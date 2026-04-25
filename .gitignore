@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment files - NEVER commit these
+.env
+.env.local
+.env.production
+api/.env
+web/.env
+web/.env.production
+mobile/.env
+
+# OS files
+.DS_Store
+**/.DS_Store
+
+# Build outputs
+dist/
+build/
+
+# Generated files
+api/src/generated/
+
+# Misc
+*.pdf
+api/shift-report.pdf
+api/dev.db
+api/prisma/dev.db
+api/tsx
+api/api@1.0.0

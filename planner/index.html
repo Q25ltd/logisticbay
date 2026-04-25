@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogisticBay — Planner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary:    #0f172a;
+      --accent:     #3b82f6;
+      --pass:       #16a34a;
+      --fail:       #dc2626;
+      --warning:    #d97706;
+      --muted:      #6b7280;
+      --border:     #e5e7eb;
+      --bg:         #f8fafc;
+      --white:      #ffffff;
+      --card-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--primary); font-size: 14px; }
+    #root { min-height: 100vh; }
+
+    /* Layout */
+    .app-shell   { display: flex; flex-direction: column; min-height: 100vh; }
+    .topnav      { background: var(--primary); color: white; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .topnav-brand{ font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
+    .topnav-brand span { color: var(--accent); }
+    .topnav-right{ display: flex; align-items: center; gap: 16px; font-size: 13px; color: rgba(255,255,255,0.7); }
+    .topnav-user { color: white; font-weight: 600; }
+    .btn-link    { background: none; border: none; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+    .btn-link:hover { color: white; background: rgba(255,255,255,0.1); }
+
+    .sidebar     { width: 200px; background: var(--white); border-right: 1px solid var(--border); padding: 16px 0; flex-shrink: 0; }
+    .main-layout { display: flex; flex: 1; overflow: hidden; }
+    .main-content{ flex: 1; overflow-y: auto; padding: 24px; }
+
+    .nav-item    { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 500; border-left: 3px solid transparent; transition: all 0.15s; }
+    .nav-item:hover { background: var(--bg); color: var(--primary); }
+    .nav-item.active { background: #eff6ff; color: var(--accent); border-left-color: var(--accent); font-weight: 600; }
+    .nav-icon    { font-size: 16px; width: 20px; text-align: center; }
+
+    /* Cards */
+    .card        { background: var(--white); border-radius: 10px; padding: 20px; box-shadow: var(--card-shadow); border: 1px solid var(--border); margin-bottom: 16px; }
+    .card-title  { font-size: 15px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
+
+    /* Forms */
+    .form-group  { margin-bottom: 14px; }
+    label        { display: block; font-size: 12px; font-weight: 600; color: var(--primary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+    input, select, textarea { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--primary); background: var(--white); outline: none; transition: border-color 0.15s; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    textarea     { min-height: 70px; resize: vertical; }
+    .hint        { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    /* Buttons */
+    .btn         { padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn:disabled{ opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+    .btn-success { background: var(--pass); color: white; }
+    .btn-danger  { background: var(--fail); color: white; }
+    .btn-outline { background: white; color: var(--primary); border: 1.5px solid var(--border); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm      { padding: 6px 12px; font-size: 12px; }
+    .btn-full    { width: 100%; justify-content: center; }
+
+    /* Status badges */
+    .badge       { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .badge-pending      { background: #fef3c7; color: #92400e; }
+    .badge-accepted     { background: #dbeafe; color: #1e40af; }
+    .badge-in_progress  { background: #fef9c3; color: #713f12; }
+    .badge-arrived_pickup { background: #e0e7ff; color: #3730a3; }
+    .badge-completed    { background: #dcfce7; color: #14532d; }
+    .badge-cancelled    { background: #f3f4f6; color: #6b7280; }
+    .badge-active       { background: #dcfce7; color: #14532d; }
+    .badge-inactive     { background: #f3f4f6; color: #6b7280; }
+
+    /* Job card */
+    .job-card    { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+    .job-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(59,130,246,0.1); }
+    .job-route   { font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 4px; }
+    .job-meta    { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .job-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+    /* Driver group */
+    .driver-group-header { background: var(--primary); color: white; padding: 8px 16px; border-radius: 8px 8px 0 0; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .driver-group-body   { border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 8px; margin-bottom: 16px; }
+
+    /* Grid */
+    .grid-2  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    /* Page headers */
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .page-title  { font-size: 20px; font-weight: 800; }
+
+    /* Auth pages */
+    .auth-wrap   { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 20px; }
+    .auth-card   { background: white; border-radius: 16px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .auth-logo   { font-size: 22px; font-weight: 900; text-align: center; margin-bottom: 8px; }
+    .auth-logo span { color: var(--accent); }
+    .auth-subtitle { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+    .auth-link   { text-align: center; margin-top: 16px; font-size: 13px; color: var(--muted); }
+    .auth-link a { color: var(--accent); text-decoration: none; font-weight: 600; }
+
+    /* Alert */
+    .alert       { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+    .alert-error { background: #fef2f2; color: #991b1b; border-left: 3px solid var(--fail); }
+    .alert-success { background: #f0fdf4; color: #14532d; border-left: 3px solid var(--pass); }
+
+    /* Table */
+    table        { width: 100%; border-collapse: collapse; }
+    th           { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border); }
+    td           { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tr:hover td  { background: var(--bg); }
+
+    /* Filter bar */
+    .filter-bar  { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+    .filter-bar input, .filter-bar select { width: auto; flex: 1; min-width: 140px; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state h3 { font-size: 16px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
+
+    /* Stat cards */
+    .stat-card   { background: white; border-radius: 10px; padding: 20px; border: 1px solid var(--border); text-align: center; }
+    .stat-value  { font-size: 32px; font-weight: 900; color: var(--accent); }
+    .stat-label  { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+    .divider     { height: 1px; background: var(--border); margin: 16px 0; }
+    .text-muted  { color: var(--muted); }
+    .text-sm     { font-size: 12px; }
+    .mt-8        { margin-top: 8px; }
+    .mt-16       { margin-top: 16px; }
+    .flex        { display: flex; }
+    .gap-8       { gap: 8px; }
+    .gap-16      { gap: 16px; }
+    .items-center{ align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .checkbox-row{ display: flex; align-items: center; gap: 8px; }
+    .checkbox-row input { width: auto; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const API = "http://192.168.0.45:3000"; // ← Change to your server URL
+
+// ─── API helper ──────────────────────────────────────────────────────────────
+
+async function api(method, path, body) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+function fmt(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function today() {
+  return new Date().toISOString().split("T")[0];
+}
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }) {
+  const labels = {
+    pending: "Pending", accepted: "Accepted", in_progress: "In Progress",
+    arrived_pickup: "At Pickup", completed: "Completed", cancelled: "Cancelled",
+    active: "Active", inactive: "Inactive", trial: "Trial",
+  };
+  return <span className={`badge badge-${status}`}>{labels[status] || status}</span>;
+}
+
+// ─── Auth pages ───────────────────────────────────────────────────────────────
+
+function LoginPage({ onLogin, onRegister }) {
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      const data = await api("POST", "/auth/login", { email, password });
+      localStorage.setItem("token", data.accessToken);
+      localStorage.setItem("refreshToken", data.refreshToken);
+      onLogin(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="auth-logo">Logistic<span>Bay</span></div>
+        <div className="auth-subtitle">Planner Dashboard — Sign in to continue</div>
+        {error && <div className="alert alert-error">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required />
+          </div>
+          <div className="form-group">
+            <label>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+          </div>
+          <button className="btn btn-primary btn-full mt-16" disabled={loading}>
+            {loading ? "Signing in..." : "Sign in →"}
+          </button>
+        </form>
+        <div className="auth-link">
+          New company? <a href="#" onClick={e => { e.preventDefault(); onRegister(); }}>Register here</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegisterPage({ onLogin, onBack }) {
+  const [form, setForm] = React.useState({ companyName: "", name: "", email: "", password: "", confirmPassword: "" });
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  function set(field) { return e => setForm(f => ({ ...f, [field]: e.target.value })); }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    try {
+      const data = await api("POST", "/auth/register-company", form);
+      localStorage.setItem("token", data.token);
+      onLogin(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="auth-logo">Logistic<span>Bay</span></div>
+        <div className="auth-subtitle">Register your company — free trial, no credit card</div>
+        {error && <div className="alert alert-error">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Company Name</label>
+            <input value={form.companyName} onChange={set("companyName")} placeholder="Acme Haulage Ltd" required />
+          </div>
+          <div className="form-group">
+            <label>Your Name</label>
+            <input value={form.name} onChange={set("name")} placeholder="John Smith" required />
+          </div>
+          <div className="form-group">
+            <label>Email</label>
+            <input type="email" value={form.email} onChange={set("email")} placeholder="john@acme.com" required />
+          </div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Password</label>
+              <input type="password" value={form.password} onChange={set("password")} placeholder="Min 8 chars" required />
+            </div>
+            <div className="form-group">
+              <label>Confirm Password</label>
+              <input type="password" value={form.confirmPassword} onChange={set("confirmPassword")} placeholder="Repeat password" required />
+            </div>
+          </div>
+          <button className="btn btn-primary btn-full mt-16" disabled={loading}>
+            {loading ? "Creating account..." : "Create Company Account →"}
+          </button>
+        </form>
+        <div className="auth-link">
+          Already registered? <a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Sign in</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+function Dashboard({ user }) {
+  const [jobs,    setJobs]    = React.useState([]);
+  const [drivers, setDrivers] = React.useState([]);
+
+  React.useEffect(() => {
+    api("GET", `/jobs?date=${today()}`).then(r => setJobs(r.data)).catch(() => {});
+    api("GET", "/drivers?status=active").then(r => setDrivers(r.data)).catch(() => {});
+  }, []);
+
+  const pending    = jobs.filter(j => j.status === "pending").length;
+  const inProgress = jobs.filter(j => j.status === "in_progress" || j.status === "arrived_pickup").length;
+  const completed  = jobs.filter(j => j.status === "completed").length;
+
+  return (
+    <div>
+      <div className="page-header">
+        <div className="page-title">Today's Overview</div>
+        <div className="text-muted text-sm">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
+      </div>
+
+      <div className="grid-3" style={{ marginBottom: 24 }}>
+        <div className="stat-card">
+          <div className="stat-value">{jobs.length}</div>
+          <div className="stat-label">Total Jobs Today</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value" style={{ color: "#d97706" }}>{pending}</div>
+          <div className="stat-label">Pending</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value" style={{ color: "var(--pass)" }}>{completed}</div>
+          <div className="stat-label">Completed</div>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">Today's Jobs</div>
+          {jobs.length === 0 ? (
+            <div className="text-muted text-sm">No jobs scheduled for today</div>
+          ) : (
+            jobs.slice(0, 5).map(job => (
+              <div key={job.id} className="job-card">
+                <div className="job-route">
+                  {job.pickupTextSnapshot || "—"} → {job.dropoffTextSnapshot || "—"}
+                </div>
+                <div className="job-meta">
+                  <span>👤 {job.assignedDriver?.displayName}</span>
+                  {job.referenceNumber && <span>📋 {job.referenceNumber}</span>}
+                  <StatusBadge status={job.status} />
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-title">Active Drivers ({drivers.length})</div>
+          {drivers.slice(0, 6).map(d => (
+            <div key={d.id} className="flex items-center justify-between" style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{d.displayName}</div>
+                {d.employeeNumber && <div className="text-sm text-muted">{d.employeeNumber}</div>}
+              </div>
+              <StatusBadge status={d.status} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Jobs / Planner Board ─────────────────────────────────────────────────────
+
+function JobsPage() {
+  const [jobs,      setJobs]      = React.useState([]);
+  const [drivers,   setDrivers]   = React.useState([]);
+  const [templates, setTemplates] = React.useState([]);
+  const [locations, setLocations] = React.useState([]);
+  const [date,      setDate]      = React.useState(today());
+  const [loading,   setLoading]   = React.useState(true);
+  const [error,     setError]     = React.useState("");
+  const [success,   setSuccess]   = React.useState("");
+  const [form,      setForm]      = React.useState({
+    templateId: "", assignedDriverId: "", plannedDate: today(),
+    pickupTextSnapshot: "", dropoffTextSnapshot: "",
+    referenceNumber: "", materialType: "", plannerNotes: "",
+    saveAsTemplate: false, templateName: "",
+  });
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [j, d, t, l] = await Promise.all([
+        api("GET", `/jobs?date=${date}`),
+        api("GET", "/drivers?status=active"),
+        api("GET", "/job-templates"),
+        api("GET", "/locations"),
+      ]);
+      setJobs(j.data);
+      setDrivers(d.data);
+      setTemplates(t.data);
+      setLocations(l.data);
+    } catch {}
+    setLoading(false);
+  }
+
+  React.useEffect(() => { load(); }, [date]);
+
+  // Poll every 30 seconds
+  React.useEffect(() => {
+    const interval = setInterval(load, 30000);
+    return () => clearInterval(interval);
+  }, [date]);
+
+  function set(field) { return e => setForm(f => ({ ...f, [field]: typeof e === "boolean" ? e : e.target.value })); }
+
+  function applyTemplate(id) {
+    const t = templates.find(t => String(t.id) === String(id));
+    if (!t) return;
+    setForm(f => ({
+      ...f,
+      templateId: id,
+      pickupTextSnapshot:  t.pickupTextSnapshot,
+      dropoffTextSnapshot: t.dropoffTextSnapshot,
+      referenceNumber:     t.defaultReference    || f.referenceNumber,
+      materialType:        t.defaultMaterialType || f.materialType,
+      plannerNotes:        t.defaultNotes        || f.plannerNotes,
+    }));
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setError(""); setSuccess("");
+    try {
+      await api("POST", "/jobs", {
+        ...form,
+        templateId:       form.templateId       ? parseInt(form.templateId)       : null,
+        assignedDriverId: parseInt(form.assignedDriverId),
+        saveAsTemplate:   form.saveAsTemplate,
+        templateName:     form.templateName,
+      });
+      setSuccess("Job created ✓");
+      setForm(f => ({ ...f, referenceNumber: "", plannerNotes: "", pickupTextSnapshot: form.templateId ? f.pickupTextSnapshot : "", dropoffTextSnapshot: form.templateId ? f.dropoffTextSnapshot : "" }));
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  // Group jobs by driver
+  const grouped = drivers.reduce((acc, d) => {
+    const driverJobs = jobs.filter(j => j.assignedDriverId === d.id);
+    if (driverJobs.length > 0) acc[d.id] = { driver: d, jobs: driverJobs };
+    return acc;
+  }, {});
+
+  const unassigned = jobs.filter(j => !drivers.find(d => d.id === j.assignedDriverId));
+
+  return (
+    <div>
+      <div className="page-header">
+        <div className="page-title">Planner Board</div>
+        <div className="filter-bar" style={{ margin: 0 }}>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 160 }} />
+          <button className="btn btn-outline btn-sm" onClick={load}>↻ Refresh</button>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        {/* Create Job Form */}
+        <div className="card">
+          <div className="card-title">➕ Create Job</div>
+          {error   && <div className="alert alert-error">{error}</div>}
+          {success && <div className="alert alert-success">{success}</div>}
+          <form onSubmit={handleCreate}>
+            <div className="form-group">
+              <label>Template <span className="text-muted">(optional)</span></label>
+              <select value={form.templateId} onChange={e => { set("templateId")(e); applyTemplate(e.target.value); }}>
+                <option value="">— No template (manual) —</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Driver *</label>
+              <select value={form.assignedDriverId} onChange={set("assignedDriverId")} required>
+                <option value="">Select driver...</option>
+                {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}{d.employeeNumber ? ` (${d.employeeNumber})` : ""}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Date *</label>
+              <input type="date" value={form.plannedDate} onChange={set("plannedDate")} required />
+            </div>
+
+            <div className="form-group">
+              <label>Pickup *</label>
+              <input value={form.pickupTextSnapshot} onChange={set("pickupTextSnapshot")} placeholder="15 Arden Place, LU2 7YE" required />
+            </div>
+
+            <div className="form-group">
+              <label>Dropoff *</label>
+              <input value={form.dropoffTextSnapshot} onChange={set("dropoffTextSnapshot")} placeholder="34C Dunelm Road, TS29 6PX" required />
+            </div>
+
+            <div className="grid-2">
+              <div className="form-group">
+                <label>Reference</label>
+                <input value={form.referenceNumber} onChange={set("referenceNumber")} placeholder="REF001" />
+              </div>
+              <div className="form-group">
+                <label>Material</label>
+                <input value={form.materialType} onChange={set("materialType")} placeholder="Type 1, MOT..." />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Planner Notes</label>
+              <textarea value={form.plannerNotes} onChange={set("plannerNotes")} placeholder="Call site before arrival..." />
+            </div>
+
+            <div className="checkbox-row form-group">
+              <input type="checkbox" id="saveTemplate" checked={form.saveAsTemplate} onChange={e => setForm(f => ({ ...f, saveAsTemplate: e.target.checked }))} />
+              <label htmlFor="saveTemplate" style={{ textTransform: "none", letterSpacing: 0, marginBottom: 0, cursor: "pointer" }}>Save as template</label>
+            </div>
+
+            {form.saveAsTemplate && (
+              <div className="form-group">
+                <label>Template Name *</label>
+                <input value={form.templateName} onChange={set("templateName")} placeholder="Depot A to Site X" />
+              </div>
+            )}
+
+            <button className="btn btn-primary btn-full" type="submit">Create Job →</button>
+          </form>
+        </div>
+
+        {/* Jobs board */}
+        <div>
+          <div className="card-title" style={{ marginBottom: 12 }}>
+            Jobs for {new Date(date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
+            {" "}— <span className="text-muted">{jobs.length} total</span>
+          </div>
+
+          {loading ? <div className="text-muted">Loading...</div> : null}
+
+          {!loading && Object.keys(grouped).length === 0 && unassigned.length === 0 && (
+            <div className="empty-state">
+              <div className="icon">📋</div>
+              <h3>No jobs for this date</h3>
+              <div>Create a job using the form on the left</div>
+            </div>
+          )}
+
+          {Object.values(grouped).map(({ driver, jobs: dJobs }) => (
+            <div key={driver.id}>
+              <div className="driver-group-header">
+                <span>👤</span> {driver.displayName}
+                <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>{dJobs.length} job{dJobs.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="driver-group-body">
+                {dJobs.map(job => (
+                  <div key={job.id} className="job-card">
+                    <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                      <div className="job-route">
+                        {job.pickupTextSnapshot || "—"} → {job.dropoffTextSnapshot || "—"}
+                      </div>
+                      <StatusBadge status={job.status} />
+                    </div>
+                    <div className="job-meta">
+                      {job.referenceNumber && <span>📋 {job.referenceNumber}</span>}
+                      {job.materialType    && <span>📦 {job.materialType}</span>}
+                      {job.plannerNotes    && <span>💬 {job.plannerNotes}</span>}
+                    </div>
+                    {job.events?.length > 0 && (
+                      <div className="text-sm text-muted mt-8">
+                        Last update: {job.events[job.events.length - 1].eventType.replace("_", " ")}
+                        {" at "}{new Date(job.events[job.events.length - 1].createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Templates Page ───────────────────────────────────────────────────────────
+
+function TemplatesPage() {
+  const [templates, setTemplates] = React.useState([]);
+  const [form,      setForm]      = React.useState({ name: "", pickupTextSnapshot: "", dropoffTextSnapshot: "", defaultReference: "", defaultNotes: "", defaultMaterialType: "" });
+  const [error,     setError]     = React.useState("");
+  const [success,   setSuccess]   = React.useState("");
+
+  async function load() {
+    const r = await api("GET", "/job-templates");
+    setTemplates(r.data);
+  }
+
+  React.useEffect(() => { load(); }, []);
+
+  function set(field) { return e => setForm(f => ({ ...f, [field]: e.target.value })); }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setError(""); setSuccess("");
+    try {
+      await api("POST", "/job-templates", form);
+      setSuccess("Template saved ✓");
+      setForm({ name: "", pickupTextSnapshot: "", dropoffTextSnapshot: "", defaultReference: "", defaultNotes: "", defaultMaterialType: "" });
+      load();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function archive(id) {
+    await api("PATCH", `/job-templates/${id}`, { status: "archived" });
+    load();
+  }
+
+  return (
+    <div>
+      <div className="page-title" style={{ marginBottom: 20 }}>Job Templates</div>
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">Create Template</div>
+          {error   && <div className="alert alert-error">{error}</div>}
+          {success && <div className="alert alert-success">{success}</div>}
+          <form onSubmit={handleCreate}>
+            <div className="form-group"><label>Template Name *</label><input value={form.name} onChange={set("name")} placeholder="Depot A to Site X" required /></div>
+            <div className="form-group"><label>Pickup Address *</label><input value={form.pickupTextSnapshot} onChange={set("pickupTextSnapshot")} placeholder="15 Arden Place, LU2 7YE" required /></div>
+            <div className="form-group"><label>Dropoff Address *</label><input value={form.dropoffTextSnapshot} onChange={set("dropoffTextSnapshot")} placeholder="34C Dunelm Road" required /></div>
+            <div className="grid-2">
+              <div className="form-group"><label>Default Reference</label><input value={form.defaultReference} onChange={set("defaultReference")} /></div>
+              <div className="form-group"><label>Material Type</label><input value={form.defaultMaterialType} onChange={set("defaultMaterialType")} /></div>
+            </div>
+            <div className="form-group"><label>Default Notes</label><textarea value={form.defaultNotes} onChange={set("defaultNotes")} placeholder="Use gate 3..." /></div>
+            <button className="btn btn-primary btn-full" type="submit">Save Template</button>
+          </form>
+        </div>
+
+        <div>
+          <div className="card-title" style={{ marginBottom: 12 }}>{templates.length} Template{templates.length !== 1 ? "s" : ""}</div>
+          {templates.length === 0 ? (
+            <div className="empty-state"><div className="icon">📄</div><h3>No templates yet</h3><div>Create your first template on the left</div></div>
+          ) : (
+            templates.map(t => (
+              <div key={t.id} className="job-card">
+                <div className="flex items-center justify-between">
+                  <div className="job-route">{t.name}</div>
+                  <button className="btn btn-outline btn-sm" onClick={() => archive(t.id)}>Archive</button>
+                </div>
+                <div className="job-meta mt-8">
+                  <span>📍 {t.pickupTextSnapshot}</span>
+                  <span>→ {t.dropoffTextSnapshot}</span>
+                </div>
+                {t.defaultMaterialType && <div className="text-sm text-muted mt-8">📦 {t.defaultMaterialType}</div>}
+                {t.defaultNotes        && <div className="text-sm text-muted mt-8">💬 {t.defaultNotes}</div>}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Drivers Page ─────────────────────────────────────────────────────────────
+
+function DriversPage() {
+  const [drivers, setDrivers] = React.useState([]);
+  const [form,    setForm]    = React.useState({ displayName: "", employeeNumber: "", phoneNumber: "", email: "" });
+  const [error,   setError]   = React.useState("");
+  const [success, setSuccess] = React.useState("");
+
+  async function load() {
+    const r = await api("GET", "/drivers");
+    setDrivers(r.data);
+  }
+  React.useEffect(() => { load(); }, []);
+
+  function set(field) { return e => setForm(f => ({ ...f, [field]: e.target.value })); }
+
+  const [loginDetails, setLoginDetails] = React.useState(null);
+  const [editDriver,   setEditDriver]   = React.useState(null);
+  const [editForm,     setEditForm]     = React.useState({});
+
+  function setE(field) { return e => setEditForm(f => ({ ...f, [field]: e.target.value })); }
+
+  async function handleEdit(e) {
+    e.preventDefault();
+    try {
+      await api("PATCH", `/drivers/${editDriver.id}`, editForm);
+      setEditDriver(null);
+      setSuccess("Driver updated ✓");
+      load();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function handleResetPassword(driver) {
+    if (!driver.userId) { setError("This driver has no login account"); return; }
+    if (!confirm(`Reset password for ${driver.displayName}?`)) return;
+    try {
+      const result = await api("POST", `/drivers/${driver.id}/reset-password`, {});
+      setLoginDetails({ email: result.loginEmail, password: result.defaultPin, name: driver.displayName });
+      setSuccess("PIN reset to default ✓ — Share login details with driver");
+    } catch (err) { setError(err.message); }
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setError(""); setSuccess(""); setLoginDetails(null);
+    try {
+      const result = await api("POST", "/drivers", form);
+      if (result.defaultPin) {
+        setLoginDetails({ email: result.loginEmail, password: result.defaultPin, name: result.displayName });
+        setSuccess("Driver added ✓ — Share the login details below with the driver");
+      } else {
+        setSuccess("Driver added ✓");
+      }
+      setForm({ displayName: "", employeeNumber: "", phoneNumber: "", email: "" });
+      load();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function toggleStatus(id, current) {
+    const next = current === "active" ? "inactive" : "active";
+    await api("PATCH", `/drivers/${id}/status`, { status: next });
+    load();
+  }
+
+  return (
+    <div>
+      <div className="page-title" style={{ marginBottom: 20 }}>Drivers</div>
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">Add Driver</div>
+          {error   && <div className="alert alert-error">{error}</div>}
+          {success && <div className="alert alert-success">{success}</div>}
+          {loginDetails && (
+            <div style={{ background: "#f0fdf4", border: "2px solid #16a34a", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: "#14532d", marginBottom: 8 }}>
+                📱 Driver Login Details — share with {loginDetails.name}
+              </div>
+              <div style={{ fontFamily: "monospace", background: "white", borderRadius: 6, padding: 12, fontSize: 13 }}>
+                <div><strong>Email:</strong> {loginDetails.email}</div>
+                <div style={{ marginTop: 6 }}><strong>PIN:</strong> <span style={{ background: "#fef9c3", padding: "4px 12px", borderRadius: 4, fontSize: 20, fontWeight: "bold", letterSpacing: 6 }}>{loginDetails.password}</span></div>
+              </div>
+              <div style={{ fontSize: 11, color: "#16a34a", marginTop: 8 }}>
+                ℹ️ Default PIN — driver must set a personal PIN on first login.
+              </div>
+            </div>
+          )}
+          <form onSubmit={handleCreate}>
+            <div className="form-group"><label>Full Name *</label><input value={form.displayName} onChange={set("displayName")} placeholder="John Smith" required /></div>
+            <div className="grid-2">
+              <div className="form-group"><label>Employee No.</label><input value={form.employeeNumber} onChange={set("employeeNumber")} placeholder="D001" /></div>
+              <div className="form-group"><label>Phone</label><input value={form.phoneNumber} onChange={set("phoneNumber")} placeholder="07700 000000" /></div>
+            </div>
+            <div className="form-group">
+              <label>Email <span className="text-muted">(creates login)</span></label>
+              <input type="email" value={form.email} onChange={set("email")} placeholder="driver@company.com" />
+              <div className="hint">If provided, driver can log into the mobile app</div>
+            </div>
+            <button className="btn btn-primary btn-full" type="submit">Add Driver</button>
+          </form>
+        </div>
+
+        <div className="card">
+          <div className="card-title">{drivers.length} Driver{drivers.length !== 1 ? "s" : ""}</div>
+          {drivers.length === 0 ? (
+            <div className="empty-state"><div className="icon">👤</div><h3>No drivers yet</h3></div>
+          ) : (
+            <table>
+              <thead><tr><th>Name</th><th>Ref</th><th>Phone</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                {drivers.map(d => (
+                  <React.Fragment key={d.id}>
+                    <tr>
+                      <td><div style={{ fontWeight: 600 }}>{d.displayName}</div>{d.user && <div className="text-sm text-muted">{d.user.email}</div>}</td>
+                      <td className="text-muted">{d.employeeNumber || "—"}</td>
+                      <td className="text-muted">{d.phoneNumber    || "—"}</td>
+                      <td><StatusBadge status={d.status} /></td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button className="btn btn-outline btn-sm" onClick={() => { setEditDriver(d); setEditForm({ displayName: d.displayName, employeeNumber: d.employeeNumber || "", phoneNumber: d.phoneNumber || "" }); }}>Edit</button>
+                          {d.user && <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(d)}>Reset PIN</button>}
+                          <button className="btn btn-outline btn-sm" onClick={() => toggleStatus(d.id, d.status)}>{d.status === "active" ? "Deactivate" : "Activate"}</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {editDriver?.id === d.id && (
+                      <tr>
+                        <td colSpan={5} style={{ background: "#f8fafc", padding: 16 }}>
+                          <form onSubmit={handleEdit} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: 11, fontWeight: 600, marginBottom: 4 }}>Name</label>
+                              <input value={editForm.displayName} onChange={setE("displayName")} style={{ width: 160 }} />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 11, fontWeight: 600, marginBottom: 4 }}>Employee No.</label>
+                              <input value={editForm.employeeNumber} onChange={setE("employeeNumber")} style={{ width: 100 }} />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 11, fontWeight: 600, marginBottom: 4 }}>Phone</label>
+                              <input value={editForm.phoneNumber} onChange={setE("phoneNumber")} style={{ width: 140 }} />
+                            </div>
+                            <button className="btn btn-primary btn-sm" type="submit">Save</button>
+                            <button className="btn btn-outline btn-sm" type="button" onClick={() => setEditDriver(null)}>Cancel</button>
+                          </form>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
+function App() {
+  const [user,    setUser]    = React.useState(null);
+  const [page,    setPage]    = React.useState("register");
+  const [nav,     setNav]     = React.useState("dashboard");
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) { setLoading(false); setPage("login"); return; }
+    api("GET", "/auth/me")
+      .then(u => { setUser(u); setPage("app"); })
+      .catch(() => { localStorage.removeItem("token"); setPage("login"); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  function handleLogin(u) { setUser(u); setPage("app"); setNav("dashboard"); }
+  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("refreshToken"); setUser(null); setPage("login"); }
+
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#6b7280" }}>Loading...</div>;
+  if (page === "login")    return <LoginPage    onLogin={handleLogin} onRegister={() => setPage("register")} />;
+  if (page === "register") return <RegisterPage onLogin={handleLogin} onBack={() => setPage("login")} />;
+
+  const navItems = [
+    { id: "dashboard", icon: "🏠", label: "Dashboard" },
+    { id: "jobs",      icon: "📋", label: "Planner" },
+    { id: "templates", icon: "📄", label: "Templates" },
+    { id: "drivers",   icon: "👥", label: "Drivers" },
+  ];
+
+  return (
+    <div className="app-shell">
+      <nav className="topnav">
+        <div className="topnav-brand">Logistic<span>Bay</span></div>
+        <div className="topnav-right">
+          <span className="topnav-user">{user?.companyName}</span>
+          <span>{user?.name}</span>
+          <button className="btn-link" onClick={handleLogout}>Sign out</button>
+        </div>
+      </nav>
+      <div className="main-layout">
+        <aside className="sidebar">
+          {navItems.map(item => (
+            <div key={item.id} className={`nav-item ${nav === item.id ? "active" : ""}`} onClick={() => setNav(item.id)}>
+              <span className="nav-icon">{item.icon}</span>
+              {item.label}
+            </div>
+          ))}
+        </aside>
+        <main className="main-content">
+          {nav === "dashboard" && <Dashboard user={user} />}
+          {nav === "jobs"      && <JobsPage />}
+          {nav === "templates" && <TemplatesPage />}
+          {nav === "drivers"   && <DriversPage />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById("root"));
+</script>
+</body>
+</html>
