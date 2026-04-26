@@ -12,7 +12,10 @@ RUN npm ci --ignore-scripts
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" npx prisma generate
 
 COPY . .
+COPY start.sh ./
+
+RUN chmod +x start.sh
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --schema=./prisma/schema.prisma && npx tsx src/server.ts"]
+CMD ["./start.sh"]
