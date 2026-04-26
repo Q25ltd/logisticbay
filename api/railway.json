@@ -4,6 +4,7 @@
     "builder": "dockerfile"
   },
   "deploy": {
-    "startCommand": "/bin/sh ./start.sh"
+    "startCommand": "/bin/sh ./start.sh",
+    "preDeployCommand": "npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss"
   }
 }
