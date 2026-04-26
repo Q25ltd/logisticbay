@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:22.12.0-alpine
 
 WORKDIR /app
 
@@ -7,11 +7,9 @@ COPY prisma ./prisma/
 COPY prisma.config.ts ./
 COPY tsconfig.json ./
 
-ENV PRISMA_SKIP_POSTINSTALL_GENERATE=true
-
 RUN npm ci
 
-RUN npx prisma generate --schema=./prisma/schema.prisma
+RUN npx prisma generate
 
 COPY . .
 
