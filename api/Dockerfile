@@ -7,9 +7,9 @@ COPY prisma ./prisma/
 COPY prisma.config.ts ./
 COPY tsconfig.json ./
 
-RUN npm ci
+RUN npm ci --ignore-scripts
 
-RUN npx prisma generate
+RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" npx prisma generate
 
 COPY . .
 
