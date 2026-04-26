@@ -6,16 +6,16 @@ COPY package*.json ./
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
 COPY tsconfig.json ./
+COPY start.sh ./
 
 RUN npm ci --ignore-scripts
 
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" npx prisma generate
 
-COPY . .
-COPY start.sh ./
-
 RUN chmod +x start.sh
+
+COPY . .
 
 EXPOSE 3000
 
-CMD ["./start.sh"]
+ENTRYPOINT ["/bin/sh", "./start.sh"]
