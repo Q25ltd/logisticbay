@@ -86,6 +86,21 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     });
   });
 
+  // ── PATCH /company ─────────────────────────────────────────────────────────
+  app.patch("/company", { preHandler: [authenticate, requireRole(["company_owner","planner"])] }, async (request, reply) => {
+    const { companyId } = (request as any).user;
+    const { name, reportEmail, reportEmailEnabled } = request.body as any;
+    const updated = await prisma.company.update({
+      where: { id: companyId },
+      data: {
+        ...(name               !== undefined ? { name }               : {}),
+        ...(reportEmail        !== undefined ? { reportEmail }        : {}),
+        ...(reportEmailEnabled !== undefined ? { reportEmailEnabled } : {}),
+      },
+    });
+    return reply.send(updated);
+  });
+
   // ── GET /company — get current company info ────────────────────────────────
   app.get("/company", { preHandler: authenticate }, async (request, reply) => {
     const { companyId } = request.user!;

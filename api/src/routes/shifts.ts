@@ -219,7 +219,11 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     setImmediate(async () => {
       try {
         const pdfBuffer = await generateShiftPDF(updatedShift as any);
-        await sendShiftReportEmail({ shift: updatedShift as any, pdfBuffer });
+        const company = await prisma.company.findUnique({ where: { id: updatedShift.companyId } });
+        if (company?.reportEmailEnabled !== false) {
+          const recipientEmail = company?.reportEmail || undefined;
+          await sendShiftReportEmail({ shift: updatedShift as any, pdfBuffer, recipientEmail });
+        }
         await prisma.shift.update({ where: { id: shiftId }, data: { status: "completed" } });
         app.log.info({ shiftId }, "Shift PDF sent and marked completed");
       } catch (err) {

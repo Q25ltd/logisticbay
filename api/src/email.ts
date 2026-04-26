@@ -10,7 +10,7 @@ function fmtDate(d: any): string {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
 }
 
-export async function sendShiftReportEmail({ shift, pdfBuffer }: { shift: any; pdfBuffer: Buffer }): Promise<void> {
+export async function sendShiftReportEmail({ shift, pdfBuffer, recipientEmail }: { shift: any; pdfBuffer: Buffer; recipientEmail?: string }): Promise<void> {
   const allChecks  = (shift.segments ?? []).flatMap((s: any) => [...(s.truckChecks ?? []), ...(s.trailerChecks ?? [])]);
   const isFailed   = (c: any) => c.result === "fail" || c.ok === false;
   const hasDefects  = allChecks.some(isFailed);
@@ -155,7 +155,7 @@ export async function sendShiftReportEmail({ shift, pdfBuffer }: { shift: any; p
   const filename = `shift-report-${shift.id}-${new Date(shift.shiftDate).toISOString().split("T")[0]}.pdf`;
 
   await sgMail.send({
-    to:   EMAIL_RECIPIENT,
+    to:   (recipientEmail || EMAIL_RECIPIENT),
     from: EMAIL_FROM,
     subject,
     html,
