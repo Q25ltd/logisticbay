@@ -1,7 +1,8 @@
 #!/bin/sh
+set -e
 echo "DATABASE_URL is set: $(echo $DATABASE_URL | cut -c1-30)..."
 echo "Running prisma db push..."
-npx prisma db push --schema=./prisma/schema.prisma
-echo "Prisma push exit code: $?"
+npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss
+echo "Prisma push done!"
 echo "Starting server..."
-npx tsx src/server.ts
+exec npx tsx src/server.ts
