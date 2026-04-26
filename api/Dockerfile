@@ -15,4 +15,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push && npx tsx src/server.ts"]
+CMD ["sh", "-c", "echo 'Running prisma db push...' && npx prisma db push && echo 'Starting server...' && npx tsx src/server.ts"]
