@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.railway.app/railpack.json",
+  "build": {
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "startCommand": "npx tsx src/server.ts"
+  }
+}
