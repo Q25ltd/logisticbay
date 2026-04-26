@@ -18,11 +18,11 @@ const NAV = [
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(true);
+  const open = true; // always open
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
-      <aside className={(open ? "w-56" : "w-14") + " flex-shrink-0 bg-primary flex flex-col transition-all duration-200"}>
+      <aside style={{ width: "224px", minWidth: "224px", overflow: "hidden", backgroundColor: "#0f172a", display: "flex", flexDirection: "column", flexShrink: 0 }}>
         <div className="h-14 flex items-center px-4 border-b border-white/10 flex-shrink-0">
           {open ? <span className="text-lg font-black text-white">Logistic<span className="text-accent">Bay</span></span>
                 : <span className="text-lg font-black text-accent">LB</span>}
@@ -53,9 +53,7 @@ export default function AppShell() {
             <button onClick={() => { logout(); navigate("/login"); }} className="text-white/40 hover:text-white text-lg w-full text-center" title="Sign out">↩</button>
           )}
         </div>
-        <button onClick={() => setOpen(o => !o)} className="border-t border-white/10 py-2.5 text-white/40 hover:text-white hover:bg-white/10 text-center text-xs transition-colors flex-shrink-0">
-          {open ? "◀ Collapse" : "▶"}
-        </button>
+
       </aside>
 
       <div className="flex-1 flex flex-col overflow-hidden">

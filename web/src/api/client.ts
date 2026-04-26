@@ -32,7 +32,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (res.status === 401) {
     clearToken();
-    window.location.href = "/login";
+    if (!window.location.pathname.includes("/login")) {
+      window.location.href = "/login";
+    }
     throw new Error("Session expired. Please sign in again.");
   }
   const data = await res.json().catch(() => ({}));

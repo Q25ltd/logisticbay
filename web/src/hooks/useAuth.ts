@@ -18,6 +18,8 @@ export function useAuthProvider(): AuthContext {
   const [loading, setLoading] = useState(true);
 
   async function refresh() {
+    const token = localStorage.getItem("lb_token");
+    if (!token) { setUser(null); setLoading(false); return; }
     try { setUser(await getMe()); }
     catch { setUser(null); apiLogout(); }
     finally { setLoading(false); }
