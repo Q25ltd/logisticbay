@@ -87,7 +87,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   });
 
   // ── PATCH /company ─────────────────────────────────────────────────────────
-  app.patch("/company", { preHandler: [authenticate, requireRole(["company_owner","planner"])] }, async (request, reply) => {
+  app.patch("/company", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = (request as any).user;
     const { name, reportEmail, reportEmailEnabled } = request.body as any;
     const updated = await prisma.company.update({
