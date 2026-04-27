@@ -6,6 +6,7 @@ import { authRoutes }    from "./routes/auth.js";
 import { companyRoutes } from "./routes/companies.js";
 import { shiftRoutes }   from "./routes/shifts.js";
 import { jobRoutes }     from "./routes/jobs.js";
+import { healthRoutes }  from "./routes/health.js";
 import fastifyStatic     from "@fastify/static";
 import cors              from "@fastify/cors";
 import path              from "path";
@@ -17,11 +18,42 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma  = new PrismaClient({ adapter });
 const app     = Fastify({ logger: true });
 
+const allowedOrigins = process.env.NODE_ENV === "production"
+  ? ["https://logisticbay.com", "https://www.logisticbay.com", /\.vercel\.app$/]
+  : true;
+
 await app.register(cors, {
-  origin: true,
+  origin: allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
+});
+
+// Rate limiting
+await app.register(import("@fastify/rate-limit").then(m => m.default), {
+  max: 100,
+  timeWindow: "1 minute",
+  errorResponseBuilder: () => ({
+    statusCode: 429,
+    error: "Too Many Requests",
+    message: "Rate limit exceeded. Please try again later.",
+  }),
+});
+
+// Global error handler
+app.setErrorHandler((error, request, reply) => {
+  const statusCode = error.statusCode ?? 500;
+  if (statusCode >= 500) {
+    app.log.error({ err: error, req: request.id }, "Internal server error");
+    return reply.status(500).send({
+      error: "Internal Server Error",
+      message: "Something went wrong. Please try again.",
+    });
+  }
+  return reply.status(statusCode).send({
+    error: error.code ?? "ERROR",
+    message: error.message,
+  });
 });
 
 await app.register(fastifyStatic, {
