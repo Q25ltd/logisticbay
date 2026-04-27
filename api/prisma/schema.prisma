@@ -131,6 +131,11 @@ model PlannedJob {
   quantityUnit        String   @default("")
   plannerNotes        String   @default("")
   status              String   @default("pending")
+  actualQuantity      String   @default("")
+  actualUnit          String   @default("")
+  podNumber           String   @default("")
+  collectionNote      String   @default("")
+  deliveryNote        String   @default("")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

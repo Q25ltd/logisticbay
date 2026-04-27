@@ -2,15 +2,17 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 
-const VALID_STATUSES = ["pending","accepted","in_progress","arrived_pickup","completed","cancelled"];
+const VALID_STATUSES = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff","completed","cancelled"];
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  pending:        ["accepted", "in_progress", "cancelled"],
-  accepted:       ["in_progress", "cancelled"],
-  in_progress:    ["arrived_pickup", "completed"],
-  arrived_pickup: ["completed"],
-  completed:      [],
-  cancelled:      [],
+  pending:         ["accepted", "in_progress", "cancelled"],
+  accepted:        ["in_progress", "cancelled"],
+  in_progress:     ["arrived_pickup", "cancelled"],
+  arrived_pickup:  ["collected", "cancelled"],
+  collected:       ["arrived_dropoff"],
+  arrived_dropoff: ["completed"],
+  completed:       [],
+  cancelled:       [],
 };
 
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -409,19 +411,45 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
-    // Update job status
+    // Update job status + actual quantities
+    const updateData: any = { status: body.status };
+    if (body.status === "collected") {
+      if (body.actualQuantity !== undefined) updateData.actualQuantity = String(body.actualQuantity);
+      if (body.actualUnit)                   updateData.actualUnit     = body.actualUnit;
+      if (body.collectionNote)               updateData.collectionNote = body.collectionNote;
+    }
+    if (body.status === "completed" || body.status === "arrived_dropoff") {
+      if (body.podNumber)    updateData.podNumber    = body.podNumber;
+      if (body.deliveryNote) updateData.deliveryNote = body.deliveryNote;
+    }
+
     await prisma.plannedJob.update({
       where: { id },
-      data:  { status: body.status },
+      data:  updateData,
     });
 
     // Record event
     const eventTypeMap: Record<string, string> = {
-      in_progress:    "started",
-      arrived_pickup: "arrived_pickup",
-      completed:      "completed",
-      cancelled:      "note_added",
+      in_progress:     "started",
+      arrived_pickup:  "arrived_pickup",
+      collected:       "collected",
+      arrived_dropoff: "arrived_dropoff",
+      completed:       "completed",
+      cancelled:       "cancelled",
     };
+
+    // Save actual quantities when collecting or delivering
+    const updateData: any = { status: body.status };
+    if (body.status === "collected") {
+      if (body.actualQuantity) updateData.actualQuantity = body.actualQuantity;
+      if (body.actualUnit)     updateData.actualUnit     = body.actualUnit;
+      if (body.collectionNote) updateData.collectionNote = body.collectionNote;
+    }
+    if (body.status === "completed") {
+      if (body.podNumber)    updateData.podNumber    = body.podNumber;
+      if (body.deliveryNote) updateData.deliveryNote = body.deliveryNote;
+      if (body.actualQuantity && !updateData.actualQuantity) updateData.actualQuantity = body.actualQuantity;
+    }
 
     await prisma.jobExecutionEvent.create({
       data: {
