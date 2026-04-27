@@ -438,19 +438,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       cancelled:       "cancelled",
     };
 
-    // Save actual quantities when collecting or delivering
-    const updateData: any = { status: body.status };
-    if (body.status === "collected") {
-      if (body.actualQuantity) updateData.actualQuantity = body.actualQuantity;
-      if (body.actualUnit)     updateData.actualUnit     = body.actualUnit;
-      if (body.collectionNote) updateData.collectionNote = body.collectionNote;
-    }
-    if (body.status === "completed") {
-      if (body.podNumber)    updateData.podNumber    = body.podNumber;
-      if (body.deliveryNote) updateData.deliveryNote = body.deliveryNote;
-      if (body.actualQuantity && !updateData.actualQuantity) updateData.actualQuantity = body.actualQuantity;
-    }
-
     await prisma.jobExecutionEvent.create({
       data: {
         jobId:     id,
