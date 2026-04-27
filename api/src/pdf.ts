@@ -124,7 +124,7 @@ export async function generateShiftPDF(shift: any): Promise<Buffer> {
     const allChecks  = (shift.segments ?? []).flatMap((s: any) => [
       ...(s.truckChecks ?? []), ...(s.trailerChecks ?? []),
     ]);
-    const hasDefects = allChecks.some((c: any) => !c.ok);
+    const hasDefects = allChecks.some((c: any) => c.result === "fail" || c.ok === false);
 
     if (hasDefects) {
       doc.rect(MARGIN, y, CONTENT, 24).fill(C.failBg);

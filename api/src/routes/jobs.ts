@@ -209,16 +209,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.send({ data: [] });
 
-    const today = q.date ?? new Date().toISOString().split("T")[0];
+    const now   = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const in7   = new Date(today);
+    in7.setDate(today.getDate() + 7);
 
     const jobs = await prisma.plannedJob.findMany({
       where: {
         companyId,
         assignedDriverId: profile.id,
-        plannedDate: {
-          gte: new Date(`${today}T00:00:00.000Z`),
-          lt:  new Date(`${today}T23:59:59.999Z`),
-        },
+        plannedDate: { gte: today, lt: in7 },
         status: { not: "cancelled" },
       },
       include: {
@@ -226,10 +226,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         dropoffLocation: true,
         events:          { orderBy: { createdAt: "asc" } },
       },
-      orderBy: { sequence: "asc" },
+      orderBy: [{ plannedDate: "asc" }, { sequence: "asc" }],
     });
 
-    return reply.send({ data: jobs });
+    const todayStr     = today.toISOString().split("T")[0];
+    const todayJobs    = jobs.filter(j => j.plannedDate.toISOString().split("T")[0] === todayStr);
+    const upcomingJobs = jobs.filter(j => j.plannedDate.toISOString().split("T")[0] !== todayStr);
+
+    return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });
 
   // ── POST /jobs — create job ────────────────────────────────────────────────

@@ -171,6 +171,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       where:   { id: shiftId, companyId, driverId: userId, status: "draft" },
       include: {
         segments:  { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
+          driver:    { include: { user: true } },
         company:   { select: { name: true } },
         driver:    { select: { name: true } },
       },
