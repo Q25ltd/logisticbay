@@ -75,6 +75,7 @@ await authRoutes(app, prisma);
 await companyRoutes(app, prisma);
 await shiftRoutes(app, prisma);
 await jobRoutes(app, prisma);
+await availabilityRoutes(app, prisma);
 
 process.on("SIGINT",  async () => { await app.close(); await prisma.$disconnect(); process.exit(0); });
 process.on("SIGTERM", async () => { await app.close(); await prisma.$disconnect(); process.exit(0); });
