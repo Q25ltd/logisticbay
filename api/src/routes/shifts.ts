@@ -390,4 +390,11 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // Run cleanup on startup and every 24 hours
   autoCleanupOldShifts();
   setInterval(autoCleanupOldShifts, 24 * 60 * 60 * 1000);
+
+  // ── DEV: reset all shifts for testing ─────────────────────────────────────
+  app.delete("/dev/reset-shifts", { preHandler: [authenticate, requireRole("company_owner")] }, async (request, reply) => {
+    const { companyId } = request.user!;
+    await prisma.shift.updateMany({ where: { companyId }, data: { status: "deleted" } });
+    return reply.send({ ok: true });
+  });
 }
