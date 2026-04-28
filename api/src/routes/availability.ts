@@ -148,27 +148,10 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
         : new Date();
       restCheck = checkRestPeriod(lastEnd, requestedStart);
 
-      // Count reduced rest this week
-      if (restCheck.isReduced) {
-        const weekStart = getWeekStart(new Date());
-        const summary = await prisma.driverWorkingTimeSummary.findUnique({
-          where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
-        });
-        if ((summary?.reducedRestUsed ?? 0) >= 3) {
-          return reply.status(400).send({
-            error: "Cannot use reduced rest — you have already used 3 reduced rest periods this week. Minimum 11 hours rest required.",
-          });
-        }
-      }
-
       if (!restCheck.allowed) {
-        // Company owners can override rest period for testing
-        if (request.user!.role === "company_owner") {
-          // Just warn, don't block
-          warnings.push(`⚠️ Rest period override: ${restCheck.message}`);
-        } else {
-          return reply.status(400).send({ error: restCheck.message });
-        }
+        warnings.push(`⚠️ ${restCheck.message}`);
+      } else if (restCheck.isReduced) {
+        warnings.push(`⚠️ Reduced rest period (${restCheck.restHours.toFixed(1)}h). Maximum 3 per week.`);
       }
     }
 
