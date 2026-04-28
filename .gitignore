@@ -28,3 +28,5 @@ api/dev.db
 api/prisma/dev.db
 api/tsx
 api/api@1.0.0
+.env
+api/.env
