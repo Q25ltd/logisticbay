@@ -226,6 +226,35 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
           await sendShiftReportEmail({ shift: updatedShift as any, pdfBuffer, recipientEmail });
         }
         await prisma.shift.update({ where: { id: shiftId }, data: { status: "completed" } });
+
+      // Update working time summary
+      try {
+        const shiftData = await prisma.shift.findUnique({ where: { id: shiftId } });
+        if (shiftData?.startTime && shiftData?.endTime) {
+          const [sh, sm] = shiftData.startTime.split(":").map(Number);
+          const [eh, em] = shiftData.endTime.split(":").map(Number);
+          const breakMins = parseInt(shiftData.breakMins || "0", 10);
+          const totalHours = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm) - breakMins) / 60);
+
+          const weekStart = new Date(shiftData.shiftDate);
+          const day = weekStart.getDay();
+          const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
+          weekStart.setDate(diff);
+          weekStart.setHours(0, 0, 0, 0);
+
+          const profile = await prisma.driverProfile.findFirst({
+            where: { companyId: shiftData.companyId, userId: shiftData.driverId },
+          });
+
+          if (profile) {
+            await prisma.driverWorkingTimeSummary.upsert({
+              where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
+              update: { totalHours: { increment: totalHours }, shiftCount: { increment: 1 } },
+              create: { companyId: shiftData.companyId, driverProfileId: profile.id, weekStartDate: weekStart, totalHours, shiftCount: 1 },
+            });
+          }
+        }
+      } catch (e) { app.log.error("Working time update failed:", e); }
         app.log.info({ shiftId }, "Shift PDF sent and marked completed");
       } catch (err) {
         app.log.error({ err, shiftId }, "Failed to send shift report");
