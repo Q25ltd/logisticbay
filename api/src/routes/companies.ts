@@ -208,14 +208,6 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       },
     });
     return reply.status(201).send(driver);
-        displayName:    body.displayName.trim(),
-        employeeNumber: body.employeeNumber ?? null,
-        phoneNumber:    body.phoneNumber    ?? null,
-        status:         "active",
-      },
-    });
-
-    return reply.status(201).send(driver);
   });
 
   // ── PATCH /drivers/:id — update driver ────────────────────────────────────
