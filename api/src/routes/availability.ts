@@ -140,6 +140,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       orderBy: { updatedAt: "desc" },
     });
 
+    const warnings: string[] = [];
     let restCheck = null;
     if (lastShift?.endTime) {
       const lastEnd = new Date(`${lastShift.shiftDate.toISOString().split("T")[0]}T${lastShift.endTime}`);
@@ -162,8 +163,6 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     });
 
     const weeklyHours = summary?.totalHours ?? 0;
-    const warnings: string[] = [];
-
     if (weeklyHours >= 60) {
       return reply.status(400).send({
         error: `You cannot start this shift. You have worked ${weeklyHours.toFixed(1)}h this week. The legal maximum is 60h in any single week. Please speak to your planner.`,
