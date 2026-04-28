@@ -136,6 +136,9 @@ model PlannedJob {
   podNumber           String   @default("")
   collectionNote      String   @default("")
   deliveryNote        String   @default("")
+  requireCollection   Boolean  @default(false)
+  requirePOD          Boolean  @default(false)
+  requireDeliveryQty  Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
