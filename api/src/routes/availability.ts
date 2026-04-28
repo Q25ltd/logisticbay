@@ -175,10 +175,14 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const weeklyHours = summary?.totalHours ?? 0;
     const warnings: string[] = [];
 
-    if (weeklyHours >= 48) {
-      warnings.push(`⚠️ You have reached the 48h weekly limit (${weeklyHours.toFixed(1)}h worked). Please speak to your planner.`);
-    } else if (weeklyHours >= 42) {
-      warnings.push(`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Approaching the 48h legal limit.`);
+    if (weeklyHours >= 60) {
+      return reply.status(400).send({
+        error: `You cannot start this shift. You have worked ${weeklyHours.toFixed(1)}h this week. The legal maximum is 60h in any single week. Please speak to your planner.`,
+      });
+    } else if (weeklyHours >= 55) {
+      warnings.push(`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Approaching the 60h weekly legal maximum. Speak to your planner.`);
+    } else if (weeklyHours >= 48) {
+      warnings.push(`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Above 48h average — your planner should review your 17-week reference period.`);
     }
 
     if (restCheck?.isReduced) {
@@ -387,19 +391,21 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
 
     const weeklyHours    = summary?.totalHours     ?? 0;
     const reducedRestUsed = summary?.reducedRestUsed ?? 0;
-    const remaining      = Math.max(0, 48 - weeklyHours);
+    const remaining      = Math.max(0, 60 - weeklyHours);
 
     return reply.send({
       weekStart,
       weeklyHours,
       reducedRestUsed,
       remainingHours: remaining,
-      isNearLimit:    weeklyHours >= 42,
-      isAtLimit:      weeklyHours >= 48,
-      warnings:       weeklyHours >= 48
-        ? ["You have reached the 48h weekly working time limit."]
-        : weeklyHours >= 42
-        ? [`You have worked ${weeklyHours.toFixed(1)}h this week. Approaching the 48h legal limit.`]
+      isNearLimit:    weeklyHours >= 55,
+      isAtLimit:      weeklyHours >= 60,
+      warnings:       weeklyHours >= 60
+        ? [`🚫 You have reached the 60h weekly legal maximum (${weeklyHours.toFixed(1)}h). Cannot start shift.`]
+        : weeklyHours >= 55
+        ? [`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Approaching the 60h legal maximum. Speak to your planner.`]
+        : weeklyHours >= 48
+        ? [`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Above 48h average over 17 weeks — planner should consider shorter days or a day off.`]
         : [],
     });
   });
