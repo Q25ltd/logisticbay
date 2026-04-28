@@ -76,7 +76,7 @@ function DriverCard({ driver, jobs, onAdd }: { driver: Driver; jobs: PlannedJob[
 function CreatePanel({ drivers, templates, driverId, date, onClose, onCreated }: {
   drivers: Driver[]; templates: any[]; driverId?: number; date: string; onClose: () => void; onCreated: () => void;
 }) {
-  const [f, setF] = useState({ assignedDriverId: driverId ?? "", plannedDate: date, templateId:"", pickupTextSnapshot:"", dropoffTextSnapshot:"", referenceNumber:"", materialType:"", quantityExpected:"", quantityUnit:"pallets", plannerNotes:"", requireCollection:false, requirePOD:false, requireDeliveryQty:false, saveAsTemplate:false, templateName:"" });
+  const [f, setF] = useState({ assignedDriverId: driverId ?? "", plannedDate: date, templateId:"", pickupTextSnapshot:"", dropoffTextSnapshot:"", referenceNumber:"", materialType:"", quantityExpected:"", quantityUnit:"pallets", plannerNotes:"", assignedTruck:"", assignedTrailer:"", vehicleClass:"class1", requireCollection:false, requirePOD:false, requireDeliveryQty:false, saveAsTemplate:false, templateName:"" });
   const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
 
   function applyTpl(id: string) {
@@ -125,6 +125,25 @@ function CreatePanel({ drivers, templates, driverId, date, onClose, onCreated }:
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">Truck Reg</label>
+              <input className="input" value={f.assignedTruck} onChange={e=>setF(p=>({...p,assignedTruck:e.target.value.toUpperCase()}))} placeholder="e.g. AB12 CDE"/>
+            </div>
+            <div>
+              <label className="label">Trailer Reg</label>
+              <input className="input" value={f.assignedTrailer} onChange={e=>setF(p=>({...p,assignedTrailer:e.target.value.toUpperCase()}))} placeholder="e.g. TRL123 (optional)"/>
+            </div>
+          </div>
+          <div>
+            <label className="label">Vehicle Class</label>
+            <select className="input" value={f.vehicleClass} onChange={e=>setF(p=>({...p,vehicleClass:e.target.value}))}>
+              <option value="class1">Class 1 (Artic)</option>
+              <option value="class2">Class 2 (Rigid)</option>
+              <option value="van">Van</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
           <div className="border rounded-lg p-3 space-y-2">
             <p className="text-xs font-bold text-muted uppercase tracking-wide">Driver Confirmation Required</p>
             <label className="flex items-center gap-2 cursor-pointer">
