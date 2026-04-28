@@ -131,37 +131,46 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const body = request.body as any;
     const { companyId } = request.user!;
 
-    if (!body.displayName?.trim()) return reply.status(400).send({ error: "Driver name is required" });
-
-    // If email provided — create a user account and link it
+    // If email provided — link existing user or create new one
     let userId: number | null = null;
+    let isNewUser = false;
+    const defaultPin = "123456";
 
     if (body.email?.trim()) {
-      const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      if (existing) return reply.status(409).send({ error: "Email already in use" });
+      const emailLower = body.email.toLowerCase().trim();
 
-      const DEFAULT_PIN = "123456";
-      const passwordHash = await bcrypt.hash(DEFAULT_PIN, 12);
-
-      const newUser = await prisma.user.create({
-        data: {
-          name:         body.displayName.trim(),
-          email:        body.email.toLowerCase().trim(),
-          passwordHash,
-          status:       "active",
-        },
+      // Block duplicate driver in same company
+      const existingInCompany = await prisma.driverProfile.findFirst({
+        where: { companyId, contactEmail: emailLower },
       });
+      if (existingInCompany) return reply.status(409).send({ error: "A driver with this email already exists in your company" });
 
-      await prisma.companyMembership.create({
-        data: {
-          companyId,
-          userId: newUser.id,
-          role:   "driver",
-          status: "active",
-        },
-      });
+      // Check if user exists globally (agency driver working multiple companies)
+      let targetUser = await prisma.user.findUnique({ where: { email: emailLower } });
 
-      userId = newUser.id;
+      if (targetUser) {
+        // Agency driver — link to this company, keep existing PIN
+        const existingMembership = await prisma.companyMembership.findFirst({
+          where: { companyId, userId: targetUser.id },
+        });
+        if (!existingMembership) {
+          await prisma.companyMembership.create({
+            data: { companyId, userId: targetUser.id, role: "driver", status: "active" },
+          });
+        }
+        userId = targetUser.id;
+      } else {
+        // New user — create account with default PIN
+        isNewUser = true;
+        const passwordHash = await bcrypt.hash(defaultPin, 12);
+        targetUser = await prisma.user.create({
+          data: { name: body.displayName.trim(), email: emailLower, passwordHash, status: "active" },
+        });
+        await prisma.companyMembership.create({
+          data: { companyId, userId: targetUser.id, role: "driver", status: "active" },
+        });
+        userId = targetUser.id;
+      }
 
       const driver = await prisma.driverProfile.create({
         data: {
@@ -170,22 +179,35 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
           displayName:    body.displayName.trim(),
           employeeNumber: body.employeeNumber ?? null,
           phoneNumber:    body.phoneNumber    ?? null,
+          contactEmail:   emailLower,
+          contactPhone:   body.phoneNumber ?? null,
           status:         "active",
         },
       });
 
       return reply.status(201).send({
         ...driver,
-        defaultPin:  DEFAULT_PIN,
-        loginEmail:  body.email.toLowerCase().trim(),
-        message:     "Driver created with default PIN",
+        defaultPin:     isNewUser ? defaultPin : null,
+        loginEmail:     emailLower,
+        isAgencyDriver: !isNewUser,
+        message:        isNewUser
+          ? "Driver created — default PIN is 123456"
+          : "Agency driver linked — they keep their existing PIN",
       });
     }
 
+    // No email — create profile without login
     const driver = await prisma.driverProfile.create({
       data: {
         companyId,
         userId,
+        displayName:    body.displayName.trim(),
+        employeeNumber: body.employeeNumber ?? null,
+        phoneNumber:    body.phoneNumber    ?? null,
+        status:         "active",
+      },
+    });
+    return reply.status(201).send(driver);
         displayName:    body.displayName.trim(),
         employeeNumber: body.employeeNumber ?? null,
         phoneNumber:    body.phoneNumber    ?? null,

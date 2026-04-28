@@ -9,193 +9,122 @@ function generateToken(payload: object): string {
 
 export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
-  // ── POST /auth/login ───────────────────────────────────────────────────────
   app.post("/auth/login", {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
   }, async (request, reply) => {
     const body = request.body as any;
     const { email, password } = body;
-
-    if (!email || !password) {
-      return reply.status(400).send({ error: "Email and password are required" });
-    }
+    if (!email || !password) return reply.status(400).send({ error: "Email and password are required" });
 
     const user = await prisma.user.findUnique({
       where:   { email: email.toLowerCase().trim() },
-      include: {
-        memberships: {
-          where:   { status: "active" },
-          include: { company: true },
-          orderBy: { createdAt: "desc" },
-          take:    1,
-        },
-      },
+      include: { memberships: { where: { status: "active" }, include: { company: true }, orderBy: { createdAt: "desc" } } },
     });
 
-    if (!user || user.status !== "active") {
-      return reply.status(401).send({ error: "Invalid email or password" });
-    }
-
+    if (!user || user.status !== "active") return reply.status(401).send({ error: "Invalid email or password" });
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return reply.status(401).send({ error: "Invalid email or password" });
 
-    const membership = user.memberships[0];
-    if (!membership) return reply.status(401).send({ error: "No active company membership" });
+    const memberships = user.memberships;
+    if (!memberships.length) return reply.status(401).send({ error: "No active company membership" });
 
-    const token = generateToken({
-      userId:    user.id,
-      companyId: membership.companyId,
-      role:      membership.role,
-    });
+    const selectedCompanyId = body.companyId ? parseInt(body.companyId) : null;
 
-    // Refresh token
-    const refreshToken = jwt.sign(
-      { userId: user.id, companyId: membership.companyId, role: membership.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: "30d" }
-    );
+    if (memberships.length > 1 && !selectedCompanyId) {
+      return reply.send({
+        requiresCompanySelection: true,
+        companies: memberships.map(m => ({ companyId: m.companyId, companyName: m.company.name, role: m.role })),
+        user: { id: user.id, name: user.name, email: user.email },
+      });
+    }
 
-    // Check if driver is still using default PIN
+    const membership = selectedCompanyId ? memberships.find(m => m.companyId === selectedCompanyId) : memberships[0];
+    if (!membership) return reply.status(401).send({ error: "Company not found or access denied" });
+
+    const token = generateToken({ userId: user.id, companyId: membership.companyId, role: membership.role });
+    const refreshToken = jwt.sign({ userId: user.id, companyId: membership.companyId, role: membership.role }, process.env.JWT_SECRET!, { expiresIn: "30d" });
     const usingDefaultPin = await bcrypt.compare("123456", user.passwordHash);
 
     return reply.send({
-      accessToken:  token,
-      refreshToken,
+      accessToken: token, refreshToken,
       mustChangePin: usingDefaultPin && membership.role === "driver",
-      user: {
-        id:          user.id,
-        name:        user.name,
-        email:       user.email,
-        companyId:   membership.companyId,
-        companyName: membership.company.name,
-        role:        membership.role,
-      },
+      user: { id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role },
     });
   });
 
-  // ── POST /auth/refresh ─────────────────────────────────────────────────────
   app.post("/auth/refresh", async (request, reply) => {
     const body = request.body as any;
-    const { refreshToken } = body;
-
-    if (!refreshToken) return reply.status(400).send({ error: "Refresh token required" });
-
+    if (!body.refreshToken) return reply.status(400).send({ error: "Refresh token required" });
     try {
-      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET!) as any;
-
-      const user = await prisma.user.findUnique({
-        where:   { id: decoded.userId },
-        include: {
-          memberships: {
-            where:   { companyId: decoded.companyId, status: "active" },
-            include: { company: true },
-            take:    1,
-          },
-        },
-      });
-
-      if (!user || user.status !== "active") {
-        return reply.status(401).send({ error: "User not found or inactive" });
-      }
-
+      const decoded = jwt.verify(body.refreshToken, process.env.JWT_SECRET!) as any;
+      const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
+      if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found or inactive" });
       const membership = user.memberships[0];
       if (!membership) return reply.status(401).send({ error: "No active membership" });
-
-      const newToken = generateToken({
-        userId:    user.id,
-        companyId: membership.companyId,
-        role:      membership.role,
-      });
-
-      return reply.send({
-        accessToken: newToken,
-        user: {
-          id:          user.id,
-          name:        user.name,
-          email:       user.email,
-          companyId:   membership.companyId,
-          companyName: membership.company.name,
-          role:        membership.role,
-        },
-      });
-    } catch {
-      return reply.status(401).send({ error: "Token expired or invalid" });
-    }
+      const newToken = generateToken({ userId: user.id, companyId: membership.companyId, role: membership.role });
+      return reply.send({ accessToken: newToken, user: { id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role } });
+    } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
   });
 
-  // ── GET /auth/me ───────────────────────────────────────────────────────────
   app.get("/auth/me", async (request, reply) => {
     const auth = request.headers.authorization;
     if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
-
     try {
       const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET!) as any;
-
-      const user = await prisma.user.findUnique({
-        where:   { id: decoded.userId },
-        include: {
-          memberships: {
-            where:   { companyId: decoded.companyId, status: "active" },
-            include: { company: true },
-            take:    1,
-          },
-        },
-      });
-
-      if (!user || user.status !== "active") {
-        return reply.status(401).send({ error: "User not found" });
-      }
-
+      const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
+      if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found" });
       const membership = user.memberships[0];
       if (!membership) return reply.status(401).send({ error: "No active membership" });
-
-      return reply.send({
-        id:          user.id,
-        name:        user.name,
-        email:       user.email,
-        companyId:   membership.companyId,
-        companyName: membership.company.name,
-        role:        membership.role,
-      });
-    } catch {
-      return reply.status(401).send({ error: "Token expired or invalid" });
-    }
+      return reply.send({ id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role });
+    } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
   });
 
-  // ── POST /auth/change-password ─────────────────────────────────────────────
   app.post("/auth/change-password", async (request, reply) => {
     const auth = request.headers.authorization;
     if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
-
     const body = request.body as any;
     const { currentPassword, newPassword } = body;
-
-    if (!currentPassword || !newPassword) {
-      return reply.status(400).send({ error: "Current and new password are required" });
-    }
-    // Accept both PIN (6 digits) and regular password
+    if (!currentPassword || !newPassword) return reply.status(400).send({ error: "Current and new password are required" });
     const isPin = /^\d{6}$/.test(newPassword);
-    if (!isPin && newPassword.length < 8) {
-      return reply.status(400).send({ error: "PIN must be 6 digits, or password at least 8 characters" });
-    }
-    if (newPassword === "123456") {
-      return reply.status(400).send({ error: "You cannot use the default PIN — choose a different 6-digit PIN" });
-    }
-
+    if (!isPin && newPassword.length < 8) return reply.status(400).send({ error: "PIN must be 6 digits, or password at least 8 characters" });
+    if (newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
     try {
       const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET!) as any;
       const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
       if (!user) return reply.status(404).send({ error: "User not found" });
-
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
       if (!valid) return reply.status(401).send({ error: "Current password is incorrect" });
-
       const passwordHash = await bcrypt.hash(newPassword, 12);
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
-
       return reply.send({ ok: true, message: "Password changed successfully" });
-    } catch {
-      return reply.status(401).send({ error: "Token expired or invalid" });
-    }
+    } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
+  });
+
+  app.post("/auth/register-company", {
+    config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+  }, async (request, reply) => {
+    const body = request.body as any;
+    const { name, companyName, email, password, confirmPassword } = body;
+    const errors = [];
+    if (!name?.trim())        errors.push("Your name is required");
+    if (!companyName?.trim()) errors.push("Company name is required");
+    if (!email?.trim())       errors.push("Email is required");
+    if (!password)            errors.push("Password is required");
+    if (password !== confirmPassword) errors.push("Passwords do not match");
+    if (errors.length) return reply.status(400).send({ error: errors.join(", ") });
+    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (existing) return reply.status(409).send({ error: "Email already registered" });
+    const slug = companyName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
+    const slugExists = await prisma.company.findUnique({ where: { slug } });
+    if (slugExists) return reply.status(409).send({ error: "Company name already taken" });
+    const passwordHash = await bcrypt.hash(password, 12);
+    const result = await prisma.$transaction(async tx => {
+      const company = await tx.company.create({ data: { name: companyName.trim(), slug } });
+      const user = await tx.user.create({ data: { name: name.trim(), email: email.toLowerCase(), passwordHash, status: "active" } });
+      await tx.companyMembership.create({ data: { companyId: company.id, userId: user.id, role: "company_owner", status: "active" } });
+      return { company, user };
+    });
+    const token = generateToken({ userId: result.user.id, companyId: result.company.id, role: "company_owner" });
+    return reply.status(201).send({ accessToken: token, user: { id: result.user.id, name: result.user.name, email: result.user.email, companyId: result.company.id, companyName: result.company.name, role: "company_owner" } });
   });
 }
