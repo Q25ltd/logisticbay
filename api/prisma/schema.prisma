@@ -18,13 +18,18 @@ model Company {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  memberships      CompanyMembership[]
-  driverProfiles   DriverProfile[]
-  savedLocations   SavedLocation[]
-  jobTemplates     JobTemplate[]
-  plannedJobs      PlannedJob[]
-  jobEvents        JobExecutionEvent[]
-  shifts           Shift[]
+  memberships       CompanyMembership[]
+  driverProfiles    DriverProfile[]
+  savedLocations    SavedLocation[]
+  jobTemplates      JobTemplate[]
+  plannedJobs       PlannedJob[]
+  jobEvents         JobExecutionEvent[]
+  shifts            Shift[]
+  availability      DriverAvailability[]
+  shiftPreferences  ShiftPreference[]
+  holidayRequests   HolidayRequest[]
+  workingSummaries  DriverWorkingTimeSummary[]
+  maxHolidaysPerDay Int      @default(2)
 }
 
 model User {
@@ -64,16 +69,23 @@ model DriverProfile {
   userId         Int?     @unique
   displayName    String
   employeeNumber String?
-  phoneNumber    String?
-  contactEmail   String?
-  contactPhone   String?
-  status         String   @default("active")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  phoneNumber       String?
+  contactEmail      String?
+  contactPhone      String?
+  minHoursPerDay    Float    @default(8)
+  holidayAllowance  Int      @default(28)
+  holidayUsed       Int      @default(0)
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  company     Company      @relation(fields: [companyId], references: [id])
-  user        User?        @relation(fields: [userId], references: [id])
-  plannedJobs PlannedJob[]
+  company           Company                    @relation(fields: [companyId], references: [id])
+  user              User?                      @relation(fields: [userId],    references: [id])
+  plannedJobs       PlannedJob[]
+  availability      DriverAvailability[]
+  shiftPreferences  ShiftPreference[]
+  holidayRequests   HolidayRequest[]
+  workingSummaries  DriverWorkingTimeSummary[]
 }
 
 model SavedLocation {
@@ -239,4 +251,94 @@ model DeliveryTask {
   updatedAt   DateTime @updatedAt
 
   segment ShiftSegment @relation(fields: [segmentId], references: [id])
+}
+
+model DriverAvailability {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  driverProfileId Int
+  weekStartDate   DateTime
+  monPref         String   @default("normal")
+  tuePref         String   @default("normal")
+  wedPref         String   @default("normal")
+  thuPref         String   @default("normal")
+  friPref         String   @default("normal")
+  satPref         String   @default("unavailable")
+  sunPref         String   @default("unavailable")
+  monNote         String   @default("")
+  tueNote         String   @default("")
+  wedNote         String   @default("")
+  thuNote         String   @default("")
+  friNote         String   @default("")
+  satNote         String   @default("")
+  sunNote         String   @default("")
+  status          String   @default("draft")
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId],       references: [id])
+  driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
+
+  @@unique([driverProfileId, weekStartDate])
+}
+
+model ShiftPreference {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  driverProfileId Int
+  shiftDate       DateTime
+  preferenceType  String   @default("normal")
+  requestedHours  Float?
+  finishByTime    String?
+  shortDayReason  String   @default("")
+  shortDayNote    String   @default("")
+  overtimeHours   Float?
+  gpsLat          Float?
+  gpsLng          Float?
+  status          String   @default("pending")
+  plannerNote     String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId],       references: [id])
+  driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
+}
+
+model HolidayRequest {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  driverProfileId Int
+  startDate       DateTime
+  endDate         DateTime
+  totalDays       Int
+  reason          String   @default("")
+  note            String   @default("")
+  status          String   @default("pending")
+  plannerNote     String   @default("")
+  approvedById    Int?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId],       references: [id])
+  driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
+}
+
+model DriverWorkingTimeSummary {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  driverProfileId Int
+  weekStartDate   DateTime
+  totalHours      Float    @default(0)
+  shiftCount      Int      @default(0)
+  reducedRestUsed Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company       Company       @relation(fields: [companyId],       references: [id])
+  driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
+
+  @@unique([driverProfileId, weekStartDate])
 }
