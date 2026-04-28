@@ -76,7 +76,7 @@ function DriverCard({ driver, jobs, onAdd }: { driver: Driver; jobs: PlannedJob[
 function CreatePanel({ drivers, templates, driverId, date, onClose, onCreated }: {
   drivers: Driver[]; templates: any[]; driverId?: number; date: string; onClose: () => void; onCreated: () => void;
 }) {
-  const [f, setF] = useState({ assignedDriverId: driverId ?? "", plannedDate: date, templateId:"", pickupTextSnapshot:"", dropoffTextSnapshot:"", referenceNumber:"", materialType:"", plannerNotes:"", saveAsTemplate:false, templateName:"" });
+  const [f, setF] = useState({ assignedDriverId: driverId ?? "", plannedDate: date, templateId:"", pickupTextSnapshot:"", dropoffTextSnapshot:"", referenceNumber:"", materialType:"", quantityExpected:"", quantityUnit:"pallets", plannerNotes:"", requireCollection:false, requirePOD:false, requireDeliveryQty:false, saveAsTemplate:false, templateName:"" });
   const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
 
   function applyTpl(id: string) {
@@ -112,6 +112,34 @@ function CreatePanel({ drivers, templates, driverId, date, onClose, onCreated }:
             <div><label className="label">Material</label><input className="input" value={f.materialType} onChange={e=>setF(p=>({...p,materialType:e.target.value}))} placeholder="Type 1..."/></div>
           </div>
           <div><label className="label">Planner Notes</label><textarea className="input min-h-16" value={f.plannerNotes} onChange={e=>setF(p=>({...p,plannerNotes:e.target.value}))} placeholder="Call site before arrival..."/></div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="label">Expected Quantity</label><input className="input" value={f.quantityExpected} onChange={e=>setF(p=>({...p,quantityExpected:e.target.value}))} placeholder="e.g. 5"/></div>
+            <div><label className="label">Unit</label>
+              <select className="input" value={f.quantityUnit} onChange={e=>setF(p=>({...p,quantityUnit:e.target.value}))}>
+                <option value="pallets">pallets</option>
+                <option value="kgs">kgs</option>
+                <option value="bags">bags</option>
+                <option value="other">other</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="border rounded-lg p-3 space-y-2">
+            <p className="text-xs font-bold text-muted uppercase tracking-wide">Driver Confirmation Required</p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={f.requireCollection} onChange={e=>setF(p=>({...p,requireCollection:e.target.checked}))} className="w-4 h-4"/>
+              <span className="text-sm">📦 Confirm collection quantity</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={f.requirePOD} onChange={e=>setF(p=>({...p,requirePOD:e.target.checked}))} className="w-4 h-4"/>
+              <span className="text-sm">🧾 Require POD / delivery reference</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={f.requireDeliveryQty} onChange={e=>setF(p=>({...p,requireDeliveryQty:e.target.checked}))} className="w-4 h-4"/>
+              <span className="text-sm">✅ Confirm delivery quantity</span>
+            </label>
+          </div>
           <div className="flex items-center gap-2"><input type="checkbox" id="st" checked={f.saveAsTemplate} onChange={e=>setF(p=>({...p,saveAsTemplate:e.target.checked}))}/><label htmlFor="st" className="text-sm cursor-pointer">Save as template</label></div>
           {f.saveAsTemplate && <div><label className="label">Template Name</label><input className="input" value={f.templateName} onChange={e=>setF(p=>({...p,templateName:e.target.value}))} placeholder="Depot A to Site X"/></div>}
           <button type="submit" disabled={loading} className="btn btn-primary w-full mt-2">{loading ? "Creating..." : "Create Job →"}</button>
