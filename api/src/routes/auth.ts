@@ -99,32 +99,4 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.send({ ok: true, message: "Password changed successfully" });
     } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
   });
-
-  app.post("/auth/register-company", {
-    config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
-  }, async (request, reply) => {
-    const body = request.body as any;
-    const { name, companyName, email, password, confirmPassword } = body;
-    const errors = [];
-    if (!name?.trim())        errors.push("Your name is required");
-    if (!companyName?.trim()) errors.push("Company name is required");
-    if (!email?.trim())       errors.push("Email is required");
-    if (!password)            errors.push("Password is required");
-    if (password !== confirmPassword) errors.push("Passwords do not match");
-    if (errors.length) return reply.status(400).send({ error: errors.join(", ") });
-    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (existing) return reply.status(409).send({ error: "Email already registered" });
-    const slug = companyName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
-    const slugExists = await prisma.company.findUnique({ where: { slug } });
-    if (slugExists) return reply.status(409).send({ error: "Company name already taken" });
-    const passwordHash = await bcrypt.hash(password, 12);
-    const result = await prisma.$transaction(async tx => {
-      const company = await tx.company.create({ data: { name: companyName.trim(), slug } });
-      const user = await tx.user.create({ data: { name: name.trim(), email: email.toLowerCase(), passwordHash, status: "active" } });
-      await tx.companyMembership.create({ data: { companyId: company.id, userId: user.id, role: "company_owner", status: "active" } });
-      return { company, user };
-    });
-    const token = generateToken({ userId: result.user.id, companyId: result.company.id, role: "company_owner" });
-    return reply.status(201).send({ accessToken: token, user: { id: result.user.id, name: result.user.name, email: result.user.email, companyId: result.company.id, companyName: result.company.name, role: "company_owner" } });
-  });
 }
