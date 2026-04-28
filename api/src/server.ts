@@ -20,7 +20,7 @@ const prisma  = new PrismaClient({ adapter });
 const app     = Fastify({ logger: true });
 
 const allowedOrigins = process.env.NODE_ENV === "production"
-  ? ["https://logisticbay.com", "https://www.logisticbay.com", "https://logisticbay.vercel.app", /\.vercel\.app$/]
+  ? ["https://logisticbay.com", "https://www.logisticbay.com", "https://logisticbay.vercel.app"]
   : true;
 
 await app.register(cors, {

@@ -4,7 +4,10 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 function generateToken(payload: object): string {
-  return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "7d" });
+  return jwt.sign(payload, process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "7d" });
+}
+function generateRefreshToken(payload: object): string {
+  return jwt.sign(payload, process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "30d" });
 }
 
 export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -56,7 +59,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = request.body as any;
     if (!body.refreshToken) return reply.status(400).send({ error: "Refresh token required" });
     try {
-      const decoded = jwt.verify(body.refreshToken, process.env.JWT_SECRET!) as any;
+      const decoded = jwt.verify(body.refreshToken, process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!) as any;
       const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
       if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found or inactive" });
       const membership = user.memberships[0];
@@ -70,7 +73,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const auth = request.headers.authorization;
     if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
     try {
-      const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET!) as any;
+      const decoded = jwt.verify(auth.slice(7), process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!) as any;
       const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
       if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found" });
       const membership = user.memberships[0];
@@ -89,7 +92,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!isPin && newPassword.length < 8) return reply.status(400).send({ error: "PIN must be 6 digits, or password at least 8 characters" });
     if (newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
     try {
-      const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET!) as any;
+      const decoded = jwt.verify(auth.slice(7), process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!) as any;
       const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
       if (!user) return reply.status(404).send({ error: "User not found" });
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
