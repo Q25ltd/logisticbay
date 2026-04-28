@@ -162,7 +162,13 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       }
 
       if (!restCheck.allowed) {
-        return reply.status(400).send({ error: restCheck.message });
+        // Company owners can override rest period for testing
+        if (request.user!.role === "company_owner") {
+          // Just warn, don't block
+          warnings.push(`⚠️ Rest period override: ${restCheck.message}`);
+        } else {
+          return reply.status(400).send({ error: restCheck.message });
+        }
       }
     }
 
