@@ -66,14 +66,15 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       return { company, user };
     });
 
-    const token = generateToken({
+    const accessToken = generateToken({
       userId:    result.user.id,
       companyId: result.company.id,
       role:      "company_owner",
     });
 
     return reply.status(201).send({
-      token,
+      accessToken,
+      refreshToken: jwt.sign({ userId: result.user.id, companyId: result.company.id, role: "company_owner" }, process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "30d" }),
       companyId: result.company.id,
       userId:    result.user.id,
       user: {
