@@ -81,8 +81,7 @@ LogisticBay is a modular logistics operating system for transport companies.
 ✅ Discard button bigger and easier to tap
 
 ### MOBILE — BROKEN (fix first)
-❌ HomeScreen.tsx JSX error — </TouchableOpacity> should be </View> around line 156
-   Error: "Expected corresponding JSX closing tag for <View>"
+✅ All TypeScript errors resolved (2026-04-30) — commit a8b5dc8
 
 ### MOBILE — TODO
 - Detention/waiting timestamps (arrived, loading start, loading finish)
