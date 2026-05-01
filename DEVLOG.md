@@ -83,6 +83,23 @@ LogisticBay is a modular logistics operating system for transport companies.
 ### MOBILE — BROKEN (fix first)
 ✅ All TypeScript errors resolved (2026-04-30) — commit a8b5dc8
 
+### MOBILE — OFFLINE QUEUE (deprecated — awaiting backend rebuild)
+⛔ src/offlineQueue.ts — DEPRECATED, do not use
+⛔ src/apiWithQueue.ts — DEPRECATED, do not use
+⛔ src/hooks/useNetworkStatus.ts — DEPRECATED, do not use
+⛔ src/components/OfflineBanner.tsx — DEPRECATED, do not use
+
+Reason: wrong architecture. Plan requires clientEventId idempotency + POST /sync/events endpoint.
+Clean rebuild required after API phase is complete.
+
+Build order locked:
+1. ⏳ API: Phase 1 — schema migration (clientEventId, SyncEventLog table)
+2. ⏳ API: POST /sync/events endpoint (job_collected only)
+3. ⏳ API: curl idempotency test + staging deploy
+4. ⏳ Mobile: rebuild offline queue against real endpoint
+5. ⏳ Mobile: acceptance test (airplane mode flow)
+6. ⏳ Expand to other event types
+
 ### MOBILE — TODO
 - Detention/waiting timestamps (arrived, loading start, loading finish)
 - Full end-to-end test
