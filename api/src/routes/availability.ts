@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
+import { validateHolidayRequest, validatePatchHoliday } from "../validation.js";
+import type {
+  SetAvailabilityBody,
+  SetShiftPreferenceBody,
+  HolidayRequestBody,
+  PatchHolidayBody,
+} from "../types/requests.js";
 
 function getWeekStart(date: Date): Date {
   const d = new Date(date);
@@ -24,7 +31,12 @@ function checkRestPeriod(lastShiftEnd: Date, requestedStart: Date): {
     return { allowed: true, restHours, isReduced: false, message: "" };
   }
   if (restHours >= 9) {
-    return { allowed: true, restHours, isReduced: true, message: `Reduced rest period (${restHours.toFixed(1)}h). Maximum 3 per week.` };
+    return {
+      allowed:   true,
+      restHours,
+      isReduced: true,
+      message:   `Reduced rest period (${restHours.toFixed(1)}h). Maximum 3 per week.`,
+    };
   }
   return {
     allowed:   false,
@@ -36,7 +48,7 @@ function checkRestPeriod(lastShiftEnd: Date, requestedStart: Date): {
 
 export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
-  // ── GET /availability/my — driver gets their availability ─────────────────
+  // ── GET /availability/my ───────────────────────────────────────────────────
   app.get("/availability/my", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
     const q = request.query as { weekStart?: string };
@@ -53,47 +65,39 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.send({ data: availability, weekStart });
   });
 
-  // ── POST /availability/my — driver sets weekly availability ───────────────
+  // ── POST /availability/my ──────────────────────────────────────────────────
   app.post("/availability/my", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const body = request.body as any;
+    const body = request.body as SetAvailabilityBody;
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
 
     const weekStart = body.weekStart ? new Date(body.weekStart) : getWeekStart(new Date());
 
+    const dayPrefs = {
+      monPref: body.monPref ?? "normal",  tuePref: body.tuePref ?? "normal",
+      wedPref: body.wedPref ?? "normal",  thuPref: body.thuPref ?? "normal",
+      friPref: body.friPref ?? "normal",  satPref: body.satPref ?? "unavailable",
+      sunPref: body.sunPref ?? "unavailable",
+      monNote: body.monNote ?? "",        tueNote: body.tueNote ?? "",
+      wedNote: body.wedNote ?? "",        thuNote: body.thuNote ?? "",
+      friNote: body.friNote ?? "",        satNote: body.satNote ?? "",
+      sunNote: body.sunNote ?? "",
+      status:  "submitted" as const,
+      submittedAt: new Date(),
+    };
+
     const availability = await prisma.driverAvailability.upsert({
       where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
-      update: {
-        monPref: body.monPref ?? "normal", tuePref: body.tuePref ?? "normal",
-        wedPref: body.wedPref ?? "normal", thuPref: body.thuPref ?? "normal",
-        friPref: body.friPref ?? "normal", satPref: body.satPref ?? "unavailable",
-        sunPref: body.sunPref ?? "unavailable",
-        monNote: body.monNote ?? "", tueNote: body.tueNote ?? "",
-        wedNote: body.wedNote ?? "", thuNote: body.thuNote ?? "",
-        friNote: body.friNote ?? "", satNote: body.satNote ?? "",
-        sunNote: body.sunNote ?? "",
-        status:  "submitted", submittedAt: new Date(),
-      },
-      create: {
-        companyId, driverProfileId: profile.id, weekStartDate: weekStart,
-        monPref: body.monPref ?? "normal", tuePref: body.tuePref ?? "normal",
-        wedPref: body.wedPref ?? "normal", thuPref: body.thuPref ?? "normal",
-        friPref: body.friPref ?? "normal", satPref: body.satPref ?? "unavailable",
-        sunPref: body.sunPref ?? "unavailable",
-        monNote: body.monNote ?? "", tueNote: body.tueNote ?? "",
-        wedNote: body.wedNote ?? "", thuNote: body.thuNote ?? "",
-        friNote: body.friNote ?? "", satNote: body.satNote ?? "",
-        sunNote: body.sunNote ?? "",
-        status:  "submitted", submittedAt: new Date(),
-      },
+      update: dayPrefs,
+      create: { companyId, driverProfileId: profile.id, weekStartDate: weekStart, ...dayPrefs },
     });
 
     return reply.status(201).send(availability);
   });
 
-  // ── GET /availability — planner sees all drivers availability ─────────────
+  // ── GET /availability — planner sees all drivers ───────────────────────────
   app.get("/availability", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { weekStart?: string };
@@ -107,9 +111,9 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.send({ data: availability, weekStart });
   });
 
-  // ── POST /availability/:id/approve — planner approves ────────────────────
+  // ── POST /availability/:id/approve ────────────────────────────────────────
   app.post("/availability/:id/approve", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as any).id, 10);
+    const id = parseInt((request.params as { id: string }).id, 10);
     const { companyId } = request.user!;
 
     const avail = await prisma.driverAvailability.findFirst({ where: { id, companyId } });
@@ -123,10 +127,10 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.send(updated);
   });
 
-  // ── POST /shift-preferences — driver sets today's preference ──────────────
+  // ── POST /shift-preferences ────────────────────────────────────────────────
   app.post("/shift-preferences", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const body = request.body as any;
+    const body = request.body as SetShiftPreferenceBody;
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
@@ -134,7 +138,6 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const shiftDate = new Date();
     shiftDate.setHours(0, 0, 0, 0);
 
-    // Check rest period from last shift
     const lastShift = await prisma.shift.findFirst({
       where:   { companyId, driverId: userId, status: { in: ["completed", "submitted"] } },
       orderBy: { updatedAt: "desc" },
@@ -156,7 +159,6 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       }
     }
 
-    // Check weekly hours
     const weekStart = getWeekStart(new Date());
     const summary = await prisma.driverWorkingTimeSummary.findUnique({
       where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
@@ -173,9 +175,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       warnings.push(`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Above 48h average — your planner should review your 17-week reference period.`);
     }
 
-    if (restCheck?.isReduced) {
-      warnings.push(restCheck.message);
-    }
+    if (restCheck?.isReduced) warnings.push(restCheck.message);
 
     const pref = await prisma.shiftPreference.create({
       data: {
@@ -197,7 +197,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.status(201).send({ data: pref, warnings });
   });
 
-  // ── GET /shift-preferences — planner sees today's preferences ─────────────
+  // ── GET /shift-preferences ─────────────────────────────────────────────────
   app.get("/shift-preferences", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { date?: string };
@@ -224,7 +224,6 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       orderBy: { startDate: "desc" },
     });
 
-    // Get company holiday limit
     const company = await prisma.company.findUnique({ where: { id: companyId } });
 
     return reply.send({
@@ -236,12 +235,13 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     });
   });
 
-  // ── POST /holiday-requests — driver submits holiday request ───────────────
+  // ── POST /holiday-requests ────────────────────────────────────────────────
   app.post("/holiday-requests", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const body = request.body as any;
+    const body = request.body as HolidayRequestBody;
 
-    if (!body.startDate || !body.endDate) return reply.status(400).send({ error: "Start and end date required" });
+    const v = validateHolidayRequest(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
@@ -249,40 +249,30 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const start = new Date(body.startDate);
     const end   = new Date(body.endDate);
 
-    // Calculate working days
     let totalDays = 0;
     const current = new Date(start);
     while (current <= end) {
-      const day = current.getDay();
-      if (day !== 0 && day !== 6) totalDays++;
+      if (current.getDay() !== 0 && current.getDay() !== 6) totalDays++;
       current.setDate(current.getDate() + 1);
     }
 
     if (totalDays > profile.holidayAllowance - profile.holidayUsed) {
-      return reply.status(400).send({ error: `Insufficient holiday allowance. You have ${profile.holidayAllowance - profile.holidayUsed} days remaining.` });
+      return reply.status(400).send({
+        error: `Insufficient holiday allowance. You have ${profile.holidayAllowance - profile.holidayUsed} days remaining.`,
+      });
     }
 
-    // Check max drivers on holiday same days
-    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    const company   = await prisma.company.findUnique({ where: { id: companyId } });
     const maxPerDay = (company as any).maxHolidaysPerDay ?? 2;
 
-    // Check each day in range
     const conflicts: string[] = [];
     const checkDate = new Date(start);
     while (checkDate <= end) {
-      const day = checkDate.getDay();
-      if (day !== 0 && day !== 6) {
+      if (checkDate.getDay() !== 0 && checkDate.getDay() !== 6) {
         const count = await prisma.holidayRequest.count({
-          where: {
-            companyId,
-            status:    "approved",
-            startDate: { lte: checkDate },
-            endDate:   { gte: checkDate },
-          },
+          where: { companyId, status: "approved", startDate: { lte: checkDate }, endDate: { gte: checkDate } },
         });
-        if (count >= maxPerDay) {
-          conflicts.push(checkDate.toLocaleDateString("en-GB"));
-        }
+        if (count >= maxPerDay) conflicts.push(checkDate.toLocaleDateString("en-GB"));
       }
       checkDate.setDate(checkDate.getDate() + 1);
     }
@@ -293,23 +283,23 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       });
     }
 
-    const request2 = await prisma.holidayRequest.create({
+    const holidayRequest = await prisma.holidayRequest.create({
       data: {
         companyId,
         driverProfileId: profile.id,
         startDate: start,
         endDate:   end,
         totalDays,
-        reason:    body.reason   ?? "",
-        note:      body.note     ?? "",
+        reason:    body.reason ?? "",
+        note:      body.note   ?? "",
         status:    "pending",
       },
     });
 
-    return reply.status(201).send(request2);
+    return reply.status(201).send(holidayRequest);
   });
 
-  // ── GET /holiday-requests — planner sees all requests ─────────────────────
+  // ── GET /holiday-requests — planner sees all ───────────────────────────────
   app.get("/holiday-requests", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { status?: string };
@@ -323,15 +313,14 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.send({ data: requests });
   });
 
-  // ── PATCH /holiday-requests/:id — planner approves/rejects ───────────────
+  // ── PATCH /holiday-requests/:id ───────────────────────────────────────────
   app.patch("/holiday-requests/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as any).id, 10);
-    const body = request.body as any;
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as PatchHolidayBody;
     const { companyId, userId } = request.user!;
 
-    if (!["approved", "rejected"].includes(body.status)) {
-      return reply.status(400).send({ error: "Status must be approved or rejected" });
-    }
+    const v = validatePatchHoliday(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const req = await prisma.holidayRequest.findFirst({ where: { id, companyId } });
     if (!req) return reply.status(404).send({ error: "Holiday request not found" });
@@ -339,14 +328,13 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const updated = await prisma.holidayRequest.update({
       where: { id },
       data: {
-        status:      body.status,
-        plannerNote: body.plannerNote ?? "",
+        status:       body.status,
+        plannerNote:  body.plannerNote ?? "",
         approvedById: userId,
-        approvedAt:  new Date(),
+        approvedAt:   new Date(),
       },
     });
 
-    // If approved — deduct from driver's allowance
     if (body.status === "approved") {
       await prisma.driverProfile.update({
         where: { id: req.driverProfileId },
@@ -354,7 +342,6 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       });
     }
 
-    // If rejecting a previously approved request — refund days
     if (body.status === "rejected" && req.status === "approved") {
       await prisma.driverProfile.update({
         where: { id: req.driverProfileId },
@@ -365,21 +352,20 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.send(updated);
   });
 
-  // ── GET /working-time/my — driver sees their hours summary ────────────────
+  // ── GET /working-time/my ───────────────────────────────────────────────────
   app.get("/working-time/my", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
 
-    const weekStart = getWeekStart(new Date());
-
-    const summary = await prisma.driverWorkingTimeSummary.findUnique({
+    const weekStart   = getWeekStart(new Date());
+    const summary     = await prisma.driverWorkingTimeSummary.findUnique({
       where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
     });
 
-    const weeklyHours    = summary?.totalHours     ?? 0;
+    const weeklyHours     = summary?.totalHours     ?? 0;
     const reducedRestUsed = summary?.reducedRestUsed ?? 0;
-    const remaining      = Math.max(0, 60 - weeklyHours);
+    const remaining       = Math.max(0, 60 - weeklyHours);
 
     return reply.send({
       weekStart,
@@ -388,7 +374,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       remainingHours: remaining,
       isNearLimit:    weeklyHours >= 55,
       isAtLimit:      weeklyHours >= 60,
-      warnings:       weeklyHours >= 60
+      warnings: weeklyHours >= 60
         ? [`🚫 You have reached the 60h weekly legal maximum (${weeklyHours.toFixed(1)}h). Cannot start shift.`]
         : weeklyHours >= 55
         ? [`⚠️ You have worked ${weeklyHours.toFixed(1)}h this week. Approaching the 60h legal maximum. Speak to your planner.`]

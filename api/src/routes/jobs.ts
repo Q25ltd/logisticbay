@@ -1,8 +1,23 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
-
-const VALID_STATUSES = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff","completed","cancelled"];
+import {
+  validateCreateLocation,
+  validateCreateTemplate,
+  validateCreateJob,
+  validateUpdateJobStatus,
+  validateAddJobNote,
+} from "../validation.js";
+import type {
+  CreateLocationBody,
+  PatchLocationBody,
+  CreateTemplateBody,
+  PatchTemplateBody,
+  CreateJobBody,
+  PatchJobBody,
+  UpdateJobStatusBody,
+  AddJobNoteBody,
+} from "../types/requests.js";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   pending:         ["accepted", "in_progress", "cancelled"],
@@ -13,6 +28,15 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   arrived_dropoff: ["completed"],
   completed:       [],
   cancelled:       [],
+};
+
+const EVENT_TYPE_MAP: Record<string, string> = {
+  in_progress:     "started",
+  arrived_pickup:  "arrived_pickup",
+  collected:       "collected",
+  arrived_dropoff: "arrived_dropoff",
+  completed:       "completed",
+  cancelled:       "cancelled",
 };
 
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -28,12 +52,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── POST /locations ────────────────────────────────────────────────────────
-  app.post("/locations", { preHandler: [authenticate, requireRole("company_owner","planner")] }, async (request, reply) => {
-    const body = request.body as any;
+  app.post("/locations", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const body = request.body as CreateLocationBody;
     const { companyId } = request.user!;
 
-    if (!body.name?.trim())        return reply.status(400).send({ error: "Location name is required" });
-    if (!body.addressText?.trim()) return reply.status(400).send({ error: "Address is required" });
+    const v = validateCreateLocation(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const loc = await prisma.savedLocation.create({
       data: {
@@ -51,9 +75,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── PATCH /locations/:id ───────────────────────────────────────────────────
-  app.patch("/locations/:id", { preHandler: [authenticate, requireRole("company_owner","planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as any).id, 10);
-    const body = request.body as any;
+  app.patch("/locations/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as PatchLocationBody;
     const { companyId } = request.user!;
 
     const loc = await prisma.savedLocation.findFirst({ where: { id, companyId } });
@@ -93,20 +117,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── POST /job-templates ────────────────────────────────────────────────────
-  app.post("/job-templates", { preHandler: [authenticate, requireRole("company_owner","planner")] }, async (request, reply) => {
-    const body = request.body as any;
+  app.post("/job-templates", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const body = request.body as CreateTemplateBody;
     const { companyId } = request.user!;
 
-    if (!body.name?.trim()) return reply.status(400).send({ error: "Template name is required" });
+    const v = validateCreateTemplate(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    // Need at least pickup + dropoff (either by ID or text)
-    const hasPickup  = body.pickupLocationId  || body.pickupTextSnapshot?.trim();
-    const hasDropoff = body.dropoffLocationId || body.dropoffTextSnapshot?.trim();
-    if (!hasPickup || !hasDropoff) {
-      return reply.status(400).send({ error: "Pickup and dropoff are required" });
-    }
-
-    // If location IDs given — snapshot the address text
     let pickupText  = body.pickupTextSnapshot  ?? "";
     let dropoffText = body.dropoffTextSnapshot ?? "";
 
@@ -140,9 +157,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── PATCH /job-templates/:id ───────────────────────────────────────────────
-  app.patch("/job-templates/:id", { preHandler: [authenticate, requireRole("company_owner","planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as any).id, 10);
-    const body = request.body as any;
+  app.patch("/job-templates/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as PatchTemplateBody;
     const { companyId } = request.user!;
 
     const template = await prisma.jobTemplate.findFirst({ where: { id, companyId } });
@@ -162,12 +179,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(updated);
   });
 
-  // ── GET /jobs — planner view ───────────────────────────────────────────────
+  // ── GET /jobs — planner / driver view ─────────────────────────────────────
   app.get("/jobs", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, role, userId } = request.user!;
     const q = request.query as { date?: string; driverId?: string; status?: string };
 
-    // Drivers only see their own jobs
     let driverProfileId: number | undefined;
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
@@ -175,11 +191,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       driverProfileId = profile.id;
     }
 
-    const where: any = {
+    const where = {
       companyId,
-      ...(driverProfileId     ? { assignedDriverId: driverProfileId }           : {}),
-      ...(q.driverId          ? { assignedDriverId: parseInt(q.driverId, 10) }  : {}),
-      ...(q.status            ? { status: q.status }                             : {}),
+      ...(driverProfileId    ? { assignedDriverId: driverProfileId }           : {}),
+      ...(q.driverId         ? { assignedDriverId: parseInt(q.driverId, 10) }  : {}),
+      ...(q.status           ? { status: q.status }                             : {}),
       ...(q.date ? {
         plannedDate: {
           gte: new Date(`${q.date}T00:00:00.000Z`),
@@ -203,10 +219,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send({ data: jobs });
   });
 
-  // ── GET /jobs/my — driver's own jobs for today ────────────────────────────
+  // ── GET /jobs/my — driver's own jobs ──────────────────────────────────────
   app.get("/jobs/my", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const q = request.query as { date?: string };
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.send({ data: [] });
@@ -238,10 +253,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });
 
-  // ── POST /jobs — create job ────────────────────────────────────────────────
-  // ── GET /jobs/:id — get single job ───────────────────────────────────────
+  // ── GET /jobs/:id ─────────────────────────────────────────────────────────
   app.get("/jobs/:id", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as any).id, 10);
+    const id = parseInt((request.params as { id: string }).id, 10);
     const { companyId, userId, role } = request.user!;
 
     const job = await prisma.plannedJob.findFirst({
@@ -255,7 +269,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
-    // Driver can only see their own jobs
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile || job.assignedDriverId !== profile.id) {
@@ -266,14 +279,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(job);
   });
 
-  app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner","planner")] }, async (request, reply) => {
-    const body = request.body as any;
+  // ── POST /jobs — create job ───────────────────────────────────────────────
+  app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const body = request.body as CreateJobBody;
     const { companyId, userId } = request.user!;
 
-    if (!body.assignedDriverId) return reply.status(400).send({ error: "Driver is required" });
-    if (!body.plannedDate)      return reply.status(400).send({ error: "Planned date is required" });
+    const v = validateCreateJob(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    // Verify driver belongs to this company
     const driver = await prisma.driverProfile.findFirst({
       where: { id: body.assignedDriverId, companyId, status: "active" },
     });
@@ -282,7 +295,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     let pickupText  = body.pickupTextSnapshot  ?? "";
     let dropoffText = body.dropoffTextSnapshot ?? "";
 
-    // If creating from template — fill in defaults
     if (body.templateId) {
       const template = await prisma.jobTemplate.findFirst({ where: { id: body.templateId, companyId } });
       if (!template) return reply.status(400).send({ error: "Template not found" });
@@ -306,32 +318,31 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.plannedJob.create({
       data: {
         companyId,
-        templateId:         body.templateId         ?? null,
-        assignedDriverId:   body.assignedDriverId,
-        createdByUserId:    userId,
-        plannedDate:        new Date(body.plannedDate),
-        sequence:           body.sequence            ?? 0,
-        pickupLocationId:   body.pickupLocationId    ?? null,
-        dropoffLocationId:  body.dropoffLocationId   ?? null,
-        pickupTextSnapshot: pickupText,
+        templateId:          body.templateId         ?? null,
+        assignedDriverId:    body.assignedDriverId,
+        createdByUserId:     userId,
+        plannedDate:         new Date(body.plannedDate),
+        sequence:            body.sequence            ?? 0,
+        pickupLocationId:    body.pickupLocationId    ?? null,
+        dropoffLocationId:   body.dropoffLocationId   ?? null,
+        pickupTextSnapshot:  pickupText,
         dropoffTextSnapshot: dropoffText,
-        referenceNumber:    body.referenceNumber     ?? "",
-        materialType:       body.materialType        ?? "",
-        quantityExpected:   body.quantityExpected    ?? "",
-        quantityUnit:       body.quantityUnit        ?? "",
-        plannerNotes:       body.plannerNotes        ?? "",
-        assignedTruck:      body.assignedTruck       ?? "",
-        assignedTrailer:    body.assignedTrailer     ?? "",
-        vehicleClass:       body.vehicleClass        ?? "",
-        requireCollection:  body.requireCollection   ?? false,
-        requirePOD:         body.requirePOD          ?? false,
-        requireDeliveryQty: body.requireDeliveryQty  ?? false,
-        status:             "pending",
+        referenceNumber:     body.referenceNumber     ?? "",
+        materialType:        body.materialType        ?? "",
+        quantityExpected:    body.quantityExpected    ?? "",
+        quantityUnit:        body.quantityUnit        ?? "",
+        plannerNotes:        body.plannerNotes        ?? "",
+        assignedTruck:       body.assignedTruck       ?? "",
+        assignedTrailer:     body.assignedTrailer     ?? "",
+        vehicleClass:        body.vehicleClass        ?? "",
+        requireCollection:   body.requireCollection   ?? false,
+        requirePOD:          body.requirePOD          ?? false,
+        requireDeliveryQty:  body.requireDeliveryQty  ?? false,
+        status:              "pending",
       },
       include: { assignedDriver: true },
     });
 
-    // If saveAsTemplate — create a template from this job
     if (body.saveAsTemplate && body.templateName) {
       await prisma.jobTemplate.create({
         data: {
@@ -352,17 +363,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.status(201).send(job);
   });
 
-  // ── PATCH /jobs/:id — edit job (only before started) ──────────────────────
-  app.patch("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner","planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as any).id, 10);
-    const body = request.body as any;
+  // ── PATCH /jobs/:id — edit job (before started) ───────────────────────────
+  app.patch("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as PatchJobBody;
     const { companyId } = request.user!;
 
     const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
-    // Block edit if already started
-    if (!["pending","accepted"].includes(job.status)) {
+    if (!["pending", "accepted"].includes(job.status)) {
       return reply.status(403).send({ error: "Cannot edit a job that has already started" });
     }
 
@@ -391,15 +401,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(updated);
   });
 
-  // ── PATCH /jobs/:id/status — driver updates status ────────────────────────
+  // ── PATCH /jobs/:id/status — driver updates job status ────────────────────
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
-    const id   = parseInt((request.params as any).id, 10);
-    const body = request.body as any;
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as UpdateJobStatusBody;
     const { companyId, userId, role } = request.user!;
 
-    if (!VALID_STATUSES.includes(body.status)) {
-      return reply.status(400).send({ error: "Invalid status" });
-    }
+    const v = validateUpdateJobStatus(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const job = await prisma.plannedJob.findFirst({
       where:   { id, companyId },
@@ -407,7 +416,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
-    // Driver can only update their own jobs
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile || job.assignedDriverId !== profile.id) {
@@ -415,7 +423,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       }
     }
 
-    // Validate status transition
     const allowed = ALLOWED_TRANSITIONS[job.status] ?? [];
     if (!allowed.includes(body.status)) {
       return reply.status(400).send({
@@ -423,8 +430,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
-    // Update job status + actual quantities
-    const updateData: any = { status: body.status };
+    const updateData: Record<string, unknown> = { status: body.status };
     if (body.status === "collected") {
       if (body.actualQuantity !== undefined) updateData.actualQuantity = String(body.actualQuantity);
       if (body.actualUnit)                   updateData.actualUnit     = body.actualUnit;
@@ -435,52 +441,44 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       if (body.deliveryNote) updateData.deliveryNote = body.deliveryNote;
     }
 
-    await prisma.plannedJob.update({
-      where: { id },
-      data:  updateData,
-    });
-
-    // Record event
-    const eventTypeMap: Record<string, string> = {
-      in_progress:     "started",
-      arrived_pickup:  "arrived_pickup",
-      collected:       "collected",
-      arrived_dropoff: "arrived_dropoff",
-      completed:       "completed",
-      cancelled:       "cancelled",
-    };
+    await prisma.plannedJob.update({ where: { id }, data: updateData });
 
     await prisma.jobExecutionEvent.create({
       data: {
-        jobId:     id,
+        jobId:          id,
         companyId,
-        driverId:  userId,
-        eventType: eventTypeMap[body.status] ?? "note_added",
-        note:      body.note ?? "",
+        driverId:       userId,
+        eventType:      EVENT_TYPE_MAP[body.status] ?? "note_added",
+        note:           body.note ?? "",
+        clientEventId:  `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        clientTimestamp: new Date(),
       },
     });
 
     return reply.send({ status: body.status, id });
   });
 
-  // ── POST /jobs/:id/note — driver adds note ────────────────────────────────
+  // ── POST /jobs/:id/note ───────────────────────────────────────────────────
   app.post("/jobs/:id/note", { preHandler: authenticate }, async (request, reply) => {
-    const id   = parseInt((request.params as any).id, 10);
-    const body = request.body as any;
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as AddJobNoteBody;
     const { companyId, userId } = request.user!;
 
-    if (!body.note?.trim()) return reply.status(400).send({ error: "Note is required" });
+    const v = validateAddJobNote(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
     await prisma.jobExecutionEvent.create({
       data: {
-        jobId:     id,
+        jobId:           id,
         companyId,
-        driverId:  userId,
-        eventType: "note_added",
-        note:      body.note.trim(),
+        driverId:        userId,
+        eventType:       "note_added",
+        note:            body.note.trim(),
+        clientEventId:   `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        clientTimestamp: new Date(),
       },
     });
 

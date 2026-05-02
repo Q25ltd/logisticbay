@@ -29,6 +29,7 @@ model Company {
   shiftPreferences  ShiftPreference[]
   holidayRequests   HolidayRequest[]
   workingSummaries  DriverWorkingTimeSummary[]
+  syncEventLogs     SyncEventLog[]
   maxHolidaysPerDay Int      @default(2)
 }
 
@@ -170,17 +171,41 @@ model PlannedJob {
 }
 
 model JobExecutionEvent {
-  id        Int      @id @default(autoincrement())
-  jobId     Int
-  companyId Int
-  driverId  Int
-  eventType String
-  note      String   @default("")
-  createdAt DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  jobId            Int
+  companyId        Int
+  driverId         Int
+  eventType        String
+  note             String   @default("")
+  clientEventId    String
+  clientTimestamp  DateTime
+  serverReceivedAt DateTime @default(now())
+  appVersion       String?
+  needsReview      Boolean  @default(false)
+  reviewReason     String?
+  createdAt        DateTime @default(now())
 
   job     PlannedJob @relation(fields: [jobId],     references: [id])
   company Company    @relation(fields: [companyId], references: [id])
   driver  User       @relation(fields: [driverId],  references: [id])
+
+  @@unique([companyId, clientEventId])
+}
+
+model SyncEventLog {
+  id            Int      @id @default(autoincrement())
+  companyId     Int
+  clientEventId String
+  eventType     String
+  status        String
+  failureReason String?
+  rawPayload    Json
+  receivedAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, clientEventId])
+  @@index([receivedAt])
 }
 
 model Shift {

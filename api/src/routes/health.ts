@@ -1,7 +1,7 @@
-import { PrismaClient } from "../generated/prisma/index.js";
+import { PrismaClient } from "../generated/client.js";
 import type { FastifyInstance } from "fastify";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({} as any);
 
 export async function healthRoutes(app: FastifyInstance) {
   app.get("/health", async (request, reply) => {

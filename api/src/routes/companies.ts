@@ -3,6 +3,18 @@ import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authenticate, requireRole } from "../middleware.js";
+import {
+  validateRegisterCompany,
+  validateCreateDriver,
+  validatePatchDriverStatus,
+} from "../validation.js";
+import type {
+  RegisterCompanyBody,
+  PatchCompanyBody,
+  CreateDriverBody,
+  PatchDriverBody,
+  PatchDriverStatusBody,
+} from "../types/requests.js";
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -12,71 +24,64 @@ function generateToken(payload: object): string {
   return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "7d" });
 }
 
+function generateRefreshToken(payload: object): string {
+  return jwt.sign(
+    payload,
+    process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!,
+    { expiresIn: "30d" },
+  );
+}
+
 export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /auth/register-company ────────────────────────────────────────────
   app.post("/auth/register-company", async (request, reply) => {
-    const body = request.body as any;
-    const { companyName, name, email, password, confirmPassword } = body;
+    const body = request.body as RegisterCompanyBody;
 
-    // Validation
-    const errors: string[] = [];
-    if (!companyName?.trim())         errors.push("Company name is required");
-    if (!name?.trim())                errors.push("Your name is required");
-    if (!email?.trim())               errors.push("Email is required");
-    if (!password || password.length < 8) errors.push("Password must be at least 8 characters");
-    if (password !== confirmPassword) errors.push("Passwords do not match");
-    if (errors.length) return reply.status(400).send({ error: errors.join(", ") });
+    const v = validateRegisterCompany(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    // Check email unique
-    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (existing) return reply.status(409).send({ error: "Email already registered" });
 
-    // Create slug — ensure unique
-    let slug = slugify(companyName.trim());
+    let slug = slugify(body.companyName.trim());
     const slugExists = await prisma.company.findUnique({ where: { slug } });
     if (slugExists) slug = `${slug}-${Date.now()}`;
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(body.password, 12);
 
-    // Create company + user + membership in one transaction
     const result = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
-        data: { name: companyName.trim(), slug, status: "trial" },
+        data: { name: body.companyName.trim(), slug, status: "trial" },
       });
 
       const user = await tx.user.create({
         data: {
-          name: name.trim(),
-          email: email.toLowerCase().trim(),
+          name:         body.name.trim(),
+          email:        body.email.toLowerCase().trim(),
           passwordHash,
-          status: "active",
+          status:       "active",
         },
       });
 
       await tx.companyMembership.create({
-        data: {
-          companyId: company.id,
-          userId:    user.id,
-          role:      "company_owner",
-          status:    "active",
-        },
+        data: { companyId: company.id, userId: user.id, role: "company_owner", status: "active" },
       });
 
       return { company, user };
     });
 
-    const accessToken = generateToken({
+    const tokenPayload = {
       userId:    result.user.id,
       companyId: result.company.id,
       role:      "company_owner",
-    });
+    };
 
     return reply.status(201).send({
-      accessToken,
-      refreshToken: jwt.sign({ userId: result.user.id, companyId: result.company.id, role: "company_owner" }, process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "30d" }),
-      companyId: result.company.id,
-      userId:    result.user.id,
+      accessToken:  generateToken(tokenPayload),
+      refreshToken: generateRefreshToken(tokenPayload),
+      companyId:    result.company.id,
+      userId:       result.user.id,
       user: {
         id:        result.user.id,
         name:      result.user.name,
@@ -89,20 +94,21 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
   // ── PATCH /company ─────────────────────────────────────────────────────────
   app.patch("/company", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const { companyId } = (request as any).user;
-    const { name, reportEmail, reportEmailEnabled } = request.body as any;
+    const { companyId } = request.user!;
+    const body = request.body as PatchCompanyBody;
+
     const updated = await prisma.company.update({
       where: { id: companyId },
       data: {
-        ...(name               !== undefined ? { name }               : {}),
-        ...(reportEmail        !== undefined ? { reportEmail }        : {}),
-        ...(reportEmailEnabled !== undefined ? { reportEmailEnabled } : {}),
+        ...(body.name               !== undefined ? { name: body.name }                           : {}),
+        ...(body.reportEmail        !== undefined ? { reportEmail: body.reportEmail }              : {}),
+        ...(body.reportEmailEnabled !== undefined ? { reportEmailEnabled: body.reportEmailEnabled } : {}),
       },
     });
     return reply.send(updated);
   });
 
-  // ── GET /company — get current company info ────────────────────────────────
+  // ── GET /company ───────────────────────────────────────────────────────────
   app.get("/company", { preHandler: authenticate }, async (request, reply) => {
     const { companyId } = request.user!;
     const company = await prisma.company.findUnique({ where: { id: companyId } });
@@ -110,16 +116,13 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     return reply.send(company);
   });
 
-  // ── GET /drivers — list company drivers ───────────────────────────────────
+  // ── GET /drivers ───────────────────────────────────────────────────────────
   app.get("/drivers", { preHandler: authenticate }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { status?: string };
 
     const drivers = await prisma.driverProfile.findMany({
-      where: {
-        companyId,
-        ...(q.status ? { status: q.status } : {}),
-      },
+      where: { companyId, ...(q.status ? { status: q.status } : {}) },
       include: { user: { select: { id: true, email: true, name: true, status: true } } },
       orderBy: { displayName: "asc" },
     });
@@ -127,30 +130,31 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     return reply.send({ data: drivers });
   });
 
-  // ── POST /drivers — create driver ─────────────────────────────────────────
+  // ── POST /drivers ──────────────────────────────────────────────────────────
   app.post("/drivers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as any;
+    const body = request.body as CreateDriverBody;
     const { companyId } = request.user!;
 
-    // If email provided — link existing user or create new one
+    const v = validateCreateDriver(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
+
     let userId: number | null = null;
     let isNewUser = false;
-    const defaultPin = "123456";
+    const DEFAULT_PIN = "123456";
 
     if (body.email?.trim()) {
       const emailLower = body.email.toLowerCase().trim();
 
-      // Block duplicate driver in same company
       const existingInCompany = await prisma.driverProfile.findFirst({
         where: { companyId, contactEmail: emailLower },
       });
-      if (existingInCompany) return reply.status(409).send({ error: "A driver with this email already exists in your company" });
+      if (existingInCompany) {
+        return reply.status(409).send({ error: "A driver with this email already exists in your company" });
+      }
 
-      // Check if user exists globally (agency driver working multiple companies)
       let targetUser = await prisma.user.findUnique({ where: { email: emailLower } });
 
       if (targetUser) {
-        // Agency driver — link to this company, keep existing PIN
         const existingMembership = await prisma.companyMembership.findFirst({
           where: { companyId, userId: targetUser.id },
         });
@@ -161,9 +165,8 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         }
         userId = targetUser.id;
       } else {
-        // New user — create account with default PIN
         isNewUser = true;
-        const passwordHash = await bcrypt.hash(defaultPin, 12);
+        const passwordHash = await bcrypt.hash(DEFAULT_PIN, 12);
         targetUser = await prisma.user.create({
           data: { name: body.displayName.trim(), email: emailLower, passwordHash, status: "active" },
         });
@@ -181,17 +184,17 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
           employeeNumber: body.employeeNumber ?? null,
           phoneNumber:    body.phoneNumber    ?? null,
           contactEmail:   emailLower,
-          contactPhone:   body.phoneNumber ?? null,
+          contactPhone:   body.phoneNumber    ?? null,
           status:         "active",
         },
       });
 
       return reply.status(201).send({
         ...driver,
-        defaultPin:     isNewUser ? defaultPin : null,
+        defaultPin:     isNewUser ? DEFAULT_PIN : null,
         loginEmail:     emailLower,
         isAgencyDriver: !isNewUser,
-        message:        isNewUser
+        message: isNewUser
           ? "Driver created — default PIN is 123456"
           : "Agency driver linked — they keep their existing PIN",
       });
@@ -211,10 +214,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     return reply.status(201).send(driver);
   });
 
-  // ── PATCH /drivers/:id — update driver ────────────────────────────────────
+  // ── PATCH /drivers/:id ─────────────────────────────────────────────────────
   app.patch("/drivers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id        = parseInt((request.params as any).id, 10);
-    const body      = request.body as any;
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as PatchDriverBody;
     const { companyId } = request.user!;
 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
@@ -232,43 +235,14 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     return reply.send(updated);
   });
 
-  // ── PATCH /drivers/:id/status — activate/deactivate ───────────────────────
-  // ── POST /drivers/:id/reset-password — admin resets driver password ─────────
-  app.post("/drivers/:id/reset-password", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as any).id, 10);
-    const { companyId } = request.user!;
-
-    const driver = await prisma.driverProfile.findFirst({
-      where: { id, companyId },
-      include: { user: true },
-    });
-    if (!driver)       return reply.status(404).send({ error: "Driver not found" });
-    if (!driver.userId) return reply.status(400).send({ error: "Driver has no login account" });
-
-    const DEFAULT_PIN = "123456";
-    const passwordHash = await bcrypt.hash(DEFAULT_PIN, 12);
-
-    await prisma.user.update({
-      where: { id: driver.userId },
-      data:  { passwordHash },
-    });
-
-    return reply.send({
-      ok:         true,
-      defaultPin: DEFAULT_PIN,
-      loginEmail: driver.user!.email,
-      message:    "PIN reset to default — driver must change on next login",
-    });
-  });
-
+  // ── PATCH /drivers/:id/status ──────────────────────────────────────────────
   app.patch("/drivers/:id/status", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id        = parseInt((request.params as any).id, 10);
-    const body      = request.body as any;
+    const id   = parseInt((request.params as { id: string }).id, 10);
+    const body = request.body as PatchDriverStatusBody;
     const { companyId } = request.user!;
 
-    if (!["active","inactive"].includes(body.status)) {
-      return reply.status(400).send({ error: "Status must be active or inactive" });
-    }
+    const v = validatePatchDriverStatus(body);
+    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
     if (!driver) return reply.status(404).send({ error: "Driver not found" });
@@ -279,5 +253,30 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     });
 
     return reply.send(updated);
+  });
+
+  // ── POST /drivers/:id/reset-password ──────────────────────────────────────
+  app.post("/drivers/:id/reset-password", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const { companyId } = request.user!;
+
+    const driver = await prisma.driverProfile.findFirst({
+      where: { id, companyId },
+      include: { user: true },
+    });
+    if (!driver)        return reply.status(404).send({ error: "Driver not found" });
+    if (!driver.userId) return reply.status(400).send({ error: "Driver has no login account" });
+
+    const DEFAULT_PIN  = "123456";
+    const passwordHash = await bcrypt.hash(DEFAULT_PIN, 12);
+
+    await prisma.user.update({ where: { id: driver.userId }, data: { passwordHash } });
+
+    return reply.send({
+      ok:         true,
+      defaultPin: DEFAULT_PIN,
+      loginEmail: driver.user!.email,
+      message:    "PIN reset to default — driver must change on next login",
+    });
   });
 }

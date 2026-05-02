@@ -83,21 +83,27 @@ LogisticBay is a modular logistics operating system for transport companies.
 ### MOBILE — BROKEN (fix first)
 ✅ All TypeScript errors resolved (2026-04-30) — commit a8b5dc8
 
-### MOBILE — OFFLINE QUEUE (deprecated — awaiting backend rebuild)
-⛔ src/offlineQueue.ts — DEPRECATED, do not use
-⛔ src/apiWithQueue.ts — DEPRECATED, do not use
-⛔ src/hooks/useNetworkStatus.ts — DEPRECATED, do not use
-⛔ src/components/OfflineBanner.tsx — DEPRECATED, do not use
+### MOBILE — OFFLINE QUEUE (rebuilt 2026-05-02)
+✅ src/offlineQueue.ts — rebuilt using POST /sync/events + clientEventId
+✅ src/hooks/useNetworkStatus.ts — rebuilt, monitors connection, auto-flushes on reconnect
+✅ src/components/OfflineBanner.tsx — active, wired into App.tsx
+✅ App.tsx — OfflineBanner + useNetworkStatus wired at navigator level
+✅ JobDetail/index.tsx — useIsOnline, optimistic UI when offline, queues to /sync/events
+⛔ src/apiWithQueue.ts — deprecated stub, do not use
 
-Reason: wrong architecture. Plan requires clientEventId idempotency + POST /sync/events endpoint.
-Clean rebuild required after API phase is complete.
+Architecture:
+- Job status updates generate a clientEventId (UUID) on device
+- Offline: events saved to AsyncStorage, optimistic UI update shown immediately
+- Online reconnect: auto-flush via POST /sync/events (idempotent)
+- Server: SyncEventLog deduplicates by clientEventId, JobExecutionEvent stores clientEventId
+- Migration file: api/prisma/migrations/20260502000000_add_client_event_id_and_sync_log
 
-Build order locked:
-1. ⏳ API: Phase 1 — schema migration (clientEventId, SyncEventLog table)
-2. ⏳ API: POST /sync/events endpoint (job_collected only)
-3. ⏳ API: curl idempotency test + staging deploy
-4. ⏳ Mobile: rebuild offline queue against real endpoint
-5. ⏳ Mobile: acceptance test (airplane mode flow)
+Build order status:
+✅ API: Phase 1 — schema migration (clientEventId, SyncEventLog table)
+✅ API: POST /sync/events endpoint (all job status transitions)
+⏳ API: deploy to Railway (railway up) + verify migration applies
+⏳ Mobile: acceptance test (airplane mode flow)
+⏳ Expand offline support to other event types (notes, shift submit)
 6. ⏳ Expand to other event types
 
 ### MOBILE — TODO

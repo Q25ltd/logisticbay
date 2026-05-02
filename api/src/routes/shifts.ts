@@ -1,28 +1,22 @@
 import type { FastifyInstance } from "fastify";
-import { PrismaClient } from "../generated/client.js";
+import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { ALL_TRUCK_KEYS, TRAILER_CHECK_KEYS } from "../constants.js";
 import { generateShiftPDF } from "../pdf.js";
 import { sendShiftReportEmail } from "../email.js";
-
-function validateChecks(checks: any[], allowedKeys: string[], name: string): string[] {
-  const errors: string[] = [];
-  if (!Array.isArray(checks)) { errors.push(`${name} must be an array`); return errors; }
-  checks.forEach((c, i) => {
-    if (!allowedKeys.includes(c.key)) errors.push(`${name}[${i}]: unknown key "${c.key}"`);
-    // Accept both old boolean ok and new three-state result field
-    const isFail = c.result === "fail" || c.ok === false;
-    if (isFail && !c.note?.trim()) errors.push(`${name}[${i}]: note required when check fails (${c.key})`);
-  });
-  return errors;
-}
+import { validateSegmentChecks, validateCreateSegment } from "../validation.js";
+import type {
+  CreateShiftBody,
+  CreateSegmentBody,
+  CreateDeliveryBody,
+  SubmitShiftBody,
+} from "../types/requests.js";
 
 export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /shifts ────────────────────────────────────────────────────────────
-
   app.post("/shifts", { preHandler: authenticate }, async (request, reply) => {
-    const body = request.body as any;
+    const body = request.body as CreateShiftBody;
     const { userId, companyId } = request.user!;
 
     const driver = await prisma.user.findUnique({
@@ -34,11 +28,11 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const shift = await prisma.shift.create({
       data: {
         companyId,
-        driverId:        userId,
-        driverName:      driver.name,
-        shiftDate:       body.shiftDate ? new Date(body.shiftDate) : new Date(),
-        startTime:       body.startTime   ?? "",
-        status:          "draft",
+        driverId:   userId,
+        driverName: driver.name,
+        shiftDate:  body.shiftDate ? new Date(body.shiftDate) : new Date(),
+        startTime:  body.startTime ?? "",
+        status:     "draft",
       },
     });
 
@@ -47,11 +41,15 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── POST /shifts/:id/segments ───────────────────────────────────────────────
-
   app.post("/shifts/:id/segments", { preHandler: authenticate }, async (request, reply) => {
-    const shiftId = parseInt((request.params as any).id, 10);
-    const body    = request.body as any;
+    const shiftId = parseInt((request.params as { id: string }).id, 10);
+    const body    = request.body as CreateSegmentBody;
     const { userId, companyId } = request.user!;
+
+    const segValidation = validateCreateSegment(body);
+    if (!segValidation.valid) {
+      return reply.status(400).send({ error: "Validation failed", details: segValidation.errors });
+    }
 
     const shift = await prisma.shift.findFirst({
       where:   { id: shiftId, companyId, driverId: userId, status: "draft" },
@@ -59,35 +57,26 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!shift) return reply.status(404).send({ error: "Shift not found or not in draft" });
 
-    // Validate truck checks
-    const truckErrors = validateChecks(body.truckChecks ?? [], ALL_TRUCK_KEYS, "truckChecks");
+    const truckErrors = validateSegmentChecks(body.truckChecks ?? [], ALL_TRUCK_KEYS, "truckChecks");
     if (truckErrors.length) return reply.status(400).send({ error: "Validation failed", details: truckErrors });
 
-    // Validate trailer checks if provided
     if (body.trailerReg && body.trailerChecks) {
-      const trailerErrors = validateChecks(body.trailerChecks, TRAILER_CHECK_KEYS, "trailerChecks");
+      const trailerErrors = validateSegmentChecks(body.trailerChecks, TRAILER_CHECK_KEYS, "trailerChecks");
       if (trailerErrors.length) return reply.status(400).send({ error: "Validation failed", details: trailerErrors });
     }
 
-    // Close previous segment if open
     const prevSegment = shift.segments[shift.segments.length - 1];
     if (prevSegment && !prevSegment.endTime) {
       await prisma.shiftSegment.update({
         where: { id: prevSegment.id },
         data: {
-          endTime:     new Date(),
-          // Only update odometerEnd if provided (truck change) — trailer change skips this
+          endTime: new Date(),
           ...(body.prevOdometerEnd != null ? { odometerEnd: body.prevOdometerEnd } : {}),
         },
       });
     }
 
     const segmentNumber = shift.segments.length + 1;
-
-    // odometerStart:
-    // - If truck changed: use the value sent from mobile
-    // - If trailer only changed: carry over from previous segment's start (truck didn't move)
-    // - First segment: use value sent
     const odometerStart = body.odometerStart != null
       ? body.odometerStart
       : prevSegment?.odometerStart ?? 0;
@@ -99,18 +88,18 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         vehicleClass:      body.vehicleClass      ?? "class1",
         needsTruckCheck:   body.needsTruckCheck   ?? true,
         needsTrailerCheck: body.needsTrailerCheck ?? true,
-        truckReg:      body.truckReg.trim().toUpperCase(),
-        trailerReg:    body.trailerReg?.trim().toUpperCase() ?? null,
+        truckReg:          body.truckReg.trim().toUpperCase(),
+        trailerReg:        body.trailerReg?.trim().toUpperCase() ?? null,
         odometerStart,
-        truckChecks:   body.truckChecks,
-        trailerChecks: body.trailerReg ? (body.trailerChecks ?? null) : null,
-        startTime:     new Date(),
+        truckChecks:       body.truckChecks ?? Prisma.JsonNull,
+        trailerChecks:     body.trailerReg ? (body.trailerChecks ?? Prisma.JsonNull) : Prisma.JsonNull,
+        startTime:         new Date(),
       },
     });
 
-    const isFailed = (c: any) => c.result === "fail" || c.ok === false;
-    const failedTruck   = (body.truckChecks   ?? []).filter(isFailed).map((c: any) => c.key);
-    const failedTrailer = (body.trailerChecks ?? []).filter(isFailed).map((c: any) => c.key);
+    const isFailed = (c: { result?: string; ok?: boolean }) => c.result === "fail" || c.ok === false;
+    const failedTruck   = (body.truckChecks   ?? []).filter(isFailed).map(c => c.key);
+    const failedTrailer = (body.trailerChecks ?? []).filter(isFailed).map(c => c.key);
 
     if (failedTruck.length || failedTrailer.length) {
       app.log.warn({ failedTruck, failedTrailer, shiftId }, "Segment has failed checks");
@@ -125,11 +114,10 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── POST /shifts/:id/segments/:segId/deliveries ─────────────────────────────
-
   app.post("/shifts/:id/segments/:segId/deliveries", { preHandler: authenticate }, async (request, reply) => {
-    const shiftId   = parseInt((request.params as any).id, 10);
-    const segmentId = parseInt((request.params as any).segId, 10);
-    const body      = request.body as any;
+    const shiftId   = parseInt((request.params as { id: string; segId: string }).id, 10);
+    const segmentId = parseInt((request.params as { id: string; segId: string }).segId, 10);
+    const body      = request.body as CreateDeliveryBody;
     const { userId, companyId } = request.user!;
 
     const segment = await prisma.shiftSegment.findFirst({
@@ -161,25 +149,22 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── PATCH /shifts/:id/submit ────────────────────────────────────────────────
-
   app.patch("/shifts/:id/submit", { preHandler: authenticate }, async (request, reply) => {
-    const shiftId = parseInt((request.params as any).id, 10);
-    const body    = request.body as any;
+    const shiftId = parseInt((request.params as { id: string }).id, 10);
+    const body    = request.body as SubmitShiftBody;
     const { userId, companyId } = request.user!;
 
     const shift = await prisma.shift.findFirst({
       where:   { id: shiftId, companyId, driverId: userId, status: "draft" },
       include: {
-        segments:  { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
-          driver:    { include: { user: true } },
-        company:   { select: { name: true } },
-        driver:    { select: { name: true } },
+        segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
+        driver:   { select: { name: true } },
+        company:  { select: { name: true } },
       },
     });
-    if (!shift)                  return reply.status(404).send({ error: "Shift not found or already submitted" });
-    if (!shift.segments.length)  return reply.status(400).send({ error: "Shift has no segments" });
+    if (!shift)                 return reply.status(404).send({ error: "Shift not found or already submitted" });
+    if (!shift.segments.length) return reply.status(400).send({ error: "Shift has no segments" });
 
-    // Close final segment
     const lastSeg = shift.segments[shift.segments.length - 1];
     await prisma.shiftSegment.update({
       where: { id: lastSeg.id },
@@ -190,7 +175,6 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       },
     });
 
-    // Save end-of-shift summary
     const updatedShift = await prisma.shift.update({
       where: { id: shiftId },
       data: {
@@ -207,16 +191,16 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         submittedAt: new Date(),
       },
       include: {
-        segments:  { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
-        company:   { select: { name: true } },
-        driver:    { select: { name: true } },
+        segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
+        company:  { select: { name: true } },
+        driver:   { select: { name: true } },
       },
     });
 
     app.log.info({ shiftId }, "Shift submitted");
     reply.status(200).send({ status: "submitted", id: shiftId });
 
-    // Background: PDF + email
+    // Background: PDF + email + working time update
     setImmediate(async () => {
       try {
         const pdfBuffer = await generateShiftPDF(updatedShift as any);
@@ -227,34 +211,34 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         }
         await prisma.shift.update({ where: { id: shiftId }, data: { status: "completed" } });
 
-      // Update working time summary
-      try {
-        const shiftData = await prisma.shift.findUnique({ where: { id: shiftId } });
-        if (shiftData?.startTime && shiftData?.endTime) {
-          const [sh, sm] = shiftData.startTime.split(":").map(Number);
-          const [eh, em] = shiftData.endTime.split(":").map(Number);
-          const breakMins = parseInt(shiftData.breakMins || "0", 10);
-          const totalHours = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm) - breakMins) / 60);
+        try {
+          const shiftData = await prisma.shift.findUnique({ where: { id: shiftId } });
+          if (shiftData?.startTime && shiftData?.endTime) {
+            const [sh, sm] = shiftData.startTime.split(":").map(Number);
+            const [eh, em] = shiftData.endTime.split(":").map(Number);
+            const breakMins  = parseInt(shiftData.breakMins || "0", 10);
+            const totalHours = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm) - breakMins) / 60);
 
-          const weekStart = new Date(shiftData.shiftDate);
-          const day = weekStart.getDay();
-          const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
-          weekStart.setDate(diff);
-          weekStart.setHours(0, 0, 0, 0);
+            const weekStart = new Date(shiftData.shiftDate);
+            const day  = weekStart.getDay();
+            const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
+            weekStart.setDate(diff);
+            weekStart.setHours(0, 0, 0, 0);
 
-          const profile = await prisma.driverProfile.findFirst({
-            where: { companyId: shiftData.companyId, userId: shiftData.driverId },
-          });
-
-          if (profile) {
-            await prisma.driverWorkingTimeSummary.upsert({
-              where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
-              update: { totalHours: { increment: totalHours }, shiftCount: { increment: 1 } },
-              create: { companyId: shiftData.companyId, driverProfileId: profile.id, weekStartDate: weekStart, totalHours, shiftCount: 1 },
+            const profile = await prisma.driverProfile.findFirst({
+              where: { companyId: shiftData.companyId, userId: shiftData.driverId },
             });
+
+            if (profile) {
+              await prisma.driverWorkingTimeSummary.upsert({
+                where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
+                update: { totalHours: { increment: totalHours }, shiftCount: { increment: 1 } },
+                create: { companyId: shiftData.companyId, driverProfileId: profile.id, weekStartDate: weekStart, totalHours, shiftCount: 1 },
+              });
+            }
           }
-        }
-      } catch (e) { app.log.error("Working time update failed:", e); }
+        } catch (e) { app.log.error({ err: e }, "Working time update failed"); }
+
         app.log.info({ shiftId }, "Shift PDF sent and marked completed");
       } catch (err) {
         app.log.error({ err, shiftId }, "Failed to send shift report");
@@ -264,7 +248,6 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── GET /shifts ─────────────────────────────────────────────────────────────
-
   app.get("/shifts", { preHandler: authenticate }, async (request, reply) => {
     const { userId, companyId, role } = request.user!;
     const q = request.query as { limit?: string; offset?: string; status?: string };
@@ -272,7 +255,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const limit  = Math.min(parseInt(q.limit  ?? "50", 10), 100);
     const offset = Math.max(parseInt(q.offset ?? "0",  10), 0);
 
-    const where: any = {
+    const where = {
       companyId,
       ...(role === "driver" ? { driverId: userId } : {}),
       ...(q.status ? { status: q.status } : {}),
@@ -285,10 +268,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         take:    limit,
         skip:    offset,
         include: {
-          segments: {
-            include: { deliveries: true },
-            orderBy: { segmentNumber: "asc" },
-          },
+          segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
         },
       }),
       prisma.shift.count({ where }),
@@ -301,17 +281,16 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── GET /shifts/:id ─────────────────────────────────────────────────────────
-
   app.get("/shifts/:id", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as any).id, 10);
+    const id = parseInt((request.params as { id: string }).id, 10);
     const { userId, companyId, role } = request.user!;
 
     const shift = await prisma.shift.findFirst({
       where: { id, companyId, ...(role === "driver" ? { driverId: userId } : {}) },
       include: {
-        segments:  { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
-        company:   { select: { name: true } },
-        driver:    { select: { name: true } },
+        segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
+        company:  { select: { name: true } },
+        driver:   { select: { name: true } },
       },
     });
 
@@ -320,17 +299,16 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── GET /shifts/:id/pdf ─────────────────────────────────────────────────────
-
   app.get("/shifts/:id/pdf", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as any).id, 10);
+    const id = parseInt((request.params as { id: string }).id, 10);
     const { userId, companyId, role } = request.user!;
 
     const shift = await prisma.shift.findFirst({
       where: { id, companyId, ...(role === "driver" ? { driverId: userId } : {}) },
       include: {
-        segments:  { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
-        company:   { select: { name: true } },
-        driver:    { select: { name: true } },
+        segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
+        company:  { select: { name: true } },
+        driver:   { select: { name: true } },
       },
     });
 
@@ -350,44 +328,37 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
   });
 
-  // ── DELETE /shifts/:id ──────────────────────────────────────────────────────
-
-  // ── DELETE /shifts/:id — admin only ────────────────────────────────────────
+  // ── DELETE /shifts/:id — soft delete (admin only) ──────────────────────────
   app.delete(
     "/shifts/:id",
     { preHandler: [authenticate, requireRole("company_admin")] },
     async (request, reply) => {
-      const id    = parseInt((request.params as any).id, 10);
+      const id    = parseInt((request.params as { id: string }).id, 10);
       const shift = await prisma.shift.findFirst({ where: { id, companyId: request.user!.companyId } });
       if (!shift)                     return reply.status(404).send({ error: "Shift not found" });
       if (shift.status === "deleted") return reply.status(409).send({ error: "Already deleted" });
       await prisma.shift.update({ where: { id }, data: { status: "deleted" } });
-      app.log.info({ id }, "Shift deleted by admin");
+      app.log.info({ id }, "Shift soft-deleted by admin");
       return reply.send({ status: "deleted", id });
     }
   );
 
-  // ── Auto-cleanup: delete shifts older than 90 days ─────────────────────────
-  // Run once on startup, then every 24 hours
+  // ── Auto-cleanup: soft-delete shifts older than 90 days ────────────────────
   async function autoCleanupOldShifts() {
     try {
       const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const result = await prisma.shift.updateMany({
-        where: {
-          createdAt: { lt: cutoff },
-          status:    { not: "deleted" },
-        },
-        data: { status: "deleted" },
+        where: { createdAt: { lt: cutoff }, status: { not: "deleted" } },
+        data:  { status: "deleted" },
       });
       if (result.count > 0) {
-        app.log.info({ count: result.count }, "Auto-deleted shifts older than 90 days");
+        app.log.info({ count: result.count }, "Auto-soft-deleted shifts older than 90 days");
       }
     } catch (err) {
       app.log.error(err, "Auto-cleanup failed");
     }
   }
 
-  // Run cleanup on startup and every 24 hours
   autoCleanupOldShifts();
   setInterval(autoCleanupOldShifts, 24 * 60 * 60 * 1000);
 
