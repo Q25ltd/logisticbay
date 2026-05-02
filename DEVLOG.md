@@ -250,3 +250,35 @@ All other event types rejected with clear error message. More types added in Pha
 - Migrate `JobExecutionEvent.driverId` from User reference to DriverProfile reference
 - Add remaining event types: `started`, `arrived_pickup`, `arrived_dropoff`, `completed`
 - Mobile integration test with real device offline/online toggle
+
+---
+
+## 2026-05-02 — Phase 2 Sync (API)
+
+### What was built
+- Added all remaining job event types to POST /sync/events
+- `sync.constants.ts` — SUPPORTED_EVENT_TYPES now includes all 5 event types
+- `sync.service.ts` — added `podNumber` and `deliveryNote` to IncomingEvent interface
+- `sync.service.ts` — added `buildJobUpdate()` function — single place that maps event type to job status and captured fields
+
+### Event type mapping
+| Event type     | Job status set  | Fields captured                                      |
+|----------------|-----------------|------------------------------------------------------|
+| started        | in_progress     | none                                                 |
+| arrived_pickup | arrived_pickup  | none                                                 |
+| collected      | collected       | actualQuantity, actualUnit, collectionNote           |
+| arrived_dropoff| arrived_dropoff | podNumber, deliveryNote                              |
+| completed      | completed       | podNumber, deliveryNote, actualQuantity, actualUnit  |
+
+### No migration needed
+All changes are service/constants layer only — no schema changes.
+
+### API sync system is now complete for all job status transitions
+Mobile can queue any job event offline and sync it when signal returns.
+
+### Next steps (mobile session)
+- AuthContext.tsx — cache token + user profile to SecureStore on login
+- On app open — read cached profile, attempt background token refresh
+- If offline — use cached profile (access token is 7d TTL, covers full shift)
+- Job list — cache to AsyncStorage on fetch, read from cache when offline
+- Shift submit — queue to sync when offline
