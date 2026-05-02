@@ -208,3 +208,45 @@ Back to Jobs or End Shift → last vehicle modal → EndShift screen → Review 
 - After finishing work, update the STATUS section above
 - Commit message format: "feat:", "fix:", "refactor:", "docs:"
 
+
+---
+
+## 2026-05-02 — Phase 1 Offline Sync (API)
+
+### What was built
+- `POST /sync/events` endpoint for receiving offline job events from mobile
+- Idempotency enforced by `@@unique([companyId, clientEventId])` — tenant-scoped, not global
+- `SyncEventLog` audit table — records every ingest attempt regardless of outcome
+- `sync.constants.ts` — single source of truth for review rules (7 day age limit, 1 hour future drift)
+- `sync.service.ts` — business logic separated from route handler
+- Migration `20260502082357_add_sync_fields` — applied locally, ready for Railway deploy
+
+### New fields on JobExecutionEvent
+- `clientEventId` — device-generated UUID, unique per company
+- `clientTimestamp` — when event happened on device
+- `serverReceivedAt` — when server received it
+- `appVersion` — for debugging old client behaviour
+- `needsReview` / `reviewReason` — flagged if event is >7 days old or >1 hour in future
+
+### Acceptance test result
+- First call with `clientEventId: test-idempotency-001` → `accepted`
+- Second call with same `clientEventId` → `duplicate` (not error)
+- HTTP 200 on both calls
+- One DB row created — idempotency confirmed
+
+### Phase 1 supports only `collected` event type
+All other event types rejected with clear error message. More types added in Phase 2.
+
+### Known pre-existing issue (out of scope)
+- `shifts.ts` lines 94-95 — CheckItem[] / Json type mismatch — pre-dates this session
+
+### Production deploy instructions
+1. Push is done — Railway will auto-deploy the code
+2. You must manually run migration on Railway:
+   `prisma migrate deploy` with Railway DATABASE_URL
+3. Do not run `migrate reset` on production — ever
+
+### TODO Phase 2
+- Migrate `JobExecutionEvent.driverId` from User reference to DriverProfile reference
+- Add remaining event types: `started`, `arrived_pickup`, `arrived_dropoff`, `completed`
+- Mobile integration test with real device offline/online toggle
