@@ -185,6 +185,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         endTime:     body.endTime     ?? "",
         totalHours:  body.totalHours  ?? "",
         breakMins:   body.breakMins   ? String(body.breakMins) : "",
+        poaMins:     body.poaMins     ? String(body.poaMins)   : "",
         fuelDrawn:   body.fuelDrawn   ?? "",
         adBlueDrawn: body.adBlueDrawn ?? "",
         status:      "submitted",
@@ -216,8 +217,10 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
           if (shiftData?.startTime && shiftData?.endTime) {
             const [sh, sm] = shiftData.startTime.split(":").map(Number);
             const [eh, em] = shiftData.endTime.split(":").map(Number);
-            const breakMins  = parseInt(shiftData.breakMins || "0", 10);
-            const totalHours = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm) - breakMins) / 60);
+            const breakMins   = parseInt(shiftData.breakMins || "0", 10);
+            const poaMins     = parseInt(shiftData.poaMins   || "0", 10);
+            // Working time = shift duration − breaks − POA (UK Working Time Directive)
+            const totalHours  = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm) - breakMins - poaMins) / 60);
 
             const weekStart = new Date(shiftData.shiftDate);
             const day  = weekStart.getDay();
@@ -328,31 +331,60 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
   });
 
-  // ── DELETE /shifts/:id — soft delete (admin only) ──────────────────────────
+  // ── DELETE /shifts/:id — soft delete ─────────────────────────────────────
+  // Admin: can delete any shift in their company.
+  // Driver: can only delete their own completed shifts.
   app.delete(
     "/shifts/:id",
-    { preHandler: [authenticate, requireRole("company_admin")] },
+    { preHandler: [authenticate, requireRole("company_admin", "driver")] },
     async (request, reply) => {
-      const id    = parseInt((request.params as { id: string }).id, 10);
-      const shift = await prisma.shift.findFirst({ where: { id, companyId: request.user!.companyId } });
+      const id   = parseInt((request.params as { id: string }).id, 10);
+      const user = request.user!;
+
+      const shift = await prisma.shift.findFirst({ where: { id, companyId: user.companyId } });
       if (!shift)                     return reply.status(404).send({ error: "Shift not found" });
       if (shift.status === "deleted") return reply.status(409).send({ error: "Already deleted" });
+
+      if (user.role === "driver") {
+        if (shift.driverId !== user.userId) return reply.status(403).send({ error: "Not your shift" });
+        if (!["draft", "failed"].includes(shift.status)) return reply.status(403).send({ error: "Only draft or failed shifts can be deleted" });
+      }
+
       await prisma.shift.update({ where: { id }, data: { status: "deleted" } });
-      app.log.info({ id }, "Shift soft-deleted by admin");
+      app.log.info({ id, deletedBy: user.role }, "Shift soft-deleted");
       return reply.send({ status: "deleted", id });
     }
   );
 
-  // ── Auto-cleanup: soft-delete shifts older than 90 days ────────────────────
+  // ── Auto-cleanup ────────────────────────────────────────────────────────────
   async function autoCleanupOldShifts() {
     try {
-      const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-      const result = await prisma.shift.updateMany({
-        where: { createdAt: { lt: cutoff }, status: { not: "deleted" } },
-        data:  { status: "deleted" },
+      const now = Date.now();
+
+      // Soft-delete draft and failed shifts older than 14 days
+      const cutoff14 = new Date(now - 14 * 24 * 60 * 60 * 1000);
+      const result14 = await prisma.shift.updateMany({
+        where: {
+          createdAt: { lt: cutoff14 },
+          status: { in: ["draft", "failed"] },
+        },
+        data: { status: "deleted" },
       });
-      if (result.count > 0) {
-        app.log.info({ count: result.count }, "Auto-soft-deleted shifts older than 90 days");
+      if (result14.count > 0) {
+        app.log.info({ count: result14.count }, "Auto-soft-deleted draft/failed shifts older than 14 days");
+      }
+
+      // Soft-delete completed and submitted shifts older than 33 days
+      const cutoff33 = new Date(now - 33 * 24 * 60 * 60 * 1000);
+      const result33 = await prisma.shift.updateMany({
+        where: {
+          createdAt: { lt: cutoff33 },
+          status: { in: ["completed", "submitted"] },
+        },
+        data: { status: "deleted" },
+      });
+      if (result33.count > 0) {
+        app.log.info({ count: result33.count }, "Auto-soft-deleted completed/submitted shifts older than 33 days");
       }
     } catch (err) {
       app.log.error(err, "Auto-cleanup failed");

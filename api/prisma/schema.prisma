@@ -221,6 +221,7 @@ model Shift {
   endTime         String   @default("")
   totalHours      String   @default("")
   breakMins       String   @default("")
+  poaMins         String   @default("")
   nightOut        Boolean  @default(false)
   expenses        String   @default("")
   delaysNote      String   @default("")

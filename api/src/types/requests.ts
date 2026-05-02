@@ -209,6 +209,8 @@ export interface SubmitShiftBody {
   endTime?:      string;
   totalHours?:   string;
   breakMins?:    string | number;
+  poaMins?:      string | number;
+  workingMins?:  string | number;
   fuelDrawn?:    string;
   adBlueDrawn?:  string;
 }
