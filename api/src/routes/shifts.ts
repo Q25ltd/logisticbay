@@ -91,8 +91,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         truckReg:          body.truckReg.trim().toUpperCase(),
         trailerReg:        body.trailerReg?.trim().toUpperCase() ?? null,
         odometerStart,
-        truckChecks:       body.truckChecks ?? Prisma.JsonNull,
-        trailerChecks:     body.trailerReg ? (body.trailerChecks ?? Prisma.JsonNull) : Prisma.JsonNull,
+        truckChecks:       (body.truckChecks ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
+        trailerChecks:     (body.trailerReg ? (body.trailerChecks ?? Prisma.JsonNull) : Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
         startTime:         new Date(),
       },
     });
