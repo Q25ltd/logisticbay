@@ -101,7 +101,7 @@ Architecture:
 Build order status:
 ✅ API: Phase 1 — schema migration (clientEventId, SyncEventLog table)
 ✅ API: POST /sync/events endpoint (all job status transitions)
-⏳ API: deploy to Railway (railway up) + verify migration applies
+✅ API: deployed to Railway — migration applied to production 2026-05-02
 ⏳ Mobile: acceptance test (airplane mode flow)
 ⏳ Expand offline support to other event types (notes, shift submit)
 6. ⏳ Expand to other event types
