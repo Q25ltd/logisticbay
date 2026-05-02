@@ -282,3 +282,25 @@ Mobile can queue any job event offline and sync it when signal returns.
 - If offline — use cached profile (access token is 7d TTL, covers full shift)
 - Job list — cache to AsyncStorage on fetch, read from cache when offline
 - Shift submit — queue to sync when offline
+
+---
+
+## 2026-05-02 — Mobile offline queue bug fixes
+
+### Bugs fixed (mobile commit fa9b830)
+Three bugs in the offline queue path that would have prevented sync from working:
+
+1. `QueuedJobEvent.status` renamed to `eventType` — field name now matches `IncomingEvent` on server
+2. `STATUS_TO_EVENT_TYPE` map added in `JobDetail/index.tsx` — `in_progress` correctly maps to `started` (the only non-obvious mapping)
+3. `flushQueue` filter fixed: `"applied"` → `"accepted"` — matches actual API response
+4. `useNetworkStatus.ts` fixed: reads `{ synced, failed }` not `{ results }` — matches actual API response shape
+
+### Online path unaffected
+Direct `api.patch` calls in `JobDetail` work as before. Only the offline queue path was broken.
+
+### Current offline sync state
+- API: fully complete — all 5 event types, idempotency, audit log ✓
+- Mobile queue: fixed — correct field names, correct response parsing ✓
+- Mobile offline login: not yet built (AuthContext still calls API on every app open)
+- Mobile job list cache: not yet built
+- Acceptance test on real device: not yet done
