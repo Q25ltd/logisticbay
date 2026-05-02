@@ -250,6 +250,41 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
   });
 
+  // ── POST /shifts/:id/retry — re-trigger PDF+email for failed shifts ─────────
+  app.post("/shifts/:id/retry", { preHandler: authenticate }, async (request, reply) => {
+    const { userId, companyId } = request.user!;
+    const shiftId = parseInt((request.params as { id: string }).id, 10);
+
+    const shift = await prisma.shift.findFirst({
+      where:   { id: shiftId, companyId, driverId: userId, status: "failed" },
+      include: {
+        segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
+        company:  { select: { name: true } },
+        driver:   { select: { name: true } },
+      },
+    });
+    if (!shift) return reply.status(404).send({ error: "Shift not found or not in failed state" });
+
+    await prisma.shift.update({ where: { id: shiftId }, data: { status: "submitted" } });
+    reply.status(202).send({ status: "retrying", id: shiftId });
+
+    setImmediate(async () => {
+      try {
+        const pdfBuffer = await generateShiftPDF(shift as any);
+        const company = await prisma.company.findUnique({ where: { id: shift.companyId } });
+        if (company?.reportEmailEnabled !== false) {
+          const recipientEmail = company?.reportEmail || undefined;
+          await sendShiftReportEmail({ shift: shift as any, pdfBuffer, recipientEmail });
+        }
+        await prisma.shift.update({ where: { id: shiftId }, data: { status: "completed" } });
+        app.log.info({ shiftId }, "Shift retry succeeded");
+      } catch (err) {
+        app.log.error({ err, shiftId }, "Shift retry failed");
+        await prisma.shift.update({ where: { id: shiftId }, data: { status: "failed" } }).catch(() => {});
+      }
+    });
+  });
+
   // ── GET /shifts ─────────────────────────────────────────────────────────────
   app.get("/shifts", { preHandler: authenticate }, async (request, reply) => {
     const { userId, companyId, role } = request.user!;
@@ -336,7 +371,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // Driver: can only delete their own completed shifts.
   app.delete(
     "/shifts/:id",
-    { preHandler: [authenticate, requireRole("company_admin", "driver")] },
+    { preHandler: [authenticate, requireRole("company_owner", "driver")] },
     async (request, reply) => {
       const id   = parseInt((request.params as { id: string }).id, 10);
       const user = request.user!;
@@ -346,8 +381,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       if (shift.status === "deleted") return reply.status(409).send({ error: "Already deleted" });
 
       if (user.role === "driver") {
-        if (shift.driverId !== user.userId) return reply.status(403).send({ error: "Not your shift" });
-        if (!["draft", "failed"].includes(shift.status)) return reply.status(403).send({ error: "Only draft or failed shifts can be deleted" });
+        if (shift.driverId !== user.userId)                return reply.status(403).send({ error: "Not your shift" });
+        if (!["draft", "failed"].includes(shift.status))   return reply.status(403).send({ error: "Only draft or failed shifts can be deleted" });
       }
 
       await prisma.shift.update({ where: { id }, data: { status: "deleted" } });
