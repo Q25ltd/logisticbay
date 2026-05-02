@@ -30,3 +30,4 @@ api/tsx
 api/api@1.0.0
 .env
 api/.env
+.claude/
