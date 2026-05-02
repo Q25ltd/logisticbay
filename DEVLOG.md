@@ -304,3 +304,11 @@ Direct `api.patch` calls in `JobDetail` work as before. Only the offline queue p
 - Mobile offline login: not yet built (AuthContext still calls API on every app open)
 - Mobile job list cache: not yet built
 - Acceptance test on real device: not yet done
+
+---
+
+## 2026-05-02 — API TypeScript clean
+
+- Fixed pre-existing `shifts.ts` CheckItem[] / Json type mismatch (lines 94-95)
+- API TypeScript build now has zero errors across all files
+- Commit: a42f035
