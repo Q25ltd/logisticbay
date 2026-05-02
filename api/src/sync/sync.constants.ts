@@ -19,6 +19,12 @@ export const SYNC_REVIEW_RULES = {
  * These strings must match exactly what the mobile app sends as eventType.
  * Source of truth: mobile/src/constants/jobStatuses.ts EVENT_TYPE_LABELS
  */
-export const SUPPORTED_EVENT_TYPES = ['collected'] as const;
+export const SUPPORTED_EVENT_TYPES = [
+  'started',
+  'arrived_pickup',
+  'collected',
+  'arrived_dropoff',
+  'completed',
+] as const;
 
 export type SupportedEventType = typeof SUPPORTED_EVENT_TYPES[number];

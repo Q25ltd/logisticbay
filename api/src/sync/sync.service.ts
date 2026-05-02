@@ -11,6 +11,8 @@ export interface IncomingEvent {
   actualQuantity?: string;
   actualUnit?: string;
   collectionNote?: string;
+  podNumber?: string;
+  deliveryNote?: string;
 }
 
 export interface SyncResult {
@@ -36,6 +38,40 @@ function checkNeedsReview(clientTimestamp: Date): { needsReview: boolean; review
 
 function isSupportedEventType(eventType: string): eventType is SupportedEventType {
   return (SUPPORTED_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
+function buildJobUpdate(event: IncomingEvent): Record<string, unknown> {
+  const STATUS_MAP: Record<SupportedEventType, string> = {
+    started:         'in_progress',
+    arrived_pickup:  'arrived_pickup',
+    collected:       'collected',
+    arrived_dropoff: 'arrived_dropoff',
+    completed:       'completed',
+  };
+
+  const update: Record<string, unknown> = {
+    status: STATUS_MAP[event.eventType as SupportedEventType],
+  };
+
+  if (event.eventType === 'collected') {
+    update.actualQuantity = event.actualQuantity ?? '';
+    update.actualUnit     = event.actualUnit     ?? '';
+    update.collectionNote = event.collectionNote ?? '';
+  }
+
+  if (event.eventType === 'arrived_dropoff') {
+    update.podNumber    = event.podNumber    ?? '';
+    update.deliveryNote = event.deliveryNote ?? '';
+  }
+
+  if (event.eventType === 'completed') {
+    update.podNumber      = event.podNumber      ?? '';
+    update.deliveryNote   = event.deliveryNote   ?? '';
+    update.actualQuantity = event.actualQuantity ?? '';
+    update.actualUnit     = event.actualUnit     ?? '';
+  }
+
+  return update;
 }
 
 async function updateSyncLog(
@@ -151,12 +187,7 @@ export async function processSyncEvents(
 
         await tx.plannedJob.update({
           where: { id: event.jobId },
-          data: {
-            status: 'collected',
-            actualQuantity: event.actualQuantity ?? '',
-            actualUnit: event.actualUnit ?? '',
-            collectionNote: event.collectionNote ?? '',
-          },
+          data: buildJobUpdate(event),
         });
       });
 
