@@ -150,6 +150,9 @@ export interface UpdateJobStatusBody {
   collectionNote?:  string;
   podNumber?:       string;
   deliveryNote?:    string;
+  clientTimestamp?: string;
+  gpsLat?:          number;
+  gpsLng?:          number;
 }
 
 export interface AddJobNoteBody {

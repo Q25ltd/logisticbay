@@ -441,19 +441,68 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       if (body.deliveryNote) updateData.deliveryNote = body.deliveryNote;
     }
 
-    await prisma.plannedJob.update({ where: { id }, data: updateData });
+    let clientTs = new Date();
+    if (body.clientTimestamp) {
+      const parsedClientTs = new Date(body.clientTimestamp);
+      if (!isNaN(parsedClientTs.getTime())) {
+        clientTs = parsedClientTs;
+      }
+    }
 
-    await prisma.jobExecutionEvent.create({
-      data: {
-        jobId:          id,
-        companyId,
-        driverId:       userId,
-        eventType:      EVENT_TYPE_MAP[body.status] ?? "note_added",
-        note:           body.note ?? "",
-        clientEventId:  `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        clientTimestamp: new Date(),
-      },
-    });
+    if (
+      (body.gpsLat !== undefined && body.gpsLng === undefined) ||
+      (body.gpsLat === undefined && body.gpsLng !== undefined)
+    ) {
+      return reply.status(400).send({
+        error: "BAD_REQUEST",
+        message: "gpsLat and gpsLng must be provided together",
+      });
+    }
+
+    if (body.gpsLat !== undefined) {
+      if (
+        typeof body.gpsLat !== "number" ||
+        !Number.isFinite(body.gpsLat) ||
+        body.gpsLat < -90 ||
+        body.gpsLat > 90
+      ) {
+        return reply.status(400).send({
+          error: "BAD_REQUEST",
+          message: "gpsLat must be a number between -90 and 90",
+        });
+      }
+    }
+
+    if (body.gpsLng !== undefined) {
+      if (
+        typeof body.gpsLng !== "number" ||
+        !Number.isFinite(body.gpsLng) ||
+        body.gpsLng < -180 ||
+        body.gpsLng > 180
+      ) {
+        return reply.status(400).send({
+          error: "BAD_REQUEST",
+          message: "gpsLng must be a number between -180 and 180",
+        });
+      }
+    }
+
+    await prisma.$transaction([
+      prisma.plannedJob.update({ where: { id }, data: updateData }),
+      prisma.jobExecutionEvent.create({
+        data: {
+          jobId:           id,
+          companyId,
+          driverId:        userId,
+          eventType:       EVENT_TYPE_MAP[body.status] ?? "note_added",
+          note:            body.note ?? "",
+          clientEventId:   `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          clientTimestamp: clientTs,
+          gpsLat:          body.gpsLat,
+          gpsLng:          body.gpsLng,
+        },
+      }),
+    ]);
 
     return reply.send({ status: body.status, id });
   });
