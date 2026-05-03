@@ -162,18 +162,20 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         company:  { select: { name: true } },
       },
     });
-    if (!shift)                 return reply.status(404).send({ error: "Shift not found or already submitted" });
-    if (!shift.segments.length) return reply.status(400).send({ error: "Shift has no segments" });
+    if (!shift) return reply.status(404).send({ error: "Shift not found or already submitted" });
 
+    // Spare drivers have no segments — that is valid, skip the segment close-out
     const lastSeg = shift.segments[shift.segments.length - 1];
-    await prisma.shiftSegment.update({
-      where: { id: lastSeg.id },
-      data: {
-        endTime:     new Date(),
-        odometerEnd: body.odometerEnd ?? null,
-        notes:       body.segmentNotes ?? lastSeg.notes,
-      },
-    });
+    if (lastSeg) {
+      await prisma.shiftSegment.update({
+        where: { id: lastSeg.id },
+        data: {
+          endTime:     new Date(),
+          odometerEnd: body.odometerEnd ?? null,
+          notes:       body.segmentNotes ?? lastSeg.notes,
+        },
+      });
+    }
 
     const updatedShift = await prisma.shift.update({
       where: { id: shiftId },
