@@ -247,8 +247,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
 
     const todayStr     = today.toISOString().split("T")[0];
-    const todayJobs    = jobs.filter(j => j.plannedDate.toISOString().split("T")[0] === todayStr);
-    const upcomingJobs = jobs.filter(j => j.plannedDate.toISOString().split("T")[0] !== todayStr);
+    const datedJobs    = jobs.filter(j => j.plannedDate !== null);
+    const todayJobs    = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] === todayStr);
+    const upcomingJobs = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] !== todayStr);
 
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });
@@ -321,7 +322,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         templateId:          body.templateId         ?? null,
         assignedDriverId:    body.assignedDriverId,
         createdByUserId:     userId,
-        plannedDate:         new Date(body.plannedDate),
+        plannedDate:         body.plannedDate ? new Date(body.plannedDate) : null,
         sequence:            body.sequence            ?? 0,
         pickupLocationId:    body.pickupLocationId    ?? null,
         dropoffLocationId:   body.dropoffLocationId   ?? null,

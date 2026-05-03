@@ -150,7 +150,7 @@ model PlannedJob {
   templateId           Int?
   assignedDriverId     Int?
   createdByUserId      Int
-  plannedDate          DateTime
+  plannedDate          DateTime?
   sequence             Int      @default(0)
   pickupLocationId     Int?
   dropoffLocationId    Int?

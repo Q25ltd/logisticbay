@@ -107,8 +107,10 @@ export function validateCreateTemplate(body: CreateTemplateBody): ValidationResu
 
 export function validateCreateJob(body: CreateJobBody): ValidationResult {
   const errors: string[] = [];
-  if (!body.assignedDriverId) errors.push("assignedDriverId is required");
-  if (!body.plannedDate)      errors.push("plannedDate is required");
+  if (body.plannedDate !== undefined && !body.plannedDate.trim()) {
+    errors.push("plannedDate must not be empty");
+  }
+  if (!body.plannedDate && body.saveMode !== "draft") errors.push("plannedDate is required");
   return ok(errors);
 }
 

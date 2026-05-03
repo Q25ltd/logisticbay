@@ -99,47 +99,90 @@ export interface PatchTemplateBody {
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 
+export interface JobStopInput {
+  sequenceNumber:        number;
+  type:                  string;
+  savedLocationId?:      number | null;
+  locationTextSnapshot:  string;
+  lat?:                  number | null;
+  lng?:                  number | null;
+  gateLat?:              number | null;
+  gateLng?:              number | null;
+  timeWindowStart?:      string | null;
+  timeWindowEnd?:        string | null;
+  contactName?:          string;
+  contactPhone?:         string;
+  referenceNumber?:      string;
+  instructions?:         string;
+}
+
+export interface LoadDetailsInput {
+  quantity?:     number | string | null;
+  unit?:         string;
+  weight?:       number | string | null;
+  volume?:       number | string | null;
+  materialType?: string;
+  hazardClass?:  string;
+  notes?:        string;
+}
+
 export interface CreateJobBody {
-  assignedDriverId:    number;
-  plannedDate:         string;
-  templateId?:         number;
-  pickupLocationId?:   number;
-  dropoffLocationId?:  number;
-  pickupTextSnapshot?: string;
-  dropoffTextSnapshot?: string;
-  referenceNumber?:    string;
-  materialType?:       string;
-  quantityExpected?:   string;
-  quantityUnit?:       string;
-  plannerNotes?:       string;
-  assignedTruck?:      string;
-  assignedTrailer?:    string;
-  vehicleClass?:       string;
-  requireCollection?:  boolean;
-  requirePOD?:         boolean;
-  requireDeliveryQty?: boolean;
-  sequence?:           number;
-  saveAsTemplate?:     boolean;
-  templateName?:       string;
+  assignedDriverId?:     number;
+  plannedDate?:          string;
+  templateId?:           number;
+  pickupLocationId?:     number;
+  dropoffLocationId?:    number;
+  pickupTextSnapshot?:   string;
+  dropoffTextSnapshot?:  string;
+  referenceNumber?:      string;
+  materialType?:         string;
+  quantityExpected?:     string;
+  quantityUnit?:         string;
+  plannerNotes?:         string;
+  assignedTruck?:        string;
+  assignedTrailer?:      string;
+  vehicleClass?:         string;
+  vehicleClassRequired?: string;
+  trailerTypesAllowed?:  string[];
+  priority?:             number;
+  serviceType?:          string;
+  internalNotes?:        string;
+  stops?:                JobStopInput[];
+  loadDetails?:          LoadDetailsInput | null;
+  saveMode?:             "draft" | "ready_to_plan";
+  requireCollection?:    boolean;
+  requirePOD?:           boolean;
+  requireDeliveryQty?:   boolean;
+  sequence?:             number;
+  saveAsTemplate?:       boolean;
+  templateName?:         string;
 }
 
 export interface PatchJobBody {
-  assignedDriverId?:    number;
-  plannedDate?:         string;
-  pickupTextSnapshot?:  string;
-  dropoffTextSnapshot?: string;
-  referenceNumber?:     string;
-  materialType?:        string;
-  quantityExpected?:    string;
-  quantityUnit?:        string;
-  plannerNotes?:        string;
-  assignedTruck?:       string;
-  assignedTrailer?:     string;
-  vehicleClass?:        string;
-  requireCollection?:   boolean;
-  requirePOD?:          boolean;
-  requireDeliveryQty?:  boolean;
-  sequence?:            number;
+  assignedDriverId?:     number | null;
+  plannedDate?:          string;
+  pickupTextSnapshot?:   string;
+  dropoffTextSnapshot?:  string;
+  referenceNumber?:      string;
+  materialType?:         string;
+  quantityExpected?:     string;
+  quantityUnit?:         string;
+  plannerNotes?:         string;
+  assignedTruck?:        string;
+  assignedTrailer?:      string;
+  vehicleClass?:         string;
+  vehicleClassRequired?: string;
+  trailerTypesAllowed?:  string[];
+  priority?:             number;
+  serviceType?:          string;
+  internalNotes?:        string;
+  stops?:                JobStopInput[];
+  loadDetails?:          LoadDetailsInput | null;
+  saveMode?:             "draft" | "ready_to_plan";
+  requireCollection?:    boolean;
+  requirePOD?:           boolean;
+  requireDeliveryQty?:   boolean;
+  sequence?:             number;
 }
 
 export interface UpdateJobStatusBody {
