@@ -100,6 +100,7 @@ model DriverProfile {
   minHoursPerDay   Float    @default(8)
   holidayAllowance Int      @default(28)
   holidayUsed      Int      @default(0)
+  defaultTruckReg  String   @default("")
   status           String   @default("active")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

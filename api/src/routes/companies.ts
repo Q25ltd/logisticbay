@@ -180,12 +180,13 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         data: {
           companyId,
           userId,
-          displayName:    body.displayName.trim(),
-          employeeNumber: body.employeeNumber ?? null,
-          phoneNumber:    body.phoneNumber    ?? null,
-          contactEmail:   emailLower,
-          contactPhone:   body.phoneNumber    ?? null,
-          status:         "active",
+          displayName:     body.displayName.trim(),
+          employeeNumber:  body.employeeNumber  ?? null,
+          phoneNumber:     body.phoneNumber     ?? null,
+          contactEmail:    emailLower,
+          contactPhone:    body.phoneNumber     ?? null,
+          defaultTruckReg: body.defaultTruckReg ?? "",
+          status:          "active",
         },
       });
 
@@ -205,10 +206,11 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       data: {
         companyId,
         userId,
-        displayName:    body.displayName.trim(),
-        employeeNumber: body.employeeNumber ?? null,
-        phoneNumber:    body.phoneNumber    ?? null,
-        status:         "active",
+        displayName:     body.displayName.trim(),
+        employeeNumber:  body.employeeNumber  ?? null,
+        phoneNumber:     body.phoneNumber     ?? null,
+        defaultTruckReg: body.defaultTruckReg ?? "",
+        status:          "active",
       },
     });
     return reply.status(201).send(driver);
@@ -226,9 +228,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const updated = await prisma.driverProfile.update({
       where: { id },
       data: {
-        displayName:    body.displayName    ?? driver.displayName,
-        employeeNumber: body.employeeNumber ?? driver.employeeNumber,
-        phoneNumber:    body.phoneNumber    ?? driver.phoneNumber,
+        displayName:     body.displayName     ?? driver.displayName,
+        employeeNumber:  body.employeeNumber  ?? driver.employeeNumber,
+        phoneNumber:     body.phoneNumber     ?? driver.phoneNumber,
+        defaultTruckReg: body.defaultTruckReg ?? driver.defaultTruckReg,
       },
     });
 

@@ -18,7 +18,8 @@ export interface Customer {
 export interface Driver {
   id: number; companyId: number; userId: number | null;
   displayName: string; employeeNumber: string | null;
-  phoneNumber: string | null; status: "active" | "inactive";
+  phoneNumber: string | null; defaultTruckReg: string;
+  status: "active" | "inactive";
   user?: { id: number; email: string; name: string } | null;
 }
 export interface JobStop {

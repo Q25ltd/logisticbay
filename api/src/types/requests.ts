@@ -42,16 +42,18 @@ export interface PatchCompanyBody {
 // ── Drivers ───────────────────────────────────────────────────────────────────
 
 export interface CreateDriverBody {
-  displayName:    string;
-  email?:         string;
+  displayName:     string;
+  email?:          string;
   employeeNumber?: string;
-  phoneNumber?:   string;
+  phoneNumber?:    string;
+  defaultTruckReg?: string;
 }
 
 export interface PatchDriverBody {
-  displayName?:    string;
-  employeeNumber?: string;
-  phoneNumber?:    string;
+  displayName?:     string;
+  employeeNumber?:  string;
+  phoneNumber?:     string;
+  defaultTruckReg?: string;
 }
 
 export interface PatchDriverStatusBody {

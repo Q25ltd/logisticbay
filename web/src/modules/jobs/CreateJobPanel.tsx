@@ -67,8 +67,9 @@ interface StopState {
   contactPhone: string;
   referenceNumber: string;
   instructions: string;
-  timeWindowStart: string;
-  timeWindowEnd: string;
+  bookedTime: string;
+  earliestArrivalMinutes: string;
+  unloadingAllowanceMinutes: string;
 }
 
 interface LoadState {
@@ -85,19 +86,28 @@ interface LoadState {
 
 function emptyStop(seq: number, type: string): StopState {
   return {
-    sequenceNumber:       seq,
+    sequenceNumber:           seq,
     type,
-    locationTextSnapshot: "",
-    lat:                  "",
-    lng:                  "",
-    savedLocationId:      null,
-    contactName:          "",
-    contactPhone:         "",
-    referenceNumber:      "",
-    instructions:         "",
-    timeWindowStart:      "",
-    timeWindowEnd:        "",
+    locationTextSnapshot:     "",
+    lat:                      "",
+    lng:                      "",
+    savedLocationId:          null,
+    contactName:              "",
+    contactPhone:             "",
+    referenceNumber:          "",
+    instructions:             "",
+    bookedTime:               "",
+    earliestArrivalMinutes:   "60",
+    unloadingAllowanceMinutes: "60",
   };
+}
+
+function computeEarliestArrival(bookedTime: string, minutesBefore: string): string {
+  if (!bookedTime || !minutesBefore || minutesBefore === "0") return "";
+  const dt = new Date(bookedTime);
+  if (isNaN(dt.getTime())) return "";
+  dt.setMinutes(dt.getMinutes() - parseInt(minutesBefore));
+  return dt.toISOString().slice(0, 16);
 }
 
 function resequence(stops: StopState[]): StopState[] {
@@ -129,8 +139,8 @@ function liveQualityScore(stops: StopState[], load: LoadState): { score: number;
   if (stops.length > 0 && stops.every(s => hasText(s.contactName) || hasText(s.contactPhone))) score += 10;
   else missing.push("Missing contact info on stops");
 
-  if (stops.length > 0 && stops.every(s => hasText(s.timeWindowStart) && hasText(s.timeWindowEnd))) score += 10;
-  else missing.push("Missing time windows on stops");
+  if (stops.length > 0 && stops.every(s => hasText(s.bookedTime))) score += 10;
+  else missing.push("Missing confirmed time on stops");
 
   if (stops.length > 0 && stops.every(stopHasCoords)) score += 15;
   else missing.push("Missing coordinates on stops");
@@ -397,6 +407,8 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
     serviceType:          "delivery",
     internalNotes:        "",
     priority:             "normal",
+    assignedTruck:        "",
+    assignedTrailer:      "",
     saveAsTemplate:       false,
     templateName:         "",
   });
@@ -428,6 +440,14 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
     customersApi.list().then(r => setCustomers(r.data)).catch(() => {});
     jobsApi.locations().then(r => setLocations(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!f.assignedDriverId) return;
+    const driver = drivers.find(d => String(d.id) === f.assignedDriverId);
+    if (driver?.defaultTruckReg) {
+      setF(p => ({ ...p, assignedTruck: driver.defaultTruckReg }));
+    }
+  }, [f.assignedDriverId, drivers]);
 
   const quality = liveQualityScore(stops, loadDetails);
 
@@ -472,12 +492,13 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
         lat:                  s.lat != null  ? String(s.lat)  : "",
         lng:                  s.lng != null  ? String(s.lng)  : "",
         savedLocationId:      s.savedLocationId ?? null,
-        contactName:          s.contactName  || "",
-        contactPhone:         s.contactPhone || "",
-        referenceNumber:      s.referenceNumber || "",
-        instructions:         s.instructions || "",
-        timeWindowStart:      s.timeWindowStart || "",
-        timeWindowEnd:        s.timeWindowEnd   || "",
+        contactName:               s.contactName  || "",
+        contactPhone:              s.contactPhone || "",
+        referenceNumber:           s.referenceNumber || "",
+        instructions:              s.instructions || "",
+        bookedTime:                "",
+        earliestArrivalMinutes:    "60",
+        unloadingAllowanceMinutes: "60",
       })));
     } else {
       setStops([
@@ -536,18 +557,23 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
     try {
       const cleanedStops = stops
         .map((s, i) => ({
-          sequenceNumber:       i + 1,
-          type:                 s.type,
-          locationTextSnapshot: s.locationTextSnapshot.trim(),
-          savedLocationId:      s.savedLocationId ?? undefined,
-          lat:                  s.lat ? parseFloat(s.lat) : null,
-          lng:                  s.lng ? parseFloat(s.lng) : null,
-          contactName:          s.contactName.trim(),
-          contactPhone:         s.contactPhone.trim(),
-          referenceNumber:      s.referenceNumber.trim(),
-          instructions:         s.instructions.trim(),
-          timeWindowStart:      s.timeWindowStart || null,
-          timeWindowEnd:        s.timeWindowEnd   || null,
+          sequenceNumber:            i + 1,
+          type:                      s.type,
+          locationTextSnapshot:      s.locationTextSnapshot.trim(),
+          savedLocationId:           s.savedLocationId ?? undefined,
+          lat:                       s.lat ? parseFloat(s.lat) : null,
+          lng:                       s.lng ? parseFloat(s.lng) : null,
+          contactName:               s.contactName.trim(),
+          contactPhone:              s.contactPhone.trim(),
+          referenceNumber:           s.referenceNumber.trim(),
+          instructions:              s.instructions.trim(),
+          bookedTime:                s.bookedTime || null,
+          earliestArrivalMinutes:    s.earliestArrivalMinutes && s.earliestArrivalMinutes !== "0"
+                                       ? parseInt(s.earliestArrivalMinutes) : null,
+          unloadingAllowanceMinutes: s.unloadingAllowanceMinutes && s.unloadingAllowanceMinutes !== "0"
+                                       ? parseInt(s.unloadingAllowanceMinutes) : null,
+          timeWindowStart:           computeEarliestArrival(s.bookedTime, s.earliestArrivalMinutes) || null,
+          timeWindowEnd:             s.bookedTime || null,
         }))
         .filter(s => saveMode === "ready_to_plan" || hasText(s.locationTextSnapshot) || s.type);
 
@@ -562,6 +588,8 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
         serviceType:          f.serviceType,
         internalNotes:        f.internalNotes,
         priority:             f.priority as "low" | "normal" | "high" | undefined,
+        assignedTruck:        f.assignedTruck,
+        assignedTrailer:      f.assignedTrailer,
         stops:                cleanedStops,
         loadDetails: {
           quantity:     loadDetails.quantity     || null,
@@ -680,7 +708,7 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
                 <select className="input" value={f.assignedDriverId}
                   onChange={e => setF(p => ({ ...p, assignedDriverId: e.target.value }))}>
                   <option value="">Unassigned</option>
-                  {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+                  {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}{d.defaultTruckReg ? ` — ${d.defaultTruckReg}` : ""}</option>)}
                 </select>
               </div>
               <div>
@@ -689,6 +717,18 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
                   <option value="">— Manual —</option>
                   {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="label">Truck reg</label>
+                <input className="input" value={f.assignedTruck}
+                  onChange={e => setF(p => ({ ...p, assignedTruck: e.target.value.toUpperCase() }))}
+                  placeholder="e.g. AB12 CDE" />
+              </div>
+              <div>
+                <label className="label">Trailer reg <span className="text-muted font-normal">(driver can update if unknown)</span></label>
+                <input className="input" value={f.assignedTrailer}
+                  onChange={e => setF(p => ({ ...p, assignedTrailer: e.target.value.toUpperCase() }))}
+                  placeholder="e.g. T123 XYZ or leave blank" />
               </div>
             </div>
           </section>
@@ -801,16 +841,45 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
                     <input className="input" value={stop.referenceNumber}
                       onChange={e => updateStop(index, { referenceNumber: e.target.value })} />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div>
-                      <label className="label">Window start</label>
-                      <input className="input" type="datetime-local" value={stop.timeWindowStart}
-                        onChange={e => updateStop(index, { timeWindowStart: e.target.value })} />
+                      <label className="label">Confirmed time</label>
+                      <input className="input" type="datetime-local" value={stop.bookedTime}
+                        onChange={e => updateStop(index, { bookedTime: e.target.value })} />
                     </div>
                     <div>
-                      <label className="label">Window end</label>
-                      <input className="input" type="datetime-local" value={stop.timeWindowEnd}
-                        onChange={e => updateStop(index, { timeWindowEnd: e.target.value })} />
+                      <label className="label">Earliest arrival</label>
+                      <select className="input" value={stop.earliestArrivalMinutes}
+                        onChange={e => updateStop(index, { earliestArrivalMinutes: e.target.value })}>
+                        <option value="0">No restriction</option>
+                        <option value="15">15 min before</option>
+                        <option value="30">30 min before</option>
+                        <option value="45">45 min before</option>
+                        <option value="60">1 hour before</option>
+                        <option value="90">90 min before</option>
+                        <option value="120">2 hours before</option>
+                      </select>
+                      {stop.bookedTime && stop.earliestArrivalMinutes !== "0" && (
+                        <p className="text-xs text-muted mt-1">
+                          Arrive from: {new Date(computeEarliestArrival(stop.bookedTime, stop.earliestArrivalMinutes) || stop.bookedTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="label">Unloading allowance</label>
+                      <select className="input" value={stop.unloadingAllowanceMinutes}
+                        onChange={e => updateStop(index, { unloadingAllowanceMinutes: e.target.value })}>
+                        <option value="0">Not agreed</option>
+                        <option value="30">30 min free</option>
+                        <option value="45">45 min free</option>
+                        <option value="60">1 hour free</option>
+                        <option value="90">90 min free</option>
+                        <option value="120">2 hours free</option>
+                        <option value="180">3 hours free</option>
+                      </select>
+                      {stop.unloadingAllowanceMinutes !== "0" && (
+                        <p className="text-xs text-muted mt-1">Chargeable waiting starts after {stop.unloadingAllowanceMinutes} min</p>
+                      )}
                     </div>
                   </div>
                 </div>
