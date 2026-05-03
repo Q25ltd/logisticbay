@@ -176,7 +176,7 @@ export async function generateShiftPDF(shift: any): Promise<Buffer> {
       { label: "Start Time",    value: startTime },
       { label: "Finish Time",   value: endTime },
       { label: "Unpaid Break",  value: breakMins > 0 ? `${breakMins} min` : "None" },
-      { label: "Paid Hours",    value: totalHours, accent: true },
+      { label: "Working Hrs",   value: totalHours, accent: true },
       { label: "Total Mileage", value: shiftTotalMileage > 0 ? shiftTotalMileage.toLocaleString() + " km" : "—", accent: true },
     ];
     hItems.forEach((item, i) => {
@@ -366,10 +366,14 @@ export async function generateShiftPDF(shift: any): Promise<Buffer> {
     doc.rect(MARGIN, y, 3, 44).fill(C.primary);
     doc.fillColor(C.primary).fontSize(8).font("Helvetica-Bold")
       .text("DRIVER DECLARATION", MARGIN + 10, y + 6);
+    const isSpareDriver = (shift.segments ?? []).length === 0;
     doc.fillColor(C.muted).fontSize(7).font("Helvetica")
       .text(
-        "I confirm that the information in this report is accurate and complete. I have carried out the required DVSA walkaround check " +
-        "before moving the vehicle and reported all defects. This report was submitted electronically and is authenticated by the driver login.",
+        isSpareDriver
+          ? "I confirm that the information in this report is accurate and complete. I was on standby / spare driver duty today with no vehicle assigned. " +
+            "No walkaround check was required. This report was submitted electronically and is authenticated by the driver login."
+          : "I confirm that the information in this report is accurate and complete. I have carried out the required DVSA walkaround check " +
+            "before moving the vehicle and reported all defects. This report was submitted electronically and is authenticated by the driver login.",
         MARGIN + 10, y + 18, { width: CONTENT - 20 }
       );
     doc.fillColor(C.primary).fontSize(8).font("Helvetica-Bold")
