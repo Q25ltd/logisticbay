@@ -9,13 +9,49 @@ export interface Driver {
   phoneNumber: string | null; status: "active" | "inactive";
   user?: { id: number; email: string; name: string } | null;
 }
+export interface JobStop {
+  id?: number;
+  sequenceNumber: number;
+  type: "pickup" | "dropoff" | "handover" | "yard" | "depot";
+  savedLocationId?: number | null;
+  locationTextSnapshot: string;
+  lat?: number | null;
+  lng?: number | null;
+  gateLat?: number | null;
+  gateLng?: number | null;
+  timeWindowStart?: string | null;
+  timeWindowEnd?: string | null;
+  contactName?: string;
+  contactPhone?: string;
+  referenceNumber?: string;
+  instructions?: string;
+  status?: string;
+}
+
+export interface LoadDetails {
+  id?: number;
+  quantity?: number | string | null;
+  unit?: string;
+  weight?: number | string | null;
+  volume?: number | string | null;
+  materialType?: string;
+  hazardClass?: string;
+  notes?: string;
+}
+
 export interface PlannedJob {
-  id: number; companyId: number; assignedDriverId: number;
-  plannedDate: string; pickupTextSnapshot: string; dropoffTextSnapshot: string;
+  id: number; companyId: number; assignedDriverId: number | null;
+  plannedDate: string | null; pickupTextSnapshot: string; dropoffTextSnapshot: string;
   referenceNumber: string; materialType: string; quantityExpected: string;
   quantityUnit: string; plannerNotes: string;
+  vehicleClassRequired?: string;
+  trailerTypesAllowed?: string[];
+  validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "planned";
+  qualityScore?: number;
+  stops?: JobStop[];
+  loadDetails?: LoadDetails | null;
   status: "pending" | "accepted" | "in_progress" | "arrived_pickup" | "completed" | "cancelled";
-  assignedDriver?: Driver; events?: JobEvent[];
+  assignedDriver?: Driver | null; events?: JobEvent[];
   createdAt: string; updatedAt: string;
 }
 export interface JobEvent {
@@ -24,6 +60,10 @@ export interface JobEvent {
 export interface JobTemplate {
   id: number; name: string; pickupTextSnapshot: string; dropoffTextSnapshot: string;
   defaultReference: string; defaultNotes: string; defaultMaterialType: string;
+  trailerTypesAllowed?: string[];
+  defaultStops?: JobStop[];
+  defaultLoadDetails?: LoadDetails | null;
+  qualityScore?: number;
   status: "active" | "archived";
 }
 export interface SavedLocation {

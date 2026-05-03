@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { jobsApi } from "../../api/jobs";
 import { driversApi } from "../../api/drivers";
-import type { PlannedJob, Driver } from "../../types";
+import type { PlannedJob, Driver, JobTemplate } from "../../types";
+import { CreateJobPanel } from "../jobs/CreateJobPanel";
 import { Badge } from "../../components/Badge";
 
 const today = () => new Date().toISOString().split("T")[0];
@@ -73,106 +74,12 @@ function DriverCard({ driver, jobs, onAdd }: { driver: Driver; jobs: PlannedJob[
   );
 }
 
-function CreatePanel({ drivers, templates, driverId, date, onClose, onCreated }: {
-  drivers: Driver[]; templates: any[]; driverId?: number; date: string; onClose: () => void; onCreated: () => void;
-}) {
-  const [f, setF] = useState({ assignedDriverId: driverId ?? "", plannedDate: date, templateId:"", pickupTextSnapshot:"", dropoffTextSnapshot:"", referenceNumber:"", materialType:"", quantityExpected:"", quantityUnit:"pallets", plannerNotes:"", assignedTruck:"", assignedTrailer:"", vehicleClass:"class1", requireCollection:false, requirePOD:false, requireDeliveryQty:false, saveAsTemplate:false, templateName:"" });
-  const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
-
-  function applyTpl(id: string) {
-    const t = templates.find(t => String(t.id) === id);
-    if (!t) return;
-    setF(p => ({ ...p, templateId:id, pickupTextSnapshot:t.pickupTextSnapshot, dropoffTextSnapshot:t.dropoffTextSnapshot, referenceNumber:t.defaultReference||p.referenceNumber, materialType:t.defaultMaterialType||p.materialType, plannerNotes:t.defaultNotes||p.plannerNotes }));
-  }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault(); setErr(""); setLoading(true);
-    try { await jobsApi.create({ ...f, templateId: f.templateId ? parseInt(f.templateId) : null, assignedDriverId: parseInt(String(f.assignedDriverId)) }); onCreated(); onClose(); }
-    catch (e: any) { setErr(e.message); }
-    finally { setLoading(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-black/40" onClick={onClose}/>
-      <div className="w-full max-w-md bg-white h-full overflow-y-auto shadow-2xl">
-        <div className="sticky top-0 bg-white border-b border-border px-6 py-4 flex items-center justify-between">
-          <h2 className="font-bold text-primary">Create Job</h2>
-          <button onClick={onClose} className="text-muted hover:text-primary text-xl">✕</button>
-        </div>
-        <form onSubmit={submit} className="p-6 space-y-3">
-          {err && <div className="bg-red-50 border-l-4 border-red-500 text-red-800 p-3 text-sm rounded">{err}</div>}
-          <div><label className="label">Template</label><select className="input" value={f.templateId} onChange={e => { setF(p=>({...p,templateId:e.target.value})); applyTpl(e.target.value); }}><option value="">— Manual —</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-          <div><label className="label">Driver *</label><select className="input" value={f.assignedDriverId} onChange={e=>setF(p=>({...p,assignedDriverId:e.target.value}))} required><option value="">Select...</option>{drivers.map(d=><option key={d.id} value={d.id}>{d.displayName}</option>)}</select></div>
-          <div><label className="label">Date *</label><input className="input" type="date" value={f.plannedDate} onChange={e=>setF(p=>({...p,plannedDate:e.target.value}))} required/></div>
-          <div><label className="label">Pickup *</label><input className="input" value={f.pickupTextSnapshot} onChange={e=>setF(p=>({...p,pickupTextSnapshot:e.target.value}))} placeholder="15 Arden Place, LU2 7YE" required/></div>
-          <div><label className="label">Dropoff *</label><input className="input" value={f.dropoffTextSnapshot} onChange={e=>setF(p=>({...p,dropoffTextSnapshot:e.target.value}))} placeholder="34 Dunelm Road, TS29 6PX" required/></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Reference</label><input className="input" value={f.referenceNumber} onChange={e=>setF(p=>({...p,referenceNumber:e.target.value}))} placeholder="REF001"/></div>
-            <div><label className="label">Material</label><input className="input" value={f.materialType} onChange={e=>setF(p=>({...p,materialType:e.target.value}))} placeholder="Type 1..."/></div>
-          </div>
-          <div><label className="label">Planner Notes</label><textarea className="input min-h-16" value={f.plannerNotes} onChange={e=>setF(p=>({...p,plannerNotes:e.target.value}))} placeholder="Call site before arrival..."/></div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className="label">Expected Quantity</label><input className="input" value={f.quantityExpected} onChange={e=>setF(p=>({...p,quantityExpected:e.target.value}))} placeholder="e.g. 5"/></div>
-            <div><label className="label">Unit</label>
-              <select className="input" value={f.quantityUnit} onChange={e=>setF(p=>({...p,quantityUnit:e.target.value}))}>
-                <option value="pallets">pallets</option>
-                <option value="kgs">kgs</option>
-                <option value="bags">bags</option>
-                <option value="other">other</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="label">Truck Reg</label>
-              <input className="input" value={f.assignedTruck} onChange={e=>setF(p=>({...p,assignedTruck:e.target.value.toUpperCase()}))} placeholder="e.g. AB12 CDE"/>
-            </div>
-            <div>
-              <label className="label">Trailer Reg</label>
-              <input className="input" value={f.assignedTrailer} onChange={e=>setF(p=>({...p,assignedTrailer:e.target.value.toUpperCase()}))} placeholder="e.g. TRL123 (optional)"/>
-            </div>
-          </div>
-          <div>
-            <label className="label">Vehicle Class</label>
-            <select className="input" value={f.vehicleClass} onChange={e=>setF(p=>({...p,vehicleClass:e.target.value}))}>
-              <option value="class1">Class 1 (Artic)</option>
-              <option value="class2">Class 2 (Rigid)</option>
-              <option value="van">Van</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div className="border rounded-lg p-3 space-y-2">
-            <p className="text-xs font-bold text-muted uppercase tracking-wide">Driver Confirmation Required</p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={f.requireCollection} onChange={e=>setF(p=>({...p,requireCollection:e.target.checked}))} className="w-4 h-4"/>
-              <span className="text-sm">📦 Confirm collection quantity</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={f.requirePOD} onChange={e=>setF(p=>({...p,requirePOD:e.target.checked}))} className="w-4 h-4"/>
-              <span className="text-sm">🧾 Require POD / delivery reference</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={f.requireDeliveryQty} onChange={e=>setF(p=>({...p,requireDeliveryQty:e.target.checked}))} className="w-4 h-4"/>
-              <span className="text-sm">✅ Confirm delivery quantity</span>
-            </label>
-          </div>
-          <div className="flex items-center gap-2"><input type="checkbox" id="st" checked={f.saveAsTemplate} onChange={e=>setF(p=>({...p,saveAsTemplate:e.target.checked}))}/><label htmlFor="st" className="text-sm cursor-pointer">Save as template</label></div>
-          {f.saveAsTemplate && <div><label className="label">Template Name</label><input className="input" value={f.templateName} onChange={e=>setF(p=>({...p,templateName:e.target.value}))} placeholder="Depot A to Site X"/></div>}
-          <button type="submit" disabled={loading} className="btn btn-primary w-full mt-2">{loading ? "Creating..." : "Create Job →"}</button>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 export default function DashboardPage() {
   const [date,    setDate]    = useState(today());
   const [jobs,    setJobs]    = useState<PlannedJob[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [tpls,    setTpls]    = useState<any[]>([]);
+  const [tpls,    setTpls]    = useState<JobTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [createFor,  setCreateFor]  = useState<number|undefined>();
@@ -273,7 +180,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {showCreate && <CreatePanel drivers={drivers} templates={tpls} driverId={createFor} date={date} onClose={()=>setShowCreate(false)} onCreated={load}/>}
+      {showCreate && (
+        <CreateJobPanel
+          drivers={drivers}
+          templates={tpls}
+          date={date}
+          initialDriverId={createFor}
+          onClose={() => setShowCreate(false)}
+          onCreated={load}
+        />
+      )}
     </div>
   );
 }
