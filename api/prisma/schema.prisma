@@ -166,45 +166,45 @@ model JobTemplate {
 }
 
 model PlannedJob {
-  id                   Int      @id @default(autoincrement())
+  id                   Int       @id @default(autoincrement())
   companyId            Int
   customerId           Int?
-  customerName         String   @default("")
+  customerName         String    @default("")
   templateId           Int?
   assignedDriverId     Int?
   createdByUserId      Int
   plannedDate          DateTime?
-  sequence             Int      @default(0)
+  sequence             Int       @default(0)
   pickupLocationId     Int?
   dropoffLocationId    Int?
-  pickupTextSnapshot   String   @default("")
-  dropoffTextSnapshot  String   @default("")
-  referenceNumber      String   @default("")
-  materialType         String   @default("")
-  quantityExpected     String   @default("")
-  quantityUnit         String   @default("")
-  plannerNotes         String   @default("")
-  assignedTruck        String   @default("")
-  assignedTrailer      String   @default("")
-  vehicleClass         String   @default("")
-  vehicleClassRequired String   @default("")
+  pickupTextSnapshot   String    @default("")
+  dropoffTextSnapshot  String    @default("")
+  referenceNumber      String    @default("")
+  materialType         String    @default("")
+  quantityExpected     String    @default("")
+  quantityUnit         String    @default("")
+  plannerNotes         String    @default("")
+  assignedTruck        String    @default("")
+  assignedTrailer      String    @default("")
+  vehicleClass         String    @default("")
+  vehicleClassRequired String    @default("")
   trailerTypesAllowed  Json?
-  priority             String   @default("normal")
-  serviceType          String   @default("")
-  internalNotes        String   @default("")
-  validationStatus     String   @default("draft")
-  qualityScore         Int      @default(0)
-  status               String   @default("pending")
-  actualQuantity       String   @default("")
-  actualUnit           String   @default("")
-  podNumber            String   @default("")
-  collectionNote       String   @default("")
-  deliveryNote         String   @default("")
-  requireCollection    Boolean  @default(false)
-  requirePOD           Boolean  @default(false)
-  requireDeliveryQty   Boolean  @default(false)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  priority             String    @default("normal")
+  serviceType          String    @default("")
+  internalNotes        String    @default("")
+  validationStatus     String    @default("draft")
+  qualityScore         Int       @default(0)
+  status               String    @default("pending")
+  actualQuantity       String    @default("")
+  actualUnit           String    @default("")
+  podNumber            String    @default("")
+  collectionNote       String    @default("")
+  deliveryNote         String    @default("")
+  requireCollection    Boolean   @default(false)
+  requirePOD           Boolean   @default(false)
+  requireDeliveryQty   Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   company         Company             @relation(fields: [companyId], references: [id])
   customer        Customer?           @relation(fields: [customerId], references: [id])
@@ -228,6 +228,11 @@ model JobStop {
   type           String
 
   savedLocationId      Int?
+  siteName             String @default("")
+  unitName             String @default("")
+  street               String @default("")
+  town                 String @default("")
+  postcode             String @default("")
   locationTextSnapshot String @default("")
 
   lat     Float?

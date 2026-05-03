@@ -105,6 +105,11 @@ export interface JobStopInput {
   sequenceNumber:        number;
   type:                  string;
   savedLocationId?:      number | null;
+  siteName?:             string;
+  unitName?:             string;
+  street?:               string;
+  town?:                 string;
+  postcode?:             string;
   locationTextSnapshot:  string;
   lat?:                  number | null;
   lng?:                  number | null;

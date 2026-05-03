@@ -27,6 +27,11 @@ export interface JobStop {
   sequenceNumber: number;
   type: "pickup" | "dropoff" | "handover" | "yard" | "depot";
   savedLocationId?: number | null;
+  siteName?: string;
+  unitName?: string;
+  street?: string;
+  town?: string;
+  postcode?: string;
   locationTextSnapshot: string;
   lat?: number | null;
   lng?: number | null;

@@ -59,6 +59,11 @@ const PRIORITIES: [string, string][] = [
 interface StopState {
   sequenceNumber: number;
   type: string;
+  siteName: string;
+  unitName: string;
+  street: string;
+  town: string;
+  postcode: string;
   locationTextSnapshot: string;
   lat: string;
   lng: string;
@@ -88,6 +93,11 @@ function emptyStop(seq: number, type: string): StopState {
   return {
     sequenceNumber:           seq,
     type,
+    siteName:                 "",
+    unitName:                 "",
+    street:                   "",
+    town:                     "",
+    postcode:                 "",
     locationTextSnapshot:     "",
     lat:                      "",
     lng:                      "",
@@ -113,6 +123,17 @@ function computeEarliestArrival(bookedTime: string, minutesBefore: string): stri
 function resequence(stops: StopState[]): StopState[] {
   return stops.map((s, i) => ({ ...s, sequenceNumber: i + 1 }));
 }
+
+function buildLocationSnapshot(stop: StopState): string {
+  return [
+    stop.siteName,
+    stop.unitName,
+    stop.street,
+    stop.town,
+    stop.postcode,
+  ].map(v => v.trim()).filter(Boolean).join(", ") || stop.locationTextSnapshot.trim();
+}
+
 
 function hasText(v: string): boolean {
   return v.trim().length > 0;
@@ -488,6 +509,11 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
       setStops(t.defaultStops.map((s, i) => ({
         sequenceNumber:       i + 1,
         type:                 s.type,
+        siteName:             s.siteName || "",
+        unitName:             s.unitName || "",
+        street:               s.street || "",
+        town:                 s.town || "",
+        postcode:             s.postcode || "",
         locationTextSnapshot: s.locationTextSnapshot || "",
         lat:                  s.lat != null  ? String(s.lat)  : "",
         lng:                  s.lng != null  ? String(s.lng)  : "",
@@ -535,7 +561,7 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
     if (saveMode === "ready_to_plan") {
       const clientErrors: string[] = [];
       if (!customerId) clientErrors.push("Customer is required");
-      if (!f.plannedDate) clientErrors.push("Job date is required");
+      if (!f.plannedDate) clientErrors.push("Work date is required");
       if (!f.vehicleClassRequired) clientErrors.push("Vehicle type is required");
       if (!stops.some(s => s.type === "pickup"))  clientErrors.push("At least one pickup stop is required");
       if (!stops.some(s => s.type === "dropoff")) clientErrors.push("At least one dropoff stop is required");
@@ -559,7 +585,12 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
         .map((s, i) => ({
           sequenceNumber:            i + 1,
           type:                      s.type,
-          locationTextSnapshot:      s.locationTextSnapshot.trim(),
+          siteName:                  s.siteName.trim(),
+          unitName:                  s.unitName.trim(),
+          street:                    s.street.trim(),
+          town:                      s.town.trim(),
+          postcode:                  s.postcode.trim().toUpperCase(),
+          locationTextSnapshot:      buildLocationSnapshot(s),
           savedLocationId:           s.savedLocationId ?? undefined,
           lat:                       s.lat ? parseFloat(s.lat) : null,
           lng:                       s.lng ? parseFloat(s.lng) : null,
@@ -678,7 +709,7 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="label">Job date *</label>
+                <label className="label">Work date *</label>
                 <input className="input" type="date" value={f.plannedDate}
                   onChange={e => setF(p => ({ ...p, plannedDate: e.target.value }))} />
               </div>
@@ -785,8 +816,8 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
                 </div>
 
                 {/* Address */}
-                <div>
-                  <label className="label">Address / location *</label>
+                <div className="space-y-3">
+                  <label className="label">Structured address *</label>
                   <LocationPicker
                     value={stop.locationTextSnapshot}
                     lat={stop.lat}
@@ -795,6 +826,38 @@ export function CreateJobPanel({ drivers, templates, date, initialDriverId, onCl
                     locations={locations}
                     onChange={patch => updateStop(index, patch)}
                   />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Company / site name</label>
+                      <input className="input" value={stop.siteName}
+                        onChange={e => updateStop(index, { siteName: e.target.value })} placeholder="e.g. ABC Distribution Yard" />
+                    </div>
+                    <div>
+                      <label className="label">Unit / building</label>
+                      <input className="input" value={stop.unitName}
+                        onChange={e => updateStop(index, { unitName: e.target.value })} placeholder="e.g. Unit 4 / Gate B" />
+                    </div>
+                    <div>
+                      <label className="label">Street / road *</label>
+                      <input className="input" value={stop.street}
+                        onChange={e => updateStop(index, { street: e.target.value })} placeholder="e.g. Main Road" />
+                    </div>
+                    <div>
+                      <label className="label">Town / city</label>
+                      <input className="input" value={stop.town}
+                        onChange={e => updateStop(index, { town: e.target.value })} placeholder="e.g. Luton" />
+                    </div>
+                    <div>
+                      <label className="label">Postcode *</label>
+                      <input className="input" value={stop.postcode}
+                        onChange={e => updateStop(index, { postcode: e.target.value.toUpperCase() })} placeholder="e.g. LU2 7YE" />
+                    </div>
+                    <div>
+                      <label className="label">Generated address</label>
+                      <input className="input bg-gray-50" value={buildLocationSnapshot(stop)} readOnly />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Coordinates */}

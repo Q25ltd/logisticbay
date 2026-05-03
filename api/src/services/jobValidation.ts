@@ -10,6 +10,11 @@ export interface StructuredJobStopInput {
   type?: unknown;
   locationTextSnapshot?: unknown;
   savedLocationId?: number | null;
+  siteName?: unknown;
+  unitName?: unknown;
+  street?: unknown;
+  town?: unknown;
+  postcode?: unknown;
   lat?: number | null;
   lng?: number | null;
   gateLat?: number | null;
