@@ -13,6 +13,8 @@ export interface IncomingEvent {
   collectionNote?: string;
   podNumber?: string;
   deliveryNote?: string;
+  gpsLat?: number;
+  gpsLng?: number;
 }
 
 export interface SyncResult {
@@ -180,6 +182,8 @@ export async function processSyncEvents(
             clientEventId: event.clientEventId,
             clientTimestamp,
             appVersion: event.appVersion,
+            gpsLat: event.gpsLat,
+            gpsLng: event.gpsLng,
             needsReview,
             reviewReason,
           },

@@ -181,6 +181,8 @@ model JobExecutionEvent {
   clientTimestamp  DateTime
   serverReceivedAt DateTime @default(now())
   appVersion       String?
+  gpsLat           Float?
+  gpsLng           Float?
   needsReview      Boolean  @default(false)
   reviewReason     String?
   createdAt        DateTime @default(now())
