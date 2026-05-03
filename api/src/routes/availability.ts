@@ -9,6 +9,24 @@ import type {
   PatchHolidayBody,
 } from "../types/requests.js";
 
+// UK bank holidays England & Wales 2025–2026 (mirrors mobile constant)
+const BANK_HOLIDAYS = new Set([
+  "2025-01-01","2025-04-18","2025-04-21","2025-05-05","2025-05-26",
+  "2025-08-25","2025-12-25","2025-12-26",
+  "2026-01-01","2026-04-03","2026-04-06","2026-05-04","2026-05-25",
+  "2026-08-31","2026-12-25","2026-12-28",
+]);
+
+function toISODate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function isWorkingDay(d: Date): boolean {
+  const day = d.getDay();
+  if (day === 0 || day === 6) return false;
+  return !BANK_HOLIDAYS.has(toISODate(d));
+}
+
 function getWeekStart(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
@@ -213,6 +231,42 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     return reply.send({ data: prefs });
   });
 
+  // ── GET /holiday-requests/availability — day-by-day slot check ──────────────
+  app.get("/holiday-requests/availability", { preHandler: authenticate }, async (request, reply) => {
+    const { companyId } = request.user!;
+    const q = request.query as { start?: string; end?: string };
+
+    if (!q.start || !q.end) return reply.status(400).send({ error: "start and end query params required (YYYY-MM-DD)" });
+
+    const start = new Date(q.start);
+    const end   = new Date(q.end);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return reply.status(400).send({ error: "Invalid date format" });
+    if (start > end) return reply.status(400).send({ error: "start must be before end" });
+
+    const company   = await prisma.company.findUnique({ where: { id: companyId } });
+    const maxPerDay = (company as any).maxHolidaysPerDay ?? 2;
+
+    const days: { date: string; count: number; available: boolean; slotsLeft: number }[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      if (isWorkingDay(cur)) {
+        const daySnap = new Date(cur); daySnap.setHours(12, 0, 0, 0);
+        const count = await prisma.holidayRequest.count({
+          where: { companyId, status: "approved", startDate: { lte: daySnap }, endDate: { gte: daySnap } },
+        });
+        days.push({
+          date:      toISODate(cur),
+          count,
+          available: count < maxPerDay,
+          slotsLeft: Math.max(0, maxPerDay - count),
+        });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    return reply.send({ days, maxPerDay, allAvailable: days.every(d => d.available) });
+  });
+
   // ── GET /holiday-requests/my ───────────────────────────────────────────────
   app.get("/holiday-requests/my", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
@@ -248,12 +302,23 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
 
     const start = new Date(body.startDate);
     const end   = new Date(body.endDate);
+    start.setHours(12, 0, 0, 0);
+    end.setHours(12, 0, 0, 0);
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (start < today) return reply.status(400).send({ error: "Start date cannot be in the past" });
+    if (end   < today) return reply.status(400).send({ error: "End date cannot be in the past" });
+    if (start > end)   return reply.status(400).send({ error: "Start date must be on or before end date" });
 
     let totalDays = 0;
     const current = new Date(start);
     while (current <= end) {
-      if (current.getDay() !== 0 && current.getDay() !== 6) totalDays++;
+      if (isWorkingDay(current)) totalDays++;
       current.setDate(current.getDate() + 1);
+    }
+
+    if (totalDays === 0) {
+      return reply.status(400).send({ error: "Selected range contains no working days (weekends and bank holidays are excluded)" });
     }
 
     if (totalDays > profile.holidayAllowance - profile.holidayUsed) {
@@ -268,9 +333,10 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const conflicts: string[] = [];
     const checkDate = new Date(start);
     while (checkDate <= end) {
-      if (checkDate.getDay() !== 0 && checkDate.getDay() !== 6) {
+      if (isWorkingDay(checkDate)) {
+        const snap = new Date(checkDate); snap.setHours(12, 0, 0, 0);
         const count = await prisma.holidayRequest.count({
-          where: { companyId, status: "approved", startDate: { lte: checkDate }, endDate: { gte: checkDate } },
+          where: { companyId, status: "approved", startDate: { lte: snap }, endDate: { gte: snap } },
         });
         if (count >= maxPerDay) conflicts.push(checkDate.toLocaleDateString("en-GB"));
       }

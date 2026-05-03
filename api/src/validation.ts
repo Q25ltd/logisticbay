@@ -169,6 +169,9 @@ export function validateHolidayRequest(body: HolidayRequestBody): ValidationResu
   const errors: string[] = [];
   if (!body.startDate) errors.push("startDate is required");
   if (!body.endDate)   errors.push("endDate is required");
+  if (body.startDate && !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate)) errors.push("startDate must be YYYY-MM-DD");
+  if (body.endDate   && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate))   errors.push("endDate must be YYYY-MM-DD");
+  if (body.startDate && body.endDate && body.startDate > body.endDate) errors.push("startDate must be on or before endDate");
   return ok(errors);
 }
 
