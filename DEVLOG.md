@@ -436,3 +436,24 @@ Direct `api.patch` calls in `JobDetail` work as before. Only the offline queue p
   - assign driver
   - manual status view/override
 - Then return to offline acceptance testing after installable build is available
+
+---
+
+## 2026-05-03 — API cleanup and production sync
+
+### Migrations applied to production
+- 20260502082357_add_sync_fields — sync fields on JobExecutionEvent, SyncEventLog table
+- 20260502120000_add_poa_mins — POA field on Shift, working time calculation fix
+- 20260503100000_add_gps_to_job_execution_event — GPS coords on JobExecutionEvent
+
+### Production database status
+All 4 migrations applied and confirmed. Database schema is up to date.
+
+### Railway JWT variables
+- Still need confirming in Railway dashboard (JWT_ACCESS_SECRET, JWT_REFRESH_SECRET)
+
+### Next session priorities
+1. Check Railway JWT variables
+2. Mobile screen review (mobile session only)
+3. Standalone build (npx expo run:ios)
+4. Real device offline acceptance test
