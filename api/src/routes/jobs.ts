@@ -234,6 +234,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         template:        true,
         pickupLocation:  true,
         dropoffLocation: true,
+        stops:           { orderBy: { sequenceNumber: "asc" } },
+        loadDetails:     true,
         events:          { orderBy: { createdAt: "asc" } },
       },
       orderBy: [{ plannedDate: "asc" }, { sequence: "asc" }],
@@ -264,6 +266,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       include: {
         pickupLocation:  true,
         dropoffLocation: true,
+        stops:           { orderBy: { sequenceNumber: "asc" } },
+        loadDetails:     true,
         events:          { orderBy: { createdAt: "asc" } },
       },
       orderBy: [{ plannedDate: "asc" }, { sequence: "asc" }],
@@ -288,6 +292,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         assignedDriver:  true,
         pickupLocation:  true,
         dropoffLocation: true,
+        stops:           { orderBy: { sequenceNumber: "asc" } },
+        loadDetails:     true,
         events:          { orderBy: { createdAt: "asc" } },
       },
     });
