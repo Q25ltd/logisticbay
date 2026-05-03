@@ -4,6 +4,7 @@ import { PrismaClient } from "./generated/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { authRoutes }         from "./routes/auth.js";
 import { companyRoutes }      from "./routes/companies.js";
+import { customerRoutes }     from "./routes/customers.js";
 import { shiftRoutes }        from "./routes/shifts.js";
 import { jobRoutes }          from "./routes/jobs.js";
 import { syncRoutes }         from "./routes/sync.js";
@@ -67,6 +68,7 @@ app.get("/health", async (_request, reply) => {
 
 await authRoutes(app, prisma);
 await companyRoutes(app, prisma);
+await customerRoutes(app, prisma);
 await shiftRoutes(app, prisma);
 await jobRoutes(app, prisma);
 await syncRoutes(app, prisma);

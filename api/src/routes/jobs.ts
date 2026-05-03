@@ -230,6 +230,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const jobs = await prisma.plannedJob.findMany({
       where,
       include: {
+        customer:        true,
         assignedDriver:  true,
         template:        true,
         pickupLocation:  true,
@@ -264,6 +265,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         status: { not: "cancelled" },
       },
       include: {
+        customer:        true,
         pickupLocation:  true,
         dropoffLocation: true,
         stops:           { orderBy: { sequenceNumber: "asc" } },
@@ -289,6 +291,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.plannedJob.findFirst({
       where: { id, companyId },
       include: {
+        customer:        true,
         assignedDriver:  true,
         pickupLocation:  true,
         dropoffLocation: true,
@@ -382,8 +385,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         : null
     );
 
+    let customerName = body.customerName ?? "";
+    if (body.customerId && !customerName) {
+      const customer = await prisma.customer.findFirst({ where: { id: body.customerId, companyId } });
+      if (!customer) return reply.status(400).send({ error: "Customer not found" });
+      customerName = customer.name;
+    }
+
     const structuredValidation = validateStructuredJob({
       saveMode,
+      customerId:            body.customerId ?? null,
       plannedDate:           body.plannedDate,
       vehicleClassRequired:  body.vehicleClassRequired,
       trailerTypesAllowed:   body.trailerTypesAllowed,
@@ -405,6 +416,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       const created = await tx.plannedJob.create({
         data: {
           companyId,
+          customerId:            body.customerId ?? null,
+          customerName,
           templateId:            body.templateId ?? null,
           assignedDriverId:      body.assignedDriverId ?? null,
           createdByUserId:       userId,
@@ -424,7 +437,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           vehicleClass:          body.vehicleClass ?? "",
           vehicleClassRequired:  body.vehicleClassRequired ?? "",
           trailerTypesAllowed:   body.trailerTypesAllowed ?? [],
-          priority:              body.priority ?? null,
+          priority:              body.priority ?? "normal",
           serviceType:           body.serviceType ?? "",
           internalNotes:         body.internalNotes ?? "",
           validationStatus:      structuredValidation.validationStatus,
@@ -529,6 +542,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.plannedJob.findFirst({
       where: { id, companyId },
       include: {
+        customer:    true,
         stops:       { orderBy: { sequenceNumber: "asc" } },
         loadDetails: true,
       },
@@ -627,8 +641,20 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const saveMode = body.saveMode ?? (job.validationStatus === "ready_to_plan" ? "ready_to_plan" : "draft");
 
+    const effectiveCustomerId = body.customerId !== undefined ? body.customerId : job.customerId;
+
+    let patchCustomerNameSnapshot = job.customerName;
+    if (body.customerId !== undefined && body.customerId !== null) {
+      const customer = await prisma.customer.findFirst({ where: { id: body.customerId, companyId } });
+      if (!customer) return reply.status(400).send({ error: "Customer not found" });
+      patchCustomerNameSnapshot = customer.name;
+    } else if (body.customerId === null) {
+      patchCustomerNameSnapshot = "";
+    }
+
     const structuredValidation = validateStructuredJob({
       saveMode,
+      customerId:            effectiveCustomerId,
       plannedDate:           body.plannedDate ?? job.plannedDate ?? undefined,
       vehicleClassRequired:  body.vehicleClassRequired ?? job.vehicleClassRequired,
       trailerTypesAllowed:   body.trailerTypesAllowed ?? (Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []),
@@ -722,6 +748,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return tx.plannedJob.update({
         where: { id },
         data: {
+          customerId:            effectiveCustomerId ?? null,
+          customerName:  patchCustomerNameSnapshot,
           pickupLocationId:      firstPickup?.savedLocationId ?? job.pickupLocationId,
           dropoffLocationId:     lastDropoff?.savedLocationId ?? job.dropoffLocationId,
           pickupTextSnapshot:    pickupText,

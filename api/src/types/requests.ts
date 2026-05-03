@@ -150,8 +150,8 @@ export interface CreateJobBody {
   vehicleClass?:         string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?:  string[];
-  priority?:             number;
-  serviceType?:          string;
+  priority?:             "low" | "normal" | "high";
+  serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
   stops?:                JobStopInput[];
   loadDetails?:          LoadDetailsInput | null;
@@ -181,8 +181,8 @@ export interface PatchJobBody {
   vehicleClass?:         string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?:  string[];
-  priority?:             number;
-  serviceType?:          string;
+  priority?:             "low" | "normal" | "high";
+  serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
   stops?:                JobStopInput[];
   loadDetails?:          LoadDetailsInput | null;

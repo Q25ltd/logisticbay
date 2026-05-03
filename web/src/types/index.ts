@@ -3,6 +3,18 @@ export interface User {
   companyId: number; companyName: string;
   role: "company_owner" | "planner" | "driver";
 }
+
+export interface Customer {
+  id: number;
+  companyId: number;
+  name: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  status: "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+}
 export interface Driver {
   id: number; companyId: number; userId: number | null;
   displayName: string; employeeNumber: string | null;
@@ -41,11 +53,17 @@ export interface LoadDetails {
 
 export interface PlannedJob {
   id: number; companyId: number; assignedDriverId: number | null;
+  customerId?: number | null;
+  customerName?: string;
+  customer?: Customer | null;
   plannedDate: string | null; pickupTextSnapshot: string; dropoffTextSnapshot: string;
   referenceNumber: string; materialType: string; quantityExpected: string;
   quantityUnit: string; plannerNotes: string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?: string[];
+  priority?: "low" | "normal" | "high";
+  serviceType?: string;
+  internalNotes?: string;
   validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "planned";
   qualityScore?: number;
   stops?: JobStop[];
@@ -68,4 +86,5 @@ export interface JobTemplate {
 }
 export interface SavedLocation {
   id: number; name: string; addressText: string; postcode: string; notes: string;
+  latitude?: number | null; longitude?: number | null;
 }
