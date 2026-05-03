@@ -8,15 +8,15 @@ datasource db {
 }
 
 model Company {
-  id                   Int      @id @default(autoincrement())
-  name                 String
-  slug                 String   @unique
-  ticker               String?  @unique
-  status               String   @default("trial")
-  reportEmail          String?
-  reportEmailEnabled   Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                 Int      @id @default(autoincrement())
+  name               String
+  slug               String   @unique
+  ticker             String?  @unique
+  status             String   @default("trial")
+  reportEmail        String?
+  reportEmailEnabled Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   memberships       CompanyMembership[]
   driverProfiles    DriverProfile[]
@@ -30,7 +30,10 @@ model Company {
   holidayRequests   HolidayRequest[]
   workingSummaries  DriverWorkingTimeSummary[]
   syncEventLogs     SyncEventLog[]
-  maxHolidaysPerDay Int      @default(2)
+  jobStops          JobStop[]
+  loadDetails       LoadDetails[]
+  jobAudits         JobAudit[]
+  maxHolidaysPerDay Int                        @default(2)
 }
 
 model User {
@@ -42,11 +45,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships  CompanyMembership[]
+  memberships   CompanyMembership[]
   driverProfile DriverProfile?
-  shifts       Shift[]
-  createdJobs  PlannedJob[]        @relation("JobCreatedBy")
-  jobEvents    JobExecutionEvent[]
+  shifts        Shift[]
+  createdJobs   PlannedJob[]        @relation("JobCreatedBy")
+  jobEvents     JobExecutionEvent[]
+  jobAudits     JobAudit[]
 }
 
 model CompanyMembership {
@@ -65,47 +69,54 @@ model CompanyMembership {
 }
 
 model DriverProfile {
-  id             Int      @id @default(autoincrement())
-  companyId      Int
-  userId         Int?     @unique
-  displayName    String
-  employeeNumber String?
-  phoneNumber       String?
-  contactEmail      String?
-  contactPhone      String?
-  minHoursPerDay    Float    @default(8)
-  holidayAllowance  Int      @default(28)
-  holidayUsed       Int      @default(0)
-  status            String   @default("active")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  companyId        Int
+  userId           Int?     @unique
+  displayName      String
+  employeeNumber   String?
+  phoneNumber      String?
+  contactEmail     String?
+  contactPhone     String?
+  minHoursPerDay   Float    @default(8)
+  holidayAllowance Int      @default(28)
+  holidayUsed      Int      @default(0)
+  status           String   @default("active")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  company           Company                    @relation(fields: [companyId], references: [id])
-  user              User?                      @relation(fields: [userId],    references: [id])
-  plannedJobs       PlannedJob[]
-  availability      DriverAvailability[]
-  shiftPreferences  ShiftPreference[]
-  holidayRequests   HolidayRequest[]
-  workingSummaries  DriverWorkingTimeSummary[]
+  company          Company                    @relation(fields: [companyId], references: [id])
+  user             User?                      @relation(fields: [userId], references: [id])
+  plannedJobs      PlannedJob[]
+  availability     DriverAvailability[]
+  shiftPreferences ShiftPreference[]
+  holidayRequests  HolidayRequest[]
+  workingSummaries DriverWorkingTimeSummary[]
 }
 
 model SavedLocation {
-  id          Int      @id @default(autoincrement())
-  companyId   Int
-  name        String
-  addressText String
-  postcode    String   @default("")
-  notes       String   @default("")
-  latitude    Float?
-  longitude   Float?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  name              String
+  addressText       String
+  postcode          String   @default("")
+  notes             String   @default("")
+  latitude          Float?
+  longitude         Float?
+  gateLat           Float?
+  gateLng           Float?
+  accessType        String   @default("unknown")
+  accessConfidence  String   @default("low")
+  driverReportCount Int      @default(0)
+  issueFlags        Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   company          Company       @relation(fields: [companyId], references: [id])
   pickupTemplates  JobTemplate[] @relation("PickupLocation")
   dropoffTemplates JobTemplate[] @relation("DropoffLocation")
   pickupJobs       PlannedJob[]  @relation("JobPickupLocation")
   dropoffJobs      PlannedJob[]  @relation("JobDropoffLocation")
+  jobStops         JobStop[]
 }
 
 model JobTemplate {
@@ -119,55 +130,148 @@ model JobTemplate {
   defaultReference    String   @default("")
   defaultNotes        String   @default("")
   defaultMaterialType String   @default("")
+  trailerTypesAllowed Json?
+  defaultStops        Json?
+  defaultLoadDetails  Json?
+  qualityScore        Int      @default(0)
   status              String   @default("active")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   company         Company        @relation(fields: [companyId], references: [id])
-  pickupLocation  SavedLocation? @relation("PickupLocation",  fields: [pickupLocationId],  references: [id])
+  pickupLocation  SavedLocation? @relation("PickupLocation", fields: [pickupLocationId], references: [id])
   dropoffLocation SavedLocation? @relation("DropoffLocation", fields: [dropoffLocationId], references: [id])
   plannedJobs     PlannedJob[]
 }
 
 model PlannedJob {
-  id                  Int      @id @default(autoincrement())
-  companyId           Int
-  templateId          Int?
-  assignedDriverId    Int
-  createdByUserId     Int
-  plannedDate         DateTime
-  sequence            Int      @default(0)
-  pickupLocationId    Int?
-  dropoffLocationId   Int?
-  pickupTextSnapshot  String   @default("")
-  dropoffTextSnapshot String   @default("")
-  referenceNumber     String   @default("")
-  materialType        String   @default("")
-  quantityExpected    String   @default("")
-  quantityUnit        String   @default("")
-  plannerNotes        String   @default("")
-  assignedTruck       String   @default("")
-  assignedTrailer     String   @default("")
-  vehicleClass        String   @default("")
-  status              String   @default("pending")
-  actualQuantity      String   @default("")
-  actualUnit          String   @default("")
-  podNumber           String   @default("")
-  collectionNote      String   @default("")
-  deliveryNote        String   @default("")
-  requireCollection   Boolean  @default(false)
-  requirePOD          Boolean  @default(false)
-  requireDeliveryQty  Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                   Int      @id @default(autoincrement())
+  companyId            Int
+  templateId           Int?
+  assignedDriverId     Int?
+  createdByUserId      Int
+  plannedDate          DateTime
+  sequence             Int      @default(0)
+  pickupLocationId     Int?
+  dropoffLocationId    Int?
+  pickupTextSnapshot   String   @default("")
+  dropoffTextSnapshot  String   @default("")
+  referenceNumber      String   @default("")
+  materialType         String   @default("")
+  quantityExpected     String   @default("")
+  quantityUnit         String   @default("")
+  plannerNotes         String   @default("")
+  assignedTruck        String   @default("")
+  assignedTrailer      String   @default("")
+  vehicleClass         String   @default("")
+  vehicleClassRequired String   @default("")
+  trailerTypesAllowed  Json?
+  priority             Int?
+  serviceType          String   @default("")
+  internalNotes        String   @default("")
+  validationStatus     String   @default("draft")
+  qualityScore         Int      @default(0)
+  status               String   @default("pending")
+  actualQuantity       String   @default("")
+  actualUnit           String   @default("")
+  podNumber            String   @default("")
+  collectionNote       String   @default("")
+  deliveryNote         String   @default("")
+  requireCollection    Boolean  @default(false)
+  requirePOD           Boolean  @default(false)
+  requireDeliveryQty   Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  company         Company            @relation(fields: [companyId],        references: [id])
-  template        JobTemplate?       @relation(fields: [templateId],       references: [id])
-  assignedDriver  DriverProfile      @relation(fields: [assignedDriverId], references: [id])
-  createdBy       User               @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
-  pickupLocation  SavedLocation?     @relation("JobPickupLocation",  fields: [pickupLocationId],  references: [id])
-  dropoffLocation SavedLocation?     @relation("JobDropoffLocation", fields: [dropoffLocationId], references: [id])
+  company         Company             @relation(fields: [companyId], references: [id])
+  template        JobTemplate?        @relation(fields: [templateId], references: [id])
+  assignedDriver  DriverProfile?      @relation(fields: [assignedDriverId], references: [id])
+  createdBy       User                @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
+  pickupLocation  SavedLocation?      @relation("JobPickupLocation", fields: [pickupLocationId], references: [id])
+  dropoffLocation SavedLocation?      @relation("JobDropoffLocation", fields: [dropoffLocationId], references: [id])
   events          JobExecutionEvent[]
+  stops           JobStop[]
+  loadDetails     LoadDetails?
+  audits          JobAudit[]
+}
+
+model JobStop {
+  id        Int @id @default(autoincrement())
+  companyId Int
+  jobId     Int
+
+  sequenceNumber Int
+  type           String
+
+  savedLocationId      Int?
+  locationTextSnapshot String @default("")
+
+  lat     Float?
+  lng     Float?
+  gateLat Float?
+  gateLng Float?
+
+  timeWindowStart DateTime?
+  timeWindowEnd   DateTime?
+
+  contactName     String @default("")
+  contactPhone    String @default("")
+  referenceNumber String @default("")
+  instructions    String @default("")
+
+  status String @default("pending")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  job           PlannedJob     @relation(fields: [jobId], references: [id])
+  savedLocation SavedLocation? @relation(fields: [savedLocationId], references: [id])
+
+  @@unique([jobId, sequenceNumber])
+  @@index([companyId, jobId])
+}
+
+model LoadDetails {
+  id        Int @id @default(autoincrement())
+  companyId Int
+  jobId     Int @unique
+
+  quantity Float?
+  unit     String @default("")
+  weight   Float?
+  volume   Float?
+
+  materialType String @default("")
+  hazardClass  String @default("")
+  notes        String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company    @relation(fields: [companyId], references: [id])
+  job     PlannedJob @relation(fields: [jobId], references: [id])
+}
+
+model JobAudit {
+  id        Int  @id @default(autoincrement())
+  companyId Int
+  jobId     Int
+  changedBy Int?
+
+  action   String
+  field    String @default("")
+  oldValue Json?
+  newValue Json?
+
+  createdAt DateTime @default(now())
+
+  company Company    @relation(fields: [companyId], references: [id])
+  job     PlannedJob @relation(fields: [jobId], references: [id])
+  user    User?      @relation(fields: [changedBy], references: [id])
+
+  @@index([companyId, jobId])
+  @@index([createdAt])
 }
 
 model JobExecutionEvent {
@@ -187,9 +291,9 @@ model JobExecutionEvent {
   reviewReason     String?
   createdAt        DateTime @default(now())
 
-  job     PlannedJob @relation(fields: [jobId],     references: [id])
+  job     PlannedJob @relation(fields: [jobId], references: [id])
   company Company    @relation(fields: [companyId], references: [id])
-  driver  User       @relation(fields: [driverId],  references: [id])
+  driver  User       @relation(fields: [driverId], references: [id])
 
   @@unique([companyId, clientEventId])
 }
@@ -211,51 +315,51 @@ model SyncEventLog {
 }
 
 model Shift {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   companyId       Int
   driverId        Int
   driverName      String
-  shiftDate       DateTime @default(now())
-  oilWaterChecked Boolean  @default(false)
-  fuelDrawn       String   @default("")
-  adBlueDrawn     String   @default("")
-  startTime       String   @default("")
-  endTime         String   @default("")
-  totalHours      String   @default("")
-  breakMins       String   @default("")
-  poaMins         String   @default("")
-  nightOut        Boolean  @default(false)
-  expenses        String   @default("")
-  delaysNote      String   @default("")
-  defectsNote     String   @default("")
-  status          String   @default("draft")
+  shiftDate       DateTime  @default(now())
+  oilWaterChecked Boolean   @default(false)
+  fuelDrawn       String    @default("")
+  adBlueDrawn     String    @default("")
+  startTime       String    @default("")
+  endTime         String    @default("")
+  totalHours      String    @default("")
+  breakMins       String    @default("")
+  poaMins         String    @default("")
+  nightOut        Boolean   @default(false)
+  expenses        String    @default("")
+  delaysNote      String    @default("")
+  defectsNote     String    @default("")
+  status          String    @default("draft")
   submittedAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   company  Company        @relation(fields: [companyId], references: [id])
-  driver   User           @relation(fields: [driverId],  references: [id])
+  driver   User           @relation(fields: [driverId], references: [id])
   segments ShiftSegment[]
 }
 
 model ShiftSegment {
-  id                Int      @id @default(autoincrement())
+  id                Int       @id @default(autoincrement())
   shiftId           Int
   segmentNumber     Int
-  vehicleClass      String   @default("class1")
+  vehicleClass      String    @default("class1")
   truckReg          String
   trailerReg        String?
   odometerStart     Int
   odometerEnd       Int?
-  startTime         DateTime @default(now())
+  startTime         DateTime  @default(now())
   endTime           DateTime?
-  needsTruckCheck   Boolean  @default(true)
-  needsTrailerCheck Boolean  @default(true)
+  needsTruckCheck   Boolean   @default(true)
+  needsTrailerCheck Boolean   @default(true)
   truckChecks       Json
   trailerChecks     Json?
-  notes             String   @default("")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  notes             String    @default("")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   shift      Shift          @relation(fields: [shiftId], references: [id])
   deliveries DeliveryTask[]
@@ -285,31 +389,31 @@ model DeliveryTask {
 }
 
 model DriverAvailability {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   companyId       Int
   driverProfileId Int
   weekStartDate   DateTime
-  monPref         String   @default("normal")
-  tuePref         String   @default("normal")
-  wedPref         String   @default("normal")
-  thuPref         String   @default("normal")
-  friPref         String   @default("normal")
-  satPref         String   @default("unavailable")
-  sunPref         String   @default("unavailable")
-  monNote         String   @default("")
-  tueNote         String   @default("")
-  wedNote         String   @default("")
-  thuNote         String   @default("")
-  friNote         String   @default("")
-  satNote         String   @default("")
-  sunNote         String   @default("")
-  status          String   @default("draft")
+  monPref         String    @default("normal")
+  tuePref         String    @default("normal")
+  wedPref         String    @default("normal")
+  thuPref         String    @default("normal")
+  friPref         String    @default("normal")
+  satPref         String    @default("unavailable")
+  sunPref         String    @default("unavailable")
+  monNote         String    @default("")
+  tueNote         String    @default("")
+  wedNote         String    @default("")
+  thuNote         String    @default("")
+  friNote         String    @default("")
+  satNote         String    @default("")
+  sunNote         String    @default("")
+  status          String    @default("draft")
   submittedAt     DateTime?
   approvedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  company       Company       @relation(fields: [companyId],       references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 
   @@unique([driverProfileId, weekStartDate])
@@ -333,27 +437,27 @@ model ShiftPreference {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company       Company       @relation(fields: [companyId],       references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 }
 
 model HolidayRequest {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   companyId       Int
   driverProfileId Int
   startDate       DateTime
   endDate         DateTime
   totalDays       Int
-  reason          String   @default("")
-  note            String   @default("")
-  status          String   @default("pending")
-  plannerNote     String   @default("")
+  reason          String    @default("")
+  note            String    @default("")
+  status          String    @default("pending")
+  plannerNote     String    @default("")
   approvedById    Int?
   approvedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  company       Company       @relation(fields: [companyId],       references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 }
 
@@ -368,7 +472,7 @@ model DriverWorkingTimeSummary {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company       Company       @relation(fields: [companyId],       references: [id])
+  company       Company       @relation(fields: [companyId], references: [id])
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 
   @@unique([driverProfileId, weekStartDate])
