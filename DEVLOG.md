@@ -457,3 +457,23 @@ All 4 migrations applied and confirmed. Database schema is up to date.
 2. Mobile screen review (mobile session only)
 3. Standalone build (npx expo run:ios)
 4. Real device offline acceptance test
+
+---
+
+## 2026-05-03 — Mobile fixes (from mobile session)
+
+### 2 real bugs fixed (commits 5f20b54, 891c284, 0d15d17)
+- POA correctly excluded from working time, included in paid time
+- Fuel and AdBlue values no longer lost when driver changes vehicle
+- Odometer label on ChecklistScreen now reads dynamically from draft.odometerUnit (not hardcoded "miles")
+- History screen now shows both working hours and paid hours separately
+
+### EAS update published
+- Branch: production
+- Platforms: iOS + Android
+- Update group: 94b06ecd-e1cd-4703-adb8-638d3fec1f0b
+
+### Still open
+- Railway JWT variables — JWT_ACCESS_SECRET and JWT_REFRESH_SECRET need confirming in Railway dashboard
+- Real device offline acceptance test (needs standalone build)
+- Web planner MVP (next major phase)
