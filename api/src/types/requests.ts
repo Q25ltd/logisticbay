@@ -110,6 +110,10 @@ export interface JobStopInput {
   gateLng?:              number | null;
   timeWindowStart?:      string | null;
   timeWindowEnd?:        string | null;
+  bookedTime?:           string | null;
+  earliestArrivalMinutes?: number | null;
+  unloadingAllowanceMinutes?: number | null;
+  standingChargeNote?:   string;
   contactName?:          string;
   contactPhone?:         string;
   referenceNumber?:      string;
@@ -127,6 +131,8 @@ export interface LoadDetailsInput {
 }
 
 export interface CreateJobBody {
+  customerId?:           number | null;
+  customerName?:         string;
   assignedDriverId?:     number;
   plannedDate?:          string;
   templateId?:           number;
@@ -159,6 +165,8 @@ export interface CreateJobBody {
 }
 
 export interface PatchJobBody {
+  customerId?:           number | null;
+  customerName?:         string;
   assignedDriverId?:     number | null;
   plannedDate?:          string;
   pickupTextSnapshot?:   string;

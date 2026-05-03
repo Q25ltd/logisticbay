@@ -16,6 +16,10 @@ export interface StructuredJobStopInput {
   gateLng?: number | null;
   timeWindowStart?: string | Date | null;
   timeWindowEnd?: string | Date | null;
+  bookedTime?: string | Date | null;
+  earliestArrivalMinutes?: number | null;
+  unloadingAllowanceMinutes?: number | null;
+  standingChargeNote?: unknown;
   contactName?: unknown;
   contactPhone?: unknown;
   referenceNumber?: unknown;
@@ -34,6 +38,8 @@ export interface StructuredLoadDetailsInput {
 
 export interface StructuredJobValidationInput {
   saveMode?: "draft" | "ready_to_plan";
+  customerId?: unknown;
+  customerName?: unknown;
   plannedDate?: unknown;
   vehicleClassRequired?: unknown;
   trailerTypesAllowed?: unknown;
@@ -63,6 +69,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
   const stops = Array.isArray(input.stops) ? input.stops : [];
 
   if (saveMode === "ready_to_plan") {
+    if (!input.customerId && !hasText(input.customerName)) errors.push("Customer is required");
     if (!input.plannedDate) errors.push("plannedDate is required");
     if (!hasText(input.vehicleClassRequired)) errors.push("vehicleClassRequired is required");
   }
@@ -77,7 +84,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
   }
 
   if (input.vehicleClassRequired === "class1" && saveMode === "ready_to_plan" && trailerTypes.length === 0) {
-    errors.push("At least one trailer type is required for class1 jobs");
+    warnings.push("No trailer type selected — planner may allocate unsuitable equipment");
   }
 
   if (saveMode === "ready_to_plan") {
@@ -106,11 +113,16 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
       errors.push("Stop gateLat/gateLng must be valid numbers when provided");
     }
 
+    if (saveMode === "ready_to_plan" && stop.type === "dropoff" && !stop.bookedTime) {
+      errors.push("Booked delivery time is required for dropoff stops");
+    }
+
     if (!hasText(stop.contactName) && !hasText(stop.contactPhone)) warnings.push("Stop is missing contact info");
     if (!stop.timeWindowStart || !stop.timeWindowEnd) warnings.push("Stop is missing time window");
-    if (stop.gateLat === undefined || stop.gateLng === undefined || stop.gateLat === null || stop.gateLng === null) {
-      warnings.push("Stop is missing gate coordinates");
+    if (stop.lat === undefined || stop.lng === undefined || stop.lat === null || stop.lng === null) {
+      warnings.push("No exact entrance/loading coordinates set — driver may arrive at the wrong gate, causing delays or missed collection/delivery");
     }
+    if (!hasText(stop.instructions)) warnings.push("Stop is missing instructions");
     if (!stop.savedLocationId) warnings.push("Stop is not linked to a saved location");
   }
 
@@ -125,9 +137,14 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
   }
 
   if (!input.loadDetails) {
-    warnings.push("Load details are missing");
-  } else if (hasText(input.loadDetails.unit) && !isLoadUnit(input.loadDetails.unit)) {
-    errors.push("Load unit is invalid");
+    warnings.push("Load details are missing — wrong equipment or loading delays are more likely");
+  } else {
+    if (hasText(input.loadDetails.unit) && !isLoadUnit(input.loadDetails.unit)) {
+      errors.push("Load unit is invalid");
+    }
+    if (!input.loadDetails.quantity) warnings.push("Load quantity is missing");
+    if (!hasText(input.loadDetails.unit)) warnings.push("Load unit is missing");
+    if (!hasText(input.loadDetails.materialType)) warnings.push("Material/load type is missing");
   }
 
   const validationStatus =

@@ -103,13 +103,15 @@ export default function TemplatesPage() {
           <h1 className="text-xl font-black text-primary">Job Templates</h1>
           <p className="text-sm text-muted">Reuse common routes to create jobs faster</p>
         </div>
-        <Button onClick={() => { setEditTemplate(undefined); setShowForm(true); }}>+ New Template</Button>
+        <div className="text-xs text-muted text-right">
+          Create templates from the structured job form using “Save as template”.
+        </div>
       </div>
       {success && <Alert type="success" message={success} />}
       {error   && <Alert type="error"   message={error}   />}
-      {showForm && (
+      {showForm && editTemplate && (
         <div className="card p-6 mb-6">
-          <h2 className="font-bold text-primary mb-4">{editTemplate ? `Edit — ${editTemplate.name}` : "New Template"}</h2>
+          <h2 className="font-bold text-primary mb-4">Edit — {editTemplate.name}</h2>
           <TemplateForm
             initial={editTemplate}
             onSave={() => { setShowForm(false); setEditTemplate(undefined); setSuccess("Template saved ✓"); load(); }}
@@ -135,7 +137,9 @@ export default function TemplatesPage() {
           <div className="text-5xl mb-4">📄</div>
           <div className="font-bold text-primary mb-1">{templates.length === 0 ? "No templates yet" : "No templates match"}</div>
           <div className="text-sm text-muted mb-4">Create templates to speed up job creation</div>
-          {templates.length === 0 && <Button onClick={() => setShowForm(true)}>Create First Template</Button>}
+          {templates.length === 0 && (
+            <div className="text-xs text-muted">Create a job and tick “Save as template” to add your first template.</div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
