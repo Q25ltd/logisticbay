@@ -58,7 +58,7 @@ LogisticBay is a modular logistics operating system for transport companies.
 
 ---
 
-## Current Status (as of 2026-04-29)
+## Current Status (as of 2026-05-03)
 
 ### MOBILE — Nearly Complete
 ✅ Login with Face ID + company picker
@@ -79,16 +79,25 @@ LogisticBay is a modular logistics operating system for transport companies.
 ✅ Resume shift → goes to Jobs (not StartShift)
 ✅ AppFooter "LogisticBay · Q25 Ltd" on main screens
 ✅ Discard button bigger and easier to tap
+✅ Shift flow refactored and pushed — large `ShiftScreens.tsx` split into focused screens
+✅ Offline sync UI added globally — banner shows offline/syncing/synced/failed states
+✅ Offline sync retry UI added — failed sync shows Retry action
+✅ Job events now attach GPS + clientTimestamp when available
+✅ Offline event queue hardened with retry metadata, failure state, and crash recovery
 
 ### MOBILE — BROKEN (fix first)
 ✅ All TypeScript errors resolved (2026-04-30) — commit a8b5dc8
 
 ### MOBILE — OFFLINE QUEUE (rebuilt 2026-05-02)
 ✅ src/offlineQueue.ts — rebuilt using POST /sync/events + clientEventId
-✅ src/hooks/useNetworkStatus.ts — rebuilt, monitors connection, auto-flushes on reconnect
-✅ src/components/OfflineBanner.tsx — active, wired into App.tsx
+✅ src/offlineQueue.ts — production-hardened with status, retryCount, createdAt, lastAttemptAt, lastError
+✅ src/offlineQueue.ts — backward compatible with old queued events that lack metadata
+✅ src/offlineQueue.ts — treats stale `syncing` events as retryable after app crash/restart
+✅ src/hooks/useNetworkStatus.ts — monitors connection, auto-flushes on reconnect, tracks failedCount
+✅ src/components/OfflineBanner.tsx — active, wired into App.tsx, shows failed state + Retry
 ✅ App.tsx — OfflineBanner + useNetworkStatus wired at navigator level
 ✅ JobDetail/index.tsx — useIsOnline, optimistic UI when offline, queues to /sync/events
+✅ JobDetail/index.tsx — attaches GPS + clientTimestamp to online and offline job events
 ⛔ src/apiWithQueue.ts — deprecated stub, do not use
 
 Architecture:
@@ -101,15 +110,23 @@ Architecture:
 Build order status:
 ✅ API: Phase 1 — schema migration (clientEventId, SyncEventLog table)
 ✅ API: POST /sync/events endpoint (all job status transitions)
-✅ API: deployed to Railway — migration applied to production 2026-05-02
-⏳ Mobile: acceptance test (airplane mode flow)
+✅ API: GPS fields added to JobExecutionEvent via migration `20260503100000_add_gps_to_job_execution_event`
+✅ API: sync event GPS validation added (`gpsLat`/`gpsLng` both-or-none, valid ranges)
+✅ API: online `/jobs/:id/status` now accepts clientTimestamp + GPS metadata
+✅ API: online job update + JobExecutionEvent create now run in one Prisma transaction
+✅ API: holiday availability validation separated into its own commit
+✅ Mobile: offline queue supports GPS metadata
+✅ Mobile: JobDetail attaches GPS + clientTimestamp to online and offline job events
+✅ Mobile: offline queue production hardened with retry/failure metadata
+✅ Mobile: OfflineBanner shows failed sync + Retry action
+⏳ Mobile: acceptance test on installed build / real device production-like network conditions
 ⏳ Expand offline support to other event types (notes, shift submit)
-6. ⏳ Expand to other event types
 
 ### MOBILE — TODO
 - Detention/waiting timestamps (arrived, loading start, loading finish)
 - Full end-to-end test
-- Offline queue (save actions locally, sync when online)
+- Offline queue real-device acceptance test using installed build (not Expo Go Wi-Fi-off)
+- Offline login/profile cache and job list cache for true offline app start
 - Photo POD (later)
 
 ### WEB PLANNER — TODO (next big phase)
@@ -123,6 +140,8 @@ Build order status:
 ### API — TODO
 - Add JWT_ACCESS_SECRET + JWT_REFRESH_SECRET to Railway env vars
 - Rotate JWT_SECRET after adding new secrets
+- Add API timestamp sanity checks for online `/jobs/:id/status` clientTimestamp
+- Add stricter sync payload validation tests and audit review screens later
 
 ---
 
@@ -162,13 +181,16 @@ Priority fixes needed:
 - ~/timesheet-app/mobile/src/AuthContext.tsx — auth state
 - ~/timesheet-app/mobile/src/ShiftContext.tsx — shift draft state
 - ~/timesheet-app/mobile/src/api.ts — Axios instance with auto-refresh
-- ~/timesheet-app/mobile/src/components.tsx — Button, Card, COLOURS, AppFooter
+- ~/timesheet-app/mobile/src/components/OfflineBanner.tsx — global offline/sync/failure banner
+- ~/timesheet-app/mobile/src/offlineQueue.ts — offline job event queue, retry/failure metadata, AsyncStorage persistence
+- ~/timesheet-app/mobile/src/hooks/useNetworkStatus.ts — network monitor + queue auto-flush + retry trigger
+- ~/timesheet-app/mobile/src/components.tsx — legacy/shared components
 - ~/timesheet-app/mobile/src/constants.ts — vehicle classes, check items
 - ~/timesheet-app/mobile/src/screens/HomeScreen.tsx — ⚠️ BROKEN JSX
 - ~/timesheet-app/mobile/src/screens/StartShiftScreen.tsx
-- ~/timesheet-app/mobile/src/screens/ShiftScreens.tsx — ⚠️ NEEDS SPLIT
+- ~/timesheet-app/mobile/src/screens/ShiftScreens.tsx — deleted; split into focused shift screens
 - ~/timesheet-app/mobile/src/screens/JobsScreen.tsx
-- ~/timesheet-app/mobile/src/screens/JobDetailScreen.tsx — ⚠️ 756 lines
+- ~/timesheet-app/mobile/src/screens/JobDetail/index.tsx — job execution flow, online/offline event creation, GPS metadata
 - ~/timesheet-app/mobile/src/screens/ChecklistScreen.tsx
 - ~/timesheet-app/mobile/src/screens/ChangeVehicleScreen.tsx
 - ~/timesheet-app/mobile/src/screens/HolidayScreen.tsx
@@ -312,3 +334,105 @@ Direct `api.patch` calls in `JobDetail` work as before. Only the offline queue p
 - Fixed pre-existing `shifts.ts` CheckItem[] / Json type mismatch (lines 94-95)
 - API TypeScript build now has zero errors across all files
 - Commit: a42f035
+
+
+---
+
+## 2026-05-03 — API offline sync GPS + event metadata hardening
+
+### Commits pushed
+- `feat(api): add GPS support to offline sync events`
+- `feat(api): validate GPS fields for sync events`
+- `feat(api): improve holiday availability validation`
+- `feat(api): add GPS metadata to online job events`
+
+### What changed
+- Added `gpsLat` and `gpsLng` to `JobExecutionEvent`
+- Added migration `20260503100000_add_gps_to_job_execution_event`
+- `sync.service.ts` now persists GPS coordinates from `/sync/events`
+- `src/routes/sync.ts` validates GPS safely:
+  - `gpsLat` and `gpsLng` must be provided together
+  - latitude must be between `-90` and `90`
+  - longitude must be between `-180` and `180`
+- `src/routes/jobs.ts` online status updates now accept:
+  - `clientTimestamp`
+  - `gpsLat`
+  - `gpsLng`
+- Online job update and `JobExecutionEvent` creation now run in a Prisma transaction
+- `src/types/requests.ts` updated so `UpdateJobStatusBody` includes GPS/timestamp metadata
+- Holiday availability and validation changes were split into a separate commit instead of being mixed with sync
+
+### Verification
+- `npx tsc --noEmit` passed in API
+- Commits pushed to `Q25ltd/logisticbay`
+
+### Important remaining risk
+- Offline sync is implemented and type-checked, but not fully real-device field-tested yet
+- `clientTimestamp` sanity checking should still be tightened for online `/jobs/:id/status`
+
+---
+
+## 2026-05-03 — Mobile GPS event metadata + production offline queue hardening
+
+### Commits pushed
+- `feat(mobile): add GPS fields to offline queue events`
+- `feat(mobile): attach GPS and clientTimestamp to job events`
+- `feat(mobile): harden offline event queue retries`
+- `feat(mobile): production-ready offline sync with failure handling and retry UI`
+- `refactor(mobile): shift flow restructuring and UI updates (pre-offline polish)`
+
+### What changed
+- `src/offlineQueue.ts`
+  - `QueuedJobEvent` now supports `gpsLat` and `gpsLng`
+  - queue events now track `status`, `retryCount`, `createdAt`, `lastAttemptAt`, and `lastError`
+  - old queued events without metadata are normalized and still sync
+  - stale `syncing` events are retryable after app crash/restart
+  - failed events are retained instead of silently disappearing
+- `src/screens/JobDetail/index.tsx`
+  - captures GPS with `expo-location` when available
+  - attaches `clientTimestamp`, `gpsLat`, and `gpsLng` to online `/jobs/:id/status`
+  - attaches GPS to offline queued job events
+  - continues without GPS if permission is denied or location fetch fails
+- `src/hooks/useNetworkStatus.ts`
+  - tracks `queueSize` and `failedCount`
+  - auto-flushes queue on reconnect
+  - exposes `triggerSync` for manual retry
+  - added explicit `failed` sync state instead of misusing `offline`
+- `src/components/OfflineBanner.tsx`
+  - shows offline, syncing, synced, and failed states
+  - shows failed count
+  - exposes Retry action for failed sync
+- `App.tsx`
+  - passes `failedCount` and `triggerSync` into `OfflineBanner`
+- Large shift-flow restructuring was committed separately after the offline commits were isolated
+
+### Verification
+- `npx tsc --noEmit` passed in mobile after each sync/offline change
+- Commits pushed to `Q25ltd/logisticbay-mobile`
+
+### Current truth
+- Offline sync is architecturally production-grade and type-checked
+- Offline sync is **not yet field-proven** because real installed-build testing has not been completed
+- Do not mark offline as fully accepted until tested on a production-like mobile build, not just Expo Go
+
+### Required acceptance test later
+1. Install app build on real device
+2. Log in online
+3. Load assigned jobs
+4. Start shift
+5. Disable network / use airplane mode
+6. Perform job status actions offline
+7. Kill app and reopen
+8. Confirm queued actions still exist
+9. Re-enable network
+10. Confirm banner shows syncing then synced, or failed with Retry
+11. Confirm API has correct `JobExecutionEvent` rows with `clientEventId`, `clientTimestamp`, `gpsLat`, `gpsLng`
+12. Confirm duplicate retry does not create duplicate events
+
+### Next recommended product phase
+- Build Web Planner MVP:
+  - job list
+  - create job
+  - assign driver
+  - manual status view/override
+- Then return to offline acceptance testing after installable build is available

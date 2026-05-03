@@ -51,14 +51,38 @@ You = brain. User = messenger. Specialist chats = hands.
 - Each gives terminal commands using Python scripts (not manual edits)
 - Stop and ask if anything risky
 
-## Current status (as of this brain transfer)
-[fill in current status — what's done, what's pending, what's broken]
+## Current status (as of 2026-05-03)
+
+### Mobile
+- Fully functional job + shift flow
+- Offline queue implemented (AsyncStorage)
+- GPS + clientTimestamp attached to job events
+- Offline sync working with retry + failure handling
+- Global OfflineBanner shows offline/syncing/synced/failed
+- Code clean, TypeScript passes, commits structured
+
+Status: ✅ Architecturally complete, ⏳ not field-tested on real device yet
+
+### API
+- POST /sync/events implemented
+- Idempotency via clientEventId
+- SyncEventLog model active
+- GPS validation + storage implemented
+- Online job status also records GPS + timestamp
+
+Status: ✅ Phase 1 complete and deployed
+
+### Web
+- Not started yet
+
+Status: ❌ Missing (next major phase)
 
 ## Pending decisions
-[fill in any open questions or upcoming decisions]
+- When to run real-device offline acceptance testing (after installable build)
+- Scope of Web Planner MVP (keep minimal vs expand early)
 
 ## Active task
-[fill in what specialist chat is currently working on]
+Preparing next phase: Web Planner MVP
 
 ## Recent decisions worth remembering
 - Decided AsyncStorage for MVP, not SQLite (mobile offline queue)
@@ -111,29 +135,27 @@ API chat is building Phase 1 of offline sync system:
 - Idempotency via clientEventId UNIQUE constraint
 
 ### What's done this session
-- All TypeScript errors fixed (commit a8b5dc8 area)
-- App runs cleanly online
-- Refactor done: components/, theme.ts, navigation/types.ts, JobDetail/, utils/
-- StartShiftScreen restored (684 lines, has full week plan)
-- Mobile chat correctly identified offline queue needs backend first
-- Decided: stop mobile offline work until API endpoint exists
+- Full offline sync system implemented (API + Mobile)
+- GPS support added to all job events
+- Offline queue hardened with retry + failure state
+- OfflineBanner + retry UI implemented
+- Large mobile refactor completed and committed cleanly
+- DEVLOG.md and PROJECT_STATUS.md updated
 
 ### What's broken/pending
-- Mobile offline queue is non-functional (deprecated, awaiting backend)
-- API chat just started Phase 1 work with step-by-step approach
-- Web planner work not yet started (next big phase)
+- Offline system not tested on real installed app (Expo Go not reliable)
+- No offline login or job caching yet
+- Web planner not built (system incomplete from planner side)
 
 ### Specialist chats active right now
-- API chat: building Phase 1 offline sync (in progress)
-- Mobile chat: idle, waiting for backend
-- Web chat: not opened yet
+- API chat: idle (Phase 1 complete)
+- Mobile chat: idle (waiting for real-device testing later)
+- Web chat: not started (next phase)
 
 ### Next moves expected
-1. API chat completes Phase 1 (schema + endpoint + curl test)
-2. Deploy to staging
-3. Mobile chat rebuilds offline queue against real endpoint
-4. Test full offline flow
-5. Then start web planner work (live shifts, availability board, etc.)
+1. Build Web Planner MVP (jobs list, create job, assign driver)
+2. Then perform real-device offline testing (installed build)
+3. Expand offline support beyond job events (notes, shifts)
 
 ### Important context
 - User prefers: terminal commands not manual edits
