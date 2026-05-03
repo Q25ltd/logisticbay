@@ -127,6 +127,8 @@ export interface LoadDetailsInput {
 }
 
 export interface CreateJobBody {
+  customerId?:           number | null;
+  customerNameSnapshot?: string;
   assignedDriverId?:     number;
   plannedDate?:          string;
   templateId?:           number;
@@ -144,8 +146,8 @@ export interface CreateJobBody {
   vehicleClass?:         string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?:  string[];
-  priority?:             number;
-  serviceType?:          string;
+  priority?:             "low" | "normal" | "high";
+  serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
   stops?:                JobStopInput[];
   loadDetails?:          LoadDetailsInput | null;
@@ -159,6 +161,8 @@ export interface CreateJobBody {
 }
 
 export interface PatchJobBody {
+  customerId?:           number | null;
+  customerNameSnapshot?: string;
   assignedDriverId?:     number | null;
   plannedDate?:          string;
   pickupTextSnapshot?:   string;
@@ -173,8 +177,8 @@ export interface PatchJobBody {
   vehicleClass?:         string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?:  string[];
-  priority?:             number;
-  serviceType?:          string;
+  priority?:             "low" | "normal" | "high";
+  serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
   stops?:                JobStopInput[];
   loadDetails?:          LoadDetailsInput | null;

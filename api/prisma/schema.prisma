@@ -33,7 +33,25 @@ model Company {
   jobStops          JobStop[]
   loadDetails       LoadDetails[]
   jobAudits         JobAudit[]
+  customers         Customer[]
   maxHolidaysPerDay Int                        @default(2)
+}
+
+model Customer {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  name         String
+  contactName  String   @default("")
+  contactPhone String   @default("")
+  contactEmail String   @default("")
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  plannedJobs PlannedJob[]
+
+  @@index([companyId])
 }
 
 model User {
@@ -147,6 +165,8 @@ model JobTemplate {
 model PlannedJob {
   id                   Int      @id @default(autoincrement())
   companyId            Int
+  customerId           Int?
+  customerNameSnapshot String   @default("")
   templateId           Int?
   assignedDriverId     Int?
   createdByUserId      Int
@@ -166,7 +186,7 @@ model PlannedJob {
   vehicleClass         String   @default("")
   vehicleClassRequired String   @default("")
   trailerTypesAllowed  Json?
-  priority             Int?
+  priority             String   @default("normal")
   serviceType          String   @default("")
   internalNotes        String   @default("")
   validationStatus     String   @default("draft")
@@ -184,6 +204,7 @@ model PlannedJob {
   updatedAt            DateTime @updatedAt
 
   company         Company             @relation(fields: [companyId], references: [id])
+  customer        Customer?           @relation(fields: [customerId], references: [id])
   template        JobTemplate?        @relation(fields: [templateId], references: [id])
   assignedDriver  DriverProfile?      @relation(fields: [assignedDriverId], references: [id])
   createdBy       User                @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
