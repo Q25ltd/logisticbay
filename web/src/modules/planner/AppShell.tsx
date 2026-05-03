@@ -47,10 +47,10 @@ export default function AppShell() {
             <div>
               <div className="text-xs text-white/40 truncate">{user?.companyName}</div>
               <div className="text-sm font-semibold text-white truncate">{user?.name}</div>
-              <button onClick={() => { logout(); navigate("/login"); }} className="text-xs text-white/40 hover:text-white mt-1">Sign out</button>
+              <button onClick={() => { logout(); navigate("/"); }} className="text-xs text-white/40 hover:text-white mt-1">Sign out</button>
             </div>
           ) : (
-            <button onClick={() => { logout(); navigate("/login"); }} className="text-white/40 hover:text-white text-lg w-full text-center" title="Sign out">↩</button>
+            <button onClick={() => { logout(); navigate("/"); }} className="text-white/40 hover:text-white text-lg w-full text-center" title="Sign out">↩</button>
           )}
         </div>
 
@@ -66,7 +66,7 @@ export default function AppShell() {
             <span className="text-sm font-medium text-gray-900">{user?.companyName}</span>
             <span className="text-gray-300">|</span>
             <span className="text-sm text-gray-600">{user?.name}</span>
-            <button onClick={() => { logout(); navigate("/login"); }} className="text-sm text-red-500 hover:text-red-700 font-semibold ml-2">Sign out</button>
+            <button onClick={() => { logout(); navigate("/"); }} className="text-sm text-red-500 hover:text-red-700 font-semibold ml-2">Sign out</button>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto"><Outlet /></main>
