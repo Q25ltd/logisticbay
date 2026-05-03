@@ -643,13 +643,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const effectiveCustomerId = body.customerId !== undefined ? body.customerId : job.customerId;
 
-    let patchCustomerNameSnapshot = job.customerName;
+    let patchCustomerName = job.customerName;
     if (body.customerId !== undefined && body.customerId !== null) {
       const customer = await prisma.customer.findFirst({ where: { id: body.customerId, companyId } });
       if (!customer) return reply.status(400).send({ error: "Customer not found" });
-      patchCustomerNameSnapshot = customer.name;
+      patchCustomerName = customer.name;
     } else if (body.customerId === null) {
-      patchCustomerNameSnapshot = "";
+      patchCustomerName = "";
     }
 
     const structuredValidation = validateStructuredJob({
@@ -749,7 +749,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { id },
         data: {
           customerId:            effectiveCustomerId ?? null,
-          customerName:  patchCustomerNameSnapshot,
+          customerName:  patchCustomerName,
           pickupLocationId:      firstPickup?.savedLocationId ?? job.pickupLocationId,
           dropoffLocationId:     lastDropoff?.savedLocationId ?? job.dropoffLocationId,
           pickupTextSnapshot:    pickupText,
