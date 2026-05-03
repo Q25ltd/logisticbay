@@ -18,6 +18,12 @@ import type {
   UpdateJobStatusBody,
   AddJobNoteBody,
 } from "../types/requests.js";
+import {
+  validateStructuredJob,
+  type StructuredJobStopInput,
+  type StructuredLoadDetailsInput,
+} from "../services/jobValidation.js";
+import { scoreStructuredJob } from "../services/jobQuality.js";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   pending:         ["accepted", "in_progress", "cancelled"],
@@ -38,6 +44,23 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   completed:       "completed",
   cancelled:       "cancelled",
 };
+
+function toNullableNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toNullableDate(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | undefined): boolean {
+  if (!loadDetails) return false;
+  return Object.values(loadDetails).some(v => v !== undefined && v !== null && v !== "");
+}
 
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -280,88 +303,215 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(job);
   });
 
-  // ── POST /jobs — create job ───────────────────────────────────────────────
+  // ── POST /jobs — create structured job ────────────────────────────────────
   app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const body = request.body as CreateJobBody;
     const { companyId, userId } = request.user!;
+    const saveMode = body.saveMode ?? "draft";
 
-    const v = validateCreateJob(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
+    const legacyValidation = validateCreateJob(body);
+    if (!legacyValidation.valid) return reply.status(400).send({ error: legacyValidation.errors.join(", ") });
 
-    const driver = await prisma.driverProfile.findFirst({
-      where: { id: body.assignedDriverId, companyId, status: "active" },
-    });
-    if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
+    if (body.assignedDriverId !== undefined) {
+      const driver = await prisma.driverProfile.findFirst({
+        where: { id: body.assignedDriverId, companyId, status: "active" },
+      });
+      if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
+    }
 
-    let pickupText  = body.pickupTextSnapshot  ?? "";
-    let dropoffText = body.dropoffTextSnapshot ?? "";
-
+    let template: Awaited<ReturnType<typeof prisma.jobTemplate.findFirst>> = null;
     if (body.templateId) {
-      const template = await prisma.jobTemplate.findFirst({ where: { id: body.templateId, companyId } });
+      template = await prisma.jobTemplate.findFirst({ where: { id: body.templateId, companyId } });
       if (!template) return reply.status(400).send({ error: "Template not found" });
-      pickupText  = pickupText  || template.pickupTextSnapshot;
-      dropoffText = dropoffText || template.dropoffTextSnapshot;
     }
 
-    if (!pickupText && body.pickupLocationId) {
+    let legacyPickupText  = body.pickupTextSnapshot  ?? template?.pickupTextSnapshot  ?? "";
+    let legacyDropoffText = body.dropoffTextSnapshot ?? template?.dropoffTextSnapshot ?? "";
+
+    if (!legacyPickupText && body.pickupLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.pickupLocationId, companyId } });
-      if (loc) pickupText = loc.addressText;
+      if (loc) legacyPickupText = loc.addressText;
     }
-    if (!dropoffText && body.dropoffLocationId) {
+    if (!legacyDropoffText && body.dropoffLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.dropoffLocationId, companyId } });
-      if (loc) dropoffText = loc.addressText;
+      if (loc) legacyDropoffText = loc.addressText;
     }
 
-    if (!pickupText || !dropoffText) {
-      return reply.status(400).send({ error: "Pickup and dropoff are required" });
-    }
+    const stops: StructuredJobStopInput[] = Array.isArray(body.stops) && body.stops.length > 0
+      ? body.stops
+      : [
+          ...(legacyPickupText ? [{
+            sequenceNumber:       1,
+            type:                 "pickup",
+            savedLocationId:      body.pickupLocationId ?? null,
+            locationTextSnapshot: legacyPickupText,
+            referenceNumber:      body.referenceNumber ?? "",
+          }] : []),
+          ...(legacyDropoffText ? [{
+            sequenceNumber:       2,
+            type:                 "dropoff",
+            savedLocationId:      body.dropoffLocationId ?? null,
+            locationTextSnapshot: legacyDropoffText,
+            referenceNumber:      body.referenceNumber ?? "",
+          }] : []),
+        ];
 
-    const job = await prisma.plannedJob.create({
-      data: {
-        companyId,
-        templateId:          body.templateId         ?? null,
-        assignedDriverId:    body.assignedDriverId,
-        createdByUserId:     userId,
-        plannedDate:         body.plannedDate ? new Date(body.plannedDate) : null,
-        sequence:            body.sequence            ?? 0,
-        pickupLocationId:    body.pickupLocationId    ?? null,
-        dropoffLocationId:   body.dropoffLocationId   ?? null,
-        pickupTextSnapshot:  pickupText,
-        dropoffTextSnapshot: dropoffText,
-        referenceNumber:     body.referenceNumber     ?? "",
-        materialType:        body.materialType        ?? "",
-        quantityExpected:    body.quantityExpected    ?? "",
-        quantityUnit:        body.quantityUnit        ?? "",
-        plannerNotes:        body.plannerNotes        ?? "",
-        assignedTruck:       body.assignedTruck       ?? "",
-        assignedTrailer:     body.assignedTrailer     ?? "",
-        vehicleClass:        body.vehicleClass        ?? "",
-        requireCollection:   body.requireCollection   ?? false,
-        requirePOD:          body.requirePOD          ?? false,
-        requireDeliveryQty:  body.requireDeliveryQty  ?? false,
-        status:              "pending",
-      },
-      include: { assignedDriver: true },
+    const firstPickup = [...stops]
+      .sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0))
+      .find(s => s.type === "pickup");
+    const lastDropoff = [...stops]
+      .sort((a, b) => (b.sequenceNumber ?? 0) - (a.sequenceNumber ?? 0))
+      .find(s => s.type === "dropoff");
+
+    const pickupText  = typeof firstPickup?.locationTextSnapshot === "string" ? firstPickup.locationTextSnapshot.trim() : "";
+    const dropoffText = typeof lastDropoff?.locationTextSnapshot === "string" ? lastDropoff.locationTextSnapshot.trim() : "";
+
+    const loadDetails: StructuredLoadDetailsInput | null = body.loadDetails ?? (
+      body.quantityExpected || body.quantityUnit || body.materialType
+        ? {
+            quantity:     body.quantityExpected ?? null,
+            unit:         body.quantityUnit ?? "",
+            materialType: body.materialType ?? "",
+          }
+        : null
+    );
+
+    const structuredValidation = validateStructuredJob({
+      saveMode,
+      plannedDate:           body.plannedDate,
+      vehicleClassRequired:  body.vehicleClassRequired,
+      trailerTypesAllowed:   body.trailerTypesAllowed,
+      stops,
+      loadDetails,
     });
 
-    if (body.saveAsTemplate && body.templateName) {
-      await prisma.jobTemplate.create({
-        data: {
-          companyId,
-          name:                body.templateName,
-          pickupLocationId:    body.pickupLocationId  ?? null,
-          dropoffLocationId:   body.dropoffLocationId ?? null,
-          pickupTextSnapshot:  pickupText,
-          dropoffTextSnapshot: dropoffText,
-          defaultReference:    body.referenceNumber   ?? "",
-          defaultNotes:        body.plannerNotes      ?? "",
-          defaultMaterialType: body.materialType      ?? "",
-          status:              "active",
-        },
+    if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
+      return reply.status(400).send({
+        error: "Job is not ready to plan",
+        errors: structuredValidation.errors,
+        warnings: structuredValidation.warnings,
       });
     }
 
-    return reply.status(201).send(job);
+    const quality = scoreStructuredJob({ stops, loadDetails });
+
+    const job = await prisma.$transaction(async (tx) => {
+      const created = await tx.plannedJob.create({
+        data: {
+          companyId,
+          templateId:            body.templateId ?? null,
+          assignedDriverId:      body.assignedDriverId ?? null,
+          createdByUserId:       userId,
+          plannedDate:           body.plannedDate ? new Date(body.plannedDate) : null,
+          sequence:              body.sequence ?? 0,
+          pickupLocationId:      firstPickup?.savedLocationId ?? body.pickupLocationId ?? null,
+          dropoffLocationId:     lastDropoff?.savedLocationId ?? body.dropoffLocationId ?? null,
+          pickupTextSnapshot:    pickupText,
+          dropoffTextSnapshot:   dropoffText,
+          referenceNumber:       body.referenceNumber ?? (typeof firstPickup?.referenceNumber === "string" ? firstPickup.referenceNumber : ""),
+          materialType:          loadDetails?.materialType?.toString() ?? "",
+          quantityExpected:      loadDetails?.quantity !== undefined && loadDetails?.quantity !== null ? String(loadDetails.quantity) : "",
+          quantityUnit:          loadDetails?.unit?.toString() ?? "",
+          plannerNotes:          body.plannerNotes ?? "",
+          assignedTruck:         body.assignedTruck ?? "",
+          assignedTrailer:       body.assignedTrailer ?? "",
+          vehicleClass:          body.vehicleClass ?? "",
+          vehicleClassRequired:  body.vehicleClassRequired ?? "",
+          trailerTypesAllowed:   body.trailerTypesAllowed ?? [],
+          priority:              body.priority ?? null,
+          serviceType:           body.serviceType ?? "",
+          internalNotes:         body.internalNotes ?? "",
+          validationStatus:      structuredValidation.validationStatus,
+          qualityScore:          quality.score,
+          requireCollection:     body.requireCollection ?? false,
+          requirePOD:            body.requirePOD ?? false,
+          requireDeliveryQty:    body.requireDeliveryQty ?? false,
+          status:                "pending",
+          stops: {
+            create: stops.map((s) => ({
+              companyId,
+              sequenceNumber:       s.sequenceNumber ?? 0,
+              type:                 String(s.type ?? ""),
+              savedLocationId:      s.savedLocationId ?? null,
+              locationTextSnapshot: String(s.locationTextSnapshot ?? "").trim(),
+              lat:                  s.lat ?? null,
+              lng:                  s.lng ?? null,
+              gateLat:              s.gateLat ?? null,
+              gateLng:              s.gateLng ?? null,
+              timeWindowStart:      toNullableDate(s.timeWindowStart),
+              timeWindowEnd:        toNullableDate(s.timeWindowEnd),
+              contactName:          typeof s.contactName === "string" ? s.contactName.trim() : "",
+              contactPhone:         typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
+              referenceNumber:      typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
+              instructions:         typeof s.instructions === "string" ? s.instructions.trim() : "",
+              status:               "pending",
+            })),
+          },
+          ...(hasLoadDetailsInput(loadDetails) ? {
+            loadDetails: {
+              create: {
+                companyId,
+                quantity:     toNullableNumber(loadDetails?.quantity),
+                unit:         loadDetails?.unit?.toString() ?? "",
+                weight:       toNullableNumber(loadDetails?.weight),
+                volume:       toNullableNumber(loadDetails?.volume),
+                materialType: loadDetails?.materialType?.toString() ?? "",
+                hazardClass:  loadDetails?.hazardClass?.toString() ?? "",
+                notes:        loadDetails?.notes?.toString() ?? "",
+              },
+            },
+          } : {}),
+          audits: {
+            create: {
+              companyId,
+              changedBy: userId,
+              action:    "created",
+              field:     "job",
+              newValue:  {
+                saveMode,
+                validationStatus: structuredValidation.validationStatus,
+                qualityScore: quality.score,
+              },
+            },
+          },
+        },
+        include: {
+          assignedDriver: true,
+          stops:          { orderBy: { sequenceNumber: "asc" } },
+          loadDetails:    true,
+          audits:         { orderBy: { createdAt: "desc" }, take: 5 },
+        },
+      });
+
+      if (body.saveAsTemplate && body.templateName) {
+        await tx.jobTemplate.create({
+          data: {
+            companyId,
+            name:                body.templateName,
+            pickupLocationId:    firstPickup?.savedLocationId ?? null,
+            dropoffLocationId:   lastDropoff?.savedLocationId ?? null,
+            pickupTextSnapshot:  pickupText,
+            dropoffTextSnapshot: dropoffText,
+            defaultReference:    body.referenceNumber ?? "",
+            defaultNotes:        body.plannerNotes ?? "",
+            defaultMaterialType: loadDetails?.materialType?.toString() ?? "",
+            trailerTypesAllowed: body.trailerTypesAllowed ?? [],
+            defaultStops:        JSON.parse(JSON.stringify(stops)),
+            defaultLoadDetails:  JSON.parse(JSON.stringify(loadDetails ?? {})),
+            qualityScore:        quality.score,
+            status:              "active",
+          },
+        });
+      }
+
+      return created;
+    });
+
+    return reply.status(201).send({
+      ...job,
+      validation: structuredValidation,
+      quality,
+    });
   });
 
   // ── PATCH /jobs/:id — edit job (before started) ───────────────────────────
