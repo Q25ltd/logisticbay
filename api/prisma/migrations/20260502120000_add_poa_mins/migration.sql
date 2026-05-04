@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE "Shift" ADD COLUMN "poaMins" TEXT NOT NULL DEFAULT '';

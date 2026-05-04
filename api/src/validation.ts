@@ -86,8 +86,17 @@ export function validatePatchDriverStatus(body: PatchDriverStatusBody): Validati
 
 export function validateCreateLocation(body: CreateLocationBody): ValidationResult {
   const errors: string[] = [];
-  requireString(body.name,        "name",        errors);
-  requireString(body.addressText, "addressText", errors);
+  requireString(body.name, "name", errors);
+
+  const hasAddressText =
+    (typeof body.locationTextSnapshot === "string" && body.locationTextSnapshot.trim()) ||
+    (typeof body.addressText === "string" && body.addressText.trim()) ||
+    (typeof body.street === "string" && body.street.trim());
+
+  if (!hasAddressText) {
+    errors.push("locationTextSnapshot, addressText, or street is required");
+  }
+
   return ok(errors);
 }
 

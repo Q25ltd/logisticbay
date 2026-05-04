@@ -109,19 +109,47 @@ export interface PatchDriverStatusBody {
 // ── Locations ─────────────────────────────────────────────────────────────────
 
 export interface CreateLocationBody {
-  name:        string;
-  addressText: string;
-  postcode?:   string;
-  notes?:      string;
-  latitude?:   number;
-  longitude?:  number;
+  name:                  string;
+  siteName?:              string;
+  unitName?:              string;
+  locationTextSnapshot?:  string;
+  addressText?:           string; // compatibility alias for locationTextSnapshot
+  street?:                string;
+  town?:                  string;
+  postcode?:              string;
+  lat?:                   number | null;
+  lng?:                   number | null;
+  latitude?:              number | null; // compatibility alias for lat
+  longitude?:             number | null; // compatibility alias for lng
+  gateLat?:               number | null;
+  gateLng?:               number | null;
+  contactName?:           string;
+  contactPhone?:          string;
+  instructions?:          string;
+  internalNotes?:         string;
+  notes?:                 string; // compatibility alias for internalNotes
 }
 
 export interface PatchLocationBody {
-  name?:        string;
-  addressText?: string;
-  postcode?:    string;
-  notes?:       string;
+  name?:                  string;
+  siteName?:              string;
+  unitName?:              string;
+  locationTextSnapshot?:  string;
+  addressText?:           string; // compatibility alias for locationTextSnapshot
+  street?:                string;
+  town?:                  string;
+  postcode?:              string;
+  lat?:                   number | null;
+  lng?:                   number | null;
+  latitude?:              number | null; // compatibility alias for lat
+  longitude?:             number | null; // compatibility alias for lng
+  gateLat?:               number | null;
+  gateLng?:               number | null;
+  contactName?:           string;
+  contactPhone?:          string;
+  instructions?:          string;
+  internalNotes?:         string;
+  notes?:                 string; // compatibility alias for internalNotes
 }
 
 // ── Job templates ─────────────────────────────────────────────────────────────
