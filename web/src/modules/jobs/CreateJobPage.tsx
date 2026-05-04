@@ -116,22 +116,23 @@ function OptionalToggle({ open, onToggle, label = "optional details" }: {
   );
 }
 
-function YesNoToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <div className="flex rounded-lg border border-border overflow-hidden w-fit">
-      <button type="button"
-        onClick={() => onChange(true)}
-        className={"px-4 py-1.5 text-xs font-semibold transition-colors " +
-          (value ? "bg-accent text-white" : "bg-white text-muted hover:bg-gray-50")}>
-        Yes
-      </button>
-      <button type="button"
-        onClick={() => onChange(false)}
-        className={"px-4 py-1.5 text-xs font-semibold transition-colors border-l border-border " +
-          (!value ? "bg-accent text-white" : "bg-white text-muted hover:bg-gray-50")}>
-        No
-      </button>
-    </div>
+    <button type="button" onClick={() => onChange(!value)}
+      className="flex items-center gap-3 group w-fit">
+      <div className={
+        "relative w-10 h-5 rounded-full transition-colors flex-shrink-0 " +
+        (value ? "bg-accent" : "bg-gray-200")
+      }>
+        <span className={
+          "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " +
+          (value ? "translate-x-5" : "translate-x-0")
+        } />
+      </div>
+      <span className={"text-sm font-medium transition-colors " + (value ? "text-primary" : "text-muted")}>
+        {label}
+      </span>
+    </button>
   );
 }
 
@@ -455,13 +456,11 @@ export default function CreateJobPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
-                    <FieldLabel>Customer Reference Required</FieldLabel>
-                    <YesNoToggle value={custRefRequired} onChange={setCustRefRequired} />
+                    <Toggle value={custRefRequired} onChange={setCustRefRequired} label="Customer reference required" />
                     <p className="text-xs text-muted mt-1.5">Driver must enter customer ref before completing job</p>
                   </div>
                   <div>
-                    <FieldLabel>Purchase Order Required</FieldLabel>
-                    <YesNoToggle value={poRequired} onChange={setPoRequired} />
+                    <Toggle value={poRequired} onChange={setPoRequired} label="Purchase order required" />
                     <p className="text-xs text-muted mt-1.5">Driver must enter PO number before completing job</p>
                   </div>
                 </div>
