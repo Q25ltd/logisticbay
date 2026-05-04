@@ -110,46 +110,46 @@ export interface PatchDriverStatusBody {
 
 export interface CreateLocationBody {
   name:                  string;
-  siteName?:              string;
-  unitName?:              string;
-  locationTextSnapshot?:  string;
-  addressText?:           string; // compatibility alias for locationTextSnapshot
-  street?:                string;
-  town?:                  string;
-  postcode?:              string;
-  lat?:                   number | null;
-  lng?:                   number | null;
-  latitude?:              number | null; // compatibility alias for lat
-  longitude?:             number | null; // compatibility alias for lng
-  gateLat?:               number | null;
-  gateLng?:               number | null;
-  contactName?:           string;
-  contactPhone?:          string;
-  instructions?:          string;
-  internalNotes?:         string;
-  notes?:                 string; // compatibility alias for internalNotes
+  siteName?:             string;
+  unitName?:             string;
+  addressText?:          string;
+  locationTextSnapshot?: string; // mobile compat alias for addressText
+  street?:               string;
+  town?:                 string;
+  postcode?:             string;
+  latitude?:             number | null;
+  longitude?:            number | null;
+  lat?:                  number | null; // mobile compat alias for latitude
+  lng?:                  number | null; // mobile compat alias for longitude
+  gateLat?:              number | null;
+  gateLng?:              number | null;
+  contactName?:          string;
+  contactPhone?:         string;
+  instructions?:         string;
+  internalNotes?:        string;
+  notes?:                string; // mobile compat alias for internalNotes
 }
 
 export interface PatchLocationBody {
-  name?:                  string;
-  siteName?:              string;
-  unitName?:              string;
-  locationTextSnapshot?:  string;
-  addressText?:           string; // compatibility alias for locationTextSnapshot
-  street?:                string;
-  town?:                  string;
-  postcode?:              string;
-  lat?:                   number | null;
-  lng?:                   number | null;
-  latitude?:              number | null; // compatibility alias for lat
-  longitude?:             number | null; // compatibility alias for lng
-  gateLat?:               number | null;
-  gateLng?:               number | null;
-  contactName?:           string;
-  contactPhone?:          string;
-  instructions?:          string;
-  internalNotes?:         string;
-  notes?:                 string; // compatibility alias for internalNotes
+  name?:                 string;
+  siteName?:             string;
+  unitName?:             string;
+  addressText?:          string;
+  locationTextSnapshot?: string; // mobile compat alias for addressText
+  street?:               string;
+  town?:                 string;
+  postcode?:             string;
+  latitude?:             number | null;
+  longitude?:            number | null;
+  lat?:                  number | null; // mobile compat alias for latitude
+  lng?:                  number | null; // mobile compat alias for longitude
+  gateLat?:              number | null;
+  gateLng?:              number | null;
+  contactName?:          string;
+  contactPhone?:         string;
+  instructions?:         string;
+  internalNotes?:        string;
+  notes?:                string; // mobile compat alias for internalNotes
 }
 
 // ── Job templates ─────────────────────────────────────────────────────────────

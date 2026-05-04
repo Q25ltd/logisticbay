@@ -119,7 +119,7 @@ export interface PlannedJob {
   qualityScore?: number;
   stops?: JobStop[];
   loadDetails?: LoadDetails | null;
-  status: "pending" | "accepted" | "in_progress" | "arrived_pickup" | "completed" | "cancelled";
+  status: "pending" | "accepted" | "in_progress" | "arrived_pickup" | "collected" | "arrived_dropoff" | "completed" | "cancelled";
   assignedDriver?: Driver | null; events?: JobEvent[];
   createdAt: string; updatedAt: string;
 }
@@ -138,18 +138,22 @@ export interface JobTemplate {
 export interface SavedLocation {
   id: number;
   name: string;
+  siteName: string;
+  unitName: string;
   addressText: string;
+  street: string;
+  town: string;
   postcode: string;
-  notes: string;
-
-  siteName?: string;
-  unitName?: string;
-  street?: string;
-  town?: string;
-  contactName?: string;
-  contactPhone?: string;
-  instructions?: string;
-
-  latitude?: number | null;
-  longitude?: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  gateLat?: number | null;
+  gateLng?: number | null;
+  contactName: string;
+  contactPhone: string;
+  instructions: string;
+  internalNotes: string;
+  accessType?: string;
+  accessConfidence?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }

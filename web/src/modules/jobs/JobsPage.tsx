@@ -10,7 +10,7 @@ import { CreateJobPanel } from "./CreateJobPanel";
 const today = () => new Date().toISOString().split("T")[0];
 const fmt   = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day:"2-digit", month:"short" });
 
-const STATUS_FLOW = ["pending","accepted","in_progress","arrived_pickup","completed","cancelled"];
+const STATUS_FLOW = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff","completed","cancelled"];
 
 function firstStopText(job: PlannedJob, type: "pickup" | "dropoff") {
   const stop = job.stops
@@ -34,7 +34,7 @@ function JobRow({ job, onStatusChange, onNote }: {
   onStatusChange: (id: number, status: string) => void;
   onNote: (id: number) => void;
 }) {
-  const canProgress = ["pending","accepted","in_progress","arrived_pickup"].includes(job.status);
+  const canProgress = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff"].includes(job.status);
   const nextStatus  = STATUS_FLOW[STATUS_FLOW.indexOf(job.status) + 1];
   const lastEvent   = job.events?.[job.events.length - 1];
   const hasNote     = job.events?.some(e => e.eventType === "note_added" && e.note);
@@ -62,9 +62,11 @@ function JobRow({ job, onStatusChange, onNote }: {
           {canProgress && nextStatus && (
             <button onClick={() => onStatusChange(job.id, nextStatus)}
               className="text-xs text-accent hover:underline font-semibold whitespace-nowrap">
-              {nextStatus === "in_progress"    ? "▶ Start"    :
-               nextStatus === "arrived_pickup" ? "📍 Arrive"  :
-               nextStatus === "completed"      ? "✅ Complete" : nextStatus}
+              {nextStatus === "in_progress"     ? "▶ Start"         :
+               nextStatus === "arrived_pickup"  ? "📍 At Pickup"   :
+               nextStatus === "collected"       ? "✅ Collected"    :
+               nextStatus === "arrived_dropoff" ? "📍 At Dropoff"  :
+               nextStatus === "completed"       ? "✅ Complete"     : nextStatus}
             </button>
           )}
           <button onClick={() => onNote(job.id)} className="text-xs text-muted hover:text-primary">+ Note</button>
@@ -147,7 +149,7 @@ export default function JobsPage() {
   const stats = {
     total:     jobs.length,
     completed: jobs.filter(j => j.status === "completed").length,
-    active:    jobs.filter(j => ["in_progress","arrived_pickup"].includes(j.status)).length,
+    active:    jobs.filter(j => ["in_progress","arrived_pickup","collected","arrived_dropoff"].includes(j.status)).length,
     pending:   jobs.filter(j => ["pending","accepted"].includes(j.status)).length,
   };
 
@@ -174,8 +176,11 @@ export default function JobsPage() {
         <select className="input w-auto" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
+          <option value="accepted">Accepted</option>
           <option value="in_progress">In Progress</option>
           <option value="arrived_pickup">At Pickup</option>
+          <option value="collected">Collected</option>
+          <option value="arrived_dropoff">At Dropoff</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
