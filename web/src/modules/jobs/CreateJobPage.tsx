@@ -252,7 +252,7 @@ export default function CreateJobPage() {
 
   const MISSING = [
     !customerName.trim() && "Customer",
-    !plannedDate         && "Work date",
+    !plannedDate         && "Planned date",
     !serviceType         && "Service type",
     !jobType             && "Job type",
     !contactName.trim()  && "Contact name",
@@ -338,9 +338,12 @@ export default function CreateJobPage() {
               <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
             </div>
 
-            <div>
-              <FieldLabel required>Work Date</FieldLabel>
+                    <div>
+              <FieldLabel required>Planned Date</FieldLabel>
               <input type="date" className="input" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
+              <p className="text-xs text-muted mt-1.5">
+                The date this job is planned to run. Planners use this to organise the daily dispatch board and assign drivers.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
