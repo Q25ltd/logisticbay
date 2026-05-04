@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { customersApi } from "../../api/customers";
 import { useAuth } from "../../hooks/useAuth";
@@ -96,6 +96,86 @@ function SectionHeader({
   );
 }
 
+// ── Customer typeahead ────────────────────────────────────────────────────────
+
+function CustomerSearch({
+  value, linkedId, onChange,
+}: {
+  value: string;
+  linkedId: number | null;
+  onChange: (name: string, id: number | null) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Customer[]>([]);
+  const [open,        setOpen]        = useState(false);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapRef  = useRef<HTMLDivElement>(null);
+
+  function handleInput(text: string) {
+    onChange(text, null); // clear linked id when typing
+    if (debounce.current) clearTimeout(debounce.current);
+    if (!text.trim()) { setSuggestions([]); setOpen(false); return; }
+    debounce.current = setTimeout(async () => {
+      try {
+        const res = await customersApi.list(text.trim());
+        setSuggestions(res.data.slice(0, 8));
+        setOpen(res.data.length > 0);
+      } catch { setSuggestions([]); }
+    }, 220);
+  }
+
+  function pick(c: Customer) {
+    onChange(c.name, c.id);
+    setSuggestions([]);
+    setOpen(false);
+  }
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          className="input pr-8"
+          placeholder="Start typing customer name…"
+          value={value}
+          onChange={e => handleInput(e.target.value)}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          autoComplete="off"
+        />
+        {linkedId && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-green-500 text-sm" title="Linked to existing customer">✓</span>
+        )}
+      </div>
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-border rounded-xl shadow-lg overflow-hidden">
+          {suggestions.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors border-b border-border last:border-0"
+              onMouseDown={() => pick(c)}
+            >
+              <span className="font-semibold text-primary">{c.name}</span>
+              {c.contactName && <span className="text-muted ml-2 text-xs">· {c.contactName}</span>}
+            </button>
+          ))}
+          <div className="px-4 py-2 text-xs text-muted bg-gray-50 border-t border-border">
+            Not listed? Just keep typing — name will be saved as entered
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CreateJobPage() {
@@ -104,12 +184,9 @@ export default function CreateJobPage() {
   const [saving,   setSaving]   = useState<"draft" | "ready" | null>(null);
   const [showOpts, setShowOpts] = useState(false);
 
-  // Customers
-  const [customers,       setCustomers]       = useState<Customer[]>([]);
-  const [customersLoading, setCustomersLoading] = useState(true);
-
   // Form — Job Basics
-  const [customerId,          setCustomerId]          = useState("");
+  const [customerName,        setCustomerName]        = useState("");
+  const [customerId,          setCustomerId]          = useState<number | null>(null);
   const [plannedDate,         setPlannedDate]         = useState(today());
   const [serviceType,         setServiceType]         = useState("");
   const [jobType,             setJobType]             = useState("");
@@ -120,17 +197,13 @@ export default function CreateJobPage() {
   const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
   const [priority,            setPriority]            = useState("normal");
 
-  useEffect(() => {
-    customersApi.list().then(r => setCustomers(r.data)).catch(() => {}).finally(() => setCustomersLoading(false));
-  }, []);
-
   // Quality score placeholder — will compute properly once all sections are wired
-  const basicsComplete = customerId && plannedDate && serviceType && jobType;
+  const basicsComplete = customerName.trim() && plannedDate && serviceType && jobType;
   const MISSING = [
-    !customerId    && "Customer",
-    !plannedDate   && "Work date",
-    !serviceType   && "Service type",
-    !jobType       && "Job type",
+    !customerName.trim() && "Customer",
+    !plannedDate         && "Work date",
+    !serviceType         && "Service type",
+    !jobType             && "Job type",
     "Pickup address",
     "Dropoff address",
     "Material type",
@@ -221,17 +294,11 @@ export default function CreateJobPage() {
             {/* Customer */}
             <div>
               <FieldLabel required>Customer</FieldLabel>
-              <select
-                className="input"
-                value={customerId}
-                onChange={e => setCustomerId(e.target.value)}
-                disabled={customersLoading}
-              >
-                <option value="">{customersLoading ? "Loading customers…" : "— Select customer —"}</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <CustomerSearch
+                value={customerName}
+                linkedId={customerId}
+                onChange={(name, id) => { setCustomerName(name); setCustomerId(id); }}
+              />
             </div>
 
             {/* Work date */}
