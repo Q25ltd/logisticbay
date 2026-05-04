@@ -554,10 +554,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
-    if (!["pending", "accepted"].includes(job.status)) {
-      return reply.status(403).send({ error: "Cannot edit a job that has already started" });
-    }
-
     if (body.assignedDriverId !== undefined && body.assignedDriverId !== null) {
       const driver = await prisma.driverProfile.findFirst({
         where: { id: body.assignedDriverId, companyId, status: "active" },
