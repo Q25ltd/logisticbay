@@ -46,6 +46,7 @@ const LOCATION_TYPES: [string, string][] = [
 
 interface StopState {
   id: string;
+  collapsed: boolean;
   showOptional: boolean;
   stopType: "collection" | "delivery";
   locationQuery: string;
@@ -89,6 +90,7 @@ const nowDisplay = () =>
 function makeStop(): StopState {
   return {
     id: Math.random().toString(36).slice(2),
+    collapsed: false,
     showOptional: false,
     stopType: "collection",
     locationQuery: "",
@@ -183,11 +185,15 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SectionHeader({ num, icon, title, subtitle, active }: {
-  num: number; icon: string; title: string; subtitle: string; active?: boolean;
+function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary, onToggle }: {
+  num: number; icon: string; title: string; subtitle: string;
+  active?: boolean; collapsed?: boolean; summary?: string; onToggle?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-gray-50/50">
+    <div
+      className={"flex items-center gap-3 px-5 py-4 border-b border-border bg-gray-50/50 " + (onToggle ? "cursor-pointer select-none" : "")}
+      onClick={onToggle}
+    >
       <div className="w-9 h-9 rounded-lg bg-white border border-border flex items-center justify-center text-lg shadow-sm flex-shrink-0">
         {icon}
       </div>
@@ -198,9 +204,15 @@ function SectionHeader({ num, icon, title, subtitle, active }: {
           </span>
           <h2 className="text-sm font-black text-primary">{title}</h2>
         </div>
-        <p className="text-xs text-muted mt-0.5 truncate">{subtitle}</p>
+        {collapsed && summary
+          ? <p className="text-xs text-accent font-medium mt-0.5 truncate">{summary}</p>
+          : <p className="text-xs text-muted mt-0.5 truncate">{subtitle}</p>
+        }
       </div>
       {!active && <span className="text-xs text-gray-300 font-medium flex-shrink-0">Coming soon</span>}
+      {onToggle && (
+        <span className="text-muted text-sm flex-shrink-0 ml-1">{collapsed ? "▸" : "▾"}</span>
+      )}
     </div>
   );
 }
@@ -600,31 +612,36 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
   return (
     <div className="border border-border rounded-xl overflow-hidden">
 
-      {/* Stop header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-border">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-black text-primary">
-            Stop {index + 1}
-          </span>
+      {/* Stop header — clickable to collapse */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-border cursor-pointer select-none"
+        onClick={() => onChange({ collapsed: !stop.collapsed })}>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-sm font-black text-primary flex-shrink-0">Stop {index + 1}</span>
           {stop.stopType && (
             <span className={
-              "text-xs font-semibold px-2 py-0.5 rounded-full " +
+              "text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 " +
               (stop.stopType === "collection" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700")
             }>
               {stop.stopType === "collection" ? "Collection" : "Delivery"}
             </span>
           )}
-          {complete && <span className="text-xs text-green-600 font-semibold">✓</span>}
+          {complete && <span className="text-xs text-green-600 font-semibold flex-shrink-0">✓</span>}
+          {stop.collapsed && stop.siteName && (
+            <span className="text-xs text-accent truncate ml-1">{[stop.siteName, stop.town].filter(Boolean).join(", ")}</span>
+          )}
         </div>
-        {total > 1 && (
-          <button type="button" onClick={onRemove}
-            className="text-xs text-red-400 hover:text-red-600 font-semibold transition-colors">
-            Remove
-          </button>
-        )}
+        <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+          {total > 1 && (
+            <button type="button" onClick={e => { e.stopPropagation(); onRemove(); }}
+              className="text-xs text-red-400 hover:text-red-600 font-semibold transition-colors">
+              Remove
+            </button>
+          )}
+          <span className="text-muted text-sm">{stop.collapsed ? "▸" : "▾"}</span>
+        </div>
       </div>
 
-      <div className="p-4 space-y-4">
+      {!stop.collapsed && <div className="p-4 space-y-4">
 
         {/* Stop type */}
         <div>
@@ -889,9 +906,9 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
           </div>
         )}
 
-      </div>
+      </div>}
 
-      {/* Stop footer */}
+      {/* Stop footer — always visible */}
       <div className={
         "px-4 py-2 border-t border-border text-xs font-semibold flex items-center gap-2 " +
         (complete ? "text-green-700 bg-green-50" : "text-muted bg-gray-50")
@@ -916,6 +933,12 @@ export default function CreateJobPage() {
   // Saved locations (loaded once)
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   useEffect(() => { jobsApi.locations().then(r => setLocations(r.data)).catch(() => {}); }, []);
+
+  // ── Section collapse state ───────────────────────────────────────────────
+  const [sec1Collapsed, setSec1Collapsed] = useState(false);
+  const [sec2Collapsed, setSec2Collapsed] = useState(false);
+  const [sec3Collapsed, setSec3Collapsed] = useState(false);
+  const [sec4Collapsed, setSec4Collapsed] = useState(false);
 
   // ── Section 01 — Job Basics ──────────────────────────────────────────────
   const [showBasicsOpts,      setShowBasicsOpts]      = useState(false);
@@ -1076,8 +1099,10 @@ export default function CreateJobPage() {
 
         {/* ── Section 01 — Job Basics ────────────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={1} icon="📋" title="Job Basics" subtitle="Date, service type and job type" active />
-          <div className="px-5 pt-5 pb-4 space-y-4">
+          <SectionHeader num={1} icon="📋" title="Job Basics" subtitle="Date, service type and job type" active
+            collapsed={sec1Collapsed} onToggle={() => setSec1Collapsed(o => !o)}
+            summary={[customerName, plannedDate, serviceType].filter(Boolean).join(" · ")} />
+          {!sec1Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
             <div>
               <FieldLabel required>Customer</FieldLabel>
               <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
@@ -1140,14 +1165,16 @@ export default function CreateJobPage() {
                 </div>
               </div>
             )}
-          </div>
-          <SectionFooter complete={basicsComplete} label="Job basics" />
+          </div>}
+          {!sec1Collapsed && <SectionFooter complete={basicsComplete} label="Job basics" />}
         </div>
 
         {/* ── Section 02 — Customer Details ──────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={2} icon="🏢" title="Customer Details" subtitle="Operational contact for this job" active />
-          <div className="px-5 pt-5 pb-4 space-y-4">
+          <SectionHeader num={2} icon="🏢" title="Customer Details" subtitle="Operational contact for this job" active
+            collapsed={sec2Collapsed} onToggle={() => setSec2Collapsed(o => !o)}
+            summary={[contactName, contactPhone].filter(Boolean).join(" · ")} />
+          {!sec2Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
             {customerId && (
               <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                 <span>✓</span>
@@ -1201,15 +1228,17 @@ export default function CreateJobPage() {
                 </div>
               </div>
             )}
-          </div>
-          <SectionFooter complete={customerComplete} label="Customer details" />
+          </div>}
+          {!sec2Collapsed && <SectionFooter complete={customerComplete} label="Customer details" />}
         </div>
 
         {/* ── Section 03 — Collection / Delivery ─────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={3} icon="🔄" title="Collection / Delivery" subtitle="Add all pickup and dropoff stops for this job" active />
+          <SectionHeader num={3} icon="🔄" title="Collection / Delivery" subtitle="Add all pickup and dropoff stops for this job" active
+            collapsed={sec3Collapsed} onToggle={() => setSec3Collapsed(o => !o)}
+            summary={`${stops.length} stop${stops.length !== 1 ? "s" : ""} · ${stops.filter(stopComplete).length} complete`} />
 
-          <div className="p-4 space-y-3">
+          {!sec3Collapsed && <div className="p-4 space-y-3">
             {stops.map((stop, i) => (
               <StopCard
                 key={stop.id}
@@ -1226,15 +1255,17 @@ export default function CreateJobPage() {
               className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
               + Add another stop
             </button>
-          </div>
+          </div>}
 
-          <SectionFooter complete={stopsComplete} label="All stops" />
+          {!sec3Collapsed && <SectionFooter complete={stopsComplete} label="All stops" />}
         </div>
 
         {/* ── Section 04 — Load Details ───────────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active />
-          <div className="px-5 pt-5 pb-4 space-y-4">
+          <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active
+            collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
+            summary={[materialDesc, totalWeight ? totalWeight + "t" : ""].filter(Boolean).join(" · ")} />
+          {!sec4Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
 
             {/* Goods description */}
             <div>
@@ -1383,8 +1414,8 @@ export default function CreateJobPage() {
 
               </div>
             )}
-          </div>
-          <SectionFooter complete={loadComplete} label="Load details" />
+          </div>}
+          {!sec4Collapsed && <SectionFooter complete={loadComplete} label="Load details" />}
         </div>
 
         {/* ── Sections 05-06 — empty shells ──────────────────────────────────── */}
