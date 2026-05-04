@@ -312,30 +312,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(job);
   });
 
-  async function assertDriverNotOnApprovedHoliday(driverProfileId: number | null | undefined, plannedDateRaw: unknown, companyId: number) {
-    if (!driverProfileId || !plannedDateRaw) return;
-
-    const plannedDate = plannedDateRaw instanceof Date ? new Date(plannedDateRaw) : new Date(String(plannedDateRaw));
-    if (Number.isNaN(plannedDate.getTime())) return;
-
-    plannedDate.setHours(12, 0, 0, 0);
-
-    const holiday = await prisma.holidayRequest.findFirst({
-      where: {
-        companyId,
-        driverProfileId,
-        status: "approved",
-        startDate: { lte: plannedDate },
-        endDate: { gte: plannedDate },
-      },
-      include: { driverProfile: { select: { displayName: true } } },
-    });
-
-    if (holiday) {
-      throw new Error(`${holiday.driverProfile.displayName} is on approved holiday for this job date.`);
-    }
-  }
-
   // ── POST /jobs — create structured job ────────────────────────────────────
   app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const body = request.body as CreateJobBody;
@@ -350,11 +326,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { id: body.assignedDriverId, companyId, status: "active" },
       });
       if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
-      try {
-        await assertDriverNotOnApprovedHoliday(body.assignedDriverId, body.plannedDate, companyId);
-      } catch (err: any) {
-        return reply.status(400).send({ error: err.message });
-      }
     }
 
     let template: Awaited<ReturnType<typeof prisma.jobTemplate.findFirst>> = null;
@@ -592,13 +563,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { id: body.assignedDriverId, companyId, status: "active" },
       });
       if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
-
-      const nextPlannedDateForHolidayCheck = body.plannedDate ?? job.plannedDate;
-      try {
-        await assertDriverNotOnApprovedHoliday(body.assignedDriverId, nextPlannedDateForHolidayCheck, companyId);
-      } catch (err: any) {
-        return reply.status(400).send({ error: err.message });
-      }
     }
 
     let legacyPickupText  = body.pickupTextSnapshot  ?? job.pickupTextSnapshot;
