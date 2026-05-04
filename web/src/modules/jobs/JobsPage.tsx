@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
 import { driversApi } from "../../api/drivers";
 import type { PlannedJob, Driver, JobTemplate } from "../../types";
@@ -105,6 +106,7 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
 
 
 export default function JobsPage() {
+  const navigate = useNavigate();
   const [jobs,          setJobs]          = useState<PlannedJob[]>([]);
   const [drivers,       setDrivers]       = useState<Driver[]>([]);
   const [templates,     setTemplates]     = useState<JobTemplate[]>([]);
@@ -165,7 +167,7 @@ export default function JobsPage() {
         <div className="flex items-center gap-3">
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-auto text-sm"/>
           <button onClick={load} className="btn btn-outline text-sm">↻</button>
-          <Button onClick={() => setShowCreate(true)}>+ Create Job</Button>
+          <Button onClick={() => navigate("/app/jobs/create")}>+ Create Job</Button>
         </div>
       </div>
 
@@ -197,7 +199,7 @@ export default function JobsPage() {
           <div className="text-5xl mb-4">📋</div>
           <div className="font-bold text-primary mb-1">No jobs for this date</div>
           <div className="text-sm text-muted mb-4">Create a job or select a different date</div>
-          <Button onClick={() => setShowCreate(true)}>Create Job</Button>
+          <Button onClick={() => navigate("/app/jobs/create")}>Create Job</Button>
         </div>
       ) : (
         <div className="card overflow-hidden">

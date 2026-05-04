@@ -6,6 +6,7 @@ import RegisterPage     from "./modules/auth/RegisterPage";
 import AppShell         from "./modules/planner/AppShell";
 import DashboardPage    from "./modules/planner/DashboardPage";
 import JobsPage         from "./modules/jobs/JobsPage";
+import CreateJobPage    from "./modules/jobs/CreateJobPage";
 import DriversPage      from "./modules/drivers/DriversPage";
 import HolidaysPage     from "./modules/holidays/HolidaysPage";
 import TemplatesPage    from "./modules/templates/TemplatesPage";
@@ -39,6 +40,7 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard"    element={<DashboardPage />} />
             <Route path="jobs"         element={<JobsPage />} />
+            <Route path="jobs/create"  element={<CreateJobPage />} />
             <Route path="drivers"      element={<DriversPage />} />
             <Route path="holidays"     element={<HolidaysPage />} />
             <Route path="templates"    element={<TemplatesPage />} />
