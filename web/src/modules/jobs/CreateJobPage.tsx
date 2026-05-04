@@ -75,6 +75,7 @@ interface StopState {
   locationType: string;
   driverNotes: string;
   navigationInstructions: string;
+  quantity: string;
   estimatedServiceTime: string;
   internalNotes: string;
 }
@@ -115,6 +116,7 @@ function makeStop(): StopState {
     locationType: "",
     driverNotes: "",
     navigationInstructions: "",
+    quantity: "",
     estimatedServiceTime: "",
     internalNotes: "",
   };
@@ -641,13 +643,20 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
               </div>
             </div>
 
-            {/* Service time */}
+            {/* Service time + quantity */}
             <div>
               <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Service Time</div>
-              <div className="max-w-xs">
-                <FieldLabel>Estimated Service Time</FieldLabel>
-                <input type="text" className="input" placeholder="e.g. 45 mins"
-                  value={stop.estimatedServiceTime} onChange={set("estimatedServiceTime")} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel>Estimated Service Time</FieldLabel>
+                  <input type="text" className="input" placeholder="e.g. 45 mins"
+                    value={stop.estimatedServiceTime} onChange={set("estimatedServiceTime")} />
+                </div>
+                <div>
+                  <FieldLabel>Quantity at This Stop</FieldLabel>
+                  <input type="text" className="input" placeholder="e.g. 26 pallets / 14.5t"
+                    value={stop.quantity} onChange={set("quantity")} />
+                </div>
               </div>
             </div>
 
