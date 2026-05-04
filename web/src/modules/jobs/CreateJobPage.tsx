@@ -501,7 +501,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
                   className={
                     "flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors " +
                     (stop.timeType === t
-                      ? "bg-accent text-white border-accent"
+                      ? "bg-slate-700 text-white border-slate-700"
                       : "bg-white text-muted border-border hover:border-gray-400")
                   }>
                   {t === "anytime" ? "Any time" : t === "exact" ? "Exact time" : "Time window"}
