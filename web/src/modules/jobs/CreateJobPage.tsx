@@ -344,6 +344,31 @@ function LocationSearch({ value, linkedId, locations, onSelect, onClear }: {
   );
 }
 
+// ── Coordinates help ─────────────────────────────────────────────────────────
+
+function CoordsHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="text-xs">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="text-muted hover:text-primary flex items-center gap-1 transition-colors">
+        <span>{open ? "▾" : "▸"}</span>
+        <span>How to find entrance coordinates in Google Maps</span>
+      </button>
+      {open && (
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg space-y-1.5 leading-relaxed text-blue-900">
+          <p><strong>1.</strong> Open <span className="font-mono">maps.google.com</span> and search for the site.</p>
+          <p><strong>2.</strong> Navigate to the <strong>entrance gate or loading bay</strong> — not the building centre.</p>
+          <p><strong>3.</strong> Right-click on the exact entrance point.</p>
+          <p><strong>4.</strong> Click the coordinates shown at the top of the menu (e.g. <span className="font-mono">51.5074, -0.1278</span>).</p>
+          <p><strong>5.</strong> They are now copied — paste the first number into Latitude, the second into Longitude.</p>
+          <p className="text-blue-700 pt-1">⚠ Always pin the <strong>entrance</strong>, not the postcode centre — drivers rely on this to navigate to the right gate.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Stop card ─────────────────────────────────────────────────────────────────
 
 function StopCard({ stop, index, total, locations, onChange, onRemove }: {
@@ -480,9 +505,20 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
               value={stop.country} onChange={set("country")} />
           </div>
 
-          {/* Hidden lat/lng — auto filled from saved location */}
-          <input type="hidden" value={stop.lat} />
-          <input type="hidden" value={stop.lng} />
+          {/* Lat / Lng */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel>Latitude</FieldLabel>
+              <input type="text" className="input font-mono" placeholder="51.5074"
+                value={stop.lat} onChange={set("lat")} />
+            </div>
+            <div>
+              <FieldLabel>Longitude</FieldLabel>
+              <input type="text" className="input font-mono" placeholder="-0.1278"
+                value={stop.lng} onChange={set("lng")} />
+            </div>
+          </div>
+          <CoordsHelp />
         </div>
 
         {/* ── Timing ───────────────────────────────────────────────────────── */}
