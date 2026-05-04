@@ -122,7 +122,7 @@ function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: bool
       className="flex items-center gap-3 group w-fit">
       <div className={
         "relative w-10 h-5 rounded-full transition-colors flex-shrink-0 " +
-        (value ? "bg-accent" : "bg-gray-200")
+        (value ? "bg-green-500" : "bg-red-400")
       }>
         <span className={
           "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " +
