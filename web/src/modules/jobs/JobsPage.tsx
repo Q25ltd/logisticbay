@@ -6,7 +6,6 @@ import type { PlannedJob, Driver, JobTemplate } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
-import { CreateJobPanel } from "./CreateJobPanel";
 
 const today = () => new Date().toISOString().split("T")[0];
 const fmt   = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day:"2-digit", month:"short" });
@@ -115,7 +114,6 @@ export default function JobsPage() {
   const [date,          setDate]          = useState(today());
   const [statusFilter,  setStatusFilter]  = useState("all");
   const [driverFilter,  setDriverFilter]  = useState("all");
-  const [showCreate,    setShowCreate]    = useState(false);
   const [noteJobId,     setNoteJobId]     = useState<number|null>(null);
   const [success,       setSuccess]       = useState("");
 
@@ -220,12 +218,6 @@ export default function JobsPage() {
             </table>
           </div>
         </div>
-      )}
-
-      {showCreate && (
-        <CreateJobPanel drivers={drivers} templates={templates} date={date}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { load(); setSuccess("Job created ✓"); setTimeout(() => setSuccess(""), 3000); }} />
       )}
 
       {noteJobId && (

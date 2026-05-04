@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
 import { driversApi } from "../../api/drivers";
 import type { PlannedJob, Driver, JobTemplate } from "../../types";
-import { CreateJobPanel } from "../jobs/CreateJobPanel";
 import { Badge } from "../../components/Badge";
 
 const today = () => new Date().toISOString().split("T")[0];
@@ -294,13 +294,12 @@ function PlannerJobEditor({
 
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [date,    setDate]    = useState(today());
   const [jobs,    setJobs]    = useState<PlannedJob[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [tpls,    setTpls]    = useState<JobTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [createFor,  setCreateFor]  = useState<number|undefined>();
   const [editingJob, setEditingJob] = useState<PlannedJob | null>(null);
   const [refreshed,  setRefreshed]  = useState(new Date());
 
@@ -344,7 +343,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-3">
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-auto text-sm"/>
           <button onClick={load} className="btn btn-outline text-sm">↻ Refresh</button>
-          <button onClick={()=>{ setCreateFor(undefined); setShowCreate(true); }} className="btn btn-primary text-sm">+ Create Job</button>
+          <button onClick={() => navigate("/app/jobs/create")} className="btn btn-primary text-sm">+ Create Job</button>
         </div>
       </div>
 
@@ -361,7 +360,7 @@ export default function DashboardPage() {
         <div className="overflow-x-auto">
           <div className="flex gap-4 pb-2" style={{ minWidth:"max-content" }}>
             {drivers.map(d => (
-              <DriverCard key={d.id} driver={d} jobs={byDriver[d.id]??[]} onAdd={()=>{ setCreateFor(d.id); setShowCreate(true); }} onEdit={setEditingJob}/>
+              <DriverCard key={d.id} driver={d} jobs={byDriver[d.id]??[]} onAdd={() => navigate("/app/jobs/create")} onEdit={setEditingJob}/>
             ))}
             {unassigned.length > 0 && (
               <div className="card border-l-4 border-red-500 p-4 min-w-72 flex-shrink-0">
@@ -407,17 +406,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-
-      {showCreate && (
-        <CreateJobPanel
-          drivers={drivers}
-          templates={tpls}
-          date={date}
-          initialDriverId={createFor}
-          onClose={() => setShowCreate(false)}
-          onCreated={load}
-        />
-      )}
 
       {editingJob && (
         <PlannerJobEditor

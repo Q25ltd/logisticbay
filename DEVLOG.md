@@ -26,7 +26,7 @@ LogisticBay is a modular logistics operating system for transport companies.
 - Web:    ~/timesheet-app/web
 
 ## Deploy Commands
-- API:    cd ~/timesheet-app/api && railway up
+- API:     ~/timesheet-app/api && railway up
 - Web:    cd ~/timesheet-app/web && vercel --prod
 - Mobile: cd ~/timesheet-app/mobile && npx expo start
 
@@ -75,7 +75,7 @@ LogisticBay is a modular logistics operating system for transport companies.
 ✅ End Shift modal: last vehicle odometer/fuel/AdBlue (skip if spare driver)
 ✅ EndShift screen: shows calculated totals, no entry fields
 ✅ Spare driver: can end shift with no truck or jobs
-✅ Holiday screen: allowance, request, status
+✅ Holiday screen: allowcdance, request, status
 ✅ Resume shift → goes to Jobs (not StartShift)
 ✅ AppFooter "LogisticBay · Q25 Ltd" on main screens
 ✅ Discard button bigger and easier to tap
