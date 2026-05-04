@@ -356,13 +356,91 @@ function CoordsHelp() {
         <span>How to find entrance coordinates in Google Maps</span>
       </button>
       {open && (
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg space-y-1.5 leading-relaxed text-blue-900">
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg space-y-3 leading-relaxed text-blue-900">
           <p><strong>1.</strong> Open <span className="font-mono">maps.google.com</span> and search for the site.</p>
           <p><strong>2.</strong> Navigate to the <strong>entrance gate or loading bay</strong> — not the building centre.</p>
-          <p><strong>3.</strong> Right-click on the exact entrance point.</p>
-          <p><strong>4.</strong> Click the coordinates shown at the top of the menu (e.g. <span className="font-mono">51.5074, -0.1278</span>).</p>
-          <p><strong>5.</strong> They are now copied — paste the first number into Latitude, the second into Longitude.</p>
-          <p className="text-blue-700 pt-1">⚠ Always pin the <strong>entrance</strong>, not the postcode centre — drivers rely on this to navigate to the right gate.</p>
+          <p><strong>3.</strong> Right-click on the exact entrance point — a menu appears.</p>
+          <p><strong>4.</strong> Click the coordinates at the <strong>top of the menu</strong> — they copy automatically.</p>
+          <p><strong>5.</strong> Paste the first number into Latitude, the second into Longitude.</p>
+
+          {/* SVG illustration of the Google Maps right-click menu */}
+          <div className="rounded-xl overflow-hidden border border-blue-200 bg-white mt-2">
+            <svg viewBox="0 0 340 210" xmlns="http://www.w3.org/2000/svg" className="w-full">
+              {/* Map background */}
+              <rect width="340" height="210" fill="#e8e0d5"/>
+              {/* Roads */}
+              <rect x="0" y="88" width="340" height="14" fill="#fff" opacity="0.7"/>
+              <rect x="140" y="0" width="12" height="210" fill="#fff" opacity="0.7"/>
+              <rect x="0" y="150" width="340" height="8" fill="#fff" opacity="0.5"/>
+              <rect x="80" y="0" width="6" height="210" fill="#fff" opacity="0.4"/>
+              <rect x="230" y="0" width="6" height="210" fill="#fff" opacity="0.4"/>
+              {/* Buildings */}
+              <rect x="20" y="30" width="50" height="48" rx="2" fill="#d4c9b8"/>
+              <rect x="80" y="20" width="48" height="60" rx="2" fill="#c8bfb0"/>
+              <rect x="162" y="20" width="55" height="58" rx="2" fill="#d4c9b8"/>
+              <rect x="228" y="30" width="40" height="45" rx="2" fill="#c8bfb0"/>
+              <rect x="280" y="20" width="48" height="60" rx="2" fill="#d4c9b8"/>
+              <rect x="20" y="112" width="42" height="52" rx="2" fill="#c8bfb0"/>
+              <rect x="74" y="108" width="54" height="52" rx="2" fill="#d4c9b8"/>
+              <rect x="162" y="112" width="60" height="52" rx="2" fill="#c8bfb0"/>
+              <rect x="234" y="108" width="88" height="52" rx="2" fill="#d4c9b8"/>
+              <rect x="20" y="172" width="100" height="30" rx="2" fill="#c8bfb0"/>
+              <rect x="162" y="172" width="70" height="30" rx="2" fill="#d4c9b8"/>
+              <rect x="244" y="172" width="78" height="30" rx="2" fill="#c8bfb0"/>
+
+              {/* Pin at entrance */}
+              <circle cx="146" cy="93" r="7" fill="#EA4335"/>
+              <path d="M146 100 L143 108 L146 106 L149 108 Z" fill="#EA4335"/>
+
+              {/* Cursor / right-click indicator */}
+              <polygon points="146,93 156,100 152,101 154,107 151,108 149,102 146,105" fill="#333" opacity="0.85"/>
+
+              {/* Context menu */}
+              <rect x="152" y="60" width="168" height="142" rx="4" fill="white"
+                filter="url(#shadow)" stroke="#dadce0" strokeWidth="0.5"/>
+              <defs>
+                <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#0003"/>
+                </filter>
+              </defs>
+
+              {/* Coords row — highlighted, clickable */}
+              <rect x="152" y="60" width="168" height="30" rx="4" fill="#e8f0fe"/>
+              <rect x="152" y="76" width="168" height="14" fill="#e8f0fe"/>
+              <text x="162" y="79" fontSize="9.5" fontFamily="monospace" fill="#1a73e8" fontWeight="bold">51.5074, -0.1278</text>
+              <text x="162" y="89" fontSize="7.5" fontFamily="sans-serif" fill="#5f6368">Click to copy</text>
+
+              {/* Divider */}
+              <line x1="152" y1="90" x2="320" y2="90" stroke="#e0e0e0" strokeWidth="0.5"/>
+
+              {/* Menu items */}
+              {[
+                { y: 105, label: "Directions to here" },
+                { y: 120, label: "Directions from here" },
+                { y: 135, label: "What's here?" },
+                { y: 150, label: "Add a missing place" },
+                { y: 165, label: "Save" },
+                { y: 180, label: "Share" },
+              ].map(item => (
+                <text key={item.y} x="162" y={item.y} fontSize="9" fontFamily="sans-serif" fill="#3c4043">
+                  {item.label}
+                </text>
+              ))}
+
+              {/* Arrow pointing to coords row */}
+              <line x1="108" y1="75" x2="148" y2="75" stroke="#1a73e8" strokeWidth="1.5" markerEnd="url(#arr)"/>
+              <defs>
+                <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 Z" fill="#1a73e8"/>
+                </marker>
+              </defs>
+              <text x="10" y="68" fontSize="8" fontFamily="sans-serif" fill="#1a73e8" fontWeight="bold">Click</text>
+              <text x="10" y="78" fontSize="8" fontFamily="sans-serif" fill="#1a73e8" fontWeight="bold">coords</text>
+              <text x="10" y="88" fontSize="8" fontFamily="sans-serif" fill="#1a73e8" fontWeight="bold">here</text>
+            </svg>
+          </div>
+
+          <p className="text-blue-700">⚠ Always pin the <strong>entrance gate</strong>, not the postcode centre — drivers use this to navigate to the right gate.</p>
         </div>
       )}
     </div>
