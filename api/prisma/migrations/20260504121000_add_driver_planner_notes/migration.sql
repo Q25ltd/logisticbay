@@ -1,0 +1,2 @@
+ALTER TABLE "DriverProfile"
+ADD COLUMN IF NOT EXISTS "plannerNotes" TEXT NOT NULL DEFAULT '';
