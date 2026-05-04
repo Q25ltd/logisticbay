@@ -229,6 +229,7 @@ export default function CreateJobPage() {
   const [contactName,    setContactName]    = useState("");
   const [contactPhone,   setContactPhone]   = useState("");
   const [contactEmail,   setContactEmail]   = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [billingNotes,   setBillingNotes]   = useState("");
   const [custInstructions, setCustInstructions] = useState("");
   const [custRefRequired,  setCustRefRequired]  = useState(false);
@@ -435,6 +436,12 @@ export default function CreateJobPage() {
 
             {showCustOpts && (
               <div className="space-y-4 pt-1 border-t border-border">
+
+                <div>
+                  <FieldLabel>Customer Address</FieldLabel>
+                  <input type="text" className="input" placeholder="123 High Street, Manchester, M1 1AA"
+                    value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
+                </div>
 
                 <div>
                   <FieldLabel>Contact Email</FieldLabel>
