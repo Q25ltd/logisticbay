@@ -137,9 +137,31 @@ function stopComplete(s: StopState) {
 // ── Empty shells for sections not yet built (04-06) ───────────────────────────
 
 const SHELLS = [
-  { id: "load",    icon: "⚖️", title: "Load Details",          subtitle: "Material type, quantity, weight and hazard class" },
   { id: "vehicle", icon: "🚛", title: "Vehicle Requirements",  subtitle: "Vehicle class, trailer type and special equipment" },
   { id: "notes",   icon: "📝", title: "Notes & Instructions",  subtitle: "Planner notes, driver instructions and internal comments" },
+];
+
+const LOAD_UNITS: [string, string][] = [
+  ["tonnes",  "Tonnes"],
+  ["kg",      "Kg"],
+  ["pallets", "Pallets"],
+  ["bags",    "Bags"],
+  ["loads",   "Loads"],
+  ["litres",  "Litres"],
+  ["m3",      "Cubic metres"],
+  ["items",   "Items"],
+  ["other",   "Other"],
+];
+
+const HANDLING_METHODS: [string, string][] = [
+  ["forklift",          "Forklift"],
+  ["handball",          "Handball"],
+  ["crane",             "Crane"],
+  ["pump",              "Pump"],
+  ["tip",               "Tip"],
+  ["customer_loads",    "Customer loads / unloads"],
+  ["driver_loads",      "Driver loads / unloads"],
+  ["other",             "Other"],
 ];
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
@@ -938,19 +960,54 @@ export default function CreateJobPage() {
   function addStop() { setStops(prev => [...prev, makeStop()]); }
   function removeStop(id: string) { setStops(prev => prev.filter(s => s.id !== id)); }
 
+  // ── Section 04 — Load Details ────────────────────────────────────────────
+  const [showLoadOpts,     setShowLoadOpts]     = useState(false);
+  const [materialDesc,     setMaterialDesc]     = useState("");
+  const [totalQty,         setTotalQty]         = useState("");
+  const [qtyUnit,          setQtyUnit]          = useState("");
+  const [qtyUnitOther,     setQtyUnitOther]     = useState("");
+  const [totalWeight,      setTotalWeight]      = useState("");
+  const [podRequired,      setPodRequired]      = useState(true);
+  // Optional — physical
+  const [volume,           setVolume]           = useState("");
+  const [dimensions,       setDimensions]       = useState("");
+  // Optional — conditions
+  const [hazardous,        setHazardous]        = useState(false);
+  const [adrClass,         setAdrClass]         = useState("");
+  const [tempControlled,   setTempControlled]   = useState(false);
+  const [tempRange,        setTempRange]        = useState("");
+  const [fragile,          setFragile]          = useState(false);
+  const [stackable,        setStackable]        = useState(false);
+  // Optional — equipment
+  const [forkliftReq,      setForkliftReq]      = useState(false);
+  const [tailLiftReq,      setTailLiftReq]      = useState(false);
+  const [craneReq,         setCraneReq]         = useState(false);
+  // Optional — handling methods
+  const [loadingMethod,    setLoadingMethod]    = useState("");
+  const [unloadingMethod,  setUnloadingMethod]  = useState("");
+  // Optional — extra
+  const [loadNotes,        setLoadNotes]        = useState("");
+  const [photosRequired,   setPhotosRequired]   = useState(false);
+  const [weighbridgeReq,   setWeighbridgeReq]   = useState(false);
+
   // ── Quality / missing fields ─────────────────────────────────────────────
   const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
   const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
+  const loadComplete     = !!(materialDesc.trim() && totalQty.trim() && qtyUnit && totalWeight.trim());
 
   const MISSING = [
-    !customerName.trim()  && "Customer",
-    !plannedDate          && "Planned date",
-    !serviceType          && "Service type",
-    !jobType              && "Job type",
-    !contactName.trim()   && "Contact name",
-    !contactPhone.trim()  && "Contact phone",
-    !stopsComplete        && "Stop addresses / timing",
+    !customerName.trim()   && "Customer",
+    !plannedDate           && "Planned date",
+    !serviceType           && "Service type",
+    !jobType               && "Job type",
+    !contactName.trim()    && "Contact name",
+    !contactPhone.trim()   && "Contact phone",
+    !stopsComplete         && "Stop addresses / timing",
+    !materialDesc.trim()   && "Goods description",
+    !totalQty.trim()       && "Total quantity",
+    !qtyUnit               && "Unit",
+    !totalWeight.trim()    && "Total weight",
   ].filter(Boolean) as string[];
 
   function handleSaveDraft() { setSaving("draft"); setTimeout(() => setSaving(null), 1200); }
@@ -1174,10 +1231,166 @@ export default function CreateJobPage() {
           <SectionFooter complete={stopsComplete} label="All stops" />
         </div>
 
-        {/* ── Sections 04-06 — empty shells ──────────────────────────────────── */}
+        {/* ── Section 04 — Load Details ───────────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active />
+          <div className="px-5 pt-5 pb-4 space-y-4">
+
+            {/* Goods description */}
+            <div>
+              <FieldLabel required>Goods / Material Description</FieldLabel>
+              <input type="text" className="input" placeholder="e.g. Construction aggregate, frozen poultry, retail fixtures"
+                value={materialDesc} onChange={e => setMaterialDesc(e.target.value)} />
+            </div>
+
+            {/* Qty + unit */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel required>Total Quantity</FieldLabel>
+                <input type="text" className="input" placeholder="e.g. 24"
+                  value={totalQty} onChange={e => setTotalQty(e.target.value)} />
+              </div>
+              <div>
+                <FieldLabel required>Unit</FieldLabel>
+                <select className="input" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)}>
+                  <option value="">— Select unit —</option>
+                  {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            </div>
+            {qtyUnit === "other" && (
+              <div>
+                <FieldLabel required>Unit Description</FieldLabel>
+                <input type="text" className="input" placeholder="e.g. Rolls, coils, drums…"
+                  value={qtyUnitOther} onChange={e => setQtyUnitOther(e.target.value)} />
+              </div>
+            )}
+
+            {/* Total weight */}
+            <div className="max-w-xs">
+              <FieldLabel required>Total Weight / Estimated Weight</FieldLabel>
+              <div className="relative">
+                <input type="text" className="input pr-12" placeholder="e.g. 24.0"
+                  value={totalWeight} onChange={e => setTotalWeight(e.target.value)} />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">tonnes</span>
+              </div>
+            </div>
+
+            {/* POD required */}
+            <div>
+              <Toggle value={podRequired} onChange={setPodRequired} label="Proof of delivery required" />
+              <p className="text-xs text-muted mt-1.5">Driver must confirm delivery and capture POD before completing the job</p>
+            </div>
+
+            <OptionalToggle open={showLoadOpts} onToggle={() => setShowLoadOpts(o => !o)} label="load details" />
+
+            {showLoadOpts && (
+              <div className="space-y-5 pt-1 border-t border-border">
+
+                {/* Physical */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Physical</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Volume</FieldLabel>
+                      <div className="relative">
+                        <input type="text" className="input pr-8" placeholder="e.g. 36"
+                          value={volume} onChange={e => setVolume(e.target.value)} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m³</span>
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel>Dimensions (L × W × H)</FieldLabel>
+                      <input type="text" className="input" placeholder="e.g. 2.4 × 1.2 × 1.8 m"
+                        value={dimensions} onChange={e => setDimensions(e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conditions */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Conditions</div>
+                  <div className="space-y-3">
+                    <div>
+                      <Toggle value={hazardous} onChange={setHazardous} label="Hazardous goods (ADR)" />
+                      {hazardous && (
+                        <div className="mt-2 max-w-xs">
+                          <FieldLabel>ADR Class</FieldLabel>
+                          <input type="text" className="input" placeholder="e.g. Class 3 — Flammable liquids"
+                            value={adrClass} onChange={e => setAdrClass(e.target.value)} />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <Toggle value={tempControlled} onChange={setTempControlled} label="Temperature controlled" />
+                      {tempControlled && (
+                        <div className="mt-2 max-w-xs">
+                          <FieldLabel>Temperature Range</FieldLabel>
+                          <input type="text" className="input" placeholder="e.g. 2°C – 8°C"
+                            value={tempRange} onChange={e => setTempRange(e.target.value)} />
+                        </div>
+                      )}
+                    </div>
+                    <Toggle value={fragile}   onChange={setFragile}   label="Fragile" />
+                    <Toggle value={stackable} onChange={setStackable} label="Stackable" />
+                  </div>
+                </div>
+
+                {/* Handling / equipment */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Handling Equipment Required</div>
+                  <div className="space-y-3">
+                    <Toggle value={forkliftReq} onChange={setForkliftReq} label="Forklift required" />
+                    <Toggle value={tailLiftReq} onChange={setTailLiftReq} label="Tail lift required" />
+                    <Toggle value={craneReq}    onChange={setCraneReq}    label="Crane required" />
+                  </div>
+                </div>
+
+                {/* Handling methods */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Handling Methods</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Loading Method</FieldLabel>
+                      <select className="input" value={loadingMethod} onChange={e => setLoadingMethod(e.target.value)}>
+                        <option value="">— Select —</option>
+                        {HANDLING_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <FieldLabel>Unloading Method</FieldLabel>
+                      <select className="input" value={unloadingMethod} onChange={e => setUnloadingMethod(e.target.value)}>
+                        <option value="">— Select —</option>
+                        {HANDLING_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Extra */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Extra</div>
+                  <div className="space-y-3">
+                    <div>
+                      <FieldLabel>Load Notes</FieldLabel>
+                      <textarea className="input min-h-16 resize-none" placeholder="Any additional load information for the driver or planner…"
+                        value={loadNotes} onChange={e => setLoadNotes(e.target.value)} />
+                    </div>
+                    <Toggle value={photosRequired}  onChange={setPhotosRequired}  label="Photos / documents required" />
+                    <Toggle value={weighbridgeReq}  onChange={setWeighbridgeReq}  label="Weighbridge ticket required" />
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
+          <SectionFooter complete={loadComplete} label="Load details" />
+        </div>
+
+        {/* ── Sections 05-06 — empty shells ──────────────────────────────────── */}
         {SHELLS.map((s, i) => (
           <div key={s.id} className="card overflow-hidden">
-            <SectionHeader num={i + 4} icon={s.icon} title={s.title} subtitle={s.subtitle} />
+            <SectionHeader num={i + 5} icon={s.icon} title={s.title} subtitle={s.subtitle} />
             <div className="px-5 py-8 flex items-center justify-center">
               <div className="text-center">
                 <div className="text-2xl mb-2 opacity-10">{s.icon}</div>
