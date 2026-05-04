@@ -449,25 +449,25 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
           <div>
             <FieldLabel required>Company / Site Name</FieldLabel>
-            <input type="text" className="input" placeholder="Tesco RDC Luton"
+            <input type="text" className="input" placeholder="Acme Distribution Centre"
               value={stop.siteName} onChange={set("siteName")} />
           </div>
 
           <div>
             <FieldLabel required>Address Line 1 / Street</FieldLabel>
-            <input type="text" className="input" placeholder="15 Arden Place"
+            <input type="text" className="input" placeholder="1 Example Street"
               value={stop.street} onChange={set("street")} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel required>Town / City</FieldLabel>
-              <input type="text" className="input" placeholder="Luton"
+              <input type="text" className="input" placeholder="Sampletown"
                 value={stop.town} onChange={set("town")} />
             </div>
             <div>
               <FieldLabel required>Postcode</FieldLabel>
-              <input type="text" className="input placeholder:uppercase" placeholder="LU2 7YE"
+              <input type="text" className="input placeholder:uppercase" placeholder="EX1 1AA"
                 value={stop.postcode} onChange={set("postcode")} />
             </div>
           </div>
@@ -553,7 +553,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
                 </div>
                 <div>
                   <FieldLabel>County / Region</FieldLabel>
-                  <input type="text" className="input" placeholder="Bedfordshire"
+                  <input type="text" className="input" placeholder="Exampleshire"
                     value={stop.countyRegion} onChange={set("countyRegion")} />
                 </div>
               </div>
@@ -848,7 +848,7 @@ export default function CreateJobPage() {
               <div className="space-y-4 pt-1 border-t border-border">
                 <div>
                   <FieldLabel>Job Title / Short Description</FieldLabel>
-                  <input type="text" className="input" placeholder="e.g. Overnight trunking — Manchester to London"
+                  <input type="text" className="input" placeholder="e.g. Overnight trunking — North to South depot"
                     value={jobTitle} onChange={e => setJobTitle(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -911,7 +911,7 @@ export default function CreateJobPage() {
               <div className="space-y-4 pt-1 border-t border-border">
                 <div>
                   <FieldLabel>Customer Address</FieldLabel>
-                  <input type="text" className="input" placeholder="123 High Street, Manchester, M1 1AA"
+                  <input type="text" className="input" placeholder="1 Example Road, Sampletown, EX1 1AA"
                     value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
                 </div>
                 <div>
