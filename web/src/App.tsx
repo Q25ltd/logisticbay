@@ -7,6 +7,7 @@ import AppShell         from "./modules/planner/AppShell";
 import DashboardPage    from "./modules/planner/DashboardPage";
 import JobsPage         from "./modules/jobs/JobsPage";
 import DriversPage      from "./modules/drivers/DriversPage";
+import HolidaysPage     from "./modules/holidays/HolidaysPage";
 import TemplatesPage    from "./modules/templates/TemplatesPage";
 import LocationsPage    from "./modules/locations/LocationsPage";
 import ShiftsPage       from "./modules/shifts/ShiftsPage";
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="dashboard"    element={<DashboardPage />} />
             <Route path="jobs"         element={<JobsPage />} />
             <Route path="drivers"      element={<DriversPage />} />
+            <Route path="holidays"     element={<HolidaysPage />} />
             <Route path="templates"    element={<TemplatesPage />} />
             <Route path="locations"    element={<LocationsPage />} />
             <Route path="shifts"       element={<ShiftsPage />} />

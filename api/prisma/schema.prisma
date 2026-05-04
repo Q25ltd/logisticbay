@@ -33,8 +33,18 @@ model Company {
   syncEventLogs     SyncEventLog[]
   jobStops          JobStop[]
   loadDetails       LoadDetails[]
-  jobAudits         JobAudit[]
-  maxHolidaysPerDay Int                        @default(2)
+  jobAudits                  JobAudit[]
+  maxHolidaysPerDay          Int      @default(2)
+  holidayYearResetMonth      Int      @default(1)
+  holidayYearResetDay        Int      @default(1)
+  holidayWarnDaysBefore      Int      @default(30)
+  holidayCarryOverAllowed    Boolean  @default(false)
+  holidayCarryOverMaxDays    Int      @default(0)
+  baseHolidayAllowanceDays   Int      @default(28)
+  holidaySeniorityEnabled    Boolean  @default(true)
+  holidaySeniorityYears      Int      @default(5)
+  holidaySeniorityExtraDays  Int      @default(1)
+  holidaySeniorityMaxExtraDays Int    @default(5)
 }
 
 model Customer {
@@ -95,13 +105,35 @@ model DriverProfile {
   displayName      String
   employeeNumber   String?
   phoneNumber      String?
-  contactEmail     String?
-  contactPhone     String?
-  minHoursPerDay   Float    @default(8)
-  holidayAllowance Int      @default(28)
-  holidayUsed      Int      @default(0)
-  defaultTruckReg  String   @default("")
-  status           String   @default("active")
+  employmentStartDate DateTime?
+  contactEmail          String?
+  contactPhone          String?
+  driverType            String   @default("permanent")
+  licenceClass          String   @default("")
+  canUseTrailer         Boolean  @default(false)
+  trailerTypesAllowed   Json?
+  adrAllowed            Boolean  @default(false)
+  hiabAllowed           Boolean  @default(false)
+  moffettAllowed        Boolean  @default(false)
+  manualHandlingAllowed Boolean  @default(false)
+  preferredStartTime    String   @default("")
+  earliestStartTime     String   @default("")
+  latestFinishTime      String   @default("")
+  preferredShiftHours   Float?
+  normalWorkingDays     Json?
+  weekendAvailable      Boolean  @default(false)
+  nightWorkAllowed      Boolean  @default(false)
+  nightsOutAllowed      Boolean  @default(false)
+  overtimeAllowed       Boolean  @default(false)
+  baseLocation          String   @default("")
+  operatingArea         String   @default("")
+  avoidAreas            String   @default("")
+  plannerNotes          String   @default("")
+  minHoursPerDay        Float    @default(8)
+  holidayAllowance      Int      @default(28)
+  holidayUsed           Int      @default(0)
+  defaultTruckReg       String   @default("")
+  status                String   @default("active")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

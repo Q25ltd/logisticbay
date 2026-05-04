@@ -34,26 +34,72 @@ export interface RegisterCompanyBody {
 }
 
 export interface PatchCompanyBody {
-  name?:                string;
-  reportEmail?:         string;
-  reportEmailEnabled?:  boolean;
+  name?:                         string;
+  reportEmail?:                  string;
+  reportEmailEnabled?:           boolean;
+  holidayYearResetMonth?:        number;
+  holidayYearResetDay?:          number;
+  holidayWarnDaysBefore?:        number;
+  maxHolidaysPerDay?:            number;
+  holidayCarryOverAllowed?:      boolean;
+  holidayCarryOverMaxDays?:      number;
+  baseHolidayAllowanceDays?:     number;
+  holidaySeniorityEnabled?:      boolean;
+  holidaySeniorityYears?:        number;
+  holidaySeniorityExtraDays?:    number;
+  holidaySeniorityMaxExtraDays?: number;
 }
 
 // ── Drivers ───────────────────────────────────────────────────────────────────
 
-export interface CreateDriverBody {
-  displayName:     string;
-  email?:          string;
-  employeeNumber?: string;
-  phoneNumber?:    string;
-  defaultTruckReg?: string;
+export interface DriverHolidayInput {
+  startDate: string;
+  endDate: string;
+  reason?: string;
+  note?: string;
+  status?: string;
 }
 
-export interface PatchDriverBody {
-  displayName?:     string;
+export interface DriverPlanningFields {
+  employmentStartDate?: string | null;
+  driverType?: string;
+  licenceClass?: string;
+  canUseTrailer?: boolean;
+  trailerTypesAllowed?: string[];
+  adrAllowed?: boolean;
+  hiabAllowed?: boolean;
+  moffettAllowed?: boolean;
+  manualHandlingAllowed?: boolean;
+  preferredStartTime?: string;
+  earliestStartTime?: string;
+  latestFinishTime?: string;
+  preferredShiftHours?: number | string | null;
+  normalWorkingDays?: string[];
+  weekendAvailable?: boolean;
+  nightWorkAllowed?: boolean;
+  nightsOutAllowed?: boolean;
+  overtimeAllowed?: boolean;
+  baseLocation?: string;
+  operatingArea?: string;
+  avoidAreas?: string;
+  plannerNotes?: string;
+  holidayAllowance?: number | string;
+  holidayRequests?: DriverHolidayInput[];
+}
+
+export interface CreateDriverBody extends DriverPlanningFields {
+  displayName:      string;
+  email?:           string;
   employeeNumber?:  string;
   phoneNumber?:     string;
   defaultTruckReg?: string;
+}
+
+export interface PatchDriverBody extends DriverPlanningFields {
+  displayName?:      string;
+  employeeNumber?:   string;
+  phoneNumber?:      string;
+  defaultTruckReg?:  string;
 }
 
 export interface PatchDriverStatusBody {

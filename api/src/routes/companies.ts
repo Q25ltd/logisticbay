@@ -20,6 +20,70 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function optionalDate(value: unknown): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value !== "string") return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function driverProfileData(body: CreateDriverBody | PatchDriverBody) {
+  return {
+    ...(body.displayName !== undefined ? { displayName: optionalString(body.displayName) ?? "" } : {}),
+    ...(body.employmentStartDate !== undefined ? { employmentStartDate: optionalDate(body.employmentStartDate) } : {}),
+    ...(body.employeeNumber !== undefined ? { employeeNumber: optionalString(body.employeeNumber) || null } : {}),
+    ...(body.phoneNumber !== undefined ? { phoneNumber: optionalString(body.phoneNumber) || null, contactPhone: optionalString(body.phoneNumber) || null } : {}),
+    ...(body.defaultTruckReg !== undefined ? { defaultTruckReg: optionalString(body.defaultTruckReg) ?? "" } : {}),
+    ...(body.driverType !== undefined ? { driverType: optionalString(body.driverType) || "permanent" } : {}),
+    ...(body.licenceClass !== undefined ? { licenceClass: optionalString(body.licenceClass) ?? "" } : {}),
+    ...(body.canUseTrailer !== undefined ? { canUseTrailer: Boolean(body.canUseTrailer) } : {}),
+    ...(body.trailerTypesAllowed !== undefined ? { trailerTypesAllowed: Array.isArray(body.trailerTypesAllowed) ? body.trailerTypesAllowed : [] } : {}),
+    ...(body.adrAllowed !== undefined ? { adrAllowed: Boolean(body.adrAllowed) } : {}),
+    ...(body.hiabAllowed !== undefined ? { hiabAllowed: Boolean(body.hiabAllowed) } : {}),
+    ...(body.moffettAllowed !== undefined ? { moffettAllowed: Boolean(body.moffettAllowed) } : {}),
+    ...(body.manualHandlingAllowed !== undefined ? { manualHandlingAllowed: Boolean(body.manualHandlingAllowed) } : {}),
+    ...(body.preferredStartTime !== undefined ? { preferredStartTime: optionalString(body.preferredStartTime) ?? "" } : {}),
+    ...(body.earliestStartTime !== undefined ? { earliestStartTime: optionalString(body.earliestStartTime) ?? "" } : {}),
+    ...(body.latestFinishTime !== undefined ? { latestFinishTime: optionalString(body.latestFinishTime) ?? "" } : {}),
+    ...(body.preferredShiftHours !== undefined ? { preferredShiftHours: optionalNumber(body.preferredShiftHours) ?? null } : {}),
+    ...(body.normalWorkingDays !== undefined ? { normalWorkingDays: Array.isArray(body.normalWorkingDays) ? body.normalWorkingDays : [] } : {}),
+    ...(body.weekendAvailable !== undefined ? { weekendAvailable: Boolean(body.weekendAvailable) } : {}),
+    ...(body.nightWorkAllowed !== undefined ? { nightWorkAllowed: Boolean(body.nightWorkAllowed) } : {}),
+    ...(body.nightsOutAllowed !== undefined ? { nightsOutAllowed: Boolean(body.nightsOutAllowed) } : {}),
+    ...(body.overtimeAllowed !== undefined ? { overtimeAllowed: Boolean(body.overtimeAllowed) } : {}),
+    ...(body.baseLocation !== undefined ? { baseLocation: optionalString(body.baseLocation) ?? "" } : {}),
+    ...(body.operatingArea !== undefined ? { operatingArea: optionalString(body.operatingArea) ?? "" } : {}),
+    ...(body.avoidAreas !== undefined ? { avoidAreas: optionalString(body.avoidAreas) ?? "" } : {}),
+    ...(body.plannerNotes !== undefined ? { plannerNotes: optionalString(body.plannerNotes) ?? "" } : {}),
+    ...(body.holidayAllowance !== undefined ? { holidayAllowance: Math.max(0, Math.round(optionalNumber(body.holidayAllowance) ?? 28)) } : {}),
+    ...(
+      body.driverType !== undefined && optionalString(body.driverType) !== "permanent"
+        ? { holidayAllowance: 0, holidayUsed: 0 }
+        : {}
+    ),
+  };
+}
+
+function holidayDates(input: { startDate: string; endDate: string }) {
+  const start = new Date(input.startDate);
+  const end = new Date(input.endDate);
+  start.setHours(12, 0, 0, 0);
+  end.setHours(12, 0, 0, 0);
+  return { start, end };
+}
+
 function generateToken(payload: object): string {
   return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "7d" });
 }
@@ -103,6 +167,17 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         ...(body.name               !== undefined ? { name: body.name }                           : {}),
         ...(body.reportEmail        !== undefined ? { reportEmail: body.reportEmail }              : {}),
         ...(body.reportEmailEnabled !== undefined ? { reportEmailEnabled: body.reportEmailEnabled } : {}),
+        ...(body.holidayYearResetMonth !== undefined ? { holidayYearResetMonth: Math.min(12, Math.max(1, Math.round(optionalNumber(body.holidayYearResetMonth) ?? 1))) } : {}),
+        ...(body.holidayYearResetDay !== undefined ? { holidayYearResetDay: Math.min(31, Math.max(1, Math.round(optionalNumber(body.holidayYearResetDay) ?? 1))) } : {}),
+        ...(body.holidayWarnDaysBefore !== undefined ? { holidayWarnDaysBefore: Math.max(0, Math.round(optionalNumber(body.holidayWarnDaysBefore) ?? 30)) } : {}),
+        ...(body.maxHolidaysPerDay !== undefined ? { maxHolidaysPerDay: Math.max(0, Math.round(optionalNumber(body.maxHolidaysPerDay) ?? 2)) } : {}),
+        ...(body.holidayCarryOverAllowed !== undefined ? { holidayCarryOverAllowed: Boolean(body.holidayCarryOverAllowed) } : {}),
+        ...(body.holidayCarryOverMaxDays !== undefined ? { holidayCarryOverMaxDays: Math.max(0, Math.round(optionalNumber(body.holidayCarryOverMaxDays) ?? 0)) } : {}),
+        ...(body.baseHolidayAllowanceDays !== undefined ? { baseHolidayAllowanceDays: Math.max(0, Math.round(optionalNumber(body.baseHolidayAllowanceDays) ?? 28)) } : {}),
+        ...(body.holidaySeniorityEnabled !== undefined ? { holidaySeniorityEnabled: Boolean(body.holidaySeniorityEnabled) } : {}),
+        ...(body.holidaySeniorityYears !== undefined ? { holidaySeniorityYears: Math.max(0, Math.round(optionalNumber(body.holidaySeniorityYears) ?? 5)) } : {}),
+        ...(body.holidaySeniorityExtraDays !== undefined ? { holidaySeniorityExtraDays: Math.max(0, Math.round(optionalNumber(body.holidaySeniorityExtraDays) ?? 1)) } : {}),
+        ...(body.holidaySeniorityMaxExtraDays !== undefined ? { holidaySeniorityMaxExtraDays: Math.max(0, Math.round(optionalNumber(body.holidaySeniorityMaxExtraDays) ?? 5)) } : {}),
       },
     });
     return reply.send(updated);
@@ -123,7 +198,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
     const drivers = await prisma.driverProfile.findMany({
       where: { companyId, ...(q.status ? { status: q.status } : {}) },
-      include: { user: { select: { id: true, email: true, name: true, status: true } } },
+      include: { user: { select: { id: true, email: true, name: true, status: true } }, holidayRequests: { orderBy: { startDate: "asc" } } },
       orderBy: { displayName: "asc" },
     });
 
@@ -180,13 +255,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         data: {
           companyId,
           userId,
-          displayName:     body.displayName.trim(),
-          employeeNumber:  body.employeeNumber  ?? null,
-          phoneNumber:     body.phoneNumber     ?? null,
-          contactEmail:    emailLower,
-          contactPhone:    body.phoneNumber     ?? null,
-          defaultTruckReg: body.defaultTruckReg ?? "",
-          status:          "active",
+          ...driverProfileData(body),
+          displayName: body.displayName.trim(),
+          contactEmail: emailLower,
+          status: "active",
         },
       });
 
@@ -206,11 +278,9 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       data: {
         companyId,
         userId,
-        displayName:     body.displayName.trim(),
-        employeeNumber:  body.employeeNumber  ?? null,
-        phoneNumber:     body.phoneNumber     ?? null,
-        defaultTruckReg: body.defaultTruckReg ?? "",
-        status:          "active",
+        ...driverProfileData(body),
+        displayName: body.displayName.trim(),
+        status: "active",
       },
     });
     return reply.status(201).send(driver);
@@ -225,14 +295,45 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
     if (!driver) return reply.status(404).send({ error: "Driver not found" });
 
-    const updated = await prisma.driverProfile.update({
-      where: { id },
-      data: {
-        displayName:     body.displayName     ?? driver.displayName,
-        employeeNumber:  body.employeeNumber  ?? driver.employeeNumber,
-        phoneNumber:     body.phoneNumber     ?? driver.phoneNumber,
-        defaultTruckReg: body.defaultTruckReg ?? driver.defaultTruckReg,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.driverProfile.update({
+        where: { id },
+        data: driverProfileData(body),
+      });
+
+      if (Array.isArray(body.holidayRequests)) {
+        await tx.holidayRequest.deleteMany({ where: { companyId, driverProfileId: id } });
+
+        for (const holiday of body.holidayRequests) {
+          if (!holiday.startDate || !holiday.endDate) continue;
+
+          const { start, end } = holidayDates(holiday);
+          if (start > end) continue;
+
+          const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1);
+
+          await tx.holidayRequest.create({
+            data: {
+              companyId,
+              driverProfileId: id,
+              startDate: start,
+              endDate: end,
+              totalDays,
+              reason: holiday.reason ?? "holiday",
+              note: holiday.note ?? "",
+              status: holiday.status ?? "approved",
+            },
+          });
+        }
+      }
+
+      return tx.driverProfile.findUnique({
+        where: { id: saved.id },
+        include: {
+          user: { select: { id: true, email: true, name: true, status: true } },
+          holidayRequests: { orderBy: { startDate: "asc" } },
+        },
+      });
     });
 
     return reply.send(updated);

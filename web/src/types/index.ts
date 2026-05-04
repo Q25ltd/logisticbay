@@ -15,10 +15,52 @@ export interface Customer {
   createdAt: string;
   updatedAt: string;
 }
+export interface HolidayRequest {
+  id: number;
+  driverProfileId: number;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  reason: string;
+  note?: string | null;
+  status: string;
+}
+
 export interface Driver {
-  id: number; companyId: number; userId: number | null;
-  displayName: string; employeeNumber: string | null;
-  phoneNumber: string | null; defaultTruckReg: string;
+  id: number;
+  companyId: number;
+  userId: number | null;
+  displayName: string;
+  employeeNumber: string | null;
+  phoneNumber: string | null;
+  employmentStartDate?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  driverType?: string;
+  licenceClass?: string;
+  canUseTrailer?: boolean;
+  trailerTypesAllowed?: string[];
+  adrAllowed?: boolean;
+  hiabAllowed?: boolean;
+  moffettAllowed?: boolean;
+  manualHandlingAllowed?: boolean;
+  preferredStartTime?: string;
+  earliestStartTime?: string;
+  latestFinishTime?: string;
+  preferredShiftHours?: number | null;
+  normalWorkingDays?: string[];
+  weekendAvailable?: boolean;
+  nightWorkAllowed?: boolean;
+  nightsOutAllowed?: boolean;
+  overtimeAllowed?: boolean;
+  baseLocation?: string;
+  operatingArea?: string;
+  avoidAreas?: string;
+  plannerNotes?: string;
+  holidayAllowance?: number;
+  holidayUsed?: number;
+  holidayRequests?: HolidayRequest[];
+  defaultTruckReg: string;
   status: "active" | "inactive";
   user?: { id: number; email: string; name: string } | null;
 }
@@ -65,6 +107,9 @@ export interface PlannedJob {
   plannedDate: string | null; pickupTextSnapshot: string; dropoffTextSnapshot: string;
   referenceNumber: string; materialType: string; quantityExpected: string;
   quantityUnit: string; plannerNotes: string;
+  assignedTruck?: string;
+  assignedTrailer?: string;
+  vehicleClass?: string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?: string[];
   priority?: "low" | "normal" | "high";
@@ -91,6 +136,20 @@ export interface JobTemplate {
   status: "active" | "archived";
 }
 export interface SavedLocation {
-  id: number; name: string; addressText: string; postcode: string; notes: string;
-  latitude?: number | null; longitude?: number | null;
+  id: number;
+  name: string;
+  addressText: string;
+  postcode: string;
+  notes: string;
+
+  siteName?: string;
+  unitName?: string;
+  street?: string;
+  town?: string;
+  contactName?: string;
+  contactPhone?: string;
+  instructions?: string;
+
+  latitude?: number | null;
+  longitude?: number | null;
 }

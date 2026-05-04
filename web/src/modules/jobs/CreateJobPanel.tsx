@@ -243,8 +243,24 @@ function LocationPicker({
 
   function applyLocation(loc: SavedLocation) {
     onChange({
-      locationTextSnapshot: loc.addressText,
+      locationTextSnapshot: loc.addressText || loc.name,
       savedLocationId:      loc.id,
+
+      // Company / site name
+      siteName:             loc.siteName || loc.name,
+
+      // Structured address
+      unitName:             loc.unitName || "",
+      street:               loc.street || loc.addressText || "",
+      town:                 loc.town || "",
+      postcode:             loc.postcode || "",
+
+      // Contact / access details
+      contactName:          loc.contactName || "",
+      contactPhone:         loc.contactPhone || "",
+      instructions:         loc.instructions || loc.notes || "",
+
+      // Coordinates
       lat:                  loc.latitude  != null ? String(loc.latitude)  : "",
       lng:                  loc.longitude != null ? String(loc.longitude) : "",
     });
@@ -259,7 +275,7 @@ function LocationPicker({
           className="input flex-1"
           value={value}
           onChange={e => onChange({ locationTextSnapshot: e.target.value, savedLocationId: null })}
-          placeholder="Site name, postcode, depot, yard..."
+          placeholder="Address / saved location"
         />
         <button
           type="button"

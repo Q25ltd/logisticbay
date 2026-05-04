@@ -17,6 +17,10 @@ function isAtRisk(job: PlannedJob) {
   return false;
 }
 function hasNote(job: PlannedJob) { return job.events?.some(e => e.eventType === "note_added" && e.note) ?? false; }
+function canPlanJob(job: PlannedJob) {
+  return !["completed", "cancelled"].includes(job.status);
+}
+
 function statusIcon(s: string) { return ({ pending:"⬜", accepted:"🔵", in_progress:"🟡", arrived_pickup:"🟣", completed:"✅", cancelled:"❌" }[s] ?? "⬜"); }
 
 function Stat({ value, label, colour }: { value: number|string; label: string; colour?: string }) {
@@ -28,7 +32,7 @@ function Stat({ value, label, colour }: { value: number|string; label: string; c
   );
 }
 
-function DriverCard({ driver, jobs, onAdd }: { driver: Driver; jobs: PlannedJob[]; onAdd: () => void }) {
+function DriverCard({ driver, jobs, onAdd, onEdit }: { driver: Driver; jobs: PlannedJob[]; onAdd: () => void; onEdit: (job: PlannedJob) => void }) {
   const done   = jobs.filter(j => j.status === "completed").length;
   const active = jobs.filter(j => ["in_progress","arrived_pickup"].includes(j.status));
   const risk   = jobs.some(isAtRisk);
@@ -64,12 +68,226 @@ function DriverCard({ driver, jobs, onAdd }: { driver: Driver; jobs: PlannedJob[
                   {isAtRisk(job) && <div className="text-red-700 font-semibold">🔴 Stuck — check driver</div>}
                   {hasNote(job)  && <div className="text-yellow-700 font-semibold">⚠ Driver note</div>}
                 </div>
-                <Badge status={job.status} />
+                <div className="flex flex-col items-end gap-1">
+                  <Badge status={job.status} />
+                  {canPlanJob(job) && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(job)}
+                      className="text-[11px] text-accent hover:underline"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
       }
       <button onClick={onAdd} className="mt-3 w-full text-xs text-accent border border-dashed border-accent/40 hover:border-accent hover:bg-blue-50 rounded py-1.5 transition-colors">+ Add Job</button>
+    </div>
+  );
+}
+
+
+
+function toDateInput(value?: string | null) {
+  if (!value) return "";
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function toDateTimeInput(value?: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromDateTimeInput(value: string) {
+  if (!value.trim()) return null;
+  return new Date(value).toISOString();
+}
+
+function PlannerJobEditor({
+  job,
+  drivers,
+  onClose,
+  onSaved,
+}: {
+  job: PlannedJob;
+  drivers: Driver[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const pickupStop = job.stops?.find(s => s.type === "pickup");
+  const dropoffStop = [...(job.stops ?? [])].reverse().find(s => s.type === "dropoff");
+
+  const initialDriverId = job.assignedDriverId != null ? String(job.assignedDriverId) : "";
+  const initialDriver = drivers.find(d => String(d.id) === initialDriverId) ?? job.assignedDriver ?? null;
+
+  const [driverId, setDriverId] = useState(initialDriverId);
+  const [plannedDate, setPlannedDate] = useState(toDateInput(job.plannedDate));
+  const [assignedTruck, setAssignedTruck] = useState(job.assignedTruck || initialDriver?.defaultTruckReg || "");
+  const [assignedTrailer, setAssignedTrailer] = useState(job.assignedTrailer || "");
+  const [pickupTime, setPickupTime] = useState(toDateTimeInput(pickupStop?.timeWindowStart ?? null));
+  const [deliveryTime, setDeliveryTime] = useState(toDateTimeInput(dropoffStop?.timeWindowEnd ?? dropoffStop?.timeWindowStart ?? null));
+  const [plannerNotes, setPlannerNotes] = useState(job.plannerNotes || "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const selectedDriver = drivers.find(d => String(d.id) === driverId) ?? null;
+
+  function changeDriver(nextDriverId: string) {
+    const nextDriver = drivers.find(d => String(d.id) === nextDriverId) ?? null;
+    setDriverId(nextDriverId);
+
+    // Auto-complete unit only when planner has not manually entered one.
+    if (!assignedTruck.trim() && nextDriver?.defaultTruckReg) {
+      setAssignedTruck(nextDriver.defaultTruckReg);
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    setErr("");
+
+    try {
+      const stops = (job.stops ?? []).map(stop => {
+        if (stop.type === "pickup") {
+          return {
+            ...stop,
+            timeWindowStart: pickupTime ? fromDateTimeInput(pickupTime) : stop.timeWindowStart ?? null,
+          };
+        }
+
+        if (stop.type === "dropoff") {
+          const deliveryIso = deliveryTime ? fromDateTimeInput(deliveryTime) : null;
+          return {
+            ...stop,
+            timeWindowStart: deliveryIso ?? stop.timeWindowStart ?? null,
+            timeWindowEnd: deliveryIso ?? stop.timeWindowEnd ?? null,
+          };
+        }
+
+        return stop;
+      });
+
+      await jobsApi.update(job.id, {
+        assignedDriverId: driverId ? Number(driverId) : null,
+        assignedTruck: assignedTruck.trim(),
+        assignedTrailer: assignedTrailer.trim(),
+        plannedDate: plannedDate || job.plannedDate,
+        plannerNotes,
+        stops,
+        saveMode: "draft",
+      });
+
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not update job");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-5 border-b border-border flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-black text-primary">Plan job #{job.id}</h2>
+            <p className="text-xs text-muted mt-1">
+              {job.pickupTextSnapshot} → {job.dropoffTextSnapshot}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="btn btn-outline text-xs">Close</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {err && <div className="bg-red-50 text-red-800 text-sm rounded-lg p-3">{err}</div>}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Driver</label>
+              <select className="input" value={driverId} onChange={e => changeDriver(e.target.value)}>
+                <option value="">Unassigned</option>
+                {drivers.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.displayName}{d.defaultTruckReg ? ` — ${d.defaultTruckReg}` : ""}
+                  </option>
+                ))}
+              </select>
+              {selectedDriver?.defaultTruckReg && (
+                <div className="text-xs text-muted mt-1">
+                  Default unit: <span className="font-semibold">{selectedDriver.defaultTruckReg}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="label">Planned date</label>
+              <input className="input" type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Truck / unit</label>
+              <input
+                className="input"
+                value={assignedTruck}
+                onChange={e => setAssignedTruck(e.target.value)}
+                placeholder="Auto-filled from driver if available"
+              />
+            </div>
+
+            <div>
+              <label className="label">Trailer</label>
+              <input
+                className="input"
+                value={assignedTrailer}
+                onChange={e => setAssignedTrailer(e.target.value)}
+                placeholder="Trailer reg / asset"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Pickup time</label>
+              <input className="input" type="datetime-local" value={pickupTime} onChange={e => setPickupTime(e.target.value)} />
+            </div>
+
+            <div>
+              <label className="label">Delivery time</label>
+              <input className="input" type="datetime-local" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Planner notes</label>
+            <textarea
+              className="input min-h-20"
+              value={plannerNotes}
+              onChange={e => setPlannerNotes(e.target.value)}
+              placeholder="Anything the planner/driver needs to know..."
+            />
+          </div>
+
+          <div className="bg-blue-50 text-blue-900 rounded-xl p-3 text-xs">
+            Planner can assign drivers, units, trailers, and times without forcing Ready-to-Plan validation.
+          </div>
+        </div>
+
+        <div className="p-5 border-t border-border flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} className="btn btn-outline">Cancel</button>
+          <button type="button" onClick={save} disabled={saving} className="btn btn-primary">
+            {saving ? "Saving..." : "Save planning changes"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -83,6 +301,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [createFor,  setCreateFor]  = useState<number|undefined>();
+  const [editingJob, setEditingJob] = useState<PlannedJob | null>(null);
   const [refreshed,  setRefreshed]  = useState(new Date());
 
   const load = useCallback(async () => {
@@ -142,7 +361,7 @@ export default function DashboardPage() {
         <div className="overflow-x-auto">
           <div className="flex gap-4 pb-2" style={{ minWidth:"max-content" }}>
             {drivers.map(d => (
-              <DriverCard key={d.id} driver={d} jobs={byDriver[d.id]??[]} onAdd={()=>{ setCreateFor(d.id); setShowCreate(true); }}/>
+              <DriverCard key={d.id} driver={d} jobs={byDriver[d.id]??[]} onAdd={()=>{ setCreateFor(d.id); setShowCreate(true); }} onEdit={setEditingJob}/>
             ))}
             {unassigned.length > 0 && (
               <div className="card border-l-4 border-red-500 p-4 min-w-72 flex-shrink-0">
@@ -151,6 +370,15 @@ export default function DashboardPage() {
                   <div key={j.id} className="bg-red-50 p-2 rounded text-xs mb-2">
                     <div className="font-medium">{j.pickupTextSnapshot} → {j.dropoffTextSnapshot}</div>
                     {j.referenceNumber && <div className="text-muted">📋 {j.referenceNumber}</div>}
+                    {canPlanJob(j) && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingJob(j)}
+                        className="mt-1 text-[11px] text-accent hover:underline"
+                      >
+                        Assign / edit
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -188,6 +416,15 @@ export default function DashboardPage() {
           initialDriverId={createFor}
           onClose={() => setShowCreate(false)}
           onCreated={load}
+        />
+      )}
+
+      {editingJob && (
+        <PlannerJobEditor
+          job={editingJob}
+          drivers={drivers}
+          onClose={() => setEditingJob(null)}
+          onSaved={load}
         />
       )}
     </div>

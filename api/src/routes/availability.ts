@@ -246,18 +246,19 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const company   = await prisma.company.findUnique({ where: { id: companyId } });
     const maxPerDay = (company as any).maxHolidaysPerDay ?? 2;
 
-    const days: { date: string; count: number; available: boolean; slotsLeft: number }[] = [];
+    const days: { date: string; count: number; available: boolean; overLimit: boolean; slotsLeft: number }[] = [];
     const cur = new Date(start);
     while (cur <= end) {
       if (isWorkingDay(cur)) {
         const daySnap = new Date(cur); daySnap.setHours(12, 0, 0, 0);
         const count = await prisma.holidayRequest.count({
-          where: { companyId, status: "approved", startDate: { lte: daySnap }, endDate: { gte: daySnap } },
+          where: { companyId, status: { in: ["pending", "approved"] }, startDate: { lte: daySnap }, endDate: { gte: daySnap } },
         });
         days.push({
           date:      toISODate(cur),
           count,
           available: count < maxPerDay,
+          overLimit: count >= maxPerDay,
           slotsLeft: Math.max(0, maxPerDay - count),
         });
       }
@@ -336,17 +337,11 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       if (isWorkingDay(checkDate)) {
         const snap = new Date(checkDate); snap.setHours(12, 0, 0, 0);
         const count = await prisma.holidayRequest.count({
-          where: { companyId, status: "approved", startDate: { lte: snap }, endDate: { gte: snap } },
+          where: { companyId, status: { in: ["pending", "approved"] }, startDate: { lte: snap }, endDate: { gte: snap } },
         });
         if (count >= maxPerDay) conflicts.push(checkDate.toLocaleDateString("en-GB"));
       }
       checkDate.setDate(checkDate.getDate() + 1);
-    }
-
-    if (conflicts.length > 0) {
-      return reply.status(400).send({
-        error: `Maximum ${maxPerDay} drivers can be on holiday on: ${conflicts.join(", ")}. Please choose different dates.`,
-      });
     }
 
     const holidayRequest = await prisma.holidayRequest.create({
@@ -362,7 +357,12 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       },
     });
 
-    return reply.status(201).send(holidayRequest);
+    return reply.status(201).send({
+      ...holidayRequest,
+      warning: conflicts.length > 0
+        ? `Holiday limit warning: ${maxPerDay} driver(s) already pending/approved on ${conflicts.join(", ")}. Planner can still approve as an exception.`
+        : null,
+    });
   });
 
   // ── GET /holiday-requests — planner sees all ───────────────────────────────
@@ -391,29 +391,36 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const req = await prisma.holidayRequest.findFirst({ where: { id, companyId } });
     if (!req) return reply.status(404).send({ error: "Holiday request not found" });
 
-    const updated = await prisma.holidayRequest.update({
-      where: { id },
-      data: {
-        status:       body.status,
-        plannerNote:  body.plannerNote ?? "",
-        approvedById: userId,
-        approvedAt:   new Date(),
-      },
+    const previousStatus = req.status;
+    const nextStatus = body.status;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.holidayRequest.update({
+        where: { id },
+        data: {
+          status: nextStatus,
+          plannerNote: body.plannerNote ?? "",
+          approvedById: nextStatus === "approved" ? userId : null,
+          approvedAt: nextStatus === "approved" ? new Date() : null,
+        },
+      });
+
+      if (previousStatus !== "approved" && nextStatus === "approved") {
+        await tx.driverProfile.update({
+          where: { id: req.driverProfileId },
+          data: { holidayUsed: { increment: req.totalDays } },
+        });
+      }
+
+      if (previousStatus === "approved" && nextStatus !== "approved") {
+        await tx.driverProfile.update({
+          where: { id: req.driverProfileId },
+          data: { holidayUsed: { decrement: req.totalDays } },
+        });
+      }
+
+      return saved;
     });
-
-    if (body.status === "approved") {
-      await prisma.driverProfile.update({
-        where: { id: req.driverProfileId },
-        data:  { holidayUsed: { increment: req.totalDays } },
-      });
-    }
-
-    if (body.status === "rejected" && req.status === "approved") {
-      await prisma.driverProfile.update({
-        where: { id: req.driverProfileId },
-        data:  { holidayUsed: { decrement: req.totalDays } },
-      });
-    }
 
     return reply.send(updated);
   });
