@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { customersApi } from "../../api/customers";
+import { jobsApi } from "../../api/jobs";
 import { useAuth } from "../../hooks/useAuth";
-import type { Customer } from "../../types";
+import type { Customer, SavedLocation } from "../../types";
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -30,22 +31,110 @@ const PRIORITY_OPTS: [string, string][] = [
   ["high",   "High — Urgent"],
 ];
 
-// ── Empty shells for sections not yet built (03-08) ───────────────────────────
-
-const SHELLS = [
-  { id: "pickup",  icon: "📦", title: "Pickup Stop",          subtitle: "Where the load is collected from" },
-  { id: "dropoff", icon: "📍", title: "Dropoff Stop",         subtitle: "Where the load is delivered to" },
-  { id: "timing",  icon: "🕐", title: "Timing",               subtitle: "Time windows, booked slots and driver schedule" },
-  { id: "load",    icon: "⚖️", title: "Load Details",         subtitle: "Material type, quantity, weight and hazard class" },
-  { id: "vehicle", icon: "🚛", title: "Vehicle Requirements", subtitle: "Vehicle class, trailer type and special equipment" },
-  { id: "notes",   icon: "📝", title: "Notes & Instructions", subtitle: "Planner notes, driver instructions and internal comments" },
+const LOCATION_TYPES: [string, string][] = [
+  ["warehouse",   "Warehouse / RDC"],
+  ["depot",       "Depot"],
+  ["site",        "Construction site"],
+  ["retail",      "Retail / store"],
+  ["residential", "Residential"],
+  ["port",        "Port / terminal"],
+  ["airport",     "Airport"],
+  ["other",       "Other"],
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Stop state ────────────────────────────────────────────────────────────────
 
-const today      = () => new Date().toISOString().split("T")[0];
+interface StopState {
+  id: string;
+  showOptional: boolean;
+  stopType: "collection" | "delivery";
+  locationQuery: string;
+  savedLocationId: number | null;
+  siteName: string;
+  street: string;
+  town: string;
+  postcode: string;
+  country: string;
+  lat: string;
+  lng: string;
+  unitBuilding: string;
+  addressLine2: string;
+  countyRegion: string;
+  date: string;
+  timeType: "exact" | "window" | "anytime";
+  exactTime: string;
+  windowStart: string;
+  windowEnd: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+  refNumber: string;
+  bookingRequired: boolean;
+  bookingRef: string;
+  openingHours: string;
+  locationType: string;
+  driverNotes: string;
+  navigationInstructions: string;
+  estimatedServiceTime: string;
+  internalNotes: string;
+}
+
+const today = () => new Date().toISOString().split("T")[0];
 const nowDisplay = () =>
   new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function makeStop(): StopState {
+  return {
+    id: Math.random().toString(36).slice(2),
+    showOptional: false,
+    stopType: "collection",
+    locationQuery: "",
+    savedLocationId: null,
+    siteName: "",
+    street: "",
+    town: "",
+    postcode: "",
+    country: "United Kingdom",
+    lat: "",
+    lng: "",
+    unitBuilding: "",
+    addressLine2: "",
+    countyRegion: "",
+    date: today(),
+    timeType: "anytime",
+    exactTime: "",
+    windowStart: "",
+    windowEnd: "",
+    contactName: "",
+    contactPhone: "",
+    contactEmail: "",
+    refNumber: "",
+    bookingRequired: false,
+    bookingRef: "",
+    openingHours: "",
+    locationType: "",
+    driverNotes: "",
+    navigationInstructions: "",
+    estimatedServiceTime: "",
+    internalNotes: "",
+  };
+}
+
+function stopComplete(s: StopState) {
+  const addr = s.siteName.trim() && s.street.trim() && s.town.trim() && s.postcode.trim();
+  const time =
+    s.timeType === "exact"  ? !!s.exactTime :
+    s.timeType === "window" ? !!(s.windowStart && s.windowEnd) : true;
+  return !!(addr && s.date && time);
+}
+
+// ── Empty shells for sections not yet built (04-06) ───────────────────────────
+
+const SHELLS = [
+  { id: "load",    icon: "⚖️", title: "Load Details",          subtitle: "Material type, quantity, weight and hazard class" },
+  { id: "vehicle", icon: "🚛", title: "Vehicle Requirements",  subtitle: "Vehicle class, trailer type and special equipment" },
+  { id: "notes",   icon: "📝", title: "Notes & Instructions",  subtitle: "Planner notes, driver instructions and internal comments" },
+];
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -118,20 +207,11 @@ function OptionalToggle({ open, onToggle, label = "optional details" }: {
 
 function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button type="button" onClick={() => onChange(!value)}
-      className="flex items-center gap-3 group w-fit">
-      <div className={
-        "relative w-10 h-5 rounded-full transition-colors flex-shrink-0 " +
-        (value ? "bg-green-500" : "bg-red-400")
-      }>
-        <span className={
-          "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " +
-          (value ? "translate-x-5" : "translate-x-0")
-        } />
+    <button type="button" onClick={() => onChange(!value)} className="flex items-center gap-3 group w-fit">
+      <div className={"relative w-10 h-5 rounded-full transition-colors flex-shrink-0 " + (value ? "bg-green-500" : "bg-red-400")}>
+        <span className={"absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (value ? "translate-x-5" : "translate-x-0")} />
       </div>
-      <span className={"text-sm font-medium transition-colors " + (value ? "text-primary" : "text-muted")}>
-        {label}
-      </span>
+      <span className={"text-sm font-medium transition-colors " + (value ? "text-primary" : "text-muted")}>{label}</span>
     </button>
   );
 }
@@ -182,8 +262,7 @@ function CustomerSearch({ value, linkedId, onChange }: {
           value={value} onChange={e => handleInput(e.target.value)}
           onFocus={() => suggestions.length > 0 && setOpen(true)} autoComplete="off" />
         {linkedId && (
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-green-500 text-sm"
-            title="Linked to existing customer">✓</span>
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-green-500 text-sm" title="Linked to existing customer">✓</span>
         )}
       </div>
       {open && suggestions.length > 0 && (
@@ -204,6 +283,404 @@ function CustomerSearch({ value, linkedId, onChange }: {
   );
 }
 
+// ── Location typeahead (per stop) ─────────────────────────────────────────────
+
+function LocationSearch({ value, linkedId, locations, onSelect, onClear }: {
+  value: string;
+  linkedId: number | null;
+  locations: SavedLocation[];
+  onSelect: (loc: SavedLocation) => void;
+  onClear: (text: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const q = value.toLowerCase().trim();
+  const filtered = !q ? [] : locations.filter(l =>
+    l.name.toLowerCase().includes(q) ||
+    l.addressText.toLowerCase().includes(q) ||
+    l.town.toLowerCase().includes(q) ||
+    l.postcode.toLowerCase().includes(q)
+  ).slice(0, 8);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="relative">
+        <input type="text" className="input pr-8"
+          placeholder="Search saved locations or type address…"
+          value={value}
+          onChange={e => { onClear(e.target.value); setOpen(true); }}
+          onFocus={() => filtered.length > 0 && setOpen(true)}
+          autoComplete="off" />
+        {linkedId && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-green-500 text-sm" title="Saved location linked">✓</span>
+        )}
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-border rounded-xl shadow-lg overflow-hidden">
+          {filtered.map(l => (
+            <button key={l.id} type="button" onMouseDown={() => { onSelect(l); setOpen(false); }}
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors border-b border-border last:border-0">
+              <div className="font-semibold text-primary">{l.name}</div>
+              <div className="text-xs text-muted">{[l.addressText || l.street, l.town, l.postcode].filter(Boolean).join(", ")}</div>
+            </button>
+          ))}
+          <div className="px-4 py-2 text-xs text-muted bg-gray-50 border-t border-border">
+            Not listed? Fill in the address fields below manually
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Stop card ─────────────────────────────────────────────────────────────────
+
+function StopCard({ stop, index, total, locations, onChange, onRemove }: {
+  stop: StopState;
+  index: number;
+  total: number;
+  locations: SavedLocation[];
+  onChange: (patch: Partial<StopState>) => void;
+  onRemove: () => void;
+}) {
+  const set = (field: keyof StopState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    onChange({ [field]: e.target.value });
+
+  function applyLocation(loc: SavedLocation) {
+    onChange({
+      locationQuery:   loc.name,
+      savedLocationId: loc.id,
+      siteName:        loc.siteName  || loc.name,
+      street:          loc.street    || loc.addressText,
+      town:            loc.town,
+      postcode:        loc.postcode,
+      country:         "United Kingdom",
+      lat:             loc.latitude  != null ? String(loc.latitude)  : "",
+      lng:             loc.longitude != null ? String(loc.longitude) : "",
+      unitBuilding:    loc.unitName  || "",
+      contactName:     loc.contactName  || "",
+      contactPhone:    loc.contactPhone || "",
+      openingHours:    loc.instructions || "",
+    });
+  }
+
+  const dateLabel = stop.stopType === "collection" ? "Collection Date" : "Delivery Date";
+  const complete  = stopComplete(stop);
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+
+      {/* Stop header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-border">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-black text-primary">
+            Stop {index + 1}
+          </span>
+          {stop.stopType && (
+            <span className={
+              "text-xs font-semibold px-2 py-0.5 rounded-full " +
+              (stop.stopType === "collection" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700")
+            }>
+              {stop.stopType === "collection" ? "Collection" : "Delivery"}
+            </span>
+          )}
+          {complete && <span className="text-xs text-green-600 font-semibold">✓</span>}
+        </div>
+        {total > 1 && (
+          <button type="button" onClick={onRemove}
+            className="text-xs text-red-400 hover:text-red-600 font-semibold transition-colors">
+            Remove
+          </button>
+        )}
+      </div>
+
+      <div className="p-4 space-y-4">
+
+        {/* Stop type */}
+        <div>
+          <FieldLabel required>Stop Type</FieldLabel>
+          <div className="flex gap-3">
+            {(["collection", "delivery"] as const).map(t => (
+              <button key={t} type="button"
+                onClick={() => onChange({ stopType: t })}
+                className={
+                  "flex-1 py-2.5 rounded-lg border text-sm font-semibold transition-colors " +
+                  (stop.stopType === t
+                    ? t === "collection"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-green-600 text-white border-green-600"
+                    : "bg-white text-muted border-border hover:border-gray-400")
+                }>
+                {t === "collection" ? "📦 Collection" : "📍 Delivery"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Location ─────────────────────────────────────────────────────── */}
+        <div className="space-y-3">
+          <div className="text-xs font-bold text-muted uppercase tracking-widest pt-1">Location</div>
+
+          <div>
+            <FieldLabel>Address / Saved Location</FieldLabel>
+            <LocationSearch
+              value={stop.locationQuery}
+              linkedId={stop.savedLocationId}
+              locations={locations}
+              onSelect={applyLocation}
+              onClear={text => onChange({ locationQuery: text, savedLocationId: null })}
+            />
+            {stop.savedLocationId && (
+              <button type="button" onClick={() => onChange({ locationQuery: "", savedLocationId: null, siteName: "", street: "", town: "", postcode: "", lat: "", lng: "" })}
+                className="text-xs text-muted hover:text-red-500 mt-1 transition-colors">
+                ✕ Clear saved location
+              </button>
+            )}
+          </div>
+
+          <div>
+            <FieldLabel required>Company / Site Name</FieldLabel>
+            <input type="text" className="input" placeholder="Tesco RDC Luton"
+              value={stop.siteName} onChange={set("siteName")} />
+          </div>
+
+          <div>
+            <FieldLabel required>Address Line 1 / Street</FieldLabel>
+            <input type="text" className="input" placeholder="15 Arden Place"
+              value={stop.street} onChange={set("street")} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel required>Town / City</FieldLabel>
+              <input type="text" className="input" placeholder="Luton"
+                value={stop.town} onChange={set("town")} />
+            </div>
+            <div>
+              <FieldLabel required>Postcode</FieldLabel>
+              <input type="text" className="input placeholder:uppercase" placeholder="LU2 7YE"
+                value={stop.postcode} onChange={set("postcode")} />
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel required>Country</FieldLabel>
+            <input type="text" className="input" placeholder="United Kingdom"
+              value={stop.country} onChange={set("country")} />
+          </div>
+
+          {/* Hidden lat/lng — auto filled from saved location */}
+          <input type="hidden" value={stop.lat} />
+          <input type="hidden" value={stop.lng} />
+        </div>
+
+        {/* ── Timing ───────────────────────────────────────────────────────── */}
+        <div className="space-y-3">
+          <div className="text-xs font-bold text-muted uppercase tracking-widest pt-1">Timing</div>
+
+          <div>
+            <FieldLabel required>{dateLabel}</FieldLabel>
+            <input type="date" className="input" value={stop.date} onChange={set("date")} />
+          </div>
+
+          <div>
+            <FieldLabel required>Time Type</FieldLabel>
+            <div className="flex gap-2">
+              {(["anytime", "exact", "window"] as const).map(t => (
+                <button key={t} type="button"
+                  onClick={() => onChange({ timeType: t })}
+                  className={
+                    "flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors " +
+                    (stop.timeType === t
+                      ? "bg-accent text-white border-accent"
+                      : "bg-white text-muted border-border hover:border-gray-400")
+                  }>
+                  {t === "anytime" ? "Any time" : t === "exact" ? "Exact time" : "Time window"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {stop.timeType === "exact" && (
+            <div className="max-w-xs">
+              <FieldLabel required>Time</FieldLabel>
+              <input type="time" className="input" value={stop.exactTime} onChange={set("exactTime")} />
+            </div>
+          )}
+
+          {stop.timeType === "window" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel required>Start Time</FieldLabel>
+                <input type="time" className="input" value={stop.windowStart} onChange={set("windowStart")} />
+              </div>
+              <div>
+                <FieldLabel required>End Time</FieldLabel>
+                <input type="time" className="input" value={stop.windowEnd} onChange={set("windowEnd")} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Optional toggle ───────────────────────────────────────────────── */}
+        <OptionalToggle open={stop.showOptional} onToggle={() => onChange({ showOptional: !stop.showOptional })} label="stop details" />
+
+        {stop.showOptional && (
+          <div className="space-y-4 pt-1 border-t border-border">
+
+            {/* Address clarity */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Address Clarity</div>
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>Unit / Building</FieldLabel>
+                  <input type="text" className="input" placeholder="Unit 4 / Gatehouse"
+                    value={stop.unitBuilding} onChange={set("unitBuilding")} />
+                </div>
+                <div>
+                  <FieldLabel>Address Line 2</FieldLabel>
+                  <input type="text" className="input" placeholder="Industrial estate, zone B"
+                    value={stop.addressLine2} onChange={set("addressLine2")} />
+                </div>
+                <div>
+                  <FieldLabel>County / Region</FieldLabel>
+                  <input type="text" className="input" placeholder="Bedfordshire"
+                    value={stop.countyRegion} onChange={set("countyRegion")} />
+                </div>
+              </div>
+            </div>
+
+            {/* Contact */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Contact</div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Contact Name</FieldLabel>
+                    <input type="text" className="input" placeholder="Goods In"
+                      value={stop.contactName} onChange={set("contactName")} />
+                  </div>
+                  <div>
+                    <FieldLabel>Contact Phone</FieldLabel>
+                    <input type="tel" className="input" placeholder="07700 900123"
+                      value={stop.contactPhone} onChange={set("contactPhone")} />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Contact Email</FieldLabel>
+                  <input type="email" className="input" placeholder="goodsin@example.com"
+                    value={stop.contactEmail} onChange={set("contactEmail")} />
+                </div>
+              </div>
+            </div>
+
+            {/* Reference / booking */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Reference / Booking</div>
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>Reference Number</FieldLabel>
+                  <input type="text" className="input" placeholder="REF-00123"
+                    value={stop.refNumber} onChange={set("refNumber")} />
+                </div>
+                <div>
+                  <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })} label="Booking required" />
+                </div>
+                {stop.bookingRequired && (
+                  <div>
+                    <FieldLabel>Booking Reference</FieldLabel>
+                    <input type="text" className="input" placeholder="BK-456789"
+                      value={stop.bookingRef} onChange={set("bookingRef")} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Location support */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Location Support</div>
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>Opening Hours</FieldLabel>
+                  <input type="text" className="input" placeholder="Mon–Fri 06:00–18:00, Sat 07:00–13:00"
+                    value={stop.openingHours} onChange={set("openingHours")} />
+                </div>
+                <div>
+                  <FieldLabel>Location Type</FieldLabel>
+                  <select className="input" value={stop.locationType} onChange={set("locationType")}>
+                    <option value="">— Select —</option>
+                    {LOCATION_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Driver */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Driver</div>
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>Driver Notes / Instructions</FieldLabel>
+                  <textarea className="input min-h-16 resize-none" placeholder="Use gate 3, call ahead 30 min before arrival…"
+                    value={stop.driverNotes} onChange={set("driverNotes")} />
+                </div>
+                <div>
+                  <FieldLabel>Navigation Instructions</FieldLabel>
+                  <input type="text" className="input" placeholder="Paste Google Maps or Waze link…"
+                    value={stop.navigationInstructions} onChange={set("navigationInstructions")} />
+                </div>
+              </div>
+            </div>
+
+            {/* Service time */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Service Time</div>
+              <div className="max-w-xs">
+                <FieldLabel>Estimated Service Time</FieldLabel>
+                <input type="text" className="input" placeholder="e.g. 45 mins"
+                  value={stop.estimatedServiceTime} onChange={set("estimatedServiceTime")} />
+              </div>
+            </div>
+
+            {/* Internal */}
+            <div>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Internal</div>
+              <div>
+                <FieldLabel>Internal Notes</FieldLabel>
+                <textarea className="input min-h-16 resize-none" placeholder="Not shown to driver — planner only…"
+                  value={stop.internalNotes} onChange={set("internalNotes")} />
+              </div>
+            </div>
+
+          </div>
+        )}
+
+      </div>
+
+      {/* Stop footer */}
+      <div className={
+        "px-4 py-2 border-t border-border text-xs font-semibold flex items-center gap-2 " +
+        (complete ? "text-green-700 bg-green-50" : "text-muted bg-gray-50")
+      }>
+        {complete
+          ? <><span>✓</span> Stop {index + 1} complete</>
+          : <><span className="text-red-400">●</span> Fill in required fields for this stop</>
+        }
+      </div>
+
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CreateJobPage() {
@@ -211,8 +688,12 @@ export default function CreateJobPage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
 
+  // Saved locations (loaded once)
+  const [locations, setLocations] = useState<SavedLocation[]>([]);
+  useEffect(() => { jobsApi.locations().then(r => setLocations(r.data)).catch(() => {}); }, []);
+
   // ── Section 01 — Job Basics ──────────────────────────────────────────────
-  const [showBasicsOpts,  setShowBasicsOpts]  = useState(false);
+  const [showBasicsOpts,      setShowBasicsOpts]      = useState(false);
   const [customerName,        setCustomerName]        = useState("");
   const [customerId,          setCustomerId]          = useState<number | null>(null);
   const [plannedDate,         setPlannedDate]         = useState(today());
@@ -225,41 +706,48 @@ export default function CreateJobPage() {
   const [priority,            setPriority]            = useState("normal");
 
   // ── Section 02 — Customer Details ───────────────────────────────────────
-  const [showCustOpts,   setShowCustOpts]   = useState(false);
-  const [contactName,    setContactName]    = useState("");
-  const [contactPhone,   setContactPhone]   = useState("");
-  const [contactEmail,   setContactEmail]   = useState("");
+  const [showCustOpts,    setShowCustOpts]    = useState(false);
+  const [contactName,     setContactName]     = useState("");
+  const [contactPhone,    setContactPhone]    = useState("");
+  const [contactEmail,    setContactEmail]    = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
-  const [billingNotes,   setBillingNotes]   = useState("");
-  const [custInstructions, setCustInstructions] = useState("");
-  const [custRefRequired,  setCustRefRequired]  = useState(false);
-  const [poRequired,       setPoRequired]       = useState(false);
+  const [billingNotes,    setBillingNotes]    = useState("");
+  const [custInstructions,  setCustInstructions]  = useState("");
+  const [custRefRequired,   setCustRefRequired]   = useState(false);
+  const [poRequired,        setPoRequired]        = useState(false);
 
-  // Autofill contact fields when a known customer is selected
   function handleCustomerChange(name: string, id: number | null, customer?: Customer) {
     setCustomerName(name);
     setCustomerId(id);
     if (customer) {
-      setContactName(customer.contactName  || "");
+      setContactName(customer.contactName   || "");
       setContactPhone(customer.contactPhone || "");
       setContactEmail(customer.contactEmail || "");
     }
   }
 
+  // ── Section 03 — Stops ───────────────────────────────────────────────────
+  const [stops, setStops] = useState<StopState[]>([makeStop()]);
+
+  function updateStop(id: string, patch: Partial<StopState>) {
+    setStops(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  }
+  function addStop() { setStops(prev => [...prev, makeStop()]); }
+  function removeStop(id: string) { setStops(prev => prev.filter(s => s.id !== id)); }
+
   // ── Quality / missing fields ─────────────────────────────────────────────
-  const basicsComplete  = !!(customerName.trim() && plannedDate && serviceType && jobType);
+  const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
+  const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
 
   const MISSING = [
-    !customerName.trim() && "Customer",
-    !plannedDate         && "Planned date",
-    !serviceType         && "Service type",
-    !jobType             && "Job type",
-    !contactName.trim()  && "Contact name",
-    !contactPhone.trim() && "Contact phone",
-    "Pickup address",
-    "Dropoff address",
-    "Material type",
+    !customerName.trim()  && "Customer",
+    !plannedDate          && "Planned date",
+    !serviceType          && "Service type",
+    !jobType              && "Job type",
+    !contactName.trim()   && "Contact name",
+    !contactPhone.trim()  && "Contact phone",
+    !stopsComplete        && "Stop addresses / timing",
   ].filter(Boolean) as string[];
 
   function handleSaveDraft() { setSaving("draft"); setTimeout(() => setSaving(null), 1200); }
@@ -272,9 +760,7 @@ export default function CreateJobPage() {
       <div className="bg-white border-b border-border px-6 py-5">
         <div className="max-w-3xl mx-auto flex items-center gap-4">
           <button onClick={() => navigate(-1)}
-            className="text-muted hover:text-primary transition-colors text-xl leading-none" title="Back">
-            ←
-          </button>
+            className="text-muted hover:text-primary transition-colors text-xl leading-none" title="Back">←</button>
           <div>
             <h1 className="text-xl font-black text-primary">Create Job</h1>
             <p className="text-sm text-muted mt-0.5">
@@ -331,19 +817,16 @@ export default function CreateJobPage() {
         {/* ── Section 01 — Job Basics ────────────────────────────────────────── */}
         <div className="card overflow-hidden">
           <SectionHeader num={1} icon="📋" title="Job Basics" subtitle="Date, service type and job type" active />
-
           <div className="px-5 pt-5 pb-4 space-y-4">
             <div>
               <FieldLabel required>Customer</FieldLabel>
               <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
             </div>
-
-                    <div>
+            <div>
               <FieldLabel required>Planned Date</FieldLabel>
               <input type="date" className="input" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
               <p className="text-xs text-muted mt-1.5">👉 When this job appears for planning</p>
             </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FieldLabel required>Service Type</FieldLabel>
@@ -360,9 +843,7 @@ export default function CreateJobPage() {
                 </select>
               </div>
             </div>
-
             <OptionalToggle open={showBasicsOpts} onToggle={() => setShowBasicsOpts(o => !o)} label="optional job details" />
-
             {showBasicsOpts && (
               <div className="space-y-4 pt-1 border-t border-border">
                 <div>
@@ -370,7 +851,6 @@ export default function CreateJobPage() {
                   <input type="text" className="input" placeholder="e.g. Overnight trunking — Manchester to London"
                     value={jobTitle} onChange={e => setJobTitle(e.target.value)} />
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <FieldLabel>Job Reference No.</FieldLabel>
@@ -388,14 +868,12 @@ export default function CreateJobPage() {
                       value={purchaseOrderNumber} onChange={e => setPurchaseOrderNumber(e.target.value)} />
                   </div>
                 </div>
-
                 <div className="max-w-xs">
                   <FieldLabel>Priority</FieldLabel>
                   <select className="input" value={priority} onChange={e => setPriority(e.target.value)}>
                     {PRIORITY_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <ReadOnlyField label="Created By" value={user?.name ?? "—"} />
                   <ReadOnlyField label="Created At" value={nowDisplay()} />
@@ -403,23 +881,19 @@ export default function CreateJobPage() {
               </div>
             )}
           </div>
-
           <SectionFooter complete={basicsComplete} label="Job basics" />
         </div>
 
         {/* ── Section 02 — Customer Details ──────────────────────────────────── */}
         <div className="card overflow-hidden">
           <SectionHeader num={2} icon="🏢" title="Customer Details" subtitle="Operational contact for this job" active />
-
           <div className="px-5 pt-5 pb-4 space-y-4">
-
             {customerId && (
               <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                 <span>✓</span>
                 <span>Linked to <strong>{customerName}</strong> — contact details autofilled. Edit below if different for this job.</span>
               </div>
             )}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FieldLabel required>Contact Name</FieldLabel>
@@ -432,36 +906,29 @@ export default function CreateJobPage() {
                   value={contactPhone} onChange={e => setContactPhone(e.target.value)} />
               </div>
             </div>
-
             <OptionalToggle open={showCustOpts} onToggle={() => setShowCustOpts(o => !o)} label="customer details" />
-
             {showCustOpts && (
               <div className="space-y-4 pt-1 border-t border-border">
-
                 <div>
                   <FieldLabel>Customer Address</FieldLabel>
                   <input type="text" className="input" placeholder="123 High Street, Manchester, M1 1AA"
                     value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
                 </div>
-
                 <div>
                   <FieldLabel>Contact Email</FieldLabel>
                   <input type="email" className="input" placeholder="jane@example.com"
                     value={contactEmail} onChange={e => setContactEmail(e.target.value)} />
                 </div>
-
                 <div>
                   <FieldLabel>Billing Notes</FieldLabel>
                   <textarea className="input min-h-16 resize-none" placeholder="e.g. Invoice to head office, attn: Accounts Payable…"
                     value={billingNotes} onChange={e => setBillingNotes(e.target.value)} />
                 </div>
-
                 <div>
                   <FieldLabel>Customer-Specific Instructions</FieldLabel>
                   <textarea className="input min-h-16 resize-none" placeholder="e.g. Always call 30 min before arrival, do not use rear entrance…"
                     value={custInstructions} onChange={e => setCustInstructions(e.target.value)} />
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
                     <Toggle value={custRefRequired} onChange={setCustRefRequired} label="Customer reference required" />
@@ -472,19 +939,42 @@ export default function CreateJobPage() {
                     <p className="text-xs text-muted mt-1.5">Driver must enter PO number before completing job</p>
                   </div>
                 </div>
-
               </div>
             )}
-
           </div>
-
           <SectionFooter complete={customerComplete} label="Customer details" />
         </div>
 
-        {/* ── Sections 03-08 — empty shells ──────────────────────────────────── */}
+        {/* ── Section 03 — Collection / Delivery ─────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={3} icon="🔄" title="Collection / Delivery" subtitle="Add all pickup and dropoff stops for this job" active />
+
+          <div className="p-4 space-y-3">
+            {stops.map((stop, i) => (
+              <StopCard
+                key={stop.id}
+                stop={stop}
+                index={i}
+                total={stops.length}
+                locations={locations}
+                onChange={patch => updateStop(stop.id, patch)}
+                onRemove={() => removeStop(stop.id)}
+              />
+            ))}
+
+            <button type="button" onClick={addStop}
+              className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
+              + Add another stop
+            </button>
+          </div>
+
+          <SectionFooter complete={stopsComplete} label="All stops" />
+        </div>
+
+        {/* ── Sections 04-06 — empty shells ──────────────────────────────────── */}
         {SHELLS.map((s, i) => (
           <div key={s.id} className="card overflow-hidden">
-            <SectionHeader num={i + 3} icon={s.icon} title={s.title} subtitle={s.subtitle} />
+            <SectionHeader num={i + 4} icon={s.icon} title={s.title} subtitle={s.subtitle} />
             <div className="px-5 py-8 flex items-center justify-center">
               <div className="text-center">
                 <div className="text-2xl mb-2 opacity-10">{s.icon}</div>
