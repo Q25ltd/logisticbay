@@ -158,7 +158,7 @@ export default function LocationsPage() {
                   <div className="text-xs">☎ {[loc.contactName, loc.contactPhone].filter(Boolean).join(" · ")}</div>
                 )}
                 {loc.instructions && <div className="text-xs italic mt-1">🚚 {loc.instructions}</div>}
-                {loc.notes && <div className="text-xs italic mt-1">💬 {loc.notes}</div>}
+                {loc.internalNotes && <div className="text-xs italic mt-1">💬 {loc.internalNotes}</div>}
               </div>
             </div>
           ))}

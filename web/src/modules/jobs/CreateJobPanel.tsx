@@ -258,7 +258,7 @@ function LocationPicker({
       // Contact / access details
       contactName:          loc.contactName || "",
       contactPhone:         loc.contactPhone || "",
-      instructions:         loc.instructions || loc.notes || "",
+      instructions:         loc.instructions || loc.internalNotes || "",
 
       // Coordinates
       lat:                  loc.latitude  != null ? String(loc.latitude)  : "",
