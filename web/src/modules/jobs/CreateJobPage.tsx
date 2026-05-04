@@ -341,9 +341,7 @@ export default function CreateJobPage() {
                     <div>
               <FieldLabel required>Planned Date</FieldLabel>
               <input type="date" className="input" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
-              <p className="text-xs text-muted mt-1.5">
-                The date this job is planned to run. Planners use this to organise the daily dispatch board and assign drivers.
-              </p>
+              <p className="text-xs text-muted mt-1.5">👉 When this job appears for planning</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
