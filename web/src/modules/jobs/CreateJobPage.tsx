@@ -75,8 +75,10 @@ interface StopState {
   locationType: string;
   driverNotes: string;
   navigationInstructions: string;
+  numPallets: string;
   quantity: string;
-  estimatedServiceTime: string;
+  earliestArrival: string;
+  unloadingTime: string;
   internalNotes: string;
 }
 
@@ -116,8 +118,10 @@ function makeStop(): StopState {
     locationType: "",
     driverNotes: "",
     navigationInstructions: "",
+    numPallets: "",
     quantity: "",
-    estimatedServiceTime: "",
+    earliestArrival: "",
+    unloadingTime: "",
     internalNotes: "",
   };
 }
@@ -447,6 +451,96 @@ function CoordsHelp() {
   );
 }
 
+// ── Stop quantities & timing block ───────────────────────────────────────────
+
+function toMins(t: string): number | null {
+  if (!t) return null;
+  const [h, m] = t.split(":").map(Number);
+  return isNaN(h) || isNaN(m) ? null : h * 60 + m;
+}
+
+function fmtMins(m: number) {
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return h > 0 ? `${h}h ${min}m` : `${min}m`;
+}
+
+function StopTimingBlock({ stop, onChange, set }: {
+  stop: StopState;
+  onChange: (patch: Partial<StopState>) => void;
+  set: (f: keyof StopState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
+}) {
+  const earliest  = toMins(stop.earliestArrival);
+  const unloading = stop.unloadingTime ? parseInt(stop.unloadingTime, 10) : null;
+  const windowEnd = toMins(stop.windowEnd);
+  const exactT    = toMins(stop.exactTime);
+  const deadline  = stop.timeType === "exact" ? exactT : stop.timeType === "window" ? windowEnd : null;
+
+  const warnings: string[] = [];
+  if (earliest !== null && deadline !== null && earliest > deadline) {
+    warnings.push(`Earliest arrival (${stop.earliestArrival}) is after the ${stop.timeType === "exact" ? "booked time" : "window end"} (${stop.timeType === "exact" ? stop.exactTime : stop.windowEnd}).`);
+  }
+  if (earliest !== null && unloading !== null && deadline !== null) {
+    const finishAt = earliest + unloading;
+    if (finishAt > deadline) {
+      warnings.push(`Arrival + unloading (${fmtMins(unloading)}) finishes at ${fmtMins(finishAt % 1440).replace("h ", "h").replace("m", "")} — after the ${stop.timeType === "exact" ? "booked time" : "window end"}.`);
+    }
+  }
+
+  return (
+    <div>
+      <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Quantities & Stop Timing</div>
+      <div className="space-y-3">
+
+        {/* Pallets + quantity */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <FieldLabel>Number of Pallets</FieldLabel>
+            <input type="number" min="0" className="input" placeholder="e.g. 26"
+              value={stop.numPallets} onChange={set("numPallets")} />
+            <p className="text-xs text-muted mt-1">Will total across all stops in Load Details</p>
+          </div>
+          <div>
+            <FieldLabel>Quantity / Weight</FieldLabel>
+            <input type="text" className="input" placeholder="e.g. 14.5t / 3 cages"
+              value={stop.quantity} onChange={set("quantity")} />
+          </div>
+        </div>
+
+        {/* Earliest arrival */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <FieldLabel>Earliest Arrival</FieldLabel>
+            <input type="time" className="input" value={stop.earliestArrival} onChange={set("earliestArrival")} />
+            <p className="text-xs text-muted mt-1">Do not arrive before this time</p>
+          </div>
+          <div>
+            <FieldLabel>Loading / Unloading Time</FieldLabel>
+            <div className="relative">
+              <input type="number" min="0" className="input pr-14" placeholder="45"
+                value={stop.unloadingTime} onChange={set("unloadingTime")} />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">mins</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Timing conflict warnings */}
+        {warnings.length > 0 && (
+          <div className="space-y-1">
+            {warnings.map((w, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <span className="flex-shrink-0 mt-0.5">⚠</span>
+                <span>{w}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ── Stop card ─────────────────────────────────────────────────────────────────
 
 function StopCard({ stop, index, total, locations, onChange, onRemove }: {
@@ -675,6 +769,9 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
               </div>
             </div>
 
+            {/* Quantities & stop timing */}
+            <StopTimingBlock stop={stop} onChange={onChange} set={set} />
+
             {/* Contact */}
             <div>
               <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Contact</div>
@@ -753,23 +850,6 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
                   <FieldLabel>Navigation Instructions</FieldLabel>
                   <input type="text" className="input" placeholder="Paste Google Maps or Waze link…"
                     value={stop.navigationInstructions} onChange={set("navigationInstructions")} />
-                </div>
-              </div>
-            </div>
-
-            {/* Service time + quantity */}
-            <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Service Time</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <FieldLabel>Estimated Service Time</FieldLabel>
-                  <input type="text" className="input" placeholder="e.g. 45 mins"
-                    value={stop.estimatedServiceTime} onChange={set("estimatedServiceTime")} />
-                </div>
-                <div>
-                  <FieldLabel>Quantity at This Stop</FieldLabel>
-                  <input type="text" className="input" placeholder="e.g. 26 pallets / 14.5t"
-                    value={stop.quantity} onChange={set("quantity")} />
                 </div>
               </div>
             </div>
