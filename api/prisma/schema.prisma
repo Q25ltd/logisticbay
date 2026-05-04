@@ -8,43 +8,43 @@ datasource db {
 }
 
 model Company {
-  id                 Int      @id @default(autoincrement())
-  name               String
-  slug               String   @unique
-  ticker             String?  @unique
-  status             String   @default("trial")
-  reportEmail        String?
-  reportEmailEnabled Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                           Int      @id @default(autoincrement())
+  name                         String
+  slug                         String   @unique
+  ticker                       String?  @unique
+  status                       String   @default("trial")
+  reportEmail                  String?
+  reportEmailEnabled           Boolean  @default(true)
+  maxHolidaysPerDay            Int      @default(2)
+  holidayYearResetMonth        Int      @default(1)
+  holidayYearResetDay          Int      @default(1)
+  holidayWarnDaysBefore        Int      @default(30)
+  holidayCarryOverAllowed      Boolean  @default(false)
+  holidayCarryOverMaxDays      Int      @default(0)
+  baseHolidayAllowanceDays     Int      @default(28)
+  holidaySeniorityEnabled      Boolean  @default(true)
+  holidaySeniorityYears        Int      @default(5)
+  holidaySeniorityExtraDays    Int      @default(1)
+  holidaySeniorityMaxExtraDays Int      @default(5)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
-  memberships       CompanyMembership[]
-  driverProfiles    DriverProfile[]
-  savedLocations    SavedLocation[]
-  customers         Customer[]
-  jobTemplates      JobTemplate[]
-  plannedJobs       PlannedJob[]
-  jobEvents         JobExecutionEvent[]
-  shifts            Shift[]
-  availability      DriverAvailability[]
-  shiftPreferences  ShiftPreference[]
-  holidayRequests   HolidayRequest[]
-  workingSummaries  DriverWorkingTimeSummary[]
-  syncEventLogs     SyncEventLog[]
-  jobStops          JobStop[]
-  loadDetails       LoadDetails[]
-  jobAudits                  JobAudit[]
-  maxHolidaysPerDay          Int      @default(2)
-  holidayYearResetMonth      Int      @default(1)
-  holidayYearResetDay        Int      @default(1)
-  holidayWarnDaysBefore      Int      @default(30)
-  holidayCarryOverAllowed    Boolean  @default(false)
-  holidayCarryOverMaxDays    Int      @default(0)
-  baseHolidayAllowanceDays   Int      @default(28)
-  holidaySeniorityEnabled    Boolean  @default(true)
-  holidaySeniorityYears      Int      @default(5)
-  holidaySeniorityExtraDays  Int      @default(1)
-  holidaySeniorityMaxExtraDays Int    @default(5)
+  memberships      CompanyMembership[]
+  driverProfiles   DriverProfile[]
+  savedLocations   SavedLocation[]
+  customers        Customer[]
+  jobTemplates     JobTemplate[]
+  plannedJobs      PlannedJob[]
+  jobEvents        JobExecutionEvent[]
+  shifts           Shift[]
+  availability     DriverAvailability[]
+  shiftPreferences ShiftPreference[]
+  holidayRequests  HolidayRequest[]
+  workingSummaries DriverWorkingTimeSummary[]
+  syncEventLogs    SyncEventLog[]
+  jobStops         JobStop[]
+  loadDetails      LoadDetails[]
+  jobAudits        JobAudit[]
 }
 
 model Customer {
@@ -99,43 +99,43 @@ model CompanyMembership {
 }
 
 model DriverProfile {
-  id               Int      @id @default(autoincrement())
-  companyId        Int
-  userId           Int?     @unique
-  displayName      String
-  employeeNumber   String?
-  phoneNumber      String?
-  employmentStartDate DateTime?
+  id                    Int       @id @default(autoincrement())
+  companyId             Int
+  userId                Int?      @unique
+  displayName           String
+  employeeNumber        String?
+  phoneNumber           String?
+  employmentStartDate   DateTime?
   contactEmail          String?
   contactPhone          String?
-  driverType            String   @default("permanent")
-  licenceClass          String   @default("")
-  canUseTrailer         Boolean  @default(false)
+  driverType            String    @default("permanent")
+  licenceClass          String    @default("")
+  canUseTrailer         Boolean   @default(false)
   trailerTypesAllowed   Json?
-  adrAllowed            Boolean  @default(false)
-  hiabAllowed           Boolean  @default(false)
-  moffettAllowed        Boolean  @default(false)
-  manualHandlingAllowed Boolean  @default(false)
-  preferredStartTime    String   @default("")
-  earliestStartTime     String   @default("")
-  latestFinishTime      String   @default("")
+  adrAllowed            Boolean   @default(false)
+  hiabAllowed           Boolean   @default(false)
+  moffettAllowed        Boolean   @default(false)
+  manualHandlingAllowed Boolean   @default(false)
+  preferredStartTime    String    @default("")
+  earliestStartTime     String    @default("")
+  latestFinishTime      String    @default("")
   preferredShiftHours   Float?
   normalWorkingDays     Json?
-  weekendAvailable      Boolean  @default(false)
-  nightWorkAllowed      Boolean  @default(false)
-  nightsOutAllowed      Boolean  @default(false)
-  overtimeAllowed       Boolean  @default(false)
-  baseLocation          String   @default("")
-  operatingArea         String   @default("")
-  avoidAreas            String   @default("")
-  plannerNotes          String   @default("")
-  minHoursPerDay        Float    @default(8)
-  holidayAllowance      Int      @default(28)
-  holidayUsed           Int      @default(0)
-  defaultTruckReg       String   @default("")
-  status                String   @default("active")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  weekendAvailable      Boolean   @default(false)
+  nightWorkAllowed      Boolean   @default(false)
+  nightsOutAllowed      Boolean   @default(false)
+  overtimeAllowed       Boolean   @default(false)
+  baseLocation          String    @default("")
+  operatingArea         String    @default("")
+  avoidAreas            String    @default("")
+  plannerNotes          String    @default("")
+  minHoursPerDay        Float     @default(8)
+  holidayAllowance      Int       @default(28)
+  holidayUsed           Int       @default(0)
+  defaultTruckReg       String    @default("")
+  status                String    @default("active")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   company          Company                    @relation(fields: [companyId], references: [id])
   user             User?                      @relation(fields: [userId], references: [id])
@@ -178,7 +178,6 @@ model SavedLocation {
   dropoffJobs      PlannedJob[]  @relation("JobDropoffLocation")
   jobStops         JobStop[]
 }
-
 
 model JobTemplate {
   id                  Int      @id @default(autoincrement())
