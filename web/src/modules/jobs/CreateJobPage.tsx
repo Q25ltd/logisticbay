@@ -1045,7 +1045,6 @@ export default function CreateJobPage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
-  const [quickMode, setQuickMode] = useState(true);
   const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
 
   // Saved locations (loaded once)
@@ -1504,22 +1503,6 @@ export default function CreateJobPage() {
 
       <div className="max-w-3xl mx-auto px-4 pt-6 space-y-4">
 
-        {/* ── Quick / Full mode toggle ──────────────────────────────────────── */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-semibold text-muted">View mode:</span>
-          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-semibold">
-            <button type="button" onClick={() => setQuickMode(true)}
-              className={"px-4 py-2 transition-colors " + (quickMode ? "bg-slate-700 text-white" : "bg-white text-muted hover:bg-gray-50")}>
-              Quick
-            </button>
-            <button type="button" onClick={() => setQuickMode(false)}
-              className={"px-4 py-2 border-l border-border transition-colors " + (!quickMode ? "bg-slate-700 text-white" : "bg-white text-muted hover:bg-gray-50")}>
-              Full
-            </button>
-          </div>
-          <span className="text-xs text-muted">{quickMode ? "Sections 1 & 3 required — rest optional" : "All sections shown"}</span>
-        </div>
-
         {/* ── Quality score ──────────────────────────────────────────────────── */}
         <div className="card overflow-hidden">
           {/* Gradient top bar */}
@@ -1680,7 +1663,7 @@ export default function CreateJobPage() {
           <SectionHeader num={2} icon="🏢" title="Customer Details" subtitle="Operational contact for this job" active
             collapsed={sec2Collapsed} onToggle={() => setSec2Collapsed(o => !o)}
             summary={[contactName, contactPhone].filter(Boolean).join(" · ")}
-            complete={customerComplete} started={sec2Started} optional={quickMode} />
+            complete={customerComplete} started={sec2Started} />
           {!sec2Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
             {customerId && (
               <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
@@ -1773,7 +1756,7 @@ export default function CreateJobPage() {
           <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active
             collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
             summary={[materialDesc, totalWeight ? totalWeight + "t" : ""].filter(Boolean).join(" · ")}
-            complete={loadComplete} started={sec4Started} optional={quickMode} />
+            complete={loadComplete} started={sec4Started} />
           {!sec4Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
             {/* Goods description */}
@@ -1932,7 +1915,7 @@ export default function CreateJobPage() {
           <SectionHeader num={5} icon="🚛" title="Vehicle Requirements" subtitle="Vehicle class, trailer type and special equipment" active
             collapsed={sec5Collapsed} onToggle={() => setSec5Collapsed(o => !o)}
             summary={vehicleType ? VEHICLE_TYPES.find(([v]) => v === vehicleType)?.[1] ?? vehicleType : undefined}
-            complete={vehicleComplete} started={sec5Started} optional={quickMode} />
+            complete={vehicleComplete} started={sec5Started} />
 
           {!sec5Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
@@ -2052,8 +2035,7 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={6} icon="↩️" title="Return / Failure Instructions" subtitle="What the driver does if a delivery cannot be completed"
             active collapsed={sec6Collapsed} onToggle={() => setSec6Collapsed(o => !o)}
-            complete={sec6Complete} started={sec6Started} optional={quickMode}
-            summary={failureAction ? (
+            complete={sec6Complete} started={sec6Started}            summary={failureAction ? (
               failureAction === "call_assistance"      ? `Call for assistance${assistancePhone ? ` · ${assistancePhone}` : ""}` :
               failureAction === "next_delivery"        ? "Proceed to next delivery" :
               failureAction === "return_depot"         ? "Return to depot" :
@@ -2252,40 +2234,41 @@ export default function CreateJobPage() {
       </div>
 
       {/* ── Sticky save bar ───────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-lg z-40">
-        {/* Quality strip — mobile only */}
-        <div className="sm:hidden w-full h-1.5 bg-gray-100 flex">
-          <div className="h-1.5 bg-slate-600 transition-all duration-500" style={{ width: `${reqScore}%` }} />
-          <div className="h-1.5 bg-green-500 transition-all duration-500" style={{ width: `${optScore}%` }} />
+      <div className="fixed bottom-0 left-0 right-0 z-40" style={{background: 'white', borderTop: '1px solid #e2e8f0', boxShadow: '0 -4px 24px rgba(15,23,42,0.08)'}}>
+        {/* Progress strip */}
+        <div className="w-full h-1 flex">
+          <div className="h-full bg-slate-500 transition-all duration-700" style={{ width: `${reqScore}%` }} />
+          <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${optScore}%` }} />
         </div>
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="btn btn-outline text-sm px-4 py-2.5 hidden sm:block">Cancel</button>
-          {/* Quality pill — desktop */}
-          <div className={"hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border " +
-            (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
-             totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
-             "text-red-700 bg-red-50 border-red-200")}>
-            {totalScore >= 80 ? "✓" : totalScore >= 40 ? "~" : "⚠"} {totalScore}%
+        <div className="max-w-3xl mx-auto px-5 py-4">
+          <div className="flex items-center gap-3">
+            {/* Cancel — quiet, left */}
+            <button onClick={() => navigate(-1)}
+              className="text-sm font-medium text-slate-400 hover:text-slate-700 transition-colors px-1 flex-shrink-0">
+              Cancel
+            </button>
+            <div className="flex-1" />
+            {/* Quality score — centre-right */}
+            <div className={"hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-shrink-0 " +
+              (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
+               totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
+               "text-slate-500 bg-slate-50 border-slate-200")}>
+              {totalScore}%
+            </div>
+            {/* Save Draft */}
+            <button onClick={handleSaveDraft} disabled={saving !== null}
+              className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
+              {saving === "draft" ? "Saving…" : "Save Draft"}
+            </button>
+            {/* Save Ready */}
+            <button onClick={handleSaveReady} disabled={saving !== null}
+              className={"btn text-sm px-6 py-2.5 font-bold flex-shrink-0 " +
+                (MISSING.length === 0
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "btn-primary")}>
+              {saving === "ready" ? "Saving…" : MISSING.length === 0 ? "Save & Plan" : "Ready for Planner"}
+            </button>
           </div>
-          {lastAutoSaved && (
-            <span className="hidden sm:block text-xs text-muted">
-              Saved {lastAutoSaved.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          <div className="flex-1" />
-          <button onClick={handleSaveDraft} disabled={saving !== null}
-            className="btn btn-outline text-sm px-4 py-2.5 font-semibold">
-            {saving === "draft" ? "Saving…" : "Save Draft"}
-          </button>
-          <button onClick={handleSaveReady} disabled={saving !== null}
-            className={"btn text-sm px-5 py-2.5 font-semibold " +
-              (MISSING.length === 0 ? "bg-green-600 hover:bg-green-700 text-white border-green-600" : "btn-primary")}>
-            {saving === "ready" ? "Saving…" : MISSING.length === 0 ? "✓ Save & Plan →" : "Save — Ready for Planner →"}
-          </button>
-        </div>
-        {/* Mobile cancel row */}
-        <div className="sm:hidden px-4 pb-3 -mt-1">
-          <button onClick={() => navigate(-1)} className="text-xs text-muted hover:text-primary transition-colors">← Cancel</button>
         </div>
       </div>
 
