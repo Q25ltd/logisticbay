@@ -140,6 +140,22 @@ Final job state = derived from events, not stored directly.
 
 ---
 
+## 4. EVENT-BASED MODEL
+
+Job status is derived from events, not stored directly. The `status` field on `PlannedJob` exists for query performance but must always be consistent with the event log.
+
+**Implemented:**
+- `JobExecutionEvent` table with `clientEventId`, `clientTimestamp`, `serverReceivedAt`, `needsReview`
+- `@@unique([companyId, clientEventId])` — idempotency guaranteed
+- POST /sync/events endpoint — processes all 5 event types, idempotent on retry
+- `SyncEventLog` — audit log for every sync attempt including failures
+
+**Not yet implemented:**
+- Recalculation of job status from events on conflict
+- Reconciliation dashboard for `needsReview` events
+
+---
+
 ## 5. DATABASE SAFETY
 
 ### Rules
@@ -151,15 +167,21 @@ Final job state = derived from events, not stored directly.
 
 ### Migration rules
 
-**Never use:**
-```bash
-prisma migrate dev    # development only
-```
+**⚠️ CURRENT REALITY vs INTENDED:**
+The project currently uses `prisma db push` in production (set as Railway pre-deploy command). This is faster but bypasses migration history. For a paying-customer system, migrate to `prisma migrate deploy` which tracks every schema change.
 
-**Always use in production:**
+**Intended (post-launch hardening):**
 ```bash
+# development only
+prisma migrate dev
+
+# production — use this, not db push
 prisma migrate deploy
 ```
+
+**Local manual push** (only needed if Railway auto-deploy is broken):
+Requires TCP Proxy URL from Railway dashboard → Postgres → Settings → TCP Proxy.
+Internal Railway hostname does NOT work from outside Railway network.
 
 ### Safe migration flow
 1. Add new field (nullable or with default)
@@ -274,16 +296,12 @@ System must:
 ## 10. API / SERVER PROTECTION
 
 ### Required (MVP)
-- Auto-restart on crash (Railway provides)
-- /health endpoint reporting:
-  - API up/down
-  - Database reachable
-  - Queue depth
-  - DB query latency
-- Structured logging with requestId
-- Error monitoring (Sentry or similar)
-- Staging environment before production
-- Rollback capability tested
+- Auto-restart on crash — ✅ Railway provides
+- /health endpoint — ✅ EXISTS at GET /health — checks DB with SELECT 1, returns `{server, db}`. MISSING: queue depth, DB latency, memory
+- Structured logging with requestId — ⚠️ Fastify logger enabled (JSON) but does NOT inject requestId/userId/companyId per request. Must add.
+- Error monitoring (Sentry) — ❌ NOT set up
+- Staging environment — ❌ NOT set up — all deploys go direct to production
+- Rollback capability — ❌ NOT documented or tested
 
 ### Per-tenant rate limiting
 Add post-MVP:
@@ -447,22 +465,23 @@ Step-by-step incident response:
 
 These must be in place:
 
-- [x] Tenant isolation enforced via JWT
-- [x] Soft deletes for operational data
-- [x] .env not in git
-- [x] HTTPS in production
-- [ ] Idempotency via clientEventId UNIQUE
-- [ ] Event-based data model
-- [ ] Database backups verified by restore test
-- [ ] Staging environment separate from production
-- [ ] Migration safety procedure documented
-- [ ] Structured logging with requestId
-- [ ] Error monitoring (Sentry)
-- [ ] System state banner (manual toggle)
-- [ ] Manual override flag for planner
-- [ ] /health endpoint with metrics
-- [ ] Tenant isolation integration test on every deploy
-- [ ] Rollback procedure documented and tested
+- [x] Tenant isolation enforced via JWT — companyId injected from JWT, all queries scoped
+- [x] Soft deletes for operational data — status fields used throughout
+- [x] .env not in git — all .env files in .gitignore
+- [x] HTTPS in production — Railway + Vercel both enforce HTTPS
+- [x] Idempotency via clientEventId UNIQUE — @@unique([companyId, clientEventId]) on JobExecutionEvent
+- [x] Event-based data model — JobExecutionEvent table, sync endpoint live
+- [x] Per-stop location IDOR fixed — savedLocationId validated against companyId before write (fixed 2026-05-05)
+- [ ] Database backups verified by restore test — Railway auto-backups exist but restore NOT tested
+- [ ] Staging environment separate from production — NO staging, all deploys go direct to production
+- [ ] Migration safety — using `prisma db push` NOT `prisma migrate deploy` (see note below)
+- [ ] Structured logging with requestId/userId/companyId — Fastify logger enabled but NOT structured per request
+- [ ] Error monitoring (Sentry) — NOT set up
+- [ ] System state banner (manual toggle) — NOT built
+- [ ] Manual override flag for planner — NOT built
+- [ ] /health endpoint with metrics — EXISTS but minimal (only checks DB reachable, no queue depth or latency)
+- [ ] Tenant isolation integration test on every deploy — NOT built
+- [ ] Rollback procedure documented and tested — NOT documented
 
 ---
 
@@ -496,6 +515,27 @@ These must be in place:
 - Reconciliation dashboard
 - Post-mortem template
 - Disaster recovery quarterly tests
+
+---
+
+## 20. KNOWN VULNERABILITIES — FOUND AND FIXED
+
+Track every security issue discovered, even after fixing, so patterns are not repeated.
+
+| Date | Issue | Severity | Fix |
+|------|-------|----------|-----|
+| 2026-05-05 | Per-stop `savedLocationId` not validated against `companyId` — planner could reference another company's saved location | CRITICAL (IDOR) | Added company check before transaction in POST/PATCH /jobs |
+| 2026-05-05 | `bookedTime`, `earliestArrivalMinutes`, `unloadingAllowanceMinutes` accepted by API but never written to DB — silent data loss | CRITICAL | Added to stop create/createMany mapping in jobs.ts |
+| 2026-05-05 | Vehicle types, trailer types, load units from form rejected by server constants — `ready_to_plan` saves blocked for most vehicle types | HIGH | Expanded VEHICLE_CLASSES, TRAILER_TYPES, LOAD_UNITS in jobCreation.ts |
+| 2026-05-05 | `earliestArrival` HH:MM conversion used raw `split(":").map(Number)` — NaN if input malformed | MEDIUM | Replaced with `toMins()` helper which returns null for NaN |
+| 2026-05-05 | Datetime strings built without timezone (`T14:30:00` not `T14:30:00.000Z`) — ambiguous UTC vs local | MEDIUM | Appended `.000Z` to all constructed stop datetimes |
+| 2026-05-05 | DATABASE_PUBLIC_URL password exposed in chat session | HIGH | ⚠️ ROTATE POSTGRES PASSWORD IN RAILWAY IMMEDIATELY |
+
+### Pattern: IDOR on related records
+Any time a client sends an ID referencing a related record (location, driver, customer, template), validate that record belongs to `companyId` before writing. The top-level job's companyId check is not enough — check every foreign key separately.
+
+### Pattern: Silent field drops
+When adding new fields to a form, always audit that they are: (1) in the API request type, (2) mapped in the route handler create block, AND (3) mapped in the route handler update block. Missing any one of the three causes silent data loss.
 
 ---
 
