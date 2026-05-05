@@ -218,8 +218,8 @@ const HANDLING_METHODS: [string, string][] = [
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-xs font-semibold text-primary mb-1.5">
-      {children}{required && <span className="text-red-500 ml-0.5">*</span>}
+    <label className="block text-xs font-bold text-slate-600 mb-1.5 tracking-wide">
+      {children}{required && <span className="text-blue-500 ml-0.5">*</span>}
     </label>
   );
 }
@@ -252,33 +252,42 @@ function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary,
   active?: boolean; collapsed?: boolean; summary?: string; onToggle?: () => void;
   complete?: boolean; started?: boolean; optional?: boolean;
 }) {
+  const accent =
+    complete ? "border-l-green-500" :
+    started  ? "border-l-blue-400"  : "border-l-transparent";
+  const bg =
+    complete && collapsed ? "bg-green-50/60" :
+    !collapsed            ? "bg-white"        : "bg-slate-50/70";
+
   return (
     <div
-      className={"flex items-center gap-3 px-5 py-4 border-b border-border bg-gray-50/50 " + (onToggle ? "cursor-pointer select-none" : "")}
+      className={`flex items-center gap-3 px-5 py-4 border-b border-border border-l-4 ${accent} ${bg} ${onToggle ? "cursor-pointer select-none" : ""} transition-colors duration-200`}
       onClick={onToggle}
     >
       <StatusDot complete={complete} started={started} />
-      <div className="w-9 h-9 rounded-lg bg-white border border-border flex items-center justify-center text-lg shadow-sm flex-shrink-0">
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 transition-all duration-200 ${complete ? "bg-green-50 border border-green-200" : started ? "bg-blue-50 border border-blue-200" : "bg-white border border-slate-200 shadow-sm"}`}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-muted uppercase tracking-widest">
+          <span className={`text-xs font-bold uppercase tracking-widest ${complete ? "text-green-600" : started ? "text-blue-500" : "text-muted"}`}>
             {String(num).padStart(2, "0")}
           </span>
           <h2 className="text-sm font-black text-primary">{title}</h2>
-          {optional && (
-            <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">optional</span>
+          {optional && !complete && (
+            <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
           )}
         </div>
         {collapsed && summary
-          ? <p className="text-xs text-accent font-medium mt-0.5 truncate">{summary}</p>
+          ? <p className="text-xs text-accent font-semibold mt-0.5 truncate">{summary}</p>
           : <p className="text-xs text-muted mt-0.5 truncate">{subtitle}</p>
         }
       </div>
-      {!active && <span className="text-xs text-gray-300 font-medium flex-shrink-0">Coming soon</span>}
+      {!active && <span className="text-xs text-slate-300 font-medium flex-shrink-0">Coming soon</span>}
       {onToggle && (
-        <span className="text-primary text-xl flex-shrink-0 ml-1 font-bold">{collapsed ? "›" : "⌄"}</span>
+        <span className={`text-xl flex-shrink-0 ml-1 font-bold transition-transform duration-200 ${collapsed ? "text-muted" : "text-accent rotate-0"}`}>
+          {collapsed ? "›" : "⌄"}
+        </span>
       )}
     </div>
   );
@@ -287,15 +296,26 @@ function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary,
 function SectionFooter({ complete, label }: { complete: boolean; label: string }) {
   return (
     <div className={
-      "px-5 py-3 border-t text-sm font-semibold flex items-center gap-2 " +
+      "px-5 py-3 border-t text-sm font-semibold flex items-center gap-2.5 " +
       (complete
-        ? "text-green-700 bg-green-50 border-green-200"
-        : "text-red-700 bg-red-50 border-red-300")
+        ? "text-green-700 bg-green-50/80 border-green-100"
+        : "text-amber-700 bg-amber-50/80 border-amber-100")
     }>
-      {complete
-        ? <><span>✓</span> {label} complete</>
-        : <><span className="text-lg leading-none">⚠</span> Fill in all required fields above</>
-      }
+      {complete ? (
+        <>
+          <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+            <svg viewBox="0 0 10 10" className="w-3 h-3" fill="none">
+              <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </span>
+          {label} complete
+        </>
+      ) : (
+        <>
+          <span className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0 text-white text-xs font-black leading-none">!</span>
+          Fill in the required fields above
+        </>
+      )}
     </div>
   );
 }
@@ -306,9 +326,13 @@ function OptionalToggle({ open, onToggle, label = "optional details" }: {
   return (
     <div className="pt-1">
       <button type="button" onClick={onToggle}
-        className="text-xs font-semibold text-accent hover:underline flex items-center gap-1.5">
-        <span className="text-base leading-none">{open ? "▾" : "▸"}</span>
-        {open ? `Hide ${label}` : `+ Add ${label}`}
+        className={`text-xs font-semibold flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all ${
+          open
+            ? "text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200"
+            : "text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100"
+        }`}>
+        <span className="text-sm leading-none">{open ? "−" : "+"}</span>
+        {open ? `Hide ${label}` : `Show ${label}`}
       </button>
     </div>
   );
@@ -317,10 +341,10 @@ function OptionalToggle({ open, onToggle, label = "optional details" }: {
 function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button type="button" onClick={() => onChange(!value)} className="flex items-center gap-3 group w-fit">
-      <div className={"relative w-10 h-5 rounded-full transition-colors flex-shrink-0 " + (value ? "bg-green-500" : "bg-red-400")}>
-        <span className={"absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (value ? "translate-x-5" : "translate-x-0")} />
+      <div className={"relative w-11 h-6 rounded-full transition-all duration-200 flex-shrink-0 " + (value ? "bg-blue-500" : "bg-slate-200")}>
+        <span className={"absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 " + (value ? "translate-x-5" : "translate-x-0")} />
       </div>
-      <span className={"text-sm font-medium transition-colors " + (value ? "text-primary" : "text-muted")}>{label}</span>
+      <span className={"text-sm font-medium transition-colors " + (value ? "text-slate-900" : "text-slate-500")}>{label}</span>
     </button>
   );
 }
@@ -592,7 +616,7 @@ function StopTimingBlock({ stop, onChange, set }: {
 
   return (
     <div>
-      <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Quantities & Stop Timing</div>
+      <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Quantities & Stop Timing</div>
       <div className="space-y-3">
 
         {/* Pallets + quantity */}
@@ -679,10 +703,10 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
   const complete  = stopComplete(stop);
 
   return (
-    <div className="border border-border rounded-xl overflow-hidden">
+    <div className="border border-slate-200 rounded-2xl overflow-hidden" style={{boxShadow: '0 1px 3px rgba(15,23,42,0.06)'}}>
 
       {/* Stop header — clickable to collapse */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-border cursor-pointer select-none"
+      <div className={`flex items-center justify-between px-4 py-3 border-b border-slate-100 cursor-pointer select-none transition-colors ${complete ? "bg-green-50/70" : "bg-slate-50/80"}`}
         onClick={() => onChange({ collapsed: !stop.collapsed })}>
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-sm font-black text-primary flex-shrink-0">Stop {index + 1}</span>
@@ -735,7 +759,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
         {/* ── Location ─────────────────────────────────────────────────────── */}
         <div className="space-y-3">
-          <div className="text-xs font-bold text-muted uppercase tracking-widest pt-1">Location</div>
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pt-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Location</div>
 
           <div>
             <FieldLabel>Address / Saved Location</FieldLabel>
@@ -803,7 +827,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
         {/* ── Timing ───────────────────────────────────────────────────────── */}
         <div className="space-y-3">
-          <div className="text-xs font-bold text-muted uppercase tracking-widest pt-1">Timing</div>
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pt-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Timing</div>
 
           <div>
             <FieldLabel required>{dateLabel}</FieldLabel>
@@ -857,7 +881,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
             {/* Address clarity */}
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Address Clarity</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Address Clarity</div>
               <div className="space-y-3">
                 <div>
                   <FieldLabel>Unit / Building</FieldLabel>
@@ -882,7 +906,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
             {/* Contact */}
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Contact</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Contact</div>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -906,7 +930,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
             {/* Reference / booking */}
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Reference / Booking</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Reference / Booking</div>
               <div className="space-y-3">
                 <div>
                   <FieldLabel>Reference Number</FieldLabel>
@@ -928,7 +952,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
             {/* Location support */}
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Location Support</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Location Support</div>
               <div className="space-y-3">
                 <div>
                   <FieldLabel>Opening Hours</FieldLabel>
@@ -947,7 +971,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
             {/* Driver */}
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Driver</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Driver</div>
               <div className="space-y-3">
                 <div>
                   <FieldLabel>Driver Notes / Instructions</FieldLabel>
@@ -964,7 +988,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
             {/* Internal */}
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Internal</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Internal</div>
               <div>
                 <FieldLabel>Internal Notes</FieldLabel>
                 <textarea className="input min-h-16 resize-none" placeholder="Not shown to driver — planner only…"
@@ -978,16 +1002,12 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
       </div>}
 
       {/* Stop footer — always visible */}
-      <div className={
-        "px-4 py-3 border-t text-sm font-semibold flex items-center gap-2 " +
-        (complete
-          ? "text-green-700 bg-green-50 border-green-200"
-          : "text-red-700 bg-red-50 border-red-300")
-      }>
-        {complete
-          ? <><span>✓</span> Stop {index + 1} complete</>
-          : <><span className="text-lg leading-none">⚠</span> Fill in required fields for this stop</>
-        }
+      <div className={`px-4 py-2.5 border-t text-xs font-semibold flex items-center gap-2 ${complete ? "text-green-700 bg-green-50/80 border-green-100" : "text-amber-700 bg-amber-50/80 border-amber-100"}`}>
+        {complete ? (
+          <><span className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0"><svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></span> Stop {index + 1} complete</>
+        ) : (
+          <><span className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0 text-white text-xs font-black leading-none">!</span> Fill in address and date above</>
+        )}
       </div>
 
     </div>
@@ -1464,17 +1484,17 @@ export default function CreateJobPage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface pb-32">
+    <div className="min-h-screen bg-surface pb-40">
 
       {/* ── Page header ────────────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-border px-6 py-5">
+      <div className="bg-white border-b border-slate-200 px-6 py-5" style={{boxShadow: '0 1px 4px rgba(15,23,42,0.06)'}}>
         <div className="max-w-3xl mx-auto flex items-center gap-4">
           <button onClick={() => navigate(-1)}
-            className="text-muted hover:text-primary transition-colors text-xl leading-none" title="Back">←</button>
+            className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-muted hover:text-primary hover:border-slate-300 hover:bg-slate-50 transition-all flex-shrink-0" title="Back">←</button>
           <div>
-            <h1 className="text-xl font-black text-primary">Create Job</h1>
+            <h1 className="text-xl font-black text-primary">New Job</h1>
             <p className="text-sm text-muted mt-0.5">
-              Fill in the sections below — save as draft any time, mark ready when complete
+              Fill in the sections below — save as draft any time
             </p>
           </div>
         </div>
@@ -1501,43 +1521,45 @@ export default function CreateJobPage() {
         </div>
 
         {/* ── Quality score ──────────────────────────────────────────────────── */}
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-3">
+        <div className="card overflow-hidden">
+          {/* Gradient top bar */}
+          <div className="h-1.5 w-full flex">
+            <div className="h-full bg-slate-600 transition-all duration-700 ease-out" style={{ width: `${reqScore}%` }} />
+            <div className="h-full bg-green-500 transition-all duration-700 ease-out" style={{ width: `${optScore}%` }} />
+            <div className="h-full flex-1 bg-slate-100" />
+          </div>
+          <div className="p-5">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Job Quality</div>
-              <div className={"text-4xl font-black " + scoreColor}>{totalScore}%</div>
-              <div className="text-xs text-muted mt-1">
-                Required <span className="font-semibold text-slate-600">{reqScore}/65</span>
-                {" · "}
-                Optional <span className="font-semibold text-green-600">{optScore}/35</span>
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Job Completeness</div>
+              <div className={"text-5xl font-black leading-none " + scoreColor}>{totalScore}<span className="text-2xl">%</span></div>
+              <div className="text-xs text-muted mt-1.5 flex items-center gap-3">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Required <strong className="text-slate-700">{reqScore}/65</strong></span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Optional <strong className="text-green-700">{optScore}/35</strong></span>
               </div>
             </div>
-            <div className={"w-16 h-16 rounded-full border-4 flex items-center justify-center flex-shrink-0 " +
-              (totalScore >= 80 ? "border-green-200" : totalScore >= 40 ? "border-amber-200" : "border-red-200")}>
-              <span className={"text-sm font-black " + scoreColor}>{totalScore}%</span>
+            <div className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center flex-shrink-0 ${
+              totalScore >= 80 ? "border-green-200 bg-green-50" : totalScore >= 40 ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50"}`}>
+              <span className={"text-xl font-black " + scoreColor}>{totalScore}%</span>
             </div>
           </div>
 
-          {/* Two-tone progress bar */}
-          <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden mb-1 flex">
-            <div className={"h-3 " + barReqColor + " transition-all duration-500"} style={{ width: `${reqScore}%` }} />
-            <div className={"h-3 " + barOptColor + " transition-all duration-500"} style={{ width: `${optScore}%` }} />
-          </div>
-          <div className="flex items-center gap-4 mb-4 text-xs text-muted">
-            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-600" /> Required (max 65%)</span>
-            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-500" /> Optional (max 35%)</span>
+          {/* Progress bar */}
+          <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4 flex">
+            <div className={"h-full bg-slate-600 transition-all duration-700 ease-out rounded-full"} style={{ width: `${reqScore}%` }} />
+            <div className={"h-full bg-green-500 transition-all duration-700 ease-out"} style={{ width: `${optScore}%`, borderRadius: reqScore > 0 ? "0 9999px 9999px 0" : "9999px" }} />
           </div>
 
           {/* Missing required */}
           {MISSING.length > 0 && (
-            <div className="border-t border-border pt-3 mb-3">
-              <div className="text-sm font-bold text-red-700 mb-2">
-                ⚠ {MISSING.length} required field{MISSING.length > 1 ? "s" : ""} missing
+            <div className="border-t border-slate-100 pt-3 mb-3">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2.5">
+                {MISSING.length} still needed
               </div>
               <div className="flex flex-wrap gap-2">
                 {MISSING.map(f => (
-                  <span key={f} className="inline-flex items-center gap-1.5 text-sm bg-red-100 text-red-800 border border-red-400 px-3 py-1.5 rounded-full font-semibold">
-                    <span className="text-base leading-none">⚠</span> {f}
+                  <span key={f} className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded-full font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" /> {f}
                   </span>
                 ))}
               </div>
@@ -1546,13 +1568,13 @@ export default function CreateJobPage() {
 
           {/* Optional fields to improve score */}
           {MISSING.length === 0 && OPT_MISSING.length > 0 && (
-            <div className="border-t border-border pt-3">
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-2">
+            <div className="border-t border-slate-100 pt-3">
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-2.5">
                 Add these to boost your score
               </div>
               <div className="flex flex-wrap gap-2">
                 {OPT_MISSING.map(f => (
-                  <span key={f} className="inline-flex items-center gap-1 text-xs bg-gray-50 text-muted border border-border px-2.5 py-1 rounded-full">
+                  <span key={f} className="inline-flex items-center gap-1.5 text-xs bg-slate-50 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors cursor-default">
                     + {f}
                   </span>
                 ))}
@@ -1565,13 +1587,14 @@ export default function CreateJobPage() {
               <span className="text-sm text-green-700 font-semibold">✓ All fields complete — this job is ready to plan</span>
             </div>
           )}
+          </div>{/* end p-5 */}
         </div>
 
         {/* ── Template placeholder ───────────────────────────────────────────── */}
         <div className="card p-5">
-          <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Start from Template</div>
-          <div className="flex items-center gap-3 p-4 bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl justify-center cursor-not-allowed opacity-50">
-            <span className="text-2xl">📄</span>
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Start from Template</div>
+          <div className="flex items-center gap-3 p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl justify-center cursor-not-allowed opacity-40">
+            <span className="text-xl">📄</span>
             <div className="text-left">
               <div className="text-sm font-semibold text-primary">Select a template</div>
               <div className="text-xs text-muted">Autofill from a saved job template — coming soon</div>
@@ -1585,7 +1608,7 @@ export default function CreateJobPage() {
             collapsed={sec1Collapsed} onToggle={() => setSec1Collapsed(o => !o)}
             summary={[customerName, plannedDate, serviceType].filter(Boolean).join(" · ")}
             complete={basicsComplete} started={sec1Started} />
-          {!sec1Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
+          {!sec1Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
             <div>
               <FieldLabel required>Customer</FieldLabel>
               <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
@@ -1658,7 +1681,7 @@ export default function CreateJobPage() {
             collapsed={sec2Collapsed} onToggle={() => setSec2Collapsed(o => !o)}
             summary={[contactName, contactPhone].filter(Boolean).join(" · ")}
             complete={customerComplete} started={sec2Started} optional={quickMode} />
-          {!sec2Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
+          {!sec2Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
             {customerId && (
               <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                 <span>✓</span>
@@ -1751,7 +1774,7 @@ export default function CreateJobPage() {
             collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
             summary={[materialDesc, totalWeight ? totalWeight + "t" : ""].filter(Boolean).join(" · ")}
             complete={loadComplete} started={sec4Started} optional={quickMode} />
-          {!sec4Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
+          {!sec4Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
             {/* Goods description */}
             <div>
@@ -1806,7 +1829,7 @@ export default function CreateJobPage() {
 
                 {/* Physical */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Physical</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Physical</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <FieldLabel>Volume</FieldLabel>
@@ -1826,7 +1849,7 @@ export default function CreateJobPage() {
 
                 {/* Conditions */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Conditions</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Conditions</div>
                   <div className="space-y-3">
                     <div>
                       <Toggle value={hazardous} onChange={setHazardous} label="Hazardous goods (ADR)" />
@@ -1855,7 +1878,7 @@ export default function CreateJobPage() {
 
                 {/* Handling / equipment */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Handling Equipment Required</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling Equipment Required</div>
                   <div className="space-y-3">
                     <Toggle value={forkliftReq} onChange={setForkliftReq} label="Forklift required" />
                     <Toggle value={tailLiftReq} onChange={setTailLiftReq} label="Tail lift required" />
@@ -1865,7 +1888,7 @@ export default function CreateJobPage() {
 
                 {/* Handling methods */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Handling Methods</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling Methods</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <FieldLabel>Loading Method</FieldLabel>
@@ -1886,7 +1909,7 @@ export default function CreateJobPage() {
 
                 {/* Extra */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Extra</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Extra</div>
                   <div className="space-y-3">
                     <div>
                       <FieldLabel>Load Notes</FieldLabel>
@@ -1911,7 +1934,7 @@ export default function CreateJobPage() {
             summary={vehicleType ? VEHICLE_TYPES.find(([v]) => v === vehicleType)?.[1] ?? vehicleType : undefined}
             complete={vehicleComplete} started={sec5Started} optional={quickMode} />
 
-          {!sec5Collapsed && <div className="px-5 pt-5 pb-4 space-y-5">
+          {!sec5Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
             {/* Vehicle type */}
             <div>
@@ -1943,7 +1966,7 @@ export default function CreateJobPage() {
 
                 {/* Minimum size */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Size</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Size</div>
                   <div className="max-w-xs">
                     <FieldLabel>Minimum Vehicle Size</FieldLabel>
                     <select className="input" value={minSize} onChange={e => setMinSize(e.target.value)}>
@@ -1955,7 +1978,7 @@ export default function CreateJobPage() {
 
                 {/* Trailer rules */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Trailer Rules</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Trailer Rules</div>
                   <div className="space-y-4">
                     <div>
                       <FieldLabel>Trailer Types Allowed</FieldLabel>
@@ -1970,19 +1993,19 @@ export default function CreateJobPage() {
 
                 {/* Equipment */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Equipment Required</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Equipment Required</div>
                   <MultiCheck options={EQUIPMENT_OPTS} value={equipmentReq} onChange={setEquipmentReq} />
                 </div>
 
                 {/* Driver qualifications */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Driver Qualifications</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Driver Qualifications</div>
                   <MultiCheck options={DRIVER_QUALS} value={driverQuals} onChange={setDriverQuals} />
                 </div>
 
                 {/* Restrictions */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Restrictions</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Restrictions</div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <FieldLabel>Height</FieldLabel>
@@ -2013,7 +2036,7 @@ export default function CreateJobPage() {
 
                 {/* Access notes */}
                 <div>
-                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Access / Vehicle Notes</div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Access / Vehicle Notes</div>
                   <textarea className="input min-h-16 resize-none"
                     placeholder="e.g. Tight access — no artic. Residential road. Low bridge at 3.8m on approach."
                     value={accessNotes} onChange={e => setAccessNotes(e.target.value)} />
@@ -2039,7 +2062,7 @@ export default function CreateJobPage() {
               failureAction === "finish_then_return"   ? `Finish deliveries, then return${returnDestination ? ` to ${returnDestination}` : ""}` : ""
             ) : undefined} />
 
-          {!sec6Collapsed && <div className="px-5 pt-5 pb-4 space-y-5">
+          {!sec6Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
             {/* Main dropdown */}
             <div>
