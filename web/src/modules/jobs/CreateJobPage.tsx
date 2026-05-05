@@ -233,24 +233,43 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary, onToggle }: {
+function StatusDot({ complete, started }: { complete?: boolean; started?: boolean }) {
+  if (complete) return (
+    <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+      <svg viewBox="0 0 10 10" className="w-3 h-3" fill="none">
+        <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    </span>
+  );
+  if (started) return (
+    <span className="w-5 h-5 rounded-full bg-blue-400 flex-shrink-0 shadow-sm animate-pulse" />
+  );
+  return <span className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white flex-shrink-0" />;
+}
+
+function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary, onToggle, complete, started, optional }: {
   num: number; icon: string; title: string; subtitle: string;
   active?: boolean; collapsed?: boolean; summary?: string; onToggle?: () => void;
+  complete?: boolean; started?: boolean; optional?: boolean;
 }) {
   return (
     <div
       className={"flex items-center gap-3 px-5 py-4 border-b border-border bg-gray-50/50 " + (onToggle ? "cursor-pointer select-none" : "")}
       onClick={onToggle}
     >
+      <StatusDot complete={complete} started={started} />
       <div className="w-9 h-9 rounded-lg bg-white border border-border flex items-center justify-center text-lg shadow-sm flex-shrink-0">
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold text-muted uppercase tracking-widest">
             {String(num).padStart(2, "0")}
           </span>
           <h2 className="text-sm font-black text-primary">{title}</h2>
+          {optional && (
+            <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">optional</span>
+          )}
         </div>
         {collapsed && summary
           ? <p className="text-xs text-accent font-medium mt-0.5 truncate">{summary}</p>
@@ -580,7 +599,7 @@ function StopTimingBlock({ stop, onChange, set }: {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <FieldLabel>Number of Pallets</FieldLabel>
-            <input type="number" min="0" className="input" placeholder="e.g. 26"
+            <input type="number" min="0" inputMode="numeric" className="input" placeholder="e.g. 26"
               value={stop.numPallets} onChange={set("numPallets")} />
             <p className="text-xs text-muted mt-1">Will total across all stops in Load Details</p>
           </div>
@@ -601,7 +620,7 @@ function StopTimingBlock({ stop, onChange, set }: {
           <div>
             <FieldLabel>Loading / Unloading Time</FieldLabel>
             <div className="relative">
-              <input type="number" min="0" className="input pr-14" placeholder="45"
+              <input type="number" min="0" inputMode="numeric" className="input pr-14" placeholder="45"
                 value={stop.unloadingTime} onChange={set("unloadingTime")} />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">mins</span>
             </div>
@@ -701,7 +720,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
               <button key={t} type="button"
                 onClick={() => onChange({ stopType: t })}
                 className={
-                  "flex-1 py-2.5 rounded-lg border text-sm font-semibold transition-colors " +
+                  "flex-1 py-3 min-h-[48px] rounded-lg border text-sm font-semibold transition-colors " +
                   (stop.stopType === t
                     ? t === "collection"
                       ? "bg-blue-600 text-white border-blue-600"
@@ -770,12 +789,12 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel>Latitude</FieldLabel>
-              <input type="text" className="input font-mono" placeholder="51.5074"
+              <input type="text" inputMode="decimal" className="input font-mono" placeholder="51.5074"
                 value={stop.lat} onChange={set("lat")} />
             </div>
             <div>
               <FieldLabel>Longitude</FieldLabel>
-              <input type="text" className="input font-mono" placeholder="-0.1278"
+              <input type="text" inputMode="decimal" className="input font-mono" placeholder="-0.1278"
                 value={stop.lng} onChange={set("lng")} />
             </div>
           </div>
@@ -798,7 +817,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
                 <button key={t} type="button"
                   onClick={() => onChange({ timeType: t })}
                   className={
-                    "flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors " +
+                    "flex-1 py-2.5 min-h-[44px] rounded-lg border text-xs font-semibold transition-colors " +
                     (stop.timeType === t
                       ? "bg-slate-700 text-white border-slate-700"
                       : "bg-white text-muted border-border hover:border-gray-400")
@@ -989,7 +1008,7 @@ function MultiCheck({ options, value, onChange }: {
         const on = value.includes(key);
         return (
           <button key={key} type="button" onClick={() => toggle(key)}
-            className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+            className={"text-sm px-4 py-2.5 min-h-[44px] rounded-full border font-medium transition-colors " +
               (on ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
             {label}
           </button>
@@ -1006,6 +1025,8 @@ export default function CreateJobPage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
+  const [quickMode, setQuickMode] = useState(true);
+  const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
 
   // Saved locations (loaded once)
   const [locations, setLocations] = useState<SavedLocation[]>([]);
@@ -1155,6 +1176,69 @@ export default function CreateJobPage() {
   const assistanceComplete =
     failureAction !== "call_assistance" || !!assistancePhone.trim();
   const sec6Complete = !!failureAction && assistanceComplete && returnComplete && altAddressComplete;
+
+  // ── "Started" flags (for status dots) ───────────────────────────────────
+  const sec1Started = !!(customerName || (serviceType || jobType));
+  const sec2Started = !!(contactName || contactPhone);
+  const sec3Started = stops.some(s => s.siteName || s.street);
+  const sec4Started = !!(materialDesc || totalQty || totalWeight);
+  const sec5Started = !!vehicleType;
+  const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
+
+  // ── Auto-collapse completed sections ─────────────────────────────────────
+  const prevSec1 = useRef(false);
+  const prevSec2 = useRef(false);
+  const prevSec4 = useRef(false);
+  const prevSec5 = useRef(false);
+  const prevSec6 = useRef(false);
+  useEffect(() => {
+    if (basicsComplete && !prevSec1.current && !sec1Collapsed) {
+      const t = setTimeout(() => setSec1Collapsed(true), 1400);
+      return () => clearTimeout(t);
+    }
+    prevSec1.current = basicsComplete;
+  }, [basicsComplete, sec1Collapsed]);
+  useEffect(() => {
+    if (customerComplete && !prevSec2.current && !sec2Collapsed) {
+      const t = setTimeout(() => setSec2Collapsed(true), 1400);
+      return () => clearTimeout(t);
+    }
+    prevSec2.current = customerComplete;
+  }, [customerComplete, sec2Collapsed]);
+  useEffect(() => {
+    if (loadComplete && !prevSec4.current && !sec4Collapsed) {
+      const t = setTimeout(() => setSec4Collapsed(true), 1400);
+      return () => clearTimeout(t);
+    }
+    prevSec4.current = loadComplete;
+  }, [loadComplete, sec4Collapsed]);
+  useEffect(() => {
+    if (vehicleComplete && !prevSec5.current && !sec5Collapsed) {
+      const t = setTimeout(() => setSec5Collapsed(true), 1400);
+      return () => clearTimeout(t);
+    }
+    prevSec5.current = vehicleComplete;
+  }, [vehicleComplete, sec5Collapsed]);
+  useEffect(() => {
+    if (sec6Complete && !prevSec6.current && !sec6Collapsed) {
+      const t = setTimeout(() => setSec6Collapsed(true), 1400);
+      return () => clearTimeout(t);
+    }
+    prevSec6.current = sec6Complete;
+  }, [sec6Complete, sec6Collapsed]);
+
+  // ── Auto-save indicator (localStorage snapshot every 30 s) ────────────────
+  useEffect(() => {
+    const started = customerName || serviceType || stops[0].siteName || materialDesc;
+    if (!started) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem("lb_job_draft_ts", new Date().toISOString());
+      } catch {}
+      setLastAutoSaved(new Date());
+    }, 30_000);
+    return () => clearTimeout(t);
+  });
 
   const MISSING = [
     !customerName.trim()   && "Customer",
@@ -1400,6 +1484,22 @@ export default function CreateJobPage() {
 
       <div className="max-w-3xl mx-auto px-4 pt-6 space-y-4">
 
+        {/* ── Quick / Full mode toggle ──────────────────────────────────────── */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-muted">View mode:</span>
+          <div className="flex rounded-lg border border-border overflow-hidden text-xs font-semibold">
+            <button type="button" onClick={() => setQuickMode(true)}
+              className={"px-4 py-2 transition-colors " + (quickMode ? "bg-slate-700 text-white" : "bg-white text-muted hover:bg-gray-50")}>
+              Quick
+            </button>
+            <button type="button" onClick={() => setQuickMode(false)}
+              className={"px-4 py-2 border-l border-border transition-colors " + (!quickMode ? "bg-slate-700 text-white" : "bg-white text-muted hover:bg-gray-50")}>
+              Full
+            </button>
+          </div>
+          <span className="text-xs text-muted">{quickMode ? "Sections 1 & 3 required — rest optional" : "All sections shown"}</span>
+        </div>
+
         {/* ── Quality score ──────────────────────────────────────────────────── */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-3">
@@ -1461,8 +1561,8 @@ export default function CreateJobPage() {
           )}
 
           {MISSING.length === 0 && OPT_MISSING.length === 0 && (
-            <div className="border-t border-border pt-3">
-              <span className="text-sm text-green-700 font-semibold">✓ Perfect — all fields complete</span>
+            <div className="border-t border-green-200 pt-3 bg-green-50 -mx-5 px-5 -mb-5 pb-5 rounded-b-xl">
+              <span className="text-sm text-green-700 font-semibold">✓ All fields complete — this job is ready to plan</span>
             </div>
           )}
         </div>
@@ -1483,7 +1583,8 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={1} icon="📋" title="Job Basics" subtitle="Date, service type and job type" active
             collapsed={sec1Collapsed} onToggle={() => setSec1Collapsed(o => !o)}
-            summary={[customerName, plannedDate, serviceType].filter(Boolean).join(" · ")} />
+            summary={[customerName, plannedDate, serviceType].filter(Boolean).join(" · ")}
+            complete={basicsComplete} started={sec1Started} />
           {!sec1Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
             <div>
               <FieldLabel required>Customer</FieldLabel>
@@ -1555,7 +1656,8 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={2} icon="🏢" title="Customer Details" subtitle="Operational contact for this job" active
             collapsed={sec2Collapsed} onToggle={() => setSec2Collapsed(o => !o)}
-            summary={[contactName, contactPhone].filter(Boolean).join(" · ")} />
+            summary={[contactName, contactPhone].filter(Boolean).join(" · ")}
+            complete={customerComplete} started={sec2Started} optional={quickMode} />
           {!sec2Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
             {customerId && (
               <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
@@ -1618,7 +1720,8 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={3} icon="🔄" title="Collection / Delivery" subtitle="Add all pickup and dropoff stops for this job" active
             collapsed={sec3Collapsed} onToggle={() => setSec3Collapsed(o => !o)}
-            summary={`${stops.length} stop${stops.length !== 1 ? "s" : ""} · ${stops.filter(stopComplete).length} complete`} />
+            summary={`${stops.length} stop${stops.length !== 1 ? "s" : ""} · ${stops.filter(stopComplete).length} complete`}
+            complete={stopsComplete} started={sec3Started} />
 
           {!sec3Collapsed && <div className="p-4 space-y-3">
             {stops.map((stop, i) => (
@@ -1646,7 +1749,8 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active
             collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
-            summary={[materialDesc, totalWeight ? totalWeight + "t" : ""].filter(Boolean).join(" · ")} />
+            summary={[materialDesc, totalWeight ? totalWeight + "t" : ""].filter(Boolean).join(" · ")}
+            complete={loadComplete} started={sec4Started} optional={quickMode} />
           {!sec4Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
 
             {/* Goods description */}
@@ -1660,7 +1764,7 @@ export default function CreateJobPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <FieldLabel required>Total Quantity</FieldLabel>
-                <input type="text" className="input" placeholder="e.g. 24"
+                <input type="text" inputMode="decimal" className="input" placeholder="e.g. 24"
                   value={totalQty} onChange={e => setTotalQty(e.target.value)} />
               </div>
               <div>
@@ -1683,7 +1787,7 @@ export default function CreateJobPage() {
             <div className="max-w-xs">
               <FieldLabel required>Total Weight / Estimated Weight</FieldLabel>
               <div className="relative">
-                <input type="text" className="input pr-12" placeholder="e.g. 24.0"
+                <input type="text" inputMode="decimal" className="input pr-12" placeholder="e.g. 24.0"
                   value={totalWeight} onChange={e => setTotalWeight(e.target.value)} />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">tonnes</span>
               </div>
@@ -1804,7 +1908,8 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={5} icon="🚛" title="Vehicle Requirements" subtitle="Vehicle class, trailer type and special equipment" active
             collapsed={sec5Collapsed} onToggle={() => setSec5Collapsed(o => !o)}
-            summary={vehicleType ? VEHICLE_TYPES.find(([v]) => v === vehicleType)?.[1] ?? vehicleType : undefined} />
+            summary={vehicleType ? VEHICLE_TYPES.find(([v]) => v === vehicleType)?.[1] ?? vehicleType : undefined}
+            complete={vehicleComplete} started={sec5Started} optional={quickMode} />
 
           {!sec5Collapsed && <div className="px-5 pt-5 pb-4 space-y-5">
 
@@ -1882,7 +1987,7 @@ export default function CreateJobPage() {
                     <div>
                       <FieldLabel>Height</FieldLabel>
                       <div className="relative">
-                        <input type="text" className="input pr-6" placeholder="e.g. 4.0"
+                        <input type="text" inputMode="decimal" className="input pr-6" placeholder="e.g. 4.0"
                           value={heightRestriction} onChange={e => setHeightRestriction(e.target.value)} />
                         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m</span>
                       </div>
@@ -1890,7 +1995,7 @@ export default function CreateJobPage() {
                     <div>
                       <FieldLabel>Weight</FieldLabel>
                       <div className="relative">
-                        <input type="text" className="input pr-6" placeholder="e.g. 7.5"
+                        <input type="text" inputMode="decimal" className="input pr-6" placeholder="e.g. 7.5"
                           value={weightRestriction} onChange={e => setWeightRestriction(e.target.value)} />
                         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">t</span>
                       </div>
@@ -1898,7 +2003,7 @@ export default function CreateJobPage() {
                     <div>
                       <FieldLabel>Length</FieldLabel>
                       <div className="relative">
-                        <input type="text" className="input pr-6" placeholder="e.g. 9.0"
+                        <input type="text" inputMode="decimal" className="input pr-6" placeholder="e.g. 9.0"
                           value={lengthRestriction} onChange={e => setLengthRestriction(e.target.value)} />
                         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m</span>
                       </div>
@@ -1924,6 +2029,7 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={6} icon="↩️" title="Return / Failure Instructions" subtitle="What the driver does if a delivery cannot be completed"
             active collapsed={sec6Collapsed} onToggle={() => setSec6Collapsed(o => !o)}
+            complete={sec6Complete} started={sec6Started} optional={quickMode}
             summary={failureAction ? (
               failureAction === "call_assistance"      ? `Call for assistance${assistancePhone ? ` · ${assistancePhone}` : ""}` :
               failureAction === "next_delivery"        ? "Proceed to next delivery" :
@@ -2124,17 +2230,39 @@ export default function CreateJobPage() {
 
       {/* ── Sticky save bar ───────────────────────────────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-border shadow-lg z-40">
+        {/* Quality strip — mobile only */}
+        <div className="sm:hidden w-full h-1.5 bg-gray-100 flex">
+          <div className="h-1.5 bg-slate-600 transition-all duration-500" style={{ width: `${reqScore}%` }} />
+          <div className="h-1.5 bg-green-500 transition-all duration-500" style={{ width: `${optScore}%` }} />
+        </div>
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="btn btn-outline text-sm px-4 py-2.5">Cancel</button>
+          <button onClick={() => navigate(-1)} className="btn btn-outline text-sm px-4 py-2.5 hidden sm:block">Cancel</button>
+          {/* Quality pill — desktop */}
+          <div className={"hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border " +
+            (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
+             totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
+             "text-red-700 bg-red-50 border-red-200")}>
+            {totalScore >= 80 ? "✓" : totalScore >= 40 ? "~" : "⚠"} {totalScore}%
+          </div>
+          {lastAutoSaved && (
+            <span className="hidden sm:block text-xs text-muted">
+              Saved {lastAutoSaved.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
           <div className="flex-1" />
           <button onClick={handleSaveDraft} disabled={saving !== null}
-            className="btn btn-outline text-sm px-5 py-2.5 font-semibold">
+            className="btn btn-outline text-sm px-4 py-2.5 font-semibold">
             {saving === "draft" ? "Saving…" : "Save Draft"}
           </button>
           <button onClick={handleSaveReady} disabled={saving !== null}
-            className="btn btn-primary text-sm px-5 py-2.5 font-semibold">
-            {saving === "ready" ? "Saving…" : "Save — Ready for Planner →"}
+            className={"btn text-sm px-5 py-2.5 font-semibold " +
+              (MISSING.length === 0 ? "bg-green-600 hover:bg-green-700 text-white border-green-600" : "btn-primary")}>
+            {saving === "ready" ? "Saving…" : MISSING.length === 0 ? "✓ Save & Plan →" : "Save — Ready for Planner →"}
           </button>
+        </div>
+        {/* Mobile cancel row */}
+        <div className="sm:hidden px-4 pb-3 -mt-1">
+          <button onClick={() => navigate(-1)} className="text-xs text-muted hover:text-primary transition-colors">← Cancel</button>
         </div>
       </div>
 
