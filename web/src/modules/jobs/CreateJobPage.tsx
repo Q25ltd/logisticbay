@@ -1204,6 +1204,7 @@ export default function CreateJobPage() {
   const sec4Started = !!(materialDesc || totalQty || totalWeight);
   const sec5Started = !!vehicleType;
   const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
+  const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started;
 
   // ── Auto-collapse completed sections ─────────────────────────────────────
   const prevSec1 = useRef(false);
@@ -1320,7 +1321,8 @@ export default function CreateJobPage() {
 
   const scoreColor =
     totalScore >= 80 ? "text-green-600" :
-    totalScore >= 40 ? "text-amber-600" : "text-red-600";
+    totalScore >= 40 ? "text-amber-600" :
+    totalScore >= 10 ? "text-red-500" : "text-slate-400";
   const barReqColor  = "bg-slate-600";
   const barOptColor  = "bg-green-500";
   const OPT_MISSING  = SCORE_OPT.filter(x => !x.ok).map(x => x.label);
@@ -1509,30 +1511,33 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           {/* Gradient top bar */}
           <div className="h-1.5 w-full flex">
-            <div className="h-full bg-slate-600 transition-all duration-700 ease-out" style={{ width: `${reqScore}%` }} />
-            <div className="h-full bg-green-500 transition-all duration-700 ease-out" style={{ width: `${optScore}%` }} />
+            <div className="h-full bg-slate-600 transition-all duration-700 ease-out" style={{ width: hasStarted ? `${reqScore}%` : "0%" }} />
+            <div className="h-full bg-green-500 transition-all duration-700 ease-out" style={{ width: hasStarted ? `${optScore}%` : "0%" }} />
             <div className="h-full flex-1 bg-slate-100" />
           </div>
           <div className="p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Job Completeness</div>
-              <div className={"text-5xl font-black leading-none " + scoreColor}>{totalScore}<span className="text-2xl">%</span></div>
+              <div className={"text-5xl font-black leading-none " + (hasStarted ? scoreColor : "text-slate-300")}>
+                {hasStarted ? totalScore : "—"}<span className="text-2xl">{hasStarted ? "%" : ""}</span>
+              </div>
               <div className="text-xs text-muted mt-1.5 flex items-center gap-3">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Required <strong className="text-slate-700">{reqScore}/65</strong></span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Optional <strong className="text-green-700">{optScore}/35</strong></span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Required <strong className="text-slate-700">{hasStarted ? `${reqScore}/65` : "0/65"}</strong></span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Optional <strong className="text-green-700">{hasStarted ? `${optScore}/35` : "0/35"}</strong></span>
               </div>
             </div>
             <div className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center flex-shrink-0 ${
+              !hasStarted ? "border-slate-100 bg-slate-50" :
               totalScore >= 80 ? "border-green-200 bg-green-50" : totalScore >= 40 ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50"}`}>
-              <span className={"text-xl font-black " + scoreColor}>{totalScore}%</span>
+              <span className={"text-xl font-black " + (hasStarted ? scoreColor : "text-slate-300")}>{hasStarted ? `${totalScore}%` : "—"}</span>
             </div>
           </div>
 
           {/* Progress bar */}
           <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4 flex">
-            <div className={"h-full bg-slate-600 transition-all duration-700 ease-out rounded-full"} style={{ width: `${reqScore}%` }} />
-            <div className={"h-full bg-green-500 transition-all duration-700 ease-out"} style={{ width: `${optScore}%`, borderRadius: reqScore > 0 ? "0 9999px 9999px 0" : "9999px" }} />
+            <div className={"h-full bg-slate-600 transition-all duration-700 ease-out rounded-full"} style={{ width: hasStarted ? `${reqScore}%` : "0%" }} />
+            <div className={"h-full bg-green-500 transition-all duration-700 ease-out"} style={{ width: hasStarted ? `${optScore}%` : "0%", borderRadius: reqScore > 0 ? "0 9999px 9999px 0" : "9999px" }} />
           </div>
 
           {/* Missing required */}
