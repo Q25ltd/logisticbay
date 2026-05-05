@@ -334,7 +334,7 @@ export default function DashboardPage() {
   if (loading) return <div className="flex items-center justify-center h-64 text-muted">Loading dispatch board...</div>;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-xl font-black text-primary">Dispatch Board</h1>

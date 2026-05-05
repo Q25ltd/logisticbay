@@ -154,26 +154,31 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+    <div className="p-4 sm:p-6">
+      <div className="flex items-start justify-between mb-5 gap-4">
         <div>
           <h1 className="text-xl font-black text-primary">Jobs</h1>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-muted mt-0.5">
             {stats.total} total · {stats.completed} done · {stats.active} active · {stats.pending} pending
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-auto text-sm"/>
-          <button onClick={load} className="btn btn-outline text-sm">↻</button>
-          <Button onClick={() => navigate("/app/jobs/create")}>+ Create Job</Button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-auto text-sm hidden sm:block"/>
+          <button onClick={load} className="btn btn-outline text-sm px-3">↻</button>
+          <Button onClick={() => navigate("/app/jobs/create")}>+ New Job</Button>
         </div>
+      </div>
+
+      {/* Mobile date picker */}
+      <div className="sm:hidden mb-4">
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-full text-sm"/>
       </div>
 
       {success && <Alert type="success" message={success} />}
       {error   && <Alert type="error"   message={error}   />}
 
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <select className="input w-auto" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <select className="input flex-1 sm:flex-none sm:w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
           <option value="accepted">Accepted</option>
@@ -184,7 +189,7 @@ export default function JobsPage() {
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
-        <select className="input w-auto" value={driverFilter} onChange={e=>setDriverFilter(e.target.value)}>
+        <select className="input flex-1 sm:flex-none sm:w-auto text-sm" value={driverFilter} onChange={e=>setDriverFilter(e.target.value)}>
           <option value="all">All drivers</option>
           {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
         </select>
@@ -200,24 +205,67 @@ export default function JobsPage() {
           <Button onClick={() => navigate("/app/jobs/create")}>Create Job</Button>
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  {["Date","Route","Driver","Reference","Material","Status","Last Update","Actions"].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide">{h}</th>
+        <>
+          {/* Desktop table */}
+          <div className="hidden sm:block card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-slate-50">
+                    {["Date","Route","Driver","Reference","Material","Status","Last Update","Actions"].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filtered.map(job => (
+                    <JobRow key={job.id} job={job} onStatusChange={handleStatusChange} onNote={id => setNoteJobId(id)} />
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map(job => (
-                  <JobRow key={job.id} job={job} onStatusChange={handleStatusChange} onNote={id => setNoteJobId(id)} />
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+
+          {/* Mobile cards */}
+          <div className="sm:hidden space-y-3">
+            {filtered.map(job => {
+              const canProgress = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff"].includes(job.status);
+              const STATUS_FLOW = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff","completed","cancelled"];
+              const nextStatus = STATUS_FLOW[STATUS_FLOW.indexOf(job.status) + 1];
+              return (
+                <div key={job.id} className="card p-4 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-primary truncate">{firstStopText(job, "pickup")}</div>
+                      <div className="text-xs text-muted truncate">→ {firstStopText(job, "dropoff")}</div>
+                    </div>
+                    <Badge status={job.status} />
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
+                    {job.plannedDate && <span>📅 {fmt(job.plannedDate)}</span>}
+                    {job.assignedDriver && <span>👤 {job.assignedDriver.displayName}</span>}
+                    {jobMaterial(job) !== "—" && <span>📦 {jobMaterial(job)}</span>}
+                    {job.referenceNumber && <span>#{job.referenceNumber}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                    {canProgress && nextStatus && (
+                      <button onClick={() => handleStatusChange(job.id, nextStatus)}
+                        className="text-xs font-semibold text-accent bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                        {nextStatus === "in_progress"     ? "▶ Start"       :
+                         nextStatus === "arrived_pickup"  ? "📍 At Pickup"  :
+                         nextStatus === "collected"       ? "✅ Collected"   :
+                         nextStatus === "arrived_dropoff" ? "📍 At Dropoff" :
+                         nextStatus === "completed"       ? "✅ Complete"    : nextStatus}
+                      </button>
+                    )}
+                    <button onClick={() => setNoteJobId(job.id)}
+                      className="text-xs text-muted hover:text-primary ml-auto">+ Note</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {noteJobId && (

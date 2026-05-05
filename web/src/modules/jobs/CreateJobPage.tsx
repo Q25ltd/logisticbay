@@ -1046,6 +1046,7 @@ export default function CreateJobPage() {
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
   const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
+  const [triedSave, setTriedSave] = useState(false);
 
   // Saved locations (loaded once)
   const [locations, setLocations] = useState<SavedLocation[]>([]);
@@ -1469,6 +1470,7 @@ export default function CreateJobPage() {
   }
 
   async function handleSaveReady() {
+    setTriedSave(true);
     setSaving("ready");
     setError("");
     try {
@@ -1534,7 +1536,7 @@ export default function CreateJobPage() {
           </div>
 
           {/* Missing required */}
-          {MISSING.length > 0 && (
+          {triedSave && MISSING.length > 0 && (
             <div className="border-t border-slate-100 pt-3 mb-3">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2.5">
                 {MISSING.length} still needed
@@ -1571,18 +1573,6 @@ export default function CreateJobPage() {
             </div>
           )}
           </div>{/* end p-5 */}
-        </div>
-
-        {/* ── Template placeholder ───────────────────────────────────────────── */}
-        <div className="card p-5">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Start from Template</div>
-          <div className="flex items-center gap-3 p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl justify-center cursor-not-allowed opacity-40">
-            <span className="text-xl">📄</span>
-            <div className="text-left">
-              <div className="text-sm font-semibold text-primary">Select a template</div>
-              <div className="text-xs text-muted">Autofill from a saved job template — coming soon</div>
-            </div>
-          </div>
         </div>
 
         {/* ── Section 01 — Job Basics ────────────────────────────────────────── */}
@@ -2252,8 +2242,8 @@ export default function CreateJobPage() {
             <div className={"hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-shrink-0 " +
               (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
                totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
-               "text-slate-500 bg-slate-50 border-slate-200")}>
-              {totalScore}%
+               "text-slate-400 bg-slate-50 border-slate-200")}>
+              {totalScore > 0 ? `${totalScore}%` : "—"}
             </div>
             {/* Save Draft */}
             <button onClick={handleSaveDraft} disabled={saving !== null}

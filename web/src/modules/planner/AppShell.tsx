@@ -3,74 +3,149 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 
 const NAV = [
-  { to:"/app/dashboard",    icon:"🏠", label:"Dashboard",   active:true  },
-  { to:"/app/jobs",         icon:"📋", label:"Jobs",        active:true  },
-  { to:"/app/templates",    icon:"📄", label:"Templates",   active:true  },
-  { to:"/app/drivers",      icon:"👥", label:"Drivers",     active:true  },
-  { to:"/app/holidays",     icon:"🌴", label:"Holidays",    active:true  },
-  { to:"/app/locations",    icon:"📍", label:"Locations",   active:true  },
-  { to:"/app/shifts",       icon:"⏱",  label:"Shifts",      active:true  },
-  { to:"/app/fleet",        icon:"🚛", label:"Fleet",       active:false },
-  { to:"/app/marketplace",  icon:"🏗️", label:"Marketplace", active:false },
-  { to:"/app/intelligence", icon:"🤖", label:"Intelligence",active:false },
-  { to:"/app/settings",     icon:"⚙️", label:"Settings",    active:true  },
+  { to:"/app/dashboard",    icon:"🏠", label:"Dashboard",    active:true  },
+  { to:"/app/jobs",         icon:"📋", label:"Jobs",         active:true  },
+  { to:"/app/templates",    icon:"📄", label:"Templates",    active:true  },
+  { to:"/app/drivers",      icon:"👥", label:"Drivers",      active:true  },
+  { to:"/app/holidays",     icon:"🌴", label:"Holidays",     active:true  },
+  { to:"/app/locations",    icon:"📍", label:"Locations",    active:true  },
+  { to:"/app/shifts",       icon:"⏱",  label:"Shifts",       active:true  },
+  { to:"/app/fleet",        icon:"🚛", label:"Fleet",        active:false },
+  { to:"/app/marketplace",  icon:"🏗️", label:"Marketplace",  active:false },
+  { to:"/app/intelligence", icon:"🤖", label:"Intelligence", active:false },
+  { to:"/app/settings",     icon:"⚙️", label:"Settings",     active:true  },
 ];
+
+function NavItems({ onClose }: { onClose?: () => void }) {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  return (
+    <>
+      <nav className="flex-1 py-3 overflow-y-auto">
+        {NAV.map(item => item.active ? (
+          <NavLink key={item.to} to={item.to} onClick={onClose}
+            className={({ isActive }) =>
+              "flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors " +
+              (isActive
+                ? "bg-white/15 text-white border-r-2 border-accent"
+                : "text-white/60 hover:text-white hover:bg-white/8")}>
+            <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
+            <span>{item.label}</span>
+          </NavLink>
+        ) : (
+          <div key={item.to}
+            className="flex items-center gap-3 px-4 py-3 text-sm text-white/25 cursor-not-allowed">
+            <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
+            <span>{item.label} <span className="text-xs opacity-50">soon</span></span>
+          </div>
+        ))}
+      </nav>
+      <div className="border-t border-white/10 p-4 flex-shrink-0">
+        <div className="text-xs text-white/40 truncate mb-0.5">{user?.companyName}</div>
+        <div className="text-sm font-semibold text-white truncate">{user?.name}</div>
+        <button
+          onClick={() => { logout(); navigate("/"); onClose?.(); }}
+          className="text-xs text-white/40 hover:text-red-400 transition-colors mt-1">
+          Sign out
+        </button>
+      </div>
+    </>
+  );
+}
 
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const open = true; // always open
+  const [drawer, setDrawer] = useState(false);
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
-      <aside style={{ width: "224px", minWidth: "224px", overflow: "hidden", backgroundColor: "#0f172a", display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        <div className="h-14 flex items-center px-4 border-b border-white/10 flex-shrink-0">
-          {open ? <span className="text-lg font-black text-white">Logistic<span className="text-accent">Bay</span></span>
-                : <span className="text-lg font-black text-accent">LB</span>}
-        </div>
-        <nav className="flex-1 py-3 overflow-y-auto">
-          {NAV.map(item => item.active ? (
-            <NavLink key={item.to} to={item.to}
-              className={({ isActive }) => "flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors " +
-                (isActive ? "bg-white/15 text-white border-r-2 border-accent" : "text-white/60 hover:text-white hover:bg-white/10")}>
-              <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
-              {open && <span>{item.label}</span>}
-            </NavLink>
-          ) : (
-            <div key={item.to} className="flex items-center gap-3 px-4 py-2.5 text-sm text-white/25 cursor-not-allowed" title="Coming soon">
-              <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
-              {open && <span>{item.label} <span className="text-xs opacity-50">soon</span></span>}
-            </div>
-          ))}
-        </nav>
-        <div className="border-t border-white/10 p-3 flex-shrink-0">
-          {open ? (
-            <div>
-              <div className="text-xs text-white/40 truncate">{user?.companyName}</div>
-              <div className="text-sm font-semibold text-white truncate">{user?.name}</div>
-              <button onClick={() => { logout(); navigate("/"); }} className="text-xs text-white/40 hover:text-white mt-1">Sign out</button>
-            </div>
-          ) : (
-            <button onClick={() => { logout(); navigate("/"); }} className="text-white/40 hover:text-white text-lg w-full text-center" title="Sign out">↩</button>
-          )}
-        </div>
 
+      {/* ── Desktop sidebar ──────────────────────────────────────────────────── */}
+      <aside
+        className="hidden sm:flex flex-col flex-shrink-0"
+        style={{ width: 224, backgroundColor: "#0f172a" }}>
+        <div className="h-14 flex items-center px-5 border-b border-white/10 flex-shrink-0">
+          <span className="text-lg font-black text-white">
+            Logistic<span className="text-accent">Bay</span>
+          </span>
+        </div>
+        <NavItems />
       </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-14 bg-white border-b border-border flex items-center justify-between px-6 flex-shrink-0">
+      {/* ── Mobile drawer ────────────────────────────────────────────────────── */}
+      {drawer && (
+        <div className="sm:hidden fixed inset-0 z-50 flex">
+          <div
+            className="w-72 flex flex-col h-full"
+            style={{ backgroundColor: "#0f172a" }}>
+            <div className="h-14 flex items-center justify-between px-5 border-b border-white/10 flex-shrink-0">
+              <span className="text-base font-black text-white">
+                Logistic<span className="text-blue-400">Bay</span>
+              </span>
+              <button
+                onClick={() => setDrawer(false)}
+                className="text-white/50 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center">
+                ×
+              </button>
+            </div>
+            <NavItems onClose={() => setDrawer(false)} />
+          </div>
+          <div
+            className="flex-1 bg-black/60"
+            onClick={() => setDrawer(false)} />
+        </div>
+      )}
+
+      {/* ── Content area ─────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+
+        {/* Mobile top bar */}
+        <div
+          className="sm:hidden h-14 flex items-center gap-3 px-4 border-b border-white/10 flex-shrink-0"
+          style={{ backgroundColor: "#0f172a" }}>
+          <button
+            onClick={() => setDrawer(true)}
+            className="text-white/60 hover:text-white p-1 flex-shrink-0"
+            aria-label="Menu">
+            <svg viewBox="0 0 18 14" className="w-5 h-4" fill="currentColor">
+              <rect y="0"  width="18" height="2" rx="1"/>
+              <rect y="6"  width="18" height="2" rx="1"/>
+              <rect y="12" width="18" height="2" rx="1"/>
+            </svg>
+          </button>
+          <span className="text-sm font-black text-white flex-1">
+            Logistic<span className="text-blue-400">Bay</span>
+          </span>
+          <span className="text-xs text-white/50 truncate max-w-[120px]">{user?.name}</span>
+        </div>
+
+        {/* Desktop top bar */}
+        <header className="hidden sm:flex h-14 bg-white border-b border-border items-center justify-between px-6 flex-shrink-0">
           <div className="text-sm text-muted">
-            {new Date().toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" })}
+            {new Date().toLocaleDateString("en-GB", {
+              weekday: "long", day: "numeric", month: "long", year: "numeric",
+            })}
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-semibold">● Live</span>
-            <span className="text-sm font-medium text-gray-900">{user?.companyName}</span>
-            <span className="text-gray-300">|</span>
-            <span className="text-sm text-gray-600">{user?.name}</span>
-            <button onClick={() => { logout(); navigate("/"); }} className="text-sm text-red-500 hover:text-red-700 font-semibold ml-2">Sign out</button>
+            <span className="flex items-center gap-1.5 text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              Live
+            </span>
+            <span className="text-sm font-semibold text-primary">{user?.companyName}</span>
+            <span className="text-slate-200">|</span>
+            <span className="text-sm text-muted">{user?.name}</span>
+            <button
+              onClick={() => { logout(); navigate("/"); }}
+              className="text-sm text-red-500 hover:text-red-700 font-semibold ml-1">
+              Sign out
+            </button>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto"><Outlet /></main>
+
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
