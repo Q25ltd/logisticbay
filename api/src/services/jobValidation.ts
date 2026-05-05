@@ -29,6 +29,17 @@ export interface StructuredJobStopInput {
   contactPhone?: unknown;
   referenceNumber?: unknown;
   instructions?: unknown;
+  contactEmail?: unknown;
+  bookingRequired?: boolean;
+  bookingRef?: unknown;
+  openingHours?: unknown;
+  locationType?: unknown;
+  navigationInstructions?: unknown;
+  numPallets?: number | null;
+  internalNotes?: unknown;
+  country?: unknown;
+  addressLine2?: unknown;
+  countyRegion?: unknown;
 }
 
 export interface StructuredLoadDetailsInput {
@@ -39,6 +50,18 @@ export interface StructuredLoadDetailsInput {
   materialType?: unknown;
   hazardClass?: unknown;
   notes?: unknown;
+  dimensions?: unknown;
+  fragile?: boolean;
+  stackable?: boolean;
+  tempControlled?: boolean;
+  tempRange?: unknown;
+  photosRequired?: boolean;
+  weighbridgeRequired?: boolean;
+  forkliftRequired?: boolean;
+  tailLiftRequired?: boolean;
+  craneRequired?: boolean;
+  loadingMethod?: unknown;
+  unloadingMethod?: unknown;
 }
 
 export interface StructuredJobValidationInput {

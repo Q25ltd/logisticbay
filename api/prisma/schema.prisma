@@ -230,6 +230,25 @@ model PlannedJob {
   trailerTypesAllowed  Json?
   priority             String    @default("normal")
   serviceType          String    @default("")
+  jobType                    String    @default("")
+  jobTitle                   String    @default("")
+  customerRef                String    @default("")
+  purchaseOrderNumber        String    @default("")
+  bookingContactName         String    @default("")
+  bookingContactPhone        String    @default("")
+  bookingContactEmail        String    @default("")
+  billingNotes               String    @default("")
+  customerInstructions       String    @default("")
+  custRefRequired            Boolean   @default(false)
+  poRequired                 Boolean   @default(false)
+  minVehicleSize             String    @default("")
+  trailerTypesForbidden      Json?
+  equipmentRequired          Json?
+  driverQualificationsReq    Json?
+  heightRestriction          String    @default("")
+  weightRestriction          String    @default("")
+  lengthRestriction          String    @default("")
+  vehicleAccessNotes         String    @default("")
   internalNotes        String    @default("")
   validationStatus     String    @default("draft")
   qualityScore         Int       @default(0)
@@ -290,6 +309,17 @@ model JobStop {
   contactPhone    String @default("")
   referenceNumber String @default("")
   instructions    String @default("")
+  contactEmail               String    @default("")
+  bookingRequired            Boolean   @default(false)
+  bookingRef                 String    @default("")
+  openingHours               String    @default("")
+  locationType               String    @default("")
+  navigationInstructions     String    @default("")
+  numPallets                 Int?
+  internalNotes              String    @default("")
+  country                    String    @default("United Kingdom")
+  addressLine2               String    @default("")
+  countyRegion               String    @default("")
 
   status String @default("pending")
 
@@ -317,6 +347,18 @@ model LoadDetails {
   materialType String @default("")
   hazardClass  String @default("")
   notes        String @default("")
+  dimensions                 String    @default("")
+  fragile                    Boolean   @default(false)
+  stackable                  Boolean   @default(false)
+  tempControlled             Boolean   @default(false)
+  tempRange                  String    @default("")
+  photosRequired             Boolean   @default(false)
+  weighbridgeRequired        Boolean   @default(false)
+  forkliftRequired           Boolean   @default(false)
+  tailLiftRequired           Boolean   @default(false)
+  craneRequired              Boolean   @default(false)
+  loadingMethod              String    @default("")
+  unloadingMethod            String    @default("")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

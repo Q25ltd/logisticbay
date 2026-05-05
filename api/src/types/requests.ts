@@ -199,6 +199,17 @@ export interface JobStopInput {
   contactPhone?:         string;
   referenceNumber?:      string;
   instructions?:         string;
+  contactEmail?:              string;
+  bookingRequired?:           boolean;
+  bookingRef?:                string;
+  openingHours?:              string;
+  locationType?:              string;
+  navigationInstructions?:    string;
+  numPallets?:                number | null;
+  internalNotes?:             string;
+  country?:                   string;
+  addressLine2?:              string;
+  countyRegion?:              string;
 }
 
 export interface LoadDetailsInput {
@@ -209,6 +220,18 @@ export interface LoadDetailsInput {
   materialType?: string;
   hazardClass?:  string;
   notes?:        string;
+  dimensions?:                string;
+  fragile?:                   boolean;
+  stackable?:                 boolean;
+  tempControlled?:            boolean;
+  tempRange?:                 string;
+  photosRequired?:            boolean;
+  weighbridgeRequired?:       boolean;
+  forkliftRequired?:          boolean;
+  tailLiftRequired?:          boolean;
+  craneRequired?:             boolean;
+  loadingMethod?:             string;
+  unloadingMethod?:           string;
 }
 
 export interface CreateJobBody {
@@ -243,6 +266,25 @@ export interface CreateJobBody {
   sequence?:             number;
   saveAsTemplate?:       boolean;
   templateName?:         string;
+  jobType?:                   string;
+  jobTitle?:                  string;
+  customerRef?:               string;
+  purchaseOrderNumber?:       string;
+  bookingContactName?:        string;
+  bookingContactPhone?:       string;
+  bookingContactEmail?:       string;
+  billingNotes?:              string;
+  customerInstructions?:      string;
+  custRefRequired?:           boolean;
+  poRequired?:                boolean;
+  minVehicleSize?:            string;
+  trailerTypesForbidden?:     string[];
+  equipmentRequired?:         string[];
+  driverQualificationsReq?:   string[];
+  heightRestriction?:         string;
+  weightRestriction?:         string;
+  lengthRestriction?:         string;
+  vehicleAccessNotes?:        string;
 }
 
 export interface PatchJobBody {
@@ -272,6 +314,25 @@ export interface PatchJobBody {
   requirePOD?:           boolean;
   requireDeliveryQty?:   boolean;
   sequence?:             number;
+  jobType?:                   string;
+  jobTitle?:                  string;
+  customerRef?:               string;
+  purchaseOrderNumber?:       string;
+  bookingContactName?:        string;
+  bookingContactPhone?:       string;
+  bookingContactEmail?:       string;
+  billingNotes?:              string;
+  customerInstructions?:      string;
+  custRefRequired?:           boolean;
+  poRequired?:                boolean;
+  minVehicleSize?:            string;
+  trailerTypesForbidden?:     string[];
+  equipmentRequired?:         string[];
+  driverQualificationsReq?:   string[];
+  heightRestriction?:         string;
+  weightRestriction?:         string;
+  lengthRestriction?:         string;
+  vehicleAccessNotes?:        string;
 }
 
 export interface UpdateJobStatusBody {

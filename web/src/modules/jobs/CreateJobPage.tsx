@@ -136,11 +136,59 @@ function stopComplete(s: StopState) {
   return !!(addr && s.date && time);
 }
 
-// ── Empty shells for sections not yet built (04-06) ───────────────────────────
 
-const SHELLS = [
-  { id: "vehicle", icon: "🚛", title: "Vehicle Requirements",  subtitle: "Vehicle class, trailer type and special equipment" },
-  { id: "notes",   icon: "📝", title: "Notes & Instructions",  subtitle: "Planner notes, driver instructions and internal comments" },
+const VEHICLE_TYPES: [string, string][] = [
+  ["van",          "Van"],
+  ["rigid",        "Rigid"],
+  ["artic",        "Artic"],
+  ["tipper",       "Tipper"],
+  ["grab",         "Grab"],
+  ["mixer",        "Mixer"],
+  ["hiab",         "HIAB"],
+  ["refrigerated", "Refrigerated"],
+  ["other",        "Other"],
+];
+
+const MIN_SIZES: [string, string][] = [
+  ["3.5t",  "3.5t"],
+  ["7.5t",  "7.5t"],
+  ["18t",   "18t"],
+  ["26t",   "26t"],
+  ["44t",   "44t"],
+];
+
+const TRAILER_TYPES: [string, string][] = [
+  ["curtain_sider",       "Curtain sider"],
+  ["flatbed",             "Flatbed"],
+  ["box",                 "Box"],
+  ["tipper",              "Tipper"],
+  ["tanker",              "Tanker"],
+  ["low_loader",          "Low loader"],
+  ["skeletal",            "Skeletal"],
+  ["refrigerated_trailer","Refrigerated trailer"],
+  ["other",               "Other"],
+];
+
+const EQUIPMENT_OPTS: [string, string][] = [
+  ["tail_lift",    "Tail lift"],
+  ["forklift",     "Forklift"],
+  ["crane",        "Crane"],
+  ["pallet_truck", "Pallet truck"],
+  ["straps",       "Straps"],
+  ["chains",       "Chains"],
+  ["sheeting",     "Sheeting"],
+  ["pump",         "Pump"],
+  ["ppe",          "PPE"],
+  ["other",        "Other"],
+];
+
+const DRIVER_QUALS: [string, string][] = [
+  ["adr",      "ADR"],
+  ["hiab",     "HIAB"],
+  ["moffett",  "Moffett"],
+  ["forklift", "Forklift"],
+  ["tanker",   "Tanker"],
+  ["other",    "Other"],
 ];
 
 const LOAD_UNITS: [string, string][] = [
@@ -211,7 +259,7 @@ function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary,
       </div>
       {!active && <span className="text-xs text-gray-300 font-medium flex-shrink-0">Coming soon</span>}
       {onToggle && (
-        <span className="text-muted text-sm flex-shrink-0 ml-1">{collapsed ? "▸" : "▾"}</span>
+        <span className="text-primary text-xl flex-shrink-0 ml-1 font-bold">{collapsed ? "›" : "⌄"}</span>
       )}
     </div>
   );
@@ -220,12 +268,14 @@ function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary,
 function SectionFooter({ complete, label }: { complete: boolean; label: string }) {
   return (
     <div className={
-      "px-5 py-2.5 border-t border-border text-xs font-semibold flex items-center gap-2 " +
-      (complete ? "text-green-700 bg-green-50" : "text-muted bg-gray-50")
+      "px-5 py-3 border-t text-sm font-semibold flex items-center gap-2 " +
+      (complete
+        ? "text-green-700 bg-green-50 border-green-200"
+        : "text-red-700 bg-red-50 border-red-300")
     }>
       {complete
         ? <><span>✓</span> {label} complete</>
-        : <><span className="text-red-400">●</span> Fill in all required fields above</>
+        : <><span className="text-lg leading-none">⚠</span> Fill in all required fields above</>
       }
     </div>
   );
@@ -637,7 +687,7 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
               Remove
             </button>
           )}
-          <span className="text-muted text-sm">{stop.collapsed ? "▸" : "▾"}</span>
+          <span className="text-primary text-xl font-bold">{stop.collapsed ? "›" : "⌄"}</span>
         </div>
       </div>
 
@@ -910,15 +960,41 @@ function StopCard({ stop, index, total, locations, onChange, onRemove }: {
 
       {/* Stop footer — always visible */}
       <div className={
-        "px-4 py-2 border-t border-border text-xs font-semibold flex items-center gap-2 " +
-        (complete ? "text-green-700 bg-green-50" : "text-muted bg-gray-50")
+        "px-4 py-3 border-t text-sm font-semibold flex items-center gap-2 " +
+        (complete
+          ? "text-green-700 bg-green-50 border-green-200"
+          : "text-red-700 bg-red-50 border-red-300")
       }>
         {complete
           ? <><span>✓</span> Stop {index + 1} complete</>
-          : <><span className="text-red-400">●</span> Fill in required fields for this stop</>
+          : <><span className="text-lg leading-none">⚠</span> Fill in required fields for this stop</>
         }
       </div>
 
+    </div>
+  );
+}
+
+function MultiCheck({ options, value, onChange }: {
+  options: [string, string][];
+  value: string[];
+  onChange: (v: string[]) => void;
+}) {
+  function toggle(key: string) {
+    onChange(value.includes(key) ? value.filter(x => x !== key) : [...value, key]);
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map(([key, label]) => {
+        const on = value.includes(key);
+        return (
+          <button key={key} type="button" onClick={() => toggle(key)}
+            className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+              (on ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -929,16 +1005,17 @@ export default function CreateJobPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
+  const [error, setError] = useState("");
 
   // Saved locations (loaded once)
   const [locations, setLocations] = useState<SavedLocation[]>([]);
   useEffect(() => { jobsApi.locations().then(r => setLocations(r.data)).catch(() => {}); }, []);
 
   // ── Section collapse state ───────────────────────────────────────────────
-  const [sec1Collapsed, setSec1Collapsed] = useState(false);
-  const [sec2Collapsed, setSec2Collapsed] = useState(false);
-  const [sec3Collapsed, setSec3Collapsed] = useState(false);
-  const [sec4Collapsed, setSec4Collapsed] = useState(false);
+  const [sec1Collapsed, setSec1Collapsed] = useState(true);
+  const [sec2Collapsed, setSec2Collapsed] = useState(true);
+  const [sec3Collapsed, setSec3Collapsed] = useState(true);
+  const [sec4Collapsed, setSec4Collapsed] = useState(true);
 
   // ── Section 01 — Job Basics ──────────────────────────────────────────────
   const [showBasicsOpts,      setShowBasicsOpts]      = useState(false);
@@ -1013,11 +1090,28 @@ export default function CreateJobPage() {
   const [photosRequired,   setPhotosRequired]   = useState(false);
   const [weighbridgeReq,   setWeighbridgeReq]   = useState(false);
 
+  // ── Section 05 — Vehicle Requirements ───────────────────────────────────
+  const [sec5Collapsed,    setSec5Collapsed]    = useState(true);
+  const [vehicleType,      setVehicleType]      = useState("");
+  const [vehicleTypeOther, setVehicleTypeOther] = useState("");
+  // Optional
+  const [showVehicleOpts,  setShowVehicleOpts]  = useState(false);
+  const [minSize,          setMinSize]          = useState("");
+  const [trailersAllowed,  setTrailersAllowed]  = useState<string[]>([]);
+  const [trailersForbidden,setTrailersForbidden]= useState<string[]>([]);
+  const [equipmentReq,     setEquipmentReq]     = useState<string[]>([]);
+  const [driverQuals,      setDriverQuals]      = useState<string[]>([]);
+  const [heightRestriction,setHeightRestriction]= useState("");
+  const [weightRestriction,setWeightRestriction]= useState("");
+  const [lengthRestriction,setLengthRestriction]= useState("");
+  const [accessNotes,      setAccessNotes]      = useState("");
+
   // ── Quality / missing fields ─────────────────────────────────────────────
   const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
   const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
   const loadComplete     = !!(materialDesc.trim() && totalQty.trim() && qtyUnit && totalWeight.trim());
+  const vehicleComplete  = !!vehicleType && (vehicleType !== "other" || !!vehicleTypeOther.trim());
 
   const MISSING = [
     !customerName.trim()   && "Customer",
@@ -1031,10 +1125,194 @@ export default function CreateJobPage() {
     !totalQty.trim()       && "Total quantity",
     !qtyUnit               && "Unit",
     !totalWeight.trim()    && "Total weight",
+    !vehicleComplete       && "Vehicle type",
   ].filter(Boolean) as string[];
 
-  function handleSaveDraft() { setSaving("draft"); setTimeout(() => setSaving(null), 1200); }
-  function handleSaveReady() { setSaving("ready"); setTimeout(() => setSaving(null), 1200); }
+  // ── Score calculation ────────────────────────────────────────────────────
+  // Required fields scale to 65 pts; optional fields scale to 35 pts.
+  // Points within each group are relative weights — totals are normalised.
+  const SCORE_REQ = [
+    { pts: 8,  ok: !!customerName.trim() },
+    { pts: 5,  ok: !!plannedDate },
+    { pts: 7,  ok: !!serviceType },
+    { pts: 7,  ok: !!jobType },
+    { pts: 6,  ok: !!contactName.trim() },
+    { pts: 6,  ok: !!contactPhone.trim() },
+    { pts: 12, ok: stopsComplete },
+    { pts: 6,  ok: !!materialDesc.trim() },
+    { pts: 4,  ok: !!(totalQty.trim() && qtyUnit) },
+    { pts: 4,  ok: !!totalWeight.trim() },
+    { pts: 7,  ok: vehicleComplete },
+  ];
+  const SCORE_OPT: { label: string; pts: number; ok: boolean }[] = [
+    { label: "Reference number",      pts: 3, ok: !!referenceNumber.trim() },
+    { label: "Customer / PO ref",     pts: 2, ok: !!(customerRef.trim() || purchaseOrderNumber.trim()) },
+    { label: "Contact email",         pts: 2, ok: !!contactEmail.trim() },
+    { label: "Stop contacts",         pts: 4, ok: stops.every(s => !!s.contactName.trim()) },
+    { label: "Booking references",    pts: 2, ok: stops.some(s => s.bookingRequired && !!s.bookingRef.trim()) },
+    { label: "Driver stop notes",     pts: 2, ok: stops.some(s => !!s.driverNotes.trim()) },
+    { label: "Volume / dimensions",   pts: 2, ok: !!(volume.trim() || dimensions.trim()) },
+    { label: "Equipment required",    pts: 4, ok: equipmentReq.length > 0 },
+    { label: "Driver qualifications", pts: 4, ok: driverQuals.length > 0 },
+    { label: "Trailer rules",         pts: 2, ok: trailersAllowed.length > 0 || trailersForbidden.length > 0 },
+    { label: "Vehicle restrictions",  pts: 2, ok: !!(heightRestriction.trim() || weightRestriction.trim() || lengthRestriction.trim()) },
+    { label: "Access notes",          pts: 3, ok: !!accessNotes.trim() },
+    { label: "Min vehicle size",      pts: 2, ok: !!minSize },
+    { label: "Load notes",            pts: 1, ok: !!loadNotes.trim() },
+  ];
+
+  const reqTotal   = SCORE_REQ.reduce((s, x) => s + x.pts, 0);
+  const reqEarned  = SCORE_REQ.filter(x => x.ok).reduce((s, x) => s + x.pts, 0);
+  const optTotal   = SCORE_OPT.reduce((s, x) => s + x.pts, 0);
+  const optEarned  = SCORE_OPT.filter(x => x.ok).reduce((s, x) => s + x.pts, 0);
+  const reqScore   = Math.round((reqEarned / reqTotal) * 65);
+  const optScore   = Math.round((optEarned / optTotal) * 35);
+  const totalScore = reqScore + optScore;
+
+  const scoreColor =
+    totalScore >= 80 ? "text-green-600" :
+    totalScore >= 40 ? "text-amber-600" : "text-red-600";
+  const barReqColor  = "bg-slate-600";
+  const barOptColor  = "bg-green-500";
+  const OPT_MISSING  = SCORE_OPT.filter(x => !x.ok).map(x => x.label);
+
+  async function buildBody(saveMode: "draft" | "ready_to_plan") {
+    const mappedStops = stops.map((stop, i) => {
+      const type = stop.stopType === "collection" ? "pickup" : "dropoff";
+      const locationTextSnapshot = [stop.siteName, stop.street, stop.town, stop.postcode].filter(Boolean).join(", ");
+
+      const base: Record<string, unknown> = {
+        sequenceNumber:        i + 1,
+        type,
+        savedLocationId:       stop.savedLocationId,
+        siteName:              stop.siteName,
+        unitName:              stop.unitBuilding,
+        street:                stop.street,
+        town:                  stop.town,
+        postcode:              stop.postcode,
+        country:               stop.country,
+        addressLine2:          stop.addressLine2,
+        countyRegion:          stop.countyRegion,
+        locationTextSnapshot,
+        lat:                   stop.lat ? parseFloat(stop.lat) : null,
+        lng:                   stop.lng ? parseFloat(stop.lng) : null,
+        contactName:           stop.contactName,
+        contactPhone:          stop.contactPhone,
+        contactEmail:          stop.contactEmail,
+        referenceNumber:       stop.refNumber,
+        instructions:          stop.driverNotes,
+        bookingRequired:       stop.bookingRequired,
+        bookingRef:            stop.bookingRef,
+        openingHours:          stop.openingHours,
+        locationType:          stop.locationType,
+        navigationInstructions: stop.navigationInstructions,
+        numPallets:            stop.numPallets ? parseInt(stop.numPallets, 10) : null,
+        internalNotes:         stop.internalNotes,
+        earliestArrivalMinutes: stop.earliestArrival
+          ? (() => { const [h, m] = stop.earliestArrival.split(":").map(Number); return h * 60 + m; })()
+          : null,
+        unloadingAllowanceMinutes: stop.unloadingTime ? parseInt(stop.unloadingTime, 10) : null,
+      };
+
+      if (stop.timeType === "exact" && stop.exactTime) {
+        base.bookedTime = `${stop.date}T${stop.exactTime}:00`;
+      } else if (stop.timeType === "window" && stop.windowStart && stop.windowEnd) {
+        base.timeWindowStart = `${stop.date}T${stop.windowStart}:00`;
+        base.timeWindowEnd   = `${stop.date}T${stop.windowEnd}:00`;
+      }
+
+      return base;
+    });
+
+    const effectiveUnit = qtyUnit === "other" ? qtyUnitOther : qtyUnit;
+    const loadDetails = {
+      materialType:       materialDesc,
+      quantity:           totalQty ? parseFloat(totalQty) : null,
+      unit:               effectiveUnit,
+      weight:             totalWeight ? parseFloat(totalWeight) : null,
+      volume:             volume ? parseFloat(volume) : null,
+      hazardClass:        adrClass,
+      notes:              loadNotes,
+      dimensions,
+      fragile,
+      stackable,
+      tempControlled,
+      tempRange,
+      photosRequired,
+      weighbridgeRequired: weighbridgeReq,
+      forkliftRequired:   forkliftReq,
+      tailLiftRequired:   tailLiftReq,
+      craneRequired:      craneReq,
+      loadingMethod,
+      unloadingMethod,
+    };
+
+    const vehicleClassRequired = vehicleType === "other"
+      ? `other: ${vehicleTypeOther}`.trim()
+      : vehicleType;
+
+    return {
+      saveMode,
+      customerId:             customerId,
+      customerName:           customerName,
+      plannedDate,
+      serviceType,
+      jobType,
+      jobTitle,
+      referenceNumber,
+      customerRef,
+      purchaseOrderNumber,
+      priority:               priority as "low" | "normal" | "high",
+      bookingContactName:     contactName,
+      bookingContactPhone:    contactPhone,
+      bookingContactEmail:    contactEmail,
+      billingNotes,
+      customerInstructions:   custInstructions,
+      custRefRequired,
+      poRequired,
+      vehicleClassRequired,
+      minVehicleSize:         minSize,
+      trailerTypesAllowed:    trailersAllowed,
+      trailerTypesForbidden:  trailersForbidden,
+      equipmentRequired:      equipmentReq,
+      driverQualificationsReq: driverQuals,
+      heightRestriction,
+      weightRestriction,
+      lengthRestriction,
+      vehicleAccessNotes:     accessNotes,
+      requirePOD:             podRequired,
+      stops:                  mappedStops,
+      loadDetails,
+    };
+  }
+
+  async function handleSaveDraft() {
+    setSaving("draft");
+    setError("");
+    try {
+      const body = await buildBody("draft");
+      await jobsApi.create(body);
+      navigate("/app/jobs");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save draft");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleSaveReady() {
+    setSaving("ready");
+    setError("");
+    try {
+      const body = await buildBody("ready_to_plan");
+      await jobsApi.create(body);
+      navigate("/app/jobs");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save job");
+    } finally {
+      setSaving(null);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-surface pb-32">
@@ -1053,6 +1331,8 @@ export default function CreateJobPage() {
         </div>
       </div>
 
+      {error && <div className="max-w-3xl mx-auto px-4 pt-4"><div className="bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 text-sm font-medium">{error}</div></div>}
+
       <div className="max-w-3xl mx-auto px-4 pt-6 space-y-4">
 
         {/* ── Quality score ──────────────────────────────────────────────────── */}
@@ -1060,29 +1340,66 @@ export default function CreateJobPage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <div className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Job Quality</div>
-              <div className="text-3xl font-black text-primary">0%</div>
-              <div className="text-xs text-muted mt-0.5">Live score — coming soon</div>
+              <div className={"text-4xl font-black " + scoreColor}>{totalScore}%</div>
+              <div className="text-xs text-muted mt-1">
+                Required <span className="font-semibold text-slate-600">{reqScore}/65</span>
+                {" · "}
+                Optional <span className="font-semibold text-green-600">{optScore}/35</span>
+              </div>
             </div>
-            <div className="w-16 h-16 rounded-full border-4 border-gray-100 flex items-center justify-center">
-              <span className="text-sm font-black text-gray-300">0%</span>
-            </div>
-          </div>
-          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
-            <div className="h-2 bg-gray-200 rounded-full" style={{ width: "0%" }} />
-          </div>
-          <div className="border-t border-border pt-3">
-            <div className="text-xs font-semibold text-muted mb-2">Missing required fields</div>
-            <div className="flex flex-wrap gap-2">
-              {MISSING.map(f => (
-                <span key={f} className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded-full">
-                  <span className="text-red-400">●</span> {f}
-                </span>
-              ))}
-              {MISSING.length === 0 && (
-                <span className="text-xs text-green-700 font-semibold">✓ All required fields filled</span>
-              )}
+            <div className={"w-16 h-16 rounded-full border-4 flex items-center justify-center flex-shrink-0 " +
+              (totalScore >= 80 ? "border-green-200" : totalScore >= 40 ? "border-amber-200" : "border-red-200")}>
+              <span className={"text-sm font-black " + scoreColor}>{totalScore}%</span>
             </div>
           </div>
+
+          {/* Two-tone progress bar */}
+          <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden mb-1 flex">
+            <div className={"h-3 " + barReqColor + " transition-all duration-500"} style={{ width: `${reqScore}%` }} />
+            <div className={"h-3 " + barOptColor + " transition-all duration-500"} style={{ width: `${optScore}%` }} />
+          </div>
+          <div className="flex items-center gap-4 mb-4 text-xs text-muted">
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-600" /> Required (max 65%)</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-500" /> Optional (max 35%)</span>
+          </div>
+
+          {/* Missing required */}
+          {MISSING.length > 0 && (
+            <div className="border-t border-border pt-3 mb-3">
+              <div className="text-sm font-bold text-red-700 mb-2">
+                ⚠ {MISSING.length} required field{MISSING.length > 1 ? "s" : ""} missing
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {MISSING.map(f => (
+                  <span key={f} className="inline-flex items-center gap-1.5 text-sm bg-red-100 text-red-800 border border-red-400 px-3 py-1.5 rounded-full font-semibold">
+                    <span className="text-base leading-none">⚠</span> {f}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Optional fields to improve score */}
+          {MISSING.length === 0 && OPT_MISSING.length > 0 && (
+            <div className="border-t border-border pt-3">
+              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-2">
+                Add these to boost your score
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {OPT_MISSING.map(f => (
+                  <span key={f} className="inline-flex items-center gap-1 text-xs bg-gray-50 text-muted border border-border px-2.5 py-1 rounded-full">
+                    + {f}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {MISSING.length === 0 && OPT_MISSING.length === 0 && (
+            <div className="border-t border-border pt-3">
+              <span className="text-sm text-green-700 font-semibold">✓ Perfect — all fields complete</span>
+            </div>
+          )}
         </div>
 
         {/* ── Template placeholder ───────────────────────────────────────────── */}
@@ -1418,18 +1735,126 @@ export default function CreateJobPage() {
           {!sec4Collapsed && <SectionFooter complete={loadComplete} label="Load details" />}
         </div>
 
-        {/* ── Sections 05-06 — empty shells ──────────────────────────────────── */}
-        {SHELLS.map((s, i) => (
-          <div key={s.id} className="card overflow-hidden">
-            <SectionHeader num={i + 5} icon={s.icon} title={s.title} subtitle={s.subtitle} />
-            <div className="px-5 py-8 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl mb-2 opacity-10">{s.icon}</div>
-                <div className="text-xs text-gray-300 font-medium">Fields for {s.title} will be added here</div>
+        {/* ── Section 05 — Vehicle Requirements ─────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={5} icon="🚛" title="Vehicle Requirements" subtitle="Vehicle class, trailer type and special equipment" active
+            collapsed={sec5Collapsed} onToggle={() => setSec5Collapsed(o => !o)}
+            summary={vehicleType ? VEHICLE_TYPES.find(([v]) => v === vehicleType)?.[1] ?? vehicleType : undefined} />
+
+          {!sec5Collapsed && <div className="px-5 pt-5 pb-4 space-y-5">
+
+            {/* Vehicle type */}
+            <div>
+              <FieldLabel required>Vehicle Type Required</FieldLabel>
+              <div className="flex flex-wrap gap-2">
+                {VEHICLE_TYPES.map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => setVehicleType(key)}
+                    className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (vehicleType === key
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")}>
+                    {label}
+                  </button>
+                ))}
               </div>
+              {vehicleType === "other" && (
+                <div className="mt-3 max-w-xs">
+                  <FieldLabel required>Vehicle Type Description</FieldLabel>
+                  <input type="text" className="input" placeholder="e.g. Specialist tanker, car transporter…"
+                    value={vehicleTypeOther} onChange={e => setVehicleTypeOther(e.target.value)} />
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+
+            <OptionalToggle open={showVehicleOpts} onToggle={() => setShowVehicleOpts(o => !o)} label="vehicle details" />
+
+            {showVehicleOpts && (
+              <div className="space-y-6 pt-1 border-t border-border">
+
+                {/* Minimum size */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Size</div>
+                  <div className="max-w-xs">
+                    <FieldLabel>Minimum Vehicle Size</FieldLabel>
+                    <select className="input" value={minSize} onChange={e => setMinSize(e.target.value)}>
+                      <option value="">— No minimum —</option>
+                      {MIN_SIZES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Trailer rules */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Trailer Rules</div>
+                  <div className="space-y-4">
+                    <div>
+                      <FieldLabel>Trailer Types Allowed</FieldLabel>
+                      <MultiCheck options={TRAILER_TYPES} value={trailersAllowed} onChange={setTrailersAllowed} />
+                    </div>
+                    <div>
+                      <FieldLabel>Trailer Types Forbidden</FieldLabel>
+                      <MultiCheck options={TRAILER_TYPES} value={trailersForbidden} onChange={setTrailersForbidden} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Equipment */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Equipment Required</div>
+                  <MultiCheck options={EQUIPMENT_OPTS} value={equipmentReq} onChange={setEquipmentReq} />
+                </div>
+
+                {/* Driver qualifications */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Driver Qualifications</div>
+                  <MultiCheck options={DRIVER_QUALS} value={driverQuals} onChange={setDriverQuals} />
+                </div>
+
+                {/* Restrictions */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Restrictions</div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <FieldLabel>Height</FieldLabel>
+                      <div className="relative">
+                        <input type="text" className="input pr-6" placeholder="e.g. 4.0"
+                          value={heightRestriction} onChange={e => setHeightRestriction(e.target.value)} />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m</span>
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel>Weight</FieldLabel>
+                      <div className="relative">
+                        <input type="text" className="input pr-6" placeholder="e.g. 7.5"
+                          value={weightRestriction} onChange={e => setWeightRestriction(e.target.value)} />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">t</span>
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel>Length</FieldLabel>
+                      <div className="relative">
+                        <input type="text" className="input pr-6" placeholder="e.g. 9.0"
+                          value={lengthRestriction} onChange={e => setLengthRestriction(e.target.value)} />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Access notes */}
+                <div>
+                  <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Access / Vehicle Notes</div>
+                  <textarea className="input min-h-16 resize-none"
+                    placeholder="e.g. Tight access — no artic. Residential road. Low bridge at 3.8m on approach."
+                    value={accessNotes} onChange={e => setAccessNotes(e.target.value)} />
+                </div>
+
+              </div>
+            )}
+          </div>}
+          {!sec5Collapsed && <SectionFooter complete={vehicleComplete} label="Vehicle requirements" />}
+        </div>
+
 
       </div>
 
