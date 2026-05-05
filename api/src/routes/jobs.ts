@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { PrismaClient } from "../generated/client.js";
+import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import {
   validateCreateLocation,
@@ -494,6 +494,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           weightRestriction:         body.weightRestriction ?? "",
           lengthRestriction:         body.lengthRestriction ?? "",
           vehicleAccessNotes:        body.vehicleAccessNotes ?? "",
+          failureAction:             body.failureAction ?? "call_assistance",
+          assistancePhone:           body.assistancePhone ?? "",
+          assistanceNote:            body.assistanceNote ?? "",
+          returnDestination:         body.returnDestination ?? "",
+          altAddress:                body.altAddress ? (body.altAddress as Prisma.InputJsonValue) : Prisma.DbNull,
           internalNotes:         body.internalNotes ?? "",
           validationStatus:      structuredValidation.validationStatus,
           qualityScore:          quality.score,
@@ -915,6 +920,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           weightRestriction:         body.weightRestriction ?? job.weightRestriction,
           lengthRestriction:         body.lengthRestriction ?? job.lengthRestriction,
           vehicleAccessNotes:        body.vehicleAccessNotes ?? job.vehicleAccessNotes,
+          failureAction:             body.failureAction ?? job.failureAction,
+          assistancePhone:           body.assistancePhone ?? job.assistancePhone,
+          assistanceNote:            body.assistanceNote ?? job.assistanceNote,
+          returnDestination:         body.returnDestination ?? job.returnDestination,
+          altAddress:                body.altAddress !== undefined
+                                     ? (body.altAddress ? (body.altAddress as Prisma.InputJsonValue) : Prisma.DbNull)
+                                     : (job.altAddress ?? Prisma.DbNull),
           internalNotes:         body.internalNotes ?? job.internalNotes,
           validationStatus:      structuredValidation.validationStatus,
           qualityScore:          quality.score,

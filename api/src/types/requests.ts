@@ -285,6 +285,11 @@ export interface CreateJobBody {
   weightRestriction?:         string;
   lengthRestriction?:         string;
   vehicleAccessNotes?:        string;
+  failureAction?:             string;
+  assistancePhone?:           string;
+  assistanceNote?:            string;
+  returnDestination?:         string;
+  altAddress?:                Record<string, unknown> | null;
 }
 
 export interface PatchJobBody {
@@ -333,6 +338,11 @@ export interface PatchJobBody {
   weightRestriction?:         string;
   lengthRestriction?:         string;
   vehicleAccessNotes?:        string;
+  failureAction?:             string;
+  assistancePhone?:           string;
+  assistanceNote?:            string;
+  returnDestination?:         string;
+  altAddress?:                Record<string, unknown> | null;
 }
 
 export interface UpdateJobStatusBody {

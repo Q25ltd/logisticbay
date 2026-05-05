@@ -249,6 +249,11 @@ model PlannedJob {
   weightRestriction          String    @default("")
   lengthRestriction          String    @default("")
   vehicleAccessNotes         String    @default("")
+  failureAction        String    @default("call_assistance")
+  assistancePhone      String    @default("")
+  assistanceNote       String    @default("")
+  returnDestination    String    @default("")
+  altAddress           Json?
   internalNotes        String    @default("")
   validationStatus     String    @default("draft")
   qualityScore         Int       @default(0)

@@ -1106,12 +1106,55 @@ export default function CreateJobPage() {
   const [lengthRestriction,setLengthRestriction]= useState("");
   const [accessNotes,      setAccessNotes]      = useState("");
 
+  // ── Section 06 — Return Instructions ────────────────────────────────────
+  const [sec6Collapsed,      setSec6Collapsed]      = useState(true);
+  const [failureAction,      setFailureAction]      = useState("call_assistance");
+  // call_assistance
+  const [assistancePhone,    setAssistancePhone]    = useState("");
+  const [assistanceNote,     setAssistanceNote]     = useState("");
+  // finish_then_return
+  const [returnDestination,  setReturnDestination]  = useState("");
+  // alternative address (shared by deliver_alternative and finish_then_return→alternative)
+  const [altSavedLocationId, setAltSavedLocationId] = useState<number | null>(null);
+  const [altLocationQuery,   setAltLocationQuery]   = useState("");
+  const [altCompanyName,     setAltCompanyName]     = useState("");
+  const [altStreet,          setAltStreet]          = useState("");
+  const [altTown,            setAltTown]            = useState("");
+  const [altPostcode,        setAltPostcode]        = useState("");
+  const [altCountry,         setAltCountry]         = useState("United Kingdom");
+  const [altLat,             setAltLat]             = useState("");
+  const [altLng,             setAltLng]             = useState("");
+  const [altUnit,            setAltUnit]            = useState("");
+  const [altAddressLine2,    setAltAddressLine2]    = useState("");
+  const [altCounty,          setAltCounty]          = useState("");
+  const [altContactName,     setAltContactName]     = useState("");
+  const [altContactPhone,    setAltContactPhone]    = useState("");
+  const [altContactEmail,    setAltContactEmail]    = useState("");
+  const [altNavNotes,        setAltNavNotes]        = useState("");
+  const [altDriverNotes,     setAltDriverNotes]     = useState("");
+  const [showAltOpts,        setShowAltOpts]        = useState(false);
+
+  const needsAltAddress =
+    failureAction === "deliver_alternative" ||
+    (failureAction === "finish_then_return" && returnDestination === "alternative");
+
   // ── Quality / missing fields ─────────────────────────────────────────────
   const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
   const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
   const loadComplete     = !!(materialDesc.trim() && totalQty.trim() && qtyUnit && totalWeight.trim());
   const vehicleComplete  = !!vehicleType && (vehicleType !== "other" || !!vehicleTypeOther.trim());
+
+  const altAddressComplete = !needsAltAddress || !!(
+    altCompanyName.trim() && altStreet.trim() && altTown.trim() && altPostcode.trim() && altCountry.trim()
+  );
+  const returnComplete =
+    failureAction !== "finish_then_return" || (
+      !!returnDestination && altAddressComplete
+    );
+  const assistanceComplete =
+    failureAction !== "call_assistance" || !!assistancePhone.trim();
+  const sec6Complete = !!failureAction && assistanceComplete && returnComplete && altAddressComplete;
 
   const MISSING = [
     !customerName.trim()   && "Customer",
@@ -1126,6 +1169,7 @@ export default function CreateJobPage() {
     !qtyUnit               && "Unit",
     !totalWeight.trim()    && "Total weight",
     !vehicleComplete       && "Vehicle type",
+    !sec6Complete          && "Return / failure instruction",
   ].filter(Boolean) as string[];
 
   // ── Score calculation ────────────────────────────────────────────────────
@@ -1143,6 +1187,7 @@ export default function CreateJobPage() {
     { pts: 4,  ok: !!(totalQty.trim() && qtyUnit) },
     { pts: 4,  ok: !!totalWeight.trim() },
     { pts: 7,  ok: vehicleComplete },
+    { pts: 5,  ok: sec6Complete },
   ];
   const SCORE_OPT: { label: string; pts: number; ok: boolean }[] = [
     { label: "Reference number",      pts: 3, ok: !!referenceNumber.trim() },
@@ -1279,6 +1324,28 @@ export default function CreateJobPage() {
       lengthRestriction,
       vehicleAccessNotes:     accessNotes,
       requirePOD:             podRequired,
+      failureAction,
+      assistancePhone:        failureAction === "call_assistance" ? assistancePhone : "",
+      assistanceNote:         failureAction === "call_assistance" ? assistanceNote  : "",
+      returnDestination:      failureAction === "finish_then_return" ? returnDestination : "",
+      altAddress: needsAltAddress ? {
+        savedLocationId: altSavedLocationId,
+        companyName:     altCompanyName,
+        street:          altStreet,
+        town:            altTown,
+        postcode:        altPostcode,
+        country:         altCountry,
+        lat:             altLat ? parseFloat(altLat) : null,
+        lng:             altLng ? parseFloat(altLng) : null,
+        unit:            altUnit,
+        addressLine2:    altAddressLine2,
+        county:          altCounty,
+        contactName:     altContactName,
+        contactPhone:    altContactPhone,
+        contactEmail:    altContactEmail,
+        navNotes:        altNavNotes,
+        driverNotes:     altDriverNotes,
+      } : null,
       stops:                  mappedStops,
       loadDetails,
     };
@@ -1853,6 +1920,205 @@ export default function CreateJobPage() {
           {!sec5Collapsed && <SectionFooter complete={vehicleComplete} label="Vehicle requirements" />}
         </div>
 
+        {/* ── Section 06 — Return Instructions ───────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={6} icon="↩️" title="Return / Failure Instructions" subtitle="What the driver does if a delivery cannot be completed"
+            active collapsed={sec6Collapsed} onToggle={() => setSec6Collapsed(o => !o)}
+            summary={failureAction ? (
+              failureAction === "call_assistance"      ? `Call for assistance${assistancePhone ? ` · ${assistancePhone}` : ""}` :
+              failureAction === "next_delivery"        ? "Proceed to next delivery" :
+              failureAction === "return_depot"         ? "Return to depot" :
+              failureAction === "return_collection"    ? "Return to collection address" :
+              failureAction === "deliver_alternative"  ? "Deliver to alternative address" :
+              failureAction === "finish_then_return"   ? `Finish deliveries, then return${returnDestination ? ` to ${returnDestination}` : ""}` : ""
+            ) : undefined} />
+
+          {!sec6Collapsed && <div className="px-5 pt-5 pb-4 space-y-5">
+
+            {/* Main dropdown */}
+            <div>
+              <FieldLabel required>What should the driver do if delivery fails?</FieldLabel>
+              <select className="input" value={failureAction} onChange={e => { setFailureAction(e.target.value); setReturnDestination(""); }}>
+                <option value="call_assistance">Call for assistance</option>
+                <option value="next_delivery">Proceed to next delivery</option>
+                <option value="return_depot">Return to depot</option>
+                <option value="return_collection">Return to collection address</option>
+                <option value="deliver_alternative">Deliver to alternative address</option>
+                <option value="finish_then_return">Finish remaining deliveries, then return</option>
+              </select>
+              <p className="text-xs text-muted mt-1.5">
+                {failureAction === "next_delivery"     && "Driver will proceed to the next stop on the job."}
+                {failureAction === "return_depot"      && "System uses the driver's assigned depot / yard. No address needed."}
+                {failureAction === "return_collection" && "System uses the original collection stop address. No address needed."}
+                {failureAction === "call_assistance"   && "Driver will call the number below before taking any other action."}
+                {failureAction === "deliver_alternative" && "Driver will deliver to the alternative address below."}
+                {failureAction === "finish_then_return"  && "Driver will complete any remaining stops, then return as specified."}
+              </p>
+            </div>
+
+            {/* Call for assistance */}
+            {failureAction === "call_assistance" && (
+              <div className="space-y-3 pt-1 border-t border-border">
+                <div>
+                  <FieldLabel required>Assistance Phone Number</FieldLabel>
+                  <input type="tel" className="input" placeholder="e.g. 07700 900123"
+                    value={assistancePhone} onChange={e => setAssistancePhone(e.target.value)} />
+                </div>
+                <div>
+                  <FieldLabel>Assistance Instruction / Note</FieldLabel>
+                  <textarea className="input min-h-16 resize-none"
+                    placeholder="e.g. Call dispatcher before returning. Quote job reference."
+                    value={assistanceNote} onChange={e => setAssistanceNote(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {/* Finish then return — destination picker */}
+            {failureAction === "finish_then_return" && (
+              <div className="pt-1 border-t border-border">
+                <FieldLabel required>Return Destination</FieldLabel>
+                <div className="flex gap-2 flex-wrap">
+                  {[["depot","Depot"],["collection","Collection address"],["alternative","Alternative address"]].map(([val, label]) => (
+                    <button key={val} type="button" onClick={() => setReturnDestination(val)}
+                      className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors " +
+                        (returnDestination === val
+                          ? "bg-slate-700 text-white border-slate-700"
+                          : "bg-white text-muted border-border hover:border-gray-400")}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {returnDestination === "depot"      && <p className="text-xs text-muted mt-2">Uses driver's assigned depot. No address needed.</p>}
+                {returnDestination === "collection" && <p className="text-xs text-muted mt-2">Uses the original collection stop address. No address needed.</p>}
+              </div>
+            )}
+
+            {/* Alternative address block — shared */}
+            {needsAltAddress && (
+              <div className="space-y-4 pt-1 border-t border-border">
+                <div className="text-xs font-bold text-muted uppercase tracking-widest">Alternative Address</div>
+
+                {/* Saved location search */}
+                <div>
+                  <FieldLabel>Search saved locations</FieldLabel>
+                  <LocationSearch
+                    value={altLocationQuery}
+                    linkedId={altSavedLocationId}
+                    locations={locations}
+                    onSelect={loc => {
+                      setAltSavedLocationId(loc.id);
+                      setAltLocationQuery(loc.name);
+                      setAltCompanyName(loc.siteName || loc.name);
+                      setAltStreet(loc.street);
+                      setAltTown(loc.town);
+                      setAltPostcode(loc.postcode);
+                      setAltLat(loc.latitude != null ? String(loc.latitude) : "");
+                      setAltLng(loc.longitude != null ? String(loc.longitude) : "");
+                      setAltContactName(loc.contactName || "");
+                      setAltContactPhone(loc.contactPhone || "");
+                    }}
+                    onClear={() => {
+                      setAltSavedLocationId(null);
+                      setAltLocationQuery("");
+                    }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <FieldLabel required>Company / Site Name</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. Acme Logistics Ltd"
+                      value={altCompanyName} onChange={e => setAltCompanyName(e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    <FieldLabel required>Street / Address Line 1</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. 12 Sample Road"
+                      value={altStreet} onChange={e => setAltStreet(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel required>Town / City</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. Sampletown"
+                      value={altTown} onChange={e => setAltTown(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel required>Postcode</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. EX1 1AA"
+                      value={altPostcode} onChange={e => setAltPostcode(e.target.value.toUpperCase())} />
+                  </div>
+                  <div className="col-span-2">
+                    <FieldLabel required>Country</FieldLabel>
+                    <input type="text" className="input" placeholder="United Kingdom"
+                      value={altCountry} onChange={e => setAltCountry(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel>Latitude</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. 51.5074"
+                      value={altLat} onChange={e => setAltLat(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>Longitude</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. -0.1278"
+                      value={altLng} onChange={e => setAltLng(e.target.value)} />
+                  </div>
+                </div>
+
+                <OptionalToggle open={showAltOpts} onToggle={() => setShowAltOpts(o => !o)} label="optional address details" />
+
+                {showAltOpts && <div className="space-y-3">
+                  <div>
+                    <FieldLabel>Unit / Building</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. Unit 4B"
+                      value={altUnit} onChange={e => setAltUnit(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>Address Line 2</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. Exampleshire Industrial Estate"
+                      value={altAddressLine2} onChange={e => setAltAddressLine2(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>County / Region</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. Exampleshire"
+                      value={altCounty} onChange={e => setAltCounty(e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel>Contact Name</FieldLabel>
+                      <input type="text" className="input" placeholder="e.g. J. Smith"
+                        value={altContactName} onChange={e => setAltContactName(e.target.value)} />
+                    </div>
+                    <div>
+                      <FieldLabel>Contact Phone</FieldLabel>
+                      <input type="tel" className="input" placeholder="e.g. 07700 900456"
+                        value={altContactPhone} onChange={e => setAltContactPhone(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Contact Email</FieldLabel>
+                    <input type="email" className="input" placeholder="e.g. goods@example.com"
+                      value={altContactEmail} onChange={e => setAltContactEmail(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>Navigation Instructions</FieldLabel>
+                    <textarea className="input min-h-16 resize-none"
+                      placeholder="e.g. Enter via rear gate on Example Lane"
+                      value={altNavNotes} onChange={e => setAltNavNotes(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>Driver Notes</FieldLabel>
+                    <textarea className="input min-h-16 resize-none"
+                      placeholder="e.g. Call ahead 30 mins before arrival"
+                      value={altDriverNotes} onChange={e => setAltDriverNotes(e.target.value)} />
+                  </div>
+                </div>}
+              </div>
+            )}
+
+          </div>}
+          {!sec6Collapsed && <SectionFooter complete={sec6Complete} label="Return instructions" />}
+        </div>
 
       </div>
 
