@@ -436,6 +436,18 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const quality = scoreStructuredJob({ stops, loadDetails });
 
+    // Validate that any savedLocationId in stops belongs to this company
+    const stopLocationIds = stops.map(s => s.savedLocationId).filter((id): id is number => typeof id === "number");
+    if (stopLocationIds.length > 0) {
+      const validLocs = await prisma.savedLocation.findMany({
+        where: { id: { in: stopLocationIds }, companyId },
+        select: { id: true },
+      });
+      const validIds = new Set(validLocs.map(l => l.id));
+      const invalid = stopLocationIds.find(id => !validIds.has(id));
+      if (invalid) return reply.status(400).send({ error: "Invalid location reference in stops" });
+    }
+
     const job = await prisma.$transaction(async (tx) => {
       const created = await tx.plannedJob.create({
         data: {
@@ -492,25 +504,28 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           stops: {
             create: stops.map((s) => ({
               companyId,
-              sequenceNumber:       s.sequenceNumber ?? 0,
-              type:                 String(s.type ?? ""),
-              savedLocationId:      s.savedLocationId ?? null,
-              siteName:             typeof s.siteName === "string" ? s.siteName.trim() : "",
-              unitName:             typeof s.unitName === "string" ? s.unitName.trim() : "",
-              street:               typeof s.street === "string" ? s.street.trim() : "",
-              town:                 typeof s.town === "string" ? s.town.trim() : "",
-              postcode:             typeof s.postcode === "string" ? s.postcode.trim().toUpperCase() : "",
-              locationTextSnapshot: String(s.locationTextSnapshot ?? "").trim(),
-              lat:                  s.lat ?? null,
-              lng:                  s.lng ?? null,
-              gateLat:              s.gateLat ?? null,
-              gateLng:              s.gateLng ?? null,
-              timeWindowStart:      toNullableDate(s.timeWindowStart),
-              timeWindowEnd:        toNullableDate(s.timeWindowEnd),
-              contactName:          typeof s.contactName === "string" ? s.contactName.trim() : "",
-              contactPhone:         typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
-              referenceNumber:      typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
-              instructions:         typeof s.instructions === "string" ? s.instructions.trim() : "",
+              sequenceNumber:            s.sequenceNumber ?? 0,
+              type:                      String(s.type ?? ""),
+              savedLocationId:           s.savedLocationId ?? null,
+              siteName:                  typeof s.siteName === "string" ? s.siteName.trim() : "",
+              unitName:                  typeof s.unitName === "string" ? s.unitName.trim() : "",
+              street:                    typeof s.street === "string" ? s.street.trim() : "",
+              town:                      typeof s.town === "string" ? s.town.trim() : "",
+              postcode:                  typeof s.postcode === "string" ? s.postcode.trim().toUpperCase() : "",
+              locationTextSnapshot:      String(s.locationTextSnapshot ?? "").trim(),
+              lat:                       s.lat ?? null,
+              lng:                       s.lng ?? null,
+              gateLat:                   s.gateLat ?? null,
+              gateLng:                   s.gateLng ?? null,
+              timeWindowStart:           toNullableDate(s.timeWindowStart),
+              timeWindowEnd:             toNullableDate(s.timeWindowEnd),
+              bookedTime:                toNullableDate(s.bookedTime),
+              earliestArrivalMinutes:    s.earliestArrivalMinutes != null ? Math.round(Number(s.earliestArrivalMinutes)) : null,
+              unloadingAllowanceMinutes: s.unloadingAllowanceMinutes != null ? Math.round(Number(s.unloadingAllowanceMinutes)) : null,
+              contactName:               typeof s.contactName === "string" ? s.contactName.trim() : "",
+              contactPhone:              typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
+              referenceNumber:           typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
+              instructions:              typeof s.instructions === "string" ? s.instructions.trim() : "",
               contactEmail:              typeof s.contactEmail === "string" ? s.contactEmail.trim() : "",
               bookingRequired:           s.bookingRequired ?? false,
               bookingRef:                typeof s.bookingRef === "string" ? s.bookingRef.trim() : "",
@@ -522,7 +537,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
               country:                   typeof s.country === "string" ? s.country.trim() : "United Kingdom",
               addressLine2:              typeof s.addressLine2 === "string" ? s.addressLine2.trim() : "",
               countyRegion:              typeof s.countyRegion === "string" ? s.countyRegion.trim() : "",
-              status:               "pending",
+              status:                    "pending",
             })),
           },
           ...(hasLoadDetailsInput(loadDetails) ? {
@@ -751,26 +766,29 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         await tx.jobStop.createMany({
           data: stops.map(s => ({
             companyId,
-            jobId:                id,
-            sequenceNumber:       s.sequenceNumber ?? 0,
-            type:                 String(s.type ?? ""),
-            savedLocationId:      s.savedLocationId ?? null,
-            siteName:             typeof s.siteName === "string" ? s.siteName.trim() : "",
-            unitName:             typeof s.unitName === "string" ? s.unitName.trim() : "",
-            street:               typeof s.street === "string" ? s.street.trim() : "",
-            town:                 typeof s.town === "string" ? s.town.trim() : "",
-            postcode:             typeof s.postcode === "string" ? s.postcode.trim().toUpperCase() : "",
-            locationTextSnapshot: String(s.locationTextSnapshot ?? "").trim(),
-            lat:                  s.lat ?? null,
-            lng:                  s.lng ?? null,
-            gateLat:              s.gateLat ?? null,
-            gateLng:              s.gateLng ?? null,
-            timeWindowStart:      toNullableDate(s.timeWindowStart),
-            timeWindowEnd:        toNullableDate(s.timeWindowEnd),
-            contactName:          typeof s.contactName === "string" ? s.contactName.trim() : "",
-            contactPhone:         typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
-            referenceNumber:      typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
-            instructions:         typeof s.instructions === "string" ? s.instructions.trim() : "",
+            jobId:                     id,
+            sequenceNumber:            s.sequenceNumber ?? 0,
+            type:                      String(s.type ?? ""),
+            savedLocationId:           s.savedLocationId ?? null,
+            siteName:                  typeof s.siteName === "string" ? s.siteName.trim() : "",
+            unitName:                  typeof s.unitName === "string" ? s.unitName.trim() : "",
+            street:                    typeof s.street === "string" ? s.street.trim() : "",
+            town:                      typeof s.town === "string" ? s.town.trim() : "",
+            postcode:                  typeof s.postcode === "string" ? s.postcode.trim().toUpperCase() : "",
+            locationTextSnapshot:      String(s.locationTextSnapshot ?? "").trim(),
+            lat:                       s.lat ?? null,
+            lng:                       s.lng ?? null,
+            gateLat:                   s.gateLat ?? null,
+            gateLng:                   s.gateLng ?? null,
+            timeWindowStart:           toNullableDate(s.timeWindowStart),
+            timeWindowEnd:             toNullableDate(s.timeWindowEnd),
+            bookedTime:                toNullableDate(s.bookedTime),
+            earliestArrivalMinutes:    s.earliestArrivalMinutes != null ? Math.round(Number(s.earliestArrivalMinutes)) : null,
+            unloadingAllowanceMinutes: s.unloadingAllowanceMinutes != null ? Math.round(Number(s.unloadingAllowanceMinutes)) : null,
+            contactName:               typeof s.contactName === "string" ? s.contactName.trim() : "",
+            contactPhone:              typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
+            referenceNumber:           typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
+            instructions:              typeof s.instructions === "string" ? s.instructions.trim() : "",
             contactEmail:              typeof s.contactEmail === "string" ? s.contactEmail.trim() : "",
             bookingRequired:           s.bookingRequired ?? false,
             bookingRef:                typeof s.bookingRef === "string" ? s.bookingRef.trim() : "",
@@ -782,7 +800,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
             country:                   typeof s.country === "string" ? s.country.trim() : "United Kingdom",
             addressLine2:              typeof s.addressLine2 === "string" ? s.addressLine2.trim() : "",
             countyRegion:              typeof s.countyRegion === "string" ? s.countyRegion.trim() : "",
-            status:               "pending",
+            status:                    "pending",
           })),
         });
       }

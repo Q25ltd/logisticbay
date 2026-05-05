@@ -1208,17 +1208,15 @@ export default function CreateJobPage() {
         navigationInstructions: stop.navigationInstructions,
         numPallets:            stop.numPallets ? parseInt(stop.numPallets, 10) : null,
         internalNotes:         stop.internalNotes,
-        earliestArrivalMinutes: stop.earliestArrival
-          ? (() => { const [h, m] = stop.earliestArrival.split(":").map(Number); return h * 60 + m; })()
-          : null,
+        earliestArrivalMinutes: toMins(stop.earliestArrival),
         unloadingAllowanceMinutes: stop.unloadingTime ? parseInt(stop.unloadingTime, 10) : null,
       };
 
       if (stop.timeType === "exact" && stop.exactTime) {
-        base.bookedTime = `${stop.date}T${stop.exactTime}:00`;
+        base.bookedTime = `${stop.date}T${stop.exactTime}:00.000Z`;
       } else if (stop.timeType === "window" && stop.windowStart && stop.windowEnd) {
-        base.timeWindowStart = `${stop.date}T${stop.windowStart}:00`;
-        base.timeWindowEnd   = `${stop.date}T${stop.windowEnd}:00`;
+        base.timeWindowStart = `${stop.date}T${stop.windowStart}:00.000Z`;
+        base.timeWindowEnd   = `${stop.date}T${stop.windowEnd}:00.000Z`;
       }
 
       return base;

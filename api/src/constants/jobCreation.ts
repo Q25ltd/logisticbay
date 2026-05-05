@@ -1,4 +1,16 @@
-export const VEHICLE_CLASSES = ["van", "class2", "class1"] as const;
+export const VEHICLE_CLASSES = [
+  "van",
+  "class2",
+  "class1",
+  "rigid",
+  "artic",
+  "tipper",
+  "grab",
+  "mixer",
+  "hiab",
+  "refrigerated",
+  "other",
+] as const;
 
 export const TRAILER_TYPES = [
   "curtain_sider",
@@ -10,6 +22,8 @@ export const TRAILER_TYPES = [
   "walking_floor",
   "tipper",
   "container",
+  "skeletal",
+  "refrigerated_trailer",
   "other",
 ] as const;
 
@@ -27,6 +41,9 @@ export const LOAD_UNITS = [
   "tonnes",
   "loads",
   "items",
+  "bags",
+  "litres",
+  "m3",
   "other",
 ] as const;
 
