@@ -724,11 +724,24 @@ function DriverSnapshot({
   const openContexts = contexts.filter((context) => !isClosed(context.job));
   const assignedIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
 
+  // A driver has a vehicle if their profile has a default truck OR any open job has a truck assigned to them
+  function driverHasVehicle(driver: Driver): boolean {
+    if (driver.defaultTruckReg) return true;
+    return openContexts.some((ctx) => ctx.job.assignedDriverId === driver.id && !!ctx.job.assignedTruck);
+  }
+
+  // The effective unit reg to display for a driver
+  function driverUnitReg(driver: Driver): string {
+    if (driver.defaultTruckReg) return driver.defaultTruckReg;
+    const jobWithTruck = openContexts.find((ctx) => ctx.job.assignedDriverId === driver.id && !!ctx.job.assignedTruck);
+    return jobWithTruck?.job.assignedTruck ?? "";
+  }
+
   // Sort: needs-attention first (free with no vehicle, or free), then busy, then unavailable
   function driverSortKey(driver: Driver) {
     if (driver.status !== "active") return 3;
     const hasJob = assignedIds.has(driver.id);
-    const hasVehicle = !!driver.defaultTruckReg;
+    const hasVehicle = driverHasVehicle(driver);
     if (!hasJob && !hasVehicle) return 0; // no job + no vehicle — top priority
     if (!hasJob) return 1;               // no job but has vehicle
     return 2;                            // assigned
@@ -736,9 +749,9 @@ function DriverSnapshot({
 
   const sortedDrivers = [...drivers].sort((a, b) => driverSortKey(a) - driverSortKey(b));
 
-  // Show all active drivers who need attention (no job or no vehicle) + up to 6 total
-  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg));
-  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg)));
+  // Show all active drivers who need attention (no job or no vehicle)
+  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && (!assignedIds.has(d.id) || !driverHasVehicle(d)));
+  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && (!assignedIds.has(d.id) || !driverHasVehicle(d))));
   const visibleDrivers = [...needsAttentionDrivers, ...otherDrivers].slice(0, 8);
 
   return (
@@ -761,13 +774,13 @@ function DriverSnapshot({
           const activeJob = driverJobs.find((context) => context.status === "active" || context.status === "loaded_trailer");
           const freeSoon = driver.status === "active" && !!activeJob && ["collected", "arrived_dropoff"].includes(activeJob.job.status);
           const hasJob = assignedIds.has(driver.id);
-          const hasVehicle = !!driver.defaultTruckReg;
           const isActive = driver.status === "active";
-          const defaultUnit = unitByRegistration(units, driver.defaultTruckReg);
+          const hasVehicle = driverHasVehicle(driver);
+          const unitReg = driverUnitReg(driver);
+          const defaultUnit = unitByRegistration(units, unitReg);
           const currentTrailer = defaultUnit?.currentTrailerId
             ? trailers.find((trailer) => trailer.id === defaultUnit.currentTrailerId)
             : null;
-
           const noJob = isActive && !hasJob;
           const noVehicle = isActive && !hasVehicle;
           const needsAttention = noJob || noVehicle;
@@ -798,7 +811,7 @@ function DriverSnapshot({
                     )}
                     {isActive && hasVehicle && (
                       <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
-                        {driver.defaultTruckReg}
+                        {unitReg}
                         {currentTrailer ? ` + ${currentTrailer.registration}` : ""}
                       </span>
                     )}
