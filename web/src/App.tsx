@@ -41,6 +41,7 @@ export default function App() {
             <Route path="dashboard"    element={<DashboardPage />} />
             <Route path="jobs"         element={<JobsPage />} />
             <Route path="jobs/create"  element={<CreateJobPage />} />
+            <Route path="jobs/:id/edit" element={<CreateJobPage />} />
             <Route path="drivers"      element={<DriversPage />} />
             <Route path="holidays"     element={<HolidaysPage />} />
             <Route path="templates"    element={<TemplatesPage />} />

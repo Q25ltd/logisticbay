@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { customersApi } from "../../api/customers";
 import { jobsApi } from "../../api/jobs";
 import { useAuth } from "../../hooks/useAuth";
-import type { Customer, SavedLocation } from "../../types";
+import type { Customer, JobStop, PlannedJob, SavedLocation } from "../../types";
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -125,6 +125,82 @@ function makeStop(): StopState {
     earliestArrival: "",
     unloadingTime: "",
     internalNotes: "",
+  };
+}
+
+// ── Edit-mode helpers ────────────────────────────────────────────────────────
+
+function parseISOToDateAndTime(iso: string | null | undefined): { date: string; time: string } {
+  if (!iso) return { date: today(), time: "" };
+  // Stored as "${date}T${time}:00.000Z" so extract the literal parts directly
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  return m ? { date: m[1], time: m[2] } : { date: today(), time: "" };
+}
+
+function jobStopToStopState(stop: JobStop): StopState {
+  let timeType: StopState["timeType"] = "anytime";
+  let date = today();
+  let exactTime = "";
+  let windowStart = "";
+  let windowEnd = "";
+
+  if (stop.bookedTime) {
+    const p = parseISOToDateAndTime(stop.bookedTime);
+    timeType = "exact";
+    date = p.date;
+    exactTime = p.time;
+  } else if (stop.timeWindowStart) {
+    const p = parseISOToDateAndTime(stop.timeWindowStart);
+    timeType = "window";
+    date = p.date;
+    windowStart = p.time;
+    windowEnd = stop.timeWindowEnd ? parseISOToDateAndTime(stop.timeWindowEnd).time : "";
+  }
+
+  function minsToHHMM(mins: number | null | undefined): string {
+    if (mins == null) return "";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  return {
+    id: Math.random().toString(36).slice(2),
+    collapsed: true,
+    showOptional: false,
+    stopType: (stop.type === "pickup" || stop.type === "collection") ? "collection" : "delivery",
+    locationQuery: stop.locationTextSnapshot || stop.siteName || "",
+    savedLocationId: stop.savedLocationId ?? null,
+    siteName: stop.siteName || "",
+    street: stop.street || "",
+    town: stop.town || "",
+    postcode: stop.postcode || "",
+    country: "United Kingdom",
+    lat: stop.lat != null ? String(stop.lat) : "",
+    lng: stop.lng != null ? String(stop.lng) : "",
+    unitBuilding: stop.unitName || "",
+    addressLine2: "",
+    countyRegion: "",
+    date,
+    timeType,
+    exactTime,
+    windowStart,
+    windowEnd,
+    contactName: stop.contactName || "",
+    contactPhone: stop.contactPhone || "",
+    contactEmail: stop.contactEmail || "",
+    refNumber: stop.referenceNumber || "",
+    bookingRequired: stop.bookingRequired ?? false,
+    bookingRef: stop.bookingRef || "",
+    openingHours: stop.openingHours || "",
+    locationType: stop.locationType || "",
+    driverNotes: stop.instructions || "",
+    navigationInstructions: stop.navigationInstructions || "",
+    numPallets: stop.numPallets != null ? String(stop.numPallets) : "",
+    quantity: "",
+    earliestArrival: minsToHHMM(stop.earliestArrivalMinutes),
+    unloadingTime: stop.unloadingAllowanceMinutes != null ? String(stop.unloadingAllowanceMinutes) : "",
+    internalNotes: stop.internalNotes || "",
   };
 }
 
@@ -1043,8 +1119,13 @@ function MultiCheck({ options, value, onChange }: {
 export default function CreateJobPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { id: jobIdParam } = useParams<{ id?: string }>();
+  const editJobId = jobIdParam ? parseInt(jobIdParam, 10) : null;
+  const isEditMode = !!editJobId;
+
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
+  const [loadingJob, setLoadingJob] = useState(isEditMode);
   const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
   const [triedSave, setTriedSave] = useState(false);
 
@@ -1247,6 +1328,84 @@ export default function CreateJobPage() {
     }
     prevSec6.current = sec6Complete;
   }, [sec6Complete, sec6Collapsed]);
+
+  // ── Edit mode: load job and populate all state ───────────────────────────
+  useEffect(() => {
+    if (!editJobId) return;
+    setLoadingJob(true);
+    jobsApi.get(editJobId).then((job: PlannedJob) => {
+      setCustomerName(job.customerName || job.customer?.name || "");
+      setCustomerId(job.customerId ?? null);
+      setPlannedDate(job.plannedDate ? job.plannedDate.slice(0, 10) : today());
+      setServiceType(job.serviceType || "");
+      setJobType(job.jobType || "");
+      setJobTitle(job.jobTitle || "");
+      setReferenceNumber(job.referenceNumber || "");
+      setCustomerRef(job.customerRef || "");
+      setPurchaseOrderNumber(job.purchaseOrderNumber || "");
+      setPriority(job.priority || "normal");
+      setContactName(job.bookingContactName || "");
+      setContactPhone(job.bookingContactPhone || "");
+      setContactEmail(job.bookingContactEmail || "");
+      setCustInstructions(job.customerInstructions || "");
+      if (job.stops && job.stops.length > 0) {
+        setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobStopToStopState));
+      }
+      const ld = job.loadDetails;
+      setMaterialDesc(ld?.materialType || job.materialType || "");
+      setTotalQty(ld?.quantity != null ? String(ld.quantity) : job.quantityExpected || "");
+      setQtyUnit(ld?.unit || job.quantityUnit || "");
+      setTotalWeight(ld?.weight != null ? String(ld.weight) : "");
+      setVolume(ld?.volume != null ? String(ld.volume) : "");
+      setDimensions(ld?.dimensions || "");
+      setAdrClass(ld?.hazardClass || "");
+      setTempControlled(ld?.tempControlled ?? false);
+      setTempRange(ld?.tempRange || "");
+      setFragile(ld?.fragile ?? false);
+      setStackable(ld?.stackable ?? false);
+      setForkliftReq(ld?.forkliftRequired ?? false);
+      setTailLiftReq(ld?.tailLiftRequired ?? false);
+      setCraneReq(ld?.craneRequired ?? false);
+      setLoadingMethod(ld?.loadingMethod || "");
+      setUnloadingMethod(ld?.unloadingMethod || "");
+      setLoadNotes(ld?.notes || "");
+      setPhotosRequired(ld?.photosRequired ?? false);
+      setWeighbridgeReq(ld?.weighbridgeRequired ?? false);
+      setPodRequired(job.requirePOD ?? true);
+      const vClass = job.vehicleClassRequired || job.vehicleClass || "";
+      if (vClass.startsWith("other:")) {
+        setVehicleType("other");
+        setVehicleTypeOther(vClass.replace("other:", "").trim());
+      } else {
+        setVehicleType(vClass);
+      }
+      setMinSize(job.minVehicleSize || "");
+      setTrailersAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
+      setTrailersForbidden(Array.isArray(job.trailerTypesForbidden) ? job.trailerTypesForbidden : []);
+      setEquipmentReq(Array.isArray(job.equipmentRequired) ? job.equipmentRequired : []);
+      setDriverQuals(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq : []);
+      setHeightRestriction(job.heightRestriction || "");
+      setWeightRestriction(job.weightRestriction || "");
+      setLengthRestriction(job.lengthRestriction || "");
+      setAccessNotes(job.vehicleAccessNotes || "");
+      setFailureAction(job.failureAction || "call_assistance");
+      setAssistancePhone(job.assistancePhone || "");
+      setAssistanceNote(job.assistanceNote || "");
+      setReturnDestination(job.returnDestination || "");
+      // Expand all sections so the user sees filled data
+      setSec1Collapsed(false);
+      setSec2Collapsed(false);
+      setSec3Collapsed(false);
+      setSec4Collapsed(false);
+      setSec5Collapsed(false);
+      setSec6Collapsed(false);
+    }).catch(() => {
+      setError("Could not load job for editing.");
+    }).finally(() => {
+      setLoadingJob(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editJobId]);
 
   // ── Auto-save indicator (localStorage snapshot every 30 s) ────────────────
   useEffect(() => {
@@ -1462,7 +1621,11 @@ export default function CreateJobPage() {
     setError("");
     try {
       const body = await buildBody("draft");
-      await jobsApi.create(body);
+      if (editJobId) {
+        await jobsApi.update(editJobId, body);
+      } else {
+        await jobsApi.create(body);
+      }
       navigate("/app/jobs");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save draft");
@@ -1483,7 +1646,11 @@ export default function CreateJobPage() {
     setError("");
     try {
       const body = await buildBody("ready_to_plan");
-      await jobsApi.create(body);
+      if (editJobId) {
+        await jobsApi.update(editJobId, body);
+      } else {
+        await jobsApi.create(body);
+      }
       navigate("/app/jobs");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save job");
@@ -1491,6 +1658,10 @@ export default function CreateJobPage() {
     } finally {
       setSaving(null);
     }
+  }
+
+  if (loadingJob) {
+    return <div className="flex h-64 items-center justify-center text-muted">Loading job...</div>;
   }
 
   return (
@@ -1502,9 +1673,9 @@ export default function CreateJobPage() {
           <button onClick={() => navigate(-1)}
             className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-muted hover:text-primary hover:border-slate-300 hover:bg-slate-50 transition-all flex-shrink-0" title="Back">←</button>
           <div>
-            <h1 className="text-xl font-black text-primary">New Job</h1>
+            <h1 className="text-xl font-black text-primary">{isEditMode ? "Edit Job" : "New Job"}</h1>
             <p className="text-sm text-muted mt-0.5">
-              Fill in the sections below — save as draft any time
+              {isEditMode ? "Update the fields below — changes won't be lost until you save" : "Fill in the sections below — save as draft any time"}
             </p>
           </div>
         </div>
@@ -2273,7 +2444,7 @@ export default function CreateJobPage() {
             {/* Save Draft */}
             <button onClick={handleSaveDraft} disabled={saving !== null}
               className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
-              {saving === "draft" ? "Saving…" : "Save Draft"}
+              {saving === "draft" ? "Saving…" : isEditMode ? "Save as draft" : "Save Draft"}
             </button>
             {/* Save Ready */}
             <button onClick={handleSaveReady} disabled={saving !== null}
@@ -2281,7 +2452,7 @@ export default function CreateJobPage() {
                 (MISSING.length === 0
                   ? "bg-green-600 hover:bg-green-700 text-white"
                   : "btn-primary")}>
-              {saving === "ready" ? "Saving…" : MISSING.length === 0 ? "Save & Plan" : "Ready for Planner"}
+              {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Update & mark ready") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
             </button>
           </div>
         </div>
