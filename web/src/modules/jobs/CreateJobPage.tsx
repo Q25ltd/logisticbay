@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { customersApi } from "../../api/customers";
 import { jobsApi } from "../../api/jobs";
 import { useAuth } from "../../hooks/useAuth";
-import type { Customer, JobStop, PlannedJob, SavedLocation } from "../../types";
+import type { Customer, JobStop, JobTemplate, PlannedJob, SavedLocation } from "../../types";
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -1128,10 +1128,47 @@ export default function CreateJobPage() {
   const [loadingJob, setLoadingJob] = useState(isEditMode);
   const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
   const [triedSave, setTriedSave] = useState(false);
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
 
   // Saved locations (loaded once)
-  const [locations, setLocations] = useState<SavedLocation[]>([]);
+  const [locations,  setLocations]  = useState<SavedLocation[]>([]);
+  const [templates,  setTemplates]  = useState<JobTemplate[]>([]);
+  const [tplQuery,   setTplQuery]   = useState("");
+
   useEffect(() => { jobsApi.locations().then(r => setLocations(r.data)).catch(() => {}); }, []);
+  useEffect(() => { jobsApi.templates().then(r => setTemplates(r.data)).catch(() => {}); }, []);
+
+  function applyTemplate(t: JobTemplate) {
+    if (t.defaultReference)    setReferenceNumber(t.defaultReference);
+    if (t.defaultMaterialType) setMaterialDesc(t.defaultMaterialType);
+    if (t.defaultNotes)        setLoadNotes(t.defaultNotes);
+    const dl = t.defaultLoadDetails;
+    if (dl) {
+      if (dl.quantity    != null) setTotalQty(String(dl.quantity));
+      if (dl.unit)                setQtyUnit(dl.unit);
+      if (dl.materialType)       setMaterialDesc(dl.materialType);
+      if (dl.weight      != null) setTotalWeight(String(dl.weight));
+    }
+    const ds = Array.isArray(t.defaultStops) ? t.defaultStops : [];
+    if (ds.length > 0) {
+      setStops(ds.map(s => ({
+        ...makeStop(),
+        stopType:       s.type === "pickup" ? "collection" : "delivery",
+        savedLocationId: s.savedLocationId ?? null,
+        siteName:       s.locationTextSnapshot || "",
+        locationQuery:  s.locationTextSnapshot || "",
+        lat:            s.lat != null ? String(s.lat) : "",
+        lng:            s.lng != null ? String(s.lng) : "",
+        contactName:    s.contactName  || "",
+        contactPhone:   s.contactPhone || "",
+        refNumber:      s.referenceNumber || "",
+        driverNotes:    s.instructions || "",
+      })));
+    }
+    setTplQuery(t.name);
+    setSec1Collapsed(false);
+  }
 
   // ── Section collapse state ───────────────────────────────────────────────
   const [sec1Collapsed, setSec1Collapsed] = useState(true);
@@ -1216,6 +1253,7 @@ export default function CreateJobPage() {
   const [sec5Collapsed,    setSec5Collapsed]    = useState(true);
   const [vehicleType,      setVehicleType]      = useState("");
   const [vehicleTypeOther, setVehicleTypeOther] = useState("");
+  const [assignedTrailer,  setAssignedTrailer]  = useState("");
   // Optional
   const [showVehicleOpts,  setShowVehicleOpts]  = useState(false);
   const [minSize,          setMinSize]          = useState("");
@@ -1382,6 +1420,7 @@ export default function CreateJobPage() {
       setMinSize(job.minVehicleSize || "");
       setTrailersAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
       setTrailersForbidden(Array.isArray(job.trailerTypesForbidden) ? job.trailerTypesForbidden : []);
+      setAssignedTrailer(job.assignedTrailer || "");
       setEquipmentReq(Array.isArray(job.equipmentRequired) ? job.equipmentRequired : []);
       setDriverQuals(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq : []);
       setHeightRestriction(job.heightRestriction || "");
@@ -1563,7 +1602,7 @@ export default function CreateJobPage() {
       saveMode,
       customerId:             customerId,
       customerName:           customerName,
-      plannedDate,
+      plannedDate:            plannedDate || undefined,
       serviceType,
       jobType,
       jobTitle,
@@ -1579,6 +1618,7 @@ export default function CreateJobPage() {
       custRefRequired,
       poRequired,
       vehicleClassRequired,
+      assignedTrailer:        assignedTrailer.trim(),
       minVehicleSize:         minSize,
       trailerTypesAllowed:    trailersAllowed,
       trailerTypesForbidden:  trailersForbidden,
@@ -1613,10 +1653,17 @@ export default function CreateJobPage() {
       } : null,
       stops:                  mappedStops,
       loadDetails,
+      saveAsTemplate:         !isEditMode && saveAsTemplate,
+      templateName:           !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
     };
   }
 
   async function handleSaveDraft() {
+    if (!isEditMode && saveAsTemplate && !templateName.trim()) {
+      setError("Enter a template name, or uncheck 'Save as template'");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     setSaving("draft");
     setError("");
     try {
@@ -1637,6 +1684,11 @@ export default function CreateJobPage() {
 
   async function handleSaveReady() {
     setTriedSave(true);
+    if (!isEditMode && saveAsTemplate && !templateName.trim()) {
+      setError("Enter a template name, or uncheck 'Save as template'");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     // If required fields are missing, just reveal the pills — don't call API
     if (MISSING.length > 0) {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1684,6 +1736,58 @@ export default function CreateJobPage() {
       {error && <div className="max-w-3xl mx-auto px-4 pt-4"><div className="bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 text-sm font-medium">{error}</div></div>}
 
       <div className="max-w-3xl mx-auto px-4 pt-6 space-y-4">
+
+        {/* ── Template picker ────────────────────────────────────────────────── */}
+        {!isEditMode && templates.length > 0 && (
+          <div className="card px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">
+                  Start from a template
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="input pr-8"
+                    placeholder="Type to search templates…"
+                    value={tplQuery}
+                    onChange={e => setTplQuery(e.target.value)}
+                  />
+                  {tplQuery && (
+                    <button type="button"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary text-lg leading-none"
+                      onClick={() => setTplQuery("")}>×</button>
+                  )}
+                </div>
+                {tplQuery && (() => {
+                  const matches = templates.filter(t =>
+                    t.name.toLowerCase().includes(tplQuery.toLowerCase()) && t.status === "active"
+                  );
+                  if (!matches.length) return (
+                    <p className="text-xs text-muted mt-2">No templates match "{tplQuery}"</p>
+                  );
+                  return (
+                    <div className="mt-1.5 border border-border rounded-xl overflow-hidden shadow-sm">
+                      {matches.slice(0, 6).map(t => (
+                        <button key={t.id} type="button"
+                          onClick={() => applyTemplate(t)}
+                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 border-b border-border last:border-0 flex items-center justify-between gap-2">
+                          <span className="font-medium text-primary">{t.name}</span>
+                          {t.defaultMaterialType && (
+                            <span className="text-xs text-muted">{t.defaultMaterialType}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+              <p className="text-xs text-muted hidden sm:block flex-shrink-0 max-w-32 text-right leading-relaxed">
+                Fills stops, cargo and references automatically
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── Quality score ──────────────────────────────────────────────────── */}
         <div className="card overflow-hidden">
@@ -2115,6 +2219,20 @@ export default function CreateJobPage() {
               )}
             </div>
 
+            <div className="max-w-xs">
+              <FieldLabel>Trailer Number, If Applicable</FieldLabel>
+              <input
+                type="text"
+                className="input"
+                placeholder="e.g. TR45"
+                value={assignedTrailer}
+                onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
+              />
+              <p className="text-xs text-muted mt-1.5">
+                Not required. Use when a trailer is already known, loaded, or must stay linked to this job.
+              </p>
+            </div>
+
             <OptionalToggle open={showVehicleOpts} onToggle={() => setShowVehicleOpts(o => !o)} label="vehicle details" />
 
             {showVehicleOpts && (
@@ -2434,6 +2552,32 @@ export default function CreateJobPage() {
               Cancel
             </button>
             <div className="flex-1" />
+            {!isEditMode && (
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 space-y-1.5">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={saveAsTemplate}
+                    onChange={e => setSaveAsTemplate(e.target.checked)}
+                  />
+                  Also save as new template
+                </label>
+                {saveAsTemplate && (
+                  <>
+                    <input
+                      className={"input !py-1.5 !text-xs w-full " + (!templateName.trim() ? "border-red-300 focus:ring-red-200" : "")}
+                      placeholder="Template name (required)"
+                      value={templateName}
+                      onChange={e => setTemplateName(e.target.value)}
+                      autoFocus
+                    />
+                    {!templateName.trim() && (
+                      <p className="text-xs text-red-600">Enter a name to save this job as a template</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             {/* Quality score — centre-right */}
             <div className={"hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-shrink-0 " +
               (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :

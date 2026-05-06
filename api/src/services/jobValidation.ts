@@ -67,6 +67,7 @@ export interface StructuredLoadDetailsInput {
 export interface StructuredJobValidationInput {
   saveMode?: "draft" | "ready_to_plan";
   customerId?: number | null;
+  customerName?: unknown;
   plannedDate?: unknown;
   vehicleClassRequired?: unknown;
   trailerTypesAllowed?: unknown;
@@ -109,7 +110,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
   // ── Hard blocks (ready_to_plan only) ──────────────────────────────────────
 
   if (saveMode === "ready_to_plan") {
-    if (!input.customerId) errors.push("Customer is required");
+    if (!input.customerId && !hasText(input.customerName)) errors.push("Customer is required");
     if (!input.plannedDate) errors.push("Job date is required");
     if (!hasText(input.vehicleClassRequired)) errors.push("Vehicle type is required");
 
