@@ -737,8 +737,8 @@ function DriverSnapshot({
     setSavingUnit(driver.id);
     try {
       await driversApi.update(driver.id, {
-        defaultTruckReg:   e.unit.trim().toUpperCase(),
-        defaultTrailerReg: e.trailer.trim().toUpperCase(),
+        defaultTruckReg:   (e.unit ?? "").trim().toUpperCase(),
+        defaultTrailerReg: (e.trailer ?? "").trim().toUpperCase(),
       });
       setEditing(prev => ({ ...prev, [driver.id]: null }));
       onUnitTrailerSaved();
@@ -752,7 +752,7 @@ function DriverSnapshot({
   function startEditing(driver: Driver) {
     setEditing(prev => ({
       ...prev,
-      [driver.id]: { unit: driver.defaultTruckReg, trailer: driver.defaultTrailerReg },
+      [driver.id]: { unit: driver.defaultTruckReg ?? "", trailer: driver.defaultTrailerReg ?? "" },
     }));
   }
 
