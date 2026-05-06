@@ -92,18 +92,20 @@ export interface CreateDriverBody extends DriverPlanningFields {
   email?:               string;
   employeeNumber?:      string;
   phoneNumber?:         string;
-  defaultTruckReg?:    string;
-  defaultTruckClass?:  string;
-  defaultTrailerReg?:  string;
+  defaultTruckReg?:      string;
+  defaultTruckClass?:    string;
+  defaultTrailerReg?:    string;
+  defaultTrailerClass?:  string;
 }
 
 export interface PatchDriverBody extends DriverPlanningFields {
-  displayName?:         string;
-  employeeNumber?:      string;
-  phoneNumber?:         string;
-  defaultTruckReg?:    string;
-  defaultTruckClass?:  string;
-  defaultTrailerReg?:  string;
+  displayName?:          string;
+  employeeNumber?:       string;
+  phoneNumber?:          string;
+  defaultTruckReg?:      string;
+  defaultTruckClass?:    string;
+  defaultTrailerReg?:    string;
+  defaultTrailerClass?:  string;
 }
 
 export interface PatchDriverStatusBody {

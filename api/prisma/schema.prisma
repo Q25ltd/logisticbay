@@ -137,6 +137,7 @@ model DriverProfile {
   defaultTruckReg       String    @default("")
   defaultTruckClass     String    @default("")
   defaultTrailerReg     String    @default("")
+  defaultTrailerClass   String    @default("")
   status                String    @default("active")
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

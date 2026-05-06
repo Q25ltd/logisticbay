@@ -63,6 +63,7 @@ export interface Driver {
   defaultTruckReg: string;
   defaultTruckClass?: string;
   defaultTrailerReg: string;
+  defaultTrailerClass?: string;
   status: "active" | "inactive";
   user?: { id: number; email: string; name: string; status?: string } | null;
 }

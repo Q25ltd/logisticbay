@@ -729,7 +729,10 @@ function DriverSnapshot({
   const assignedIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
 
   // Inline unit/trailer editing state — keyed by driver id
-  const [editing, setEditing] = useState<Record<number, { unit: string; unitClass: string; trailer: string } | null>>({});
+  const [editing, setEditing] = useState<Record<number, {
+    unit: string; unitClass: string;
+    trailer: string; trailerClass: string;
+  } | null>>({});
   const [savingUnit, setSavingUnit] = useState<number | null>(null);
 
   const EXTERNAL_VEHICLE_TYPES: { value: string; label: string }[] = [
@@ -739,8 +742,24 @@ function DriverSnapshot({
     { value: "artic",   label: "Artic" },
   ];
 
+  const EXTERNAL_TRAILER_TYPES: { value: string; label: string }[] = [
+    { value: "curtainsider", label: "Curtainsider" },
+    { value: "flatbed",      label: "Flatbed" },
+    { value: "fridge",       label: "Fridge" },
+    { value: "box",          label: "Box" },
+    { value: "skeletal",     label: "Skeletal" },
+    { value: "tipper",       label: "Tipper" },
+    { value: "tanker",       label: "Tanker" },
+    { value: "lowloader",    label: "Lowloader" },
+  ];
+
   function vehicleClassLabel(cls: string) {
     return EXTERNAL_VEHICLE_TYPES.find((t) => t.value === cls)?.label
+      ?? (cls ? cls.charAt(0).toUpperCase() + cls.slice(1).replace(/_/g, " ") : "");
+  }
+
+  function trailerClassLabel(cls: string) {
+    return EXTERNAL_TRAILER_TYPES.find((t) => t.value === cls)?.label
       ?? (cls ? cls.charAt(0).toUpperCase() + cls.slice(1).replace(/_/g, " ") : "");
   }
 
@@ -750,6 +769,12 @@ function DriverSnapshot({
     return units.find((u) => u.registration.toUpperCase().replace(/\s+/g, "") === clean) ?? null;
   }
 
+  function fleetTrailerForReg(reg: string) {
+    const clean = reg.trim().toUpperCase().replace(/\s+/g, "");
+    if (!clean) return null;
+    return trailers.find((t) => t.registration.toUpperCase().replace(/\s+/g, "") === clean) ?? null;
+  }
+
   function handleUnitRegChange(driverId: number, value: string) {
     const matched = fleetUnitForReg(value);
     setEditing(prev => ({
@@ -757,8 +782,19 @@ function DriverSnapshot({
       [driverId]: {
         ...prev[driverId]!,
         unit: value,
-        // auto-fill class from fleet; keep existing if no match yet
         unitClass: matched ? matched.vehicleClass : (prev[driverId]?.unitClass ?? ""),
+      },
+    }));
+  }
+
+  function handleTrailerRegChange(driverId: number, value: string) {
+    const matched = fleetTrailerForReg(value);
+    setEditing(prev => ({
+      ...prev,
+      [driverId]: {
+        ...prev[driverId]!,
+        trailer: value,
+        trailerClass: matched ? matched.trailerType : (prev[driverId]?.trailerClass ?? ""),
       },
     }));
   }
@@ -769,9 +805,10 @@ function DriverSnapshot({
     setSavingUnit(driver.id);
     try {
       await driversApi.update(driver.id, {
-        defaultTruckReg:   (e.unit ?? "").trim().toUpperCase(),
-        defaultTruckClass: e.unitClass ?? "",
-        defaultTrailerReg: (e.trailer ?? "").trim().toUpperCase(),
+        defaultTruckReg:     (e.unit ?? "").trim().toUpperCase(),
+        defaultTruckClass:   e.unitClass ?? "",
+        defaultTrailerReg:   (e.trailer ?? "").trim().toUpperCase(),
+        defaultTrailerClass: e.trailerClass ?? "",
       });
       setEditing(prev => ({ ...prev, [driver.id]: null }));
       onUnitTrailerSaved();
@@ -783,13 +820,15 @@ function DriverSnapshot({
   }
 
   function startEditing(driver: Driver) {
-    const matched = fleetUnitForReg(driver.defaultTruckReg ?? "");
+    const matchedUnit    = fleetUnitForReg(driver.defaultTruckReg ?? "");
+    const matchedTrailer = fleetTrailerForReg(driver.defaultTrailerReg ?? "");
     setEditing(prev => ({
       ...prev,
       [driver.id]: {
-        unit:      driver.defaultTruckReg ?? "",
-        unitClass: matched ? matched.vehicleClass : (driver.defaultTruckClass ?? ""),
-        trailer:   driver.defaultTrailerReg ?? "",
+        unit:         driver.defaultTruckReg ?? "",
+        unitClass:    matchedUnit    ? matchedUnit.vehicleClass  : (driver.defaultTruckClass    ?? ""),
+        trailer:      driver.defaultTrailerReg ?? "",
+        trailerClass: matchedTrailer ? matchedTrailer.trailerType : (driver.defaultTrailerClass ?? ""),
       },
     }));
   }
@@ -857,6 +896,9 @@ function DriverSnapshot({
                         const fleetUnit = fleetUnitForReg(driver.defaultTruckReg ?? "");
                         const cls = fleetUnit ? fleetUnit.vehicleClass : (driver.defaultTruckClass ?? "");
                         const clsLabel = vehicleClassLabel(cls);
+                        const matchedTrailerFleet = fleetTrailerForReg(driver.defaultTrailerReg ?? "");
+                        const trailerCls = matchedTrailerFleet ? matchedTrailerFleet.trailerType : (driver.defaultTrailerClass ?? "");
+                        const trailerClsLabel = trailerClassLabel(trailerCls);
                         return (
                           <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
                             🚛 {driver.defaultTruckReg}
@@ -864,6 +906,7 @@ function DriverSnapshot({
                             {driver.defaultTrailerReg && (
                               <span className={linkedTrailer?.status === "vor" ? " text-red-600" : linkedTrailer?.status === "available" ? " text-green-700" : ""}>
                                 {" "}+ {driver.defaultTrailerReg}
+                                {trailerClsLabel && <span className="text-slate-400"> · {trailerClsLabel}</span>}
                               </span>
                             )}
                           </span>
@@ -923,16 +966,57 @@ function DriverSnapshot({
                       </div>
                     )}
 
-                    {/* Trailer reg */}
+                    {/* Trailer reg + fleet feedback */}
                     <div>
                       <label className="text-[10px] font-bold uppercase text-muted">Trailer reg (optional)</label>
                       <input
                         className="input text-xs py-1"
                         placeholder="TR45 XYZ"
                         value={editState.trailer}
-                        onChange={(e) => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailer: e.target.value } }))}
+                        onChange={(e) => handleTrailerRegChange(driver.id, e.target.value)}
                       />
+                      {(() => {
+                        const trailerClean = editState.trailer.trim();
+                        const matchedTrailer = fleetTrailerForReg(trailerClean);
+                        const isExternalTrailer = !!trailerClean && !matchedTrailer;
+                        if (matchedTrailer) return (
+                          <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
+                            ✓ In fleet · {trailerClassLabel(matchedTrailer.trailerType) || matchedTrailer.trailerType} · {matchedTrailer.status}
+                          </p>
+                        );
+                        if (isExternalTrailer) return (
+                          <p className="mt-0.5 text-[10px] text-amber-700 font-semibold">
+                            Rented / not in fleet — select type:
+                          </p>
+                        );
+                        return null;
+                      })()}
                     </div>
+
+                    {/* External trailer type picker */}
+                    {(() => {
+                      const trailerClean = editState.trailer.trim();
+                      const matchedTrailer = fleetTrailerForReg(trailerClean);
+                      if (!trailerClean || matchedTrailer) return null;
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {EXTERNAL_TRAILER_TYPES.map((t) => (
+                            <button
+                              key={t.value}
+                              type="button"
+                              onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailerClass: t.value } }))}
+                              className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
+                                editState.trailerClass === t.value
+                                  ? "bg-primary text-white border-primary"
+                                  : "bg-white text-slate-600 border-slate-300 hover:border-primary"
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
 
                     <div className="flex gap-2">
                       <button type="button" disabled={savingUnit === driver.id || !canSave} onClick={() => saveUnitTrailer(driver)}
@@ -991,6 +1075,12 @@ function fleetStatusRank(status: string) {
   return 1; // in_use, loaded, assigned, etc.
 }
 
+function statusDot(status: string) {
+  if (status === "available") return <span className="inline-block h-2 w-2 rounded-full bg-green-500" />;
+  if (status === "vor")       return <span className="inline-block h-2 w-2 rounded-full bg-red-500" />;
+  return                             <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />;
+}
+
 function FleetSnapshot({
   units,
   trailers,
@@ -1004,7 +1094,6 @@ function FleetSnapshot({
   openContexts: JobContext[];
   onViewMore: () => void;
 }) {
-  // Sort: available → assigned/in_use → vor
   const sortedUnits = [...units].sort((a, b) =>
     fleetStatusRank(a.status) - fleetStatusRank(b.status) || a.registration.localeCompare(b.registration)
   );
@@ -1012,104 +1101,149 @@ function FleetSnapshot({
     fleetStatusRank(a.status) - fleetStatusRank(b.status) || a.registration.localeCompare(b.registration)
   );
 
-  // Find which driver/job has each unit reg
   function unitDriver(reg: string): Driver | null {
-    const job = openContexts.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === reg.toUpperCase() && ctx.job.assignedDriverId);
-    if (job?.job.assignedDriverId) return drivers.find((d) => d.id === job.job.assignedDriverId) ?? null;
+    const byJob = openContexts.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === reg.toUpperCase() && ctx.job.assignedDriverId);
+    if (byJob?.job.assignedDriverId) return drivers.find((d) => d.id === byJob.job.assignedDriverId) ?? null;
     return drivers.find((d) => d.defaultTruckReg?.toUpperCase() === reg.toUpperCase()) ?? null;
   }
 
-  // Find attached trailer for a unit
   function unitTrailer(unit: FleetUnit): FleetTrailer | null {
     if (unit.currentTrailerId) return trailers.find((t) => t.id === unit.currentTrailerId) ?? null;
-    // Also check job context
-    const job = openContexts.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === unit.registration.toUpperCase() && ctx.job.assignedTrailer);
-    if (job?.job.assignedTrailer) return trailers.find((t) => t.registration.toUpperCase() === job.job.assignedTrailer!.toUpperCase()) ?? null;
+    const byJob = openContexts.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === unit.registration.toUpperCase() && ctx.job.assignedTrailer);
+    if (byJob?.job.assignedTrailer) return trailers.find((t) => t.registration.toUpperCase() === byJob.job.assignedTrailer!.toUpperCase()) ?? null;
     return null;
   }
 
-  function unitBg(status: string) {
-    if (status === "available") return "bg-green-50 border-green-200";
-    if (status === "vor") return "bg-red-50 border-red-200";
-    return "bg-amber-50 border-amber-200";
+  function trailerUnit(trailer: FleetTrailer): FleetUnit | null {
+    if (trailer.attachedUnitId) return units.find((u) => u.id === trailer.attachedUnitId) ?? null;
+    const byJob = openContexts.find((ctx) => ctx.job.assignedTrailer?.toUpperCase() === trailer.registration.toUpperCase() && ctx.job.assignedTruck);
+    if (byJob?.job.assignedTruck) return units.find((u) => u.registration.toUpperCase() === byJob.job.assignedTruck!.toUpperCase()) ?? null;
+    // also check driver default trailer
+    const byDriver = drivers.find((d) => d.defaultTrailerReg?.toUpperCase() === trailer.registration.toUpperCase());
+    if (byDriver?.defaultTruckReg) return units.find((u) => u.registration.toUpperCase() === byDriver.defaultTruckReg.toUpperCase()) ?? null;
+    return null;
   }
 
-  function trailerBg(status: string) {
-    if (status === "available") return "bg-green-50 border-green-200";
-    if (status === "vor") return "bg-red-50 border-red-200";
-    return "bg-amber-50 border-amber-200";
+  const availUnits    = sortedUnits.filter((u) => u.status === "available");
+  const assignedUnits = sortedUnits.filter((u) => u.status !== "available" && u.status !== "vor");
+  const vorUnits      = sortedUnits.filter((u) => u.status === "vor");
+
+  const availTrailers    = sortedTrailers.filter((t) => t.status === "available");
+  const assignedTrailers = sortedTrailers.filter((t) => t.status !== "available" && t.status !== "vor");
+  const vorTrailers      = sortedTrailers.filter((t) => t.status === "vor");
+
+  function UnitRow({ unit }: { unit: FleetUnit }) {
+    const driver  = unitDriver(unit.registration);
+    const trailer = unitTrailer(unit);
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div className="mt-0.5 flex-shrink-0">{statusDot(unit.status)}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-sm font-bold text-primary">{unit.registration}</span>
+            {unit.vehicleClass && (
+              <span className="text-[11px] text-slate-400 font-medium">{unit.vehicleClass}</span>
+            )}
+            {unit.status === "vor" && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700">VOR</span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+            {driver
+              ? <span className="font-medium text-slate-700">👤 {driver.displayName}</span>
+              : <span className="text-slate-400 italic">No driver</span>
+            }
+            {trailer && (
+              <span className="flex items-center gap-1">
+                · 🔗 {trailer.registration}
+                {trailer.trailerType && <span className="text-slate-400">({trailer.trailerType})</span>}
+                {statusDot(trailer.status)}
+              </span>
+            )}
+            {unit.yardLocation && <span className="text-slate-400">· {unit.yardLocation}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function TrailerRow({ trailer }: { trailer: FleetTrailer }) {
+    const unit = trailerUnit(trailer);
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div className="mt-0.5 flex-shrink-0">{statusDot(trailer.status)}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-sm font-bold text-primary">{trailer.registration}</span>
+            {trailer.trailerType && (
+              <span className="text-[11px] text-slate-400 font-medium">{trailer.trailerType}</span>
+            )}
+            {trailer.status === "vor" && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700">VOR</span>
+            )}
+            {trailer.status === "loaded" && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-purple-100 text-purple-700">Loaded</span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+            {unit
+              ? <span className="font-medium text-slate-700">🚛 {unit.registration}</span>
+              : <span className="text-slate-400 italic">Not attached</span>
+            }
+            {trailer.yardLocation && <span>· 📍 {trailer.yardLocation}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function SectionGroup({ label, items, renderRow }: {
+    label: string;
+    items: (FleetUnit | FleetTrailer)[];
+    renderRow: (item: any) => React.ReactNode;
+  }) {
+    if (items.length === 0) return null;
+    return (
+      <div>
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted">{label}</div>
+        <div className="space-y-1.5">{items.map(renderRow)}</div>
+      </div>
+    );
   }
 
   return (
     <section className="card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-wide text-primary">Fleet Snapshot</h2>
-          <p className="text-xs text-muted">Available → assigned → VOR. Full management in Fleet.</p>
+          <h2 className="text-sm font-black uppercase tracking-wide text-primary">Fleet</h2>
+          <p className="text-xs text-muted">
+            {units.length} unit{units.length !== 1 ? "s" : ""} · {trailers.length} trailer{trailers.length !== 1 ? "s" : ""}
+          </p>
         </div>
-        <button type="button" onClick={onViewMore} className="text-xs font-semibold text-accent hover:underline">View fleet</button>
+        <button type="button" onClick={onViewMore} className="text-xs font-semibold text-accent hover:underline">Manage fleet</button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Units</div>
-          <div className="space-y-1.5">
-            {sortedUnits.map((unit) => {
-              const driver = unitDriver(unit.registration);
-              const trailer = unitTrailer(unit);
-              return (
-                <div key={unit.id} className={`rounded-lg border px-2.5 py-2 text-xs ${unitBg(unit.status)}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <span className="font-bold text-primary">{unit.registration}</span>
-                      <span className="ml-2 text-muted">{unit.vehicleClass}</span>
-                    </div>
-                    <FleetStatus status={unit.status} />
-                  </div>
-                  {(driver || trailer) && (
-                    <div className="mt-0.5 text-[11px] text-slate-500">
-                      {driver && <span>Driver: {driver.displayName}</span>}
-                      {driver && trailer && <span className="mx-1">·</span>}
-                      {trailer && (
-                        <span>
-                          Trailer: {trailer.registration}
-                          {trailer.status === "available" && <span className="ml-1 text-green-600">●</span>}
-                          {trailer.status === "vor" && <span className="ml-1 text-red-600">●</span>}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {sortedUnits.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted">No units.</div>}
-          </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Units column */}
+        <div className="space-y-3">
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Units</div>
+          <SectionGroup label="Available" items={availUnits} renderRow={(u) => <UnitRow key={u.id} unit={u} />} />
+          <SectionGroup label="On job" items={assignedUnits} renderRow={(u) => <UnitRow key={u.id} unit={u} />} />
+          <SectionGroup label="Off road (VOR)" items={vorUnits} renderRow={(u) => <UnitRow key={u.id} unit={u} />} />
+          {units.length === 0 && (
+            <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted text-center">No units in fleet.</div>
+          )}
         </div>
 
-        <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Trailers</div>
-          <div className="space-y-1.5">
-            {sortedTrailers.map((trailer) => (
-              <div key={trailer.id} className={`rounded-lg border px-2.5 py-2 text-xs ${trailerBg(trailer.status)}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="font-bold text-primary">{trailer.registration}</span>
-                    <span className="ml-2 text-muted">{trailer.trailerType}</span>
-                  </div>
-                  <FleetStatus status={trailer.status} />
-                </div>
-                {(trailer.linkedJobId || trailer.yardLocation || trailer.status === "loaded") && (
-                  <div className="mt-0.5 text-[11px] text-slate-500">
-                    {trailer.linkedJobId && <span>Job #{trailer.linkedJobId}</span>}
-                    {trailer.linkedJobId && trailer.yardLocation && <span className="mx-1">·</span>}
-                    {trailer.yardLocation && <span>{trailer.yardLocation}</span>}
-                    {trailer.status === "loaded" && <span className="ml-1 text-purple-700">| {loadedTrailerStandingText(trailer)}</span>}
-                  </div>
-                )}
-              </div>
-            ))}
-            {sortedTrailers.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted">No trailers.</div>}
-          </div>
+        {/* Trailers column */}
+        <div className="space-y-3">
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Trailers</div>
+          <SectionGroup label="Available" items={availTrailers} renderRow={(t) => <TrailerRow key={t.id} trailer={t} />} />
+          <SectionGroup label="In use" items={assignedTrailers} renderRow={(t) => <TrailerRow key={t.id} trailer={t} />} />
+          <SectionGroup label="Off road (VOR)" items={vorTrailers} renderRow={(t) => <TrailerRow key={t.id} trailer={t} />} />
+          {trailers.length === 0 && (
+            <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted text-center">No trailers in fleet.</div>
+          )}
         </div>
       </div>
     </section>
@@ -1313,7 +1447,7 @@ function AssignDrawer({
           <div className="rounded-xl border border-slate-200 p-4 space-y-3">
             <div className="text-xs font-bold uppercase tracking-wide text-muted">Driver</div>
             <div>
-              <select className="input" value={driverId} onChange={(event) => changeDriver(event.target.value)}>
+              <select className="input" value={driverId} onChange={(event) => setDriverId(event.target.value)}>
                 <option value="">— No driver —</option>
                 {drivers.map((driver) => {
                   const onOther = openOthers.find((ctx) => ctx.job.assignedDriverId === driver.id);
