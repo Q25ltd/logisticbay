@@ -123,6 +123,28 @@ export interface PlannedJob {
   assignedDriver?: Driver | null; events?: JobEvent[];
   createdAt: string; updatedAt: string;
 }
+export interface FleetUnit {
+  id: number;
+  registration: string;
+  vehicleClass: string;
+  status: string;
+  notes?: string | null;
+  yardLocation?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FleetTrailer {
+  id: number;
+  registration: string;
+  trailerType: string;
+  status: string;
+  notes?: string | null;
+  yardLocation?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface JobEvent {
   id: number; jobId: number; eventType: string; note: string; createdAt: string;
 }

@@ -10,7 +10,7 @@ const NAV = [
   { to:"/app/holidays",     icon:"🌴", label:"Holidays",     active:true  },
   { to:"/app/locations",    icon:"📍", label:"Locations",    active:true  },
   { to:"/app/shifts",       icon:"⏱",  label:"Shifts",       active:true  },
-  { to:"/app/fleet",        icon:"🚛", label:"Fleet",        active:false },
+  { to:"/app/fleet",        icon:"🚛", label:"Fleet",        active:true  },
   { to:"/app/marketplace",  icon:"🏗️", label:"Marketplace",  active:false },
   { to:"/app/intelligence", icon:"🤖", label:"Intelligence", active:false },
   { to:"/app/settings",     icon:"⚙️", label:"Settings",     active:true  },

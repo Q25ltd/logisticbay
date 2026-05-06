@@ -10,6 +10,7 @@ import { jobRoutes }          from "./routes/jobs.js";
 import { syncRoutes }         from "./routes/sync.js";
 import { healthRoutes }       from "./routes/health.js";
 import { availabilityRoutes } from "./routes/availability.js";
+import { fleetRoutes }        from "./routes/fleet.js";
 import cors              from "@fastify/cors";
 
 
@@ -73,6 +74,7 @@ await shiftRoutes(app, prisma);
 await jobRoutes(app, prisma);
 await syncRoutes(app, prisma);
 await availabilityRoutes(app, prisma);
+await fleetRoutes(app, prisma);
 
 process.on("SIGINT",  async () => { await app.close(); await prisma.$disconnect(); process.exit(0); });
 process.on("SIGTERM", async () => { await app.close(); await prisma.$disconnect(); process.exit(0); });

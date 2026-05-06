@@ -45,6 +45,8 @@ model Company {
   jobStops         JobStop[]
   loadDetails      LoadDetails[]
   jobAudits        JobAudit[]
+  fleetUnits       FleetUnit[]
+  fleetTrailers    FleetTrailer[]
 }
 
 model Customer {
@@ -595,4 +597,44 @@ model DriverWorkingTimeSummary {
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 
   @@unique([driverProfileId, weekStartDate])
+}
+
+model FleetUnit {
+  id            Int      @id @default(autoincrement())
+  companyId     Int
+  company       Company  @relation(fields: [companyId], references: [id])
+
+  registration  String
+  vehicleClass  String
+  status        String   @default("available")
+  notes         String?
+
+  assignedDriverId  Int?
+  currentTrailerId  Int?
+  yardLocation      String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+model FleetTrailer {
+  id            Int      @id @default(autoincrement())
+  companyId     Int
+  company       Company  @relation(fields: [companyId], references: [id])
+
+  registration  String
+  trailerType   String
+  status        String   @default("available")
+  notes         String?
+
+  attachedUnitId  Int?
+  linkedJobId     Int?
+  yardLocation    String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
 }
