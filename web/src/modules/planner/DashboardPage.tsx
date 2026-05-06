@@ -879,12 +879,6 @@ function DriverSnapshot({
                       Assign job →
                     </button>
                   )}
-                  {!noVehicle && !noJob && (
-                    <button type="button" onClick={() => onPickJobForDriver(driver)}
-                      className="text-xs font-semibold text-slate-500 hover:text-accent">
-                      Assign another →
-                    </button>
-                  )}
                   {!noVehicle && (
                     <button type="button" onClick={() => startEditing(driver)}
                       className="text-xs text-slate-500 hover:text-primary">
