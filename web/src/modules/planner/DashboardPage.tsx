@@ -723,66 +723,112 @@ function DriverSnapshot({
 }) {
   const openContexts = contexts.filter((context) => !isClosed(context.job));
   const assignedIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
-  const visibleDrivers = [
-    ...drivers.filter((driver) => driver.status === "active" && !assignedIds.has(driver.id)),
-    ...drivers.filter((driver) => driver.status === "active" && assignedIds.has(driver.id)),
-    ...drivers.filter((driver) => driver.status !== "active"),
-  ].slice(0, 6);
+
+  // Sort: needs-attention first (free with no vehicle, or free), then busy, then unavailable
+  function driverSortKey(driver: Driver) {
+    if (driver.status !== "active") return 3;
+    const hasJob = assignedIds.has(driver.id);
+    const hasVehicle = !!driver.defaultTruckReg;
+    if (!hasJob && !hasVehicle) return 0; // no job + no vehicle — top priority
+    if (!hasJob) return 1;               // no job but has vehicle
+    return 2;                            // assigned
+  }
+
+  const sortedDrivers = [...drivers].sort((a, b) => driverSortKey(a) - driverSortKey(b));
+
+  // Show all active drivers who need attention (no job or no vehicle) + up to 6 total
+  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg));
+  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg)));
+  const visibleDrivers = [...needsAttentionDrivers, ...otherDrivers].slice(0, 8);
 
   return (
     <section className="card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-primary">Drivers</h2>
-          <p className="text-xs text-muted">Free first, then assigned/unavailable.</p>
+          <p className="text-xs text-muted">
+            {needsAttentionDrivers.length > 0
+              ? `${needsAttentionDrivers.length} need${needsAttentionDrivers.length === 1 ? "s" : ""} attention`
+              : "All active drivers assigned"}
+          </p>
         </div>
-        <button type="button" onClick={onViewMore} className="text-xs font-semibold text-accent hover:underline">View more</button>
+        <button type="button" onClick={onViewMore} className="text-xs font-semibold text-accent hover:underline">View all</button>
       </div>
 
       <div className="space-y-2">
         {visibleDrivers.map((driver) => {
           const driverJobs = openContexts.filter((context) => context.job.assignedDriverId === driver.id);
           const activeJob = driverJobs.find((context) => context.status === "active" || context.status === "loaded_trailer");
-          const free = driver.status === "active" && driverJobs.length === 0;
           const freeSoon = driver.status === "active" && !!activeJob && ["collected", "arrived_dropoff"].includes(activeJob.job.status);
+          const hasJob = assignedIds.has(driver.id);
+          const hasVehicle = !!driver.defaultTruckReg;
+          const isActive = driver.status === "active";
           const defaultUnit = unitByRegistration(units, driver.defaultTruckReg);
           const currentTrailer = defaultUnit?.currentTrailerId
             ? trailers.find((trailer) => trailer.id === defaultUnit.currentTrailerId)
             : null;
 
+          const noJob = isActive && !hasJob;
+          const noVehicle = isActive && !hasVehicle;
+          const needsAttention = noJob || noVehicle;
+
           return (
-            <div key={driver.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
+            <div key={driver.id} className={`rounded-lg border p-2.5 ${needsAttention ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"}`}>
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-bold text-primary">{driver.displayName}</div>
-                  <div className="text-xs text-muted">
-                    {driver.status !== "active" ? "Unavailable" : freeSoon ? "Free soon" : free ? "Free" : "Assigned"}
-                    {driver.defaultTruckReg ? ` | Unit ${driver.defaultTruckReg}` : " | No unit"}
-                    {currentTrailer ? ` | ${currentTrailer.registration} ${currentTrailer.status}` : " | No trailer"}
+                  {/* Status tags */}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {!isActive && (
+                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-500">Unavailable</span>
+                    )}
+                    {isActive && noJob && (
+                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No job assigned</span>
+                    )}
+                    {isActive && hasJob && freeSoon && (
+                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-700">Free soon</span>
+                    )}
+                    {isActive && hasJob && !freeSoon && (
+                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-700">
+                        {driverJobs.length} job{driverJobs.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {isActive && noVehicle && (
+                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No vehicle</span>
+                    )}
+                    {isActive && hasVehicle && (
+                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
+                        {driver.defaultTruckReg}
+                        {currentTrailer ? ` + ${currentTrailer.registration}` : ""}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${free ? "bg-green-100 text-green-800" : freeSoon ? "bg-blue-100 text-blue-800" : driver.status !== "active" ? "bg-slate-100 text-slate-500" : "bg-amber-100 text-amber-800"}`}>
-                  {driver.status !== "active" ? "Unavailable" : freeSoon ? "Soon" : free ? "Free" : "Busy"}
-                </span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-accent hover:underline">
-                  Assign job
-                </button>
-                <button type="button" onClick={onViewMore} className="text-xs font-semibold text-slate-500 hover:text-primary">
-                  View driver
-                </button>
-                {driver.status === "active" && (
-                  <button type="button" onClick={() => onMarkUnavailable(driver)} className="text-xs font-semibold text-slate-500 hover:text-red-600">
+              {isActive && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {noJob && (
+                    <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-accent hover:underline">
+                      Assign job →
+                    </button>
+                  )}
+                  {!noJob && (
+                    <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-slate-500 hover:text-accent">
+                      Assign another
+                    </button>
+                  )}
+                  <button type="button" onClick={() => onMarkUnavailable(driver)} className="text-xs text-slate-400 hover:text-red-600">
                     Mark unavailable
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           );
         })}
 
-        {visibleDrivers.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-sm text-muted">No drivers yet.</div>}
+        {visibleDrivers.length === 0 && (
+          <div className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-sm text-muted">No drivers yet.</div>
+        )}
       </div>
     </section>
   );
