@@ -713,6 +713,7 @@ function DriverSnapshot({
   onPickJobForDriver,
   onViewMore,
   onMarkUnavailable,
+  onUnitTrailerSaved,
 }: {
   drivers: Driver[];
   contexts: JobContext[];
