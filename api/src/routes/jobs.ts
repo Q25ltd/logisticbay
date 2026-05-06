@@ -747,11 +747,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     let patchCustomerName = job.customerName;
     if (body.customerId !== undefined && body.customerId !== null) {
+      // Linked to an existing customer — use the DB name
       const customer = await prisma.customer.findFirst({ where: { id: body.customerId, companyId } });
       if (!customer) return reply.status(400).send({ error: "Customer not found" });
       patchCustomerName = customer.name;
     } else if (body.customerId === null) {
-      patchCustomerName = "";
+      // Customer link cleared — use free-text name from body if provided
+      patchCustomerName = body.customerName ?? "";
+    } else if (body.customerName !== undefined) {
+      // customerId not changed, but name was explicitly updated
+      patchCustomerName = body.customerName ?? "";
     }
 
     const structuredValidation = validateStructuredJob({
