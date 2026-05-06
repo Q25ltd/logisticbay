@@ -918,19 +918,40 @@ function DriverSnapshot({
 
               {/* Inline unit / trailer edit */}
               {isActive && editState && (() => {
-                const regClean = editState.unit.trim();
-                const matchedUnit = fleetUnitForReg(regClean);
-                const isExternal = !!regClean && !matchedUnit;
-                const needsClass = isExternal && !editState.unitClass;
-                const canSave = !!regClean && !needsClass;
+                const regClean      = editState.unit.trim();
+                const matchedUnit   = fleetUnitForReg(regClean);
+                const isExternal    = !!regClean && !matchedUnit;
+                const needsClass    = isExternal && !editState.unitClass;
+                // Can save when: unit is empty (removal) OR unit is set and type is resolved
+                const canSave       = !needsClass;
+
+                const trailerClean   = editState.trailer.trim();
+                const matchedTrailer = fleetTrailerForReg(trailerClean);
+                const isExternalTrailer = !!trailerClean && !matchedTrailer;
+
+                function clearUnit() {
+                  setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, unit: "", unitClass: "" } }));
+                }
+                function clearTrailer() {
+                  setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailer: "", trailerClass: "" } }));
+                }
+
                 return (
-                  <div className="mt-2 space-y-1.5">
-                    {/* Unit reg + fleet feedback */}
+                  <div className="mt-2 space-y-2">
+                    {/* ── Unit ── */}
                     <div>
-                      <label className="text-[10px] font-bold uppercase text-muted">Unit reg</label>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-[10px] font-bold uppercase text-muted">Unit reg</label>
+                        {regClean && (
+                          <button type="button" onClick={clearUnit}
+                            className="text-[10px] text-red-500 hover:text-red-700 font-semibold">
+                            ✕ Remove unit
+                          </button>
+                        )}
+                      </div>
                       <input
                         className="input text-xs py-1"
-                        placeholder="AB12 CDE"
+                        placeholder="AB12 CDE — leave blank to remove"
                         value={editState.unit}
                         onChange={(e) => handleUnitRegChange(driver.id, e.target.value)}
                       />
@@ -950,73 +971,70 @@ function DriverSnapshot({
                     {isExternal && (
                       <div className="flex flex-wrap gap-1">
                         {EXTERNAL_VEHICLE_TYPES.map((t) => (
-                          <button
-                            key={t.value}
-                            type="button"
+                          <button key={t.value} type="button"
                             onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, unitClass: t.value } }))}
                             className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
                               editState.unitClass === t.value
                                 ? "bg-primary text-white border-primary"
                                 : "bg-white text-slate-600 border-slate-300 hover:border-primary"
-                            }`}
-                          >
+                            }`}>
                             {t.label}
                           </button>
                         ))}
                       </div>
                     )}
 
-                    {/* Trailer reg + fleet feedback */}
+                    {/* ── Trailer ── */}
                     <div>
-                      <label className="text-[10px] font-bold uppercase text-muted">Trailer reg (optional)</label>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-[10px] font-bold uppercase text-muted">Trailer reg (optional)</label>
+                        {trailerClean && (
+                          <button type="button" onClick={clearTrailer}
+                            className="text-[10px] text-red-500 hover:text-red-700 font-semibold">
+                            ✕ Remove trailer
+                          </button>
+                        )}
+                      </div>
                       <input
                         className="input text-xs py-1"
-                        placeholder="TR45 XYZ"
+                        placeholder="TR45 XYZ — leave blank to remove"
                         value={editState.trailer}
                         onChange={(e) => handleTrailerRegChange(driver.id, e.target.value)}
                       />
-                      {(() => {
-                        const trailerClean = editState.trailer.trim();
-                        const matchedTrailer = fleetTrailerForReg(trailerClean);
-                        const isExternalTrailer = !!trailerClean && !matchedTrailer;
-                        if (matchedTrailer) return (
-                          <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
-                            ✓ In fleet · {trailerClassLabel(matchedTrailer.trailerType) || matchedTrailer.trailerType} · {matchedTrailer.status}
-                          </p>
-                        );
-                        if (isExternalTrailer) return (
-                          <p className="mt-0.5 text-[10px] text-amber-700 font-semibold">
-                            Rented / not in fleet — select type:
-                          </p>
-                        );
-                        return null;
-                      })()}
+                      {matchedTrailer && (
+                        <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
+                          ✓ In fleet · {trailerClassLabel(matchedTrailer.trailerType) || matchedTrailer.trailerType} · {matchedTrailer.status}
+                        </p>
+                      )}
+                      {isExternalTrailer && (
+                        <p className="mt-0.5 text-[10px] text-amber-700 font-semibold">
+                          Rented / not in fleet — select type:
+                        </p>
+                      )}
                     </div>
 
                     {/* External trailer type picker */}
-                    {(() => {
-                      const trailerClean = editState.trailer.trim();
-                      const matchedTrailer = fleetTrailerForReg(trailerClean);
-                      if (!trailerClean || matchedTrailer) return null;
-                      return (
-                        <div className="flex flex-wrap gap-1">
-                          {EXTERNAL_TRAILER_TYPES.map((t) => (
-                            <button
-                              key={t.value}
-                              type="button"
-                              onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailerClass: t.value } }))}
-                              className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
-                                editState.trailerClass === t.value
-                                  ? "bg-primary text-white border-primary"
-                                  : "bg-white text-slate-600 border-slate-300 hover:border-primary"
-                              }`}
-                            >
-                              {t.label}
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()}
+                    {isExternalTrailer && (
+                      <div className="flex flex-wrap gap-1">
+                        {EXTERNAL_TRAILER_TYPES.map((t) => (
+                          <button key={t.value} type="button"
+                            onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailerClass: t.value } }))}
+                            className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
+                              editState.trailerClass === t.value
+                                ? "bg-primary text-white border-primary"
+                                : "bg-white text-slate-600 border-slate-300 hover:border-primary"
+                            }`}>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {!regClean && (
+                      <p className="text-[10px] text-orange-600 font-semibold">
+                        ⚠ Driver will show as having no unit after saving.
+                      </p>
+                    )}
 
                     <div className="flex gap-2">
                       <button type="button" disabled={savingUnit === driver.id || !canSave} onClick={() => saveUnitTrailer(driver)}
