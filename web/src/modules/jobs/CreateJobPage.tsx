@@ -372,7 +372,7 @@ function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary,
   );
 }
 
-function SectionFooter({ complete, label }: { complete: boolean; label: string }) {
+function SectionFooter({ complete, label, onCollapse }: { complete: boolean; label: string; onCollapse?: () => void }) {
   return (
     <div className={
       "px-5 py-3 border-t text-sm font-semibold flex items-center gap-2.5 " +
@@ -380,6 +380,24 @@ function SectionFooter({ complete, label }: { complete: boolean; label: string }
         ? "text-green-700 bg-green-50/80 border-green-100"
         : "text-amber-700 bg-amber-50/80 border-amber-100")
     }>
+      {/* Collapse arrow — left side */}
+      {onCollapse && (
+        <button
+          type="button"
+          onClick={onCollapse}
+          title="Collapse section"
+          className={
+            "flex-shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors mr-1 " +
+            (complete
+              ? "text-green-600 hover:bg-green-100"
+              : "text-amber-600 hover:bg-amber-100")
+          }
+        >
+          <svg viewBox="0 0 10 10" className="w-3.5 h-3.5" fill="none">
+            <path d="M2 7l3-3 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
       {complete ? (
         <>
           <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
@@ -1901,7 +1919,7 @@ export default function CreateJobPage() {
               </div>
             )}
           </div>}
-          {!sec1Collapsed && <SectionFooter complete={basicsComplete} label="Job basics" />}
+          {!sec1Collapsed && <SectionFooter complete={basicsComplete} label="Job basics" onCollapse={() => setSec1Collapsed(true)} />}
         </div>
 
         {/* ── Section 02 — Customer Details ──────────────────────────────────── */}
@@ -1965,7 +1983,7 @@ export default function CreateJobPage() {
               </div>
             )}
           </div>}
-          {!sec2Collapsed && <SectionFooter complete={customerComplete} label="Customer details" />}
+          {!sec2Collapsed && <SectionFooter complete={customerComplete} label="Customer details" onCollapse={() => setSec2Collapsed(true)} />}
         </div>
 
         {/* ── Section 03 — Collection / Delivery ─────────────────────────────── */}
@@ -1994,7 +2012,7 @@ export default function CreateJobPage() {
             </button>
           </div>}
 
-          {!sec3Collapsed && <SectionFooter complete={stopsComplete} label="All stops" />}
+          {!sec3Collapsed && <SectionFooter complete={stopsComplete} label="All stops" onCollapse={() => setSec3Collapsed(true)} />}
         </div>
 
         {/* ── Section 04 — Load Details ───────────────────────────────────────── */}
@@ -2153,7 +2171,7 @@ export default function CreateJobPage() {
               </div>
             )}
           </div>}
-          {!sec4Collapsed && <SectionFooter complete={loadComplete} label="Load details" />}
+          {!sec4Collapsed && <SectionFooter complete={loadComplete} label="Load details" onCollapse={() => setSec4Collapsed(true)} />}
         </div>
 
         {/* ── Section 05 — Vehicle Requirements ─────────────────────────────── */}
@@ -2367,7 +2385,7 @@ export default function CreateJobPage() {
               </div>
             )}
           </div>}
-          {!sec5Collapsed && <SectionFooter complete={vehicleComplete} label="Vehicle requirements" />}
+          {!sec5Collapsed && <SectionFooter complete={vehicleComplete} label="Vehicle requirements" onCollapse={() => setSec5Collapsed(true)} />}
         </div>
 
         {/* ── Section 06 — Return Instructions ───────────────────────────────── */}
@@ -2567,7 +2585,7 @@ export default function CreateJobPage() {
             )}
 
           </div>}
-          {!sec6Collapsed && <SectionFooter complete={sec6Complete} label="Return instructions" />}
+          {!sec6Collapsed && <SectionFooter complete={sec6Complete} label="Return instructions" onCollapse={() => setSec6Collapsed(true)} />}
         </div>
 
       </div>
