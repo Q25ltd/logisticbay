@@ -1,5 +1,11 @@
 import type { PrismaClient } from '../generated/client.js';
-import { SYNC_REVIEW_RULES, SUPPORTED_EVENT_TYPES, SupportedEventType } from './sync.constants.js';
+import {
+  ALLOWED_JOB_TRANSITIONS,
+  STATUS_BY_EVENT_TYPE,
+  SYNC_REVIEW_RULES,
+  SUPPORTED_EVENT_TYPES,
+  SupportedEventType,
+} from './sync.constants.js';
 
 export interface IncomingEvent {
   clientEventId: string;
@@ -43,16 +49,8 @@ function isSupportedEventType(eventType: string): eventType is SupportedEventTyp
 }
 
 function buildJobUpdate(event: IncomingEvent): Record<string, unknown> {
-  const STATUS_MAP: Record<SupportedEventType, string> = {
-    started:         'in_progress',
-    arrived_pickup:  'arrived_pickup',
-    collected:       'collected',
-    arrived_dropoff: 'arrived_dropoff',
-    completed:       'completed',
-  };
-
   const update: Record<string, unknown> = {
-    status: STATUS_MAP[event.eventType as SupportedEventType],
+    status: STATUS_BY_EVENT_TYPE[event.eventType as SupportedEventType],
   };
 
   if (event.eventType === 'collected') {
@@ -106,6 +104,10 @@ export async function processSyncEvents(
   );
 
   const results: SyncResult[] = [];
+  const driverProfile = await prisma.driverProfile.findFirst({
+    where:  { companyId, userId: driverId, status: 'active' },
+    select: { id: true },
+  });
 
   for (const event of sorted) {
     try {
@@ -154,6 +156,16 @@ export async function processSyncEvents(
       continue;
     }
 
+    if (!driverProfile) {
+      await updateSyncLog(prisma, event.clientEventId, companyId, 'failed', 'driver_profile_not_found');
+      results.push({
+        clientEventId: event.clientEventId,
+        status: 'failed',
+        failureReason: 'Driver profile not found for this company',
+      });
+      continue;
+    }
+
     const job = await prisma.plannedJob.findFirst({
       where: { id: event.jobId, companyId },
     });
@@ -164,6 +176,28 @@ export async function processSyncEvents(
         clientEventId: event.clientEventId,
         status: 'failed',
         failureReason: 'Job ' + event.jobId + ' not found for this company',
+      });
+      continue;
+    }
+
+    if (job.assignedDriverId !== driverProfile.id) {
+      await updateSyncLog(prisma, event.clientEventId, companyId, 'failed', 'job_not_assigned_to_driver');
+      results.push({
+        clientEventId: event.clientEventId,
+        status: 'failed',
+        failureReason: 'Job ' + event.jobId + ' is not assigned to this driver',
+      });
+      continue;
+    }
+
+    const nextStatus = STATUS_BY_EVENT_TYPE[event.eventType];
+    const allowed = ALLOWED_JOB_TRANSITIONS[job.status] ?? [];
+    if (!allowed.includes(nextStatus)) {
+      await updateSyncLog(prisma, event.clientEventId, companyId, 'failed', 'invalid_status_transition:' + job.status + '_to_' + nextStatus);
+      results.push({
+        clientEventId: event.clientEventId,
+        status: 'failed',
+        failureReason: 'Cannot move job ' + event.jobId + ' from ' + job.status + ' to ' + nextStatus,
       });
       continue;
     }

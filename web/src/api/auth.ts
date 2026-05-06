@@ -13,8 +13,9 @@ export async function login(email: string, password: string) {
 export async function registerCompany(form: {
   companyName: string; name: string; email: string; password: string; confirmPassword: string;
 }) {
-  const data = await api.post<{ token: string; user: User }>("/auth/register-company", form);
-  setToken(data.token);
+  const data = await api.post<{ accessToken: string; refreshToken: string; user: User }>("/auth/register-company", form);
+  setToken(data.accessToken);
+  localStorage.setItem("lb_refresh_token", data.refreshToken);
   return data;
 }
 

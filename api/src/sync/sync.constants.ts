@@ -28,3 +28,22 @@ export const SUPPORTED_EVENT_TYPES = [
 ] as const;
 
 export type SupportedEventType = typeof SUPPORTED_EVENT_TYPES[number];
+
+export const STATUS_BY_EVENT_TYPE: Record<SupportedEventType, string> = {
+  started:         'in_progress',
+  arrived_pickup:  'arrived_pickup',
+  collected:       'collected',
+  arrived_dropoff: 'arrived_dropoff',
+  completed:       'completed',
+};
+
+export const ALLOWED_JOB_TRANSITIONS: Record<string, string[]> = {
+  pending:         ['accepted', 'in_progress', 'cancelled'],
+  accepted:        ['in_progress', 'cancelled'],
+  in_progress:     ['arrived_pickup', 'cancelled'],
+  arrived_pickup:  ['collected', 'cancelled'],
+  collected:       ['arrived_dropoff'],
+  arrived_dropoff: ['completed'],
+  completed:       [],
+  cancelled:       [],
+};

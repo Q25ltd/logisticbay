@@ -58,6 +58,24 @@ export default function AppShell() {
   const navigate = useNavigate();
   const [drawer, setDrawer] = useState(false);
 
+  if (user?.role === "driver") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+        <div className="card p-6 max-w-md w-full text-center">
+          <div className="text-lg font-black text-primary mb-2">Planner access only</div>
+          <p className="text-sm text-muted mb-5">
+            Driver accounts use the mobile app. This web area is limited to planners and company owners.
+          </p>
+          <button
+            onClick={() => { logout(); navigate("/login"); }}
+            className="btn btn-primary w-full">
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
 

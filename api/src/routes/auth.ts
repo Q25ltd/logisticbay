@@ -45,8 +45,9 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const membership = selectedCompanyId ? memberships.find(m => m.companyId === selectedCompanyId) : memberships[0];
     if (!membership) return reply.status(401).send({ error: "Company not found or access denied" });
 
-    const token = generateToken({ userId: user.id, companyId: membership.companyId, role: membership.role });
-    const refreshToken = jwt.sign({ userId: user.id, companyId: membership.companyId, role: membership.role }, process.env.JWT_SECRET!, { expiresIn: "30d" });
+    const tokenPayload = { userId: user.id, companyId: membership.companyId, role: membership.role };
+    const token = generateToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
     const usingDefaultPin = await bcrypt.compare("123456", user.passwordHash);
 
     return reply.send({

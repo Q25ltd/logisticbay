@@ -85,7 +85,7 @@ function holidayDates(input: { startDate: string; endDate: string }) {
 }
 
 function generateToken(payload: object): string {
-  return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "7d" });
+  return jwt.sign(payload, process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "7d" });
 }
 
 function generateRefreshToken(payload: object): string {
@@ -184,7 +184,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   });
 
   // ── GET /company ───────────────────────────────────────────────────────────
-  app.get("/company", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/company", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const company = await prisma.company.findUnique({ where: { id: companyId } });
     if (!company) return reply.status(404).send({ error: "Company not found" });
@@ -192,7 +192,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   });
 
   // ── GET /drivers ───────────────────────────────────────────────────────────
-  app.get("/drivers", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/drivers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { status?: string };
 
@@ -370,6 +370,15 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     });
     if (!driver)        return reply.status(404).send({ error: "Driver not found" });
     if (!driver.userId) return reply.status(400).send({ error: "Driver has no login account" });
+
+    const activeMembershipCount = await prisma.companyMembership.count({
+      where: { userId: driver.userId, status: "active" },
+    });
+    if (activeMembershipCount > 1) {
+      return reply.status(409).send({
+        error: "This driver account is shared with another company. Ask the driver to change their PIN, or create a company-only driver login before resetting it.",
+      });
+    }
 
     const DEFAULT_PIN  = "123456";
     const passwordHash = await bcrypt.hash(DEFAULT_PIN, 12);

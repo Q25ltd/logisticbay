@@ -28,7 +28,7 @@ function validateCreate(body: CreateCustomerBody): string[] {
 export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /customers ────────────────────────────────────────────────────────
-  app.get("/customers", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/customers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { status?: string; search?: string };
 
@@ -45,7 +45,7 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
   });
 
   // ── GET /customers/:id ───────────────────────────────────────────────────
-  app.get("/customers/:id", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/customers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
     const { companyId } = request.user!;
 

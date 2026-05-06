@@ -24,17 +24,7 @@ import {
   type StructuredLoadDetailsInput,
 } from "../services/jobValidation.js";
 import { scoreStructuredJob } from "../services/jobQuality.js";
-
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  pending:         ["accepted", "in_progress", "cancelled"],
-  accepted:        ["in_progress", "cancelled"],
-  in_progress:     ["arrived_pickup", "cancelled"],
-  arrived_pickup:  ["collected", "cancelled"],
-  collected:       ["arrived_dropoff"],
-  arrived_dropoff: ["completed"],
-  completed:       [],
-  cancelled:       [],
-};
+import { ALLOWED_JOB_TRANSITIONS } from "../sync/sync.constants.js";
 
 const EVENT_TYPE_MAP: Record<string, string> = {
   in_progress:     "started",
@@ -62,10 +52,29 @@ function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | un
   return Object.values(loadDetails).some(v => v !== undefined && v !== null && v !== "");
 }
 
+async function findInvalidStopLocationId(
+  prisma: PrismaClient,
+  companyId: number,
+  stops: StructuredJobStopInput[],
+): Promise<number | null> {
+  const stopLocationIds = [...new Set(stops
+    .map(s => s.savedLocationId)
+    .filter((id): id is number => typeof id === "number"))];
+
+  if (stopLocationIds.length === 0) return null;
+
+  const validLocs = await prisma.savedLocation.findMany({
+    where:  { id: { in: stopLocationIds }, companyId },
+    select: { id: true },
+  });
+  const validIds = new Set(validLocs.map(l => l.id));
+  return stopLocationIds.find(id => !validIds.has(id)) ?? null;
+}
+
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /locations ─────────────────────────────────────────────────────────
-  app.get("/locations", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/locations", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const locs = await prisma.savedLocation.findMany({
       where:   { companyId },
@@ -144,7 +153,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── GET /job-templates ─────────────────────────────────────────────────────
-  app.get("/job-templates", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/job-templates", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
     const q = request.query as { status?: string };
 
@@ -238,18 +247,25 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       driverProfileId = profile.id;
     }
 
-    const where = {
-      companyId,
-      ...(driverProfileId    ? { assignedDriverId: driverProfileId }           : {}),
-      ...(q.driverId         ? { assignedDriverId: parseInt(q.driverId, 10) }  : {}),
-      ...(q.status           ? { status: q.status }                             : {}),
-      ...(q.date ? {
-        plannedDate: {
-          gte: new Date(`${q.date}T00:00:00.000Z`),
-          lt:  new Date(`${q.date}T23:59:59.999Z`),
-        },
-      } : {}),
-    };
+    const where: Prisma.PlannedJobWhereInput = { companyId };
+
+    if (role === "driver") {
+      where.assignedDriverId = driverProfileId;
+    } else if (q.driverId) {
+      const requestedDriverId = parseInt(q.driverId, 10);
+      if (!Number.isInteger(requestedDriverId)) {
+        return reply.status(400).send({ error: "driverId must be a valid number" });
+      }
+      where.assignedDriverId = requestedDriverId;
+    }
+
+    if (q.status) where.status = q.status;
+    if (q.date) {
+      where.plannedDate = {
+        gte: new Date(`${q.date}T00:00:00.000Z`),
+        lt:  new Date(`${q.date}T23:59:59.999Z`),
+      };
+    }
 
     const jobs = await prisma.plannedJob.findMany({
       where,
@@ -409,16 +425,17 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         : null
     );
 
+    let customerId = body.customerId ?? null;
     let customerName = body.customerName ?? "";
-    if (body.customerId && !customerName) {
-      const customer = await prisma.customer.findFirst({ where: { id: body.customerId, companyId } });
+    if (customerId !== null) {
+      const customer = await prisma.customer.findFirst({ where: { id: customerId, companyId } });
       if (!customer) return reply.status(400).send({ error: "Customer not found" });
       customerName = customer.name;
     }
 
     const structuredValidation = validateStructuredJob({
       saveMode,
-      customerId:            body.customerId ?? null,
+      customerId,
       plannedDate:           body.plannedDate,
       vehicleClassRequired:  body.vehicleClassRequired,
       trailerTypesAllowed:   body.trailerTypesAllowed,
@@ -437,22 +454,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const quality = scoreStructuredJob({ stops, loadDetails });
 
     // Validate that any savedLocationId in stops belongs to this company
-    const stopLocationIds = stops.map(s => s.savedLocationId).filter((id): id is number => typeof id === "number");
-    if (stopLocationIds.length > 0) {
-      const validLocs = await prisma.savedLocation.findMany({
-        where: { id: { in: stopLocationIds }, companyId },
-        select: { id: true },
-      });
-      const validIds = new Set(validLocs.map(l => l.id));
-      const invalid = stopLocationIds.find(id => !validIds.has(id));
-      if (invalid) return reply.status(400).send({ error: "Invalid location reference in stops" });
-    }
+    const invalidStopLocationId = await findInvalidStopLocationId(prisma, companyId, stops);
+    if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
 
     const job = await prisma.$transaction(async (tx) => {
       const created = await tx.plannedJob.create({
         data: {
           companyId,
-          customerId:            body.customerId ?? null,
+          customerId,
           customerName,
           templateId:            body.templateId ?? null,
           assignedDriverId:      body.assignedDriverId ?? null,
@@ -764,6 +773,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const quality = scoreStructuredJob({ stops, loadDetails });
 
+    const invalidStopLocationId = await findInvalidStopLocationId(prisma, companyId, stops);
+    if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.jobStop.deleteMany({ where: { jobId: id, companyId } });
 
@@ -975,7 +987,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       }
     }
 
-    const allowed = ALLOWED_TRANSITIONS[job.status] ?? [];
+    const allowed = ALLOWED_JOB_TRANSITIONS[job.status] ?? [];
     if (!allowed.includes(body.status)) {
       return reply.status(400).send({
         error: `Cannot move from ${job.status} to ${body.status}`,
