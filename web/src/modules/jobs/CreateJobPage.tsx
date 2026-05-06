@@ -233,6 +233,9 @@ const MIN_SIZES: [string, string][] = [
   ["44t",   "44t"],
 ];
 
+// Vehicle types that always pull a separate trailer
+const TRAILER_REQUIRED_TYPES = new Set(["artic"]);
+
 const TRAILER_TYPES: [string, string][] = [
   ["curtain_sider",       "Curtain sider"],
   ["flatbed",             "Flatbed"],
@@ -1304,7 +1307,9 @@ export default function CreateJobPage() {
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
   const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
   const loadComplete     = !!(materialDesc.trim() && totalQty.trim() && qtyUnit && totalWeight.trim());
-  const vehicleComplete  = !!vehicleType && (vehicleType !== "other" || !!vehicleTypeOther.trim());
+  const vehicleComplete  = !!vehicleType &&
+    (vehicleType !== "other" || !!vehicleTypeOther.trim()) &&
+    (!TRAILER_REQUIRED_TYPES.has(vehicleType) || trailersAllowed.length > 0);
 
   const altAddressComplete = !needsAltAddress || !!(
     altCompanyName.trim() && altStreet.trim() && altTown.trim() && altPostcode.trim() && altCountry.trim()
@@ -2165,7 +2170,11 @@ export default function CreateJobPage() {
               <FieldLabel required>Vehicle Type Required</FieldLabel>
               <div className="flex flex-wrap gap-2">
                 {VEHICLE_TYPES.map(([key, label]) => (
-                  <button key={key} type="button" onClick={() => setVehicleType(key)}
+                  <button key={key} type="button" onClick={() => {
+                      setVehicleType(key);
+                      // Clear trailer type selection when switching away from trailer-requiring types
+                      if (!TRAILER_REQUIRED_TYPES.has(key)) setTrailersAllowed([]);
+                    }}
                     className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
                       (vehicleType === key
                         ? "bg-slate-700 text-white border-slate-700"
@@ -2183,8 +2192,81 @@ export default function CreateJobPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-xl">
-              <div>
+            {/* Trailer type picker — shown inline when vehicle requires a trailer */}
+            {TRAILER_REQUIRED_TYPES.has(vehicleType) && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-700 text-sm font-bold">Trailer required</span>
+                  <span className="text-blue-500 text-xs">— select the trailer type for this job</span>
+                </div>
+                <div>
+                  <FieldLabel required>Trailer Type</FieldLabel>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {TRAILER_TYPES.map(([key, label]) => (
+                      <button key={key} type="button"
+                        onClick={() => setTrailersAllowed(prev =>
+                          prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]
+                        )}
+                        className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                          (trailersAllowed.includes(key)
+                            ? "bg-blue-700 text-white border-blue-700"
+                            : "bg-white text-muted border-border hover:border-blue-400")}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {trailersAllowed.length === 0 && (
+                    <p className="mt-1.5 text-xs text-red-500">Select at least one trailer type</p>
+                  )}
+                </div>
+                <div className="max-w-xs">
+                  <FieldLabel>Trailer Number Plate</FieldLabel>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="e.g. TR45 XYZ  (leave blank if not yet known)"
+                    value={assignedTrailer}
+                    onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Truck + trailer regs for non-trailer vehicle types */}
+            {!TRAILER_REQUIRED_TYPES.has(vehicleType) && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-xl">
+                <div>
+                  <FieldLabel>Truck / Unit Registration</FieldLabel>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="e.g. AB12 CDE"
+                    value={assignedTruck}
+                    onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
+                  />
+                  <p className="text-xs text-muted mt-1.5">
+                    Optional at creation. Planner assigns from dashboard.
+                  </p>
+                </div>
+                <div>
+                  <FieldLabel>Trailer Number Plate</FieldLabel>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="e.g. TR45 XYZ"
+                    value={assignedTrailer}
+                    onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
+                  />
+                  <p className="text-xs text-muted mt-1.5">
+                    Use when a trailer is already known or loaded.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Truck reg shown separately when trailer box is inline */}
+            {TRAILER_REQUIRED_TYPES.has(vehicleType) && (
+              <div className="max-w-xs">
                 <FieldLabel>Truck / Unit Registration</FieldLabel>
                 <input
                   type="text"
@@ -2197,20 +2279,7 @@ export default function CreateJobPage() {
                   Optional at creation. Planner assigns from dashboard.
                 </p>
               </div>
-              <div>
-                <FieldLabel>Trailer Number Plate</FieldLabel>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="e.g. TR45 XYZ"
-                  value={assignedTrailer}
-                  onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
-                />
-                <p className="text-xs text-muted mt-1.5">
-                  Use when a trailer is already known or loaded.
-                </p>
-              </div>
-            </div>
+            )}
 
             <OptionalToggle open={showVehicleOpts} onToggle={() => setShowVehicleOpts(o => !o)} label="vehicle details" />
 
