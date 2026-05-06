@@ -1014,6 +1014,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.plannedJob.findFirst({ where: { id, companyId }, include: { stops: true } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
+    // A unit cannot be assigned without a driver
+    const effectiveDriverId = body.assignedDriverId !== undefined ? body.assignedDriverId : job.assignedDriverId;
+    const effectiveTruck    = body.assignedTruck    !== undefined ? body.assignedTruck    : job.assignedTruck;
+    if (effectiveTruck?.trim() && !effectiveDriverId) {
+      return reply.status(400).send({ error: "A unit cannot be assigned without a driver" });
+    }
+
     await prisma.$transaction(async (tx) => {
       // If swapping driver — remove from any other open job first
       if (body.assignedDriverId !== undefined && body.assignedDriverId !== null) {

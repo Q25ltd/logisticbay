@@ -1011,7 +1011,9 @@ function AssignDrawer({
 
   const warnings = buildWarnings(context.job, drivers, units, trailers, assignment);
   const nonInfoWarnings = warnings.filter((warning) => warning.level !== "info");
-  const hardBlocked = warnings.some((warning) => ["no_driver", "no_unit", "driver_unavailable"].includes(warning.type));
+  // A unit cannot be assigned without a driver — a truck doesn't drive itself
+  const unitWithoutDriver = !!unitReg.trim() && !driverId;
+  const hardBlocked = unitWithoutDriver || warnings.some((warning) => ["no_driver", "no_unit", "driver_unavailable"].includes(warning.type));
   const needsReason = nonInfoWarnings.length > 0 && !hardBlocked;
   const selectedUnit = unitByRegistration(units, unitReg);
   const selectedTrailer = selectedTrailerForJob(context.job, trailers, assignment);
@@ -1178,7 +1180,12 @@ function AssignDrawer({
                   ? `${selectedUnit.vehicleClass} | ${selectedUnit.status}${selectedUnit.yardLocation ? ` | ${selectedUnit.yardLocation}` : ""}`
                   : unitReg.trim() ? "Not in fleet list — will be saved as entered." : "Type any reg or pick from fleet."}
               </p>
-              {truckOnOtherJob && (
+              {unitWithoutDriver && (
+                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                  A unit must have a driver assigned — select a driver first.
+                </div>
+              )}
+              {truckOnOtherJob && !unitWithoutDriver && (
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   ⚠ Unit <strong>{unitReg}</strong> is currently assigned to <strong>{truckOnOtherJob.route}</strong> (Job #{truckOnOtherJob.job.id}).
                 </div>
