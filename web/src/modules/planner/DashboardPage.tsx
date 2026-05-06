@@ -100,6 +100,13 @@ function dateInputToTime(value?: string | null) {
   return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+function dateInputToShortDateTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 function dateTimeInput(value?: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -126,6 +133,32 @@ function asNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function elapsedSince(value?: string | null) {
+  if (!value) return "";
+  const started = new Date(value).getTime();
+  if (!Number.isFinite(started)) return "";
+  const minutes = Math.max(0, Math.floor((Date.now() - started) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours < 24) return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+function loadedTrailerStandingText(trailer: FleetTrailer) {
+  const elapsed = elapsedSince(trailer.updatedAt);
+  return elapsed ? `standing ${elapsed}` : "standing time unknown";
+}
+
+function loadedTrailerStandingDetail(trailer: FleetTrailer) {
+  const since = dateInputToShortDateTime(trailer.updatedAt);
+  const elapsed = elapsedSince(trailer.updatedAt);
+  if (since && elapsed) return `Standing since ${since} (${elapsed})`;
+  return "Standing time unknown";
 }
 
 function sortedStops(job: PlannedJob) {
@@ -213,6 +246,21 @@ function timeRange(job: PlannedJob) {
   const start = dateInputToTime(times[0]);
   const end = dateInputToTime(times[times.length - 1]);
   return start === end ? start : `${start}-${end}`;
+}
+
+function stopTimeLabel(stop: JobStop) {
+  if (stop.bookedTime) return `Booked ${dateInputToTime(stop.bookedTime)}`;
+  const start = dateInputToTime(stop.timeWindowStart);
+  const end = dateInputToTime(stop.timeWindowEnd);
+  if (start && end && start !== end) return `${start}-${end}`;
+  return start || end || "No time set";
+}
+
+function stopDateTimeLabel(stop: JobStop) {
+  if (stop.bookedTime) return dateInputToShortDateTime(stop.bookedTime);
+  const date = dayKey(stop.timeWindowStart ?? stop.timeWindowEnd);
+  const time = stopTimeLabel(stop);
+  return time === "No time set" ? "" : [date, time].filter(Boolean).join(" ");
 }
 
 function customerName(job: PlannedJob) {
@@ -369,7 +417,7 @@ function buildWarnings(
     warnings.push({
       level: "warning",
       type: "loaded_trailer_waiting",
-      message: `Loaded trailer ${linkedLoadedTrailer.registration} is waiting${linkedLoadedTrailer.yardLocation ? ` at ${linkedLoadedTrailer.yardLocation}` : ""}.`,
+      message: `Loaded trailer ${linkedLoadedTrailer.registration} is waiting${linkedLoadedTrailer.yardLocation ? ` at ${linkedLoadedTrailer.yardLocation}` : ""} (${loadedTrailerStandingText(linkedLoadedTrailer)}).`,
     });
   }
 
@@ -455,9 +503,9 @@ function deriveStatus(job: PlannedJob, warnings: JobWarning[], loadedTrailer: Fl
   if (loadedTrailer) return "loaded_trailer";
   if (ACTIVE_JOB_STATUSES.has(job.status)) return "active";
   if (job.assignedDriverId && job.assignedTruck) return "planned";
+  if (job.validationStatus === "draft") return "draft";
   if (warnings.some(hasMissingPlanningInfo)) return "needs_planning";
   if (job.validationStatus === "ready_to_plan") return "ready_to_plan";
-  if (job.validationStatus === "draft") return "draft";
   return "ready_to_plan";
 }
 
@@ -603,7 +651,7 @@ function JobCard({
             {context.isCarriedOver && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800">Carried over</span>}
             {context.loadedTrailer && (
               <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">
-                Loaded {context.loadedTrailer.registration}
+                Loaded {context.loadedTrailer.registration} | {loadedTrailerStandingText(context.loadedTrailer)}
               </span>
             )}
           </div>
@@ -791,9 +839,16 @@ function FleetSnapshot({
             {visibleTrailers.map((trailer) => (
               <div key={trailer.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs">
                 <div className="min-w-0">
-                  <span className="font-bold text-primary">{trailer.registration}</span>
-                  <span className="ml-2 text-muted">{trailer.trailerType}</span>
-                  {trailer.linkedJobId && <span className="ml-2 text-muted">Job #{trailer.linkedJobId}</span>}
+                  <div>
+                    <span className="font-bold text-primary">{trailer.registration}</span>
+                    <span className="ml-2 text-muted">{trailer.trailerType}</span>
+                    {trailer.linkedJobId && <span className="ml-2 text-muted">Job #{trailer.linkedJobId}</span>}
+                  </div>
+                  {trailer.status === "loaded" && (
+                    <div className="mt-0.5 text-[11px] text-purple-700">
+                      {loadedTrailerStandingText(trailer)}{trailer.yardLocation ? ` at ${trailer.yardLocation}` : ""}
+                    </div>
+                  )}
                 </div>
                 <FleetStatus status={trailer.status} />
               </div>
@@ -894,6 +949,26 @@ function AssignDrawer({
         <div className="flex-1 overflow-y-auto p-5">
           {error && <Alert type="error" message={error} />}
 
+          {sortedStops(context.job).length > 0 && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Job stops</div>
+              <div className="space-y-1.5">
+                {sortedStops(context.job).map((stop) => (
+                  <div key={stopKey(stop)} className="flex items-start gap-2 text-xs">
+                    <span className={`mt-0.5 rounded px-1.5 py-0.5 font-bold uppercase ${isPickup(stop) ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
+                      {isPickup(stop) ? "C" : "D"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-semibold text-primary">{shortLocation(stop, stop.locationTextSnapshot)}</span>
+                      <span className="ml-2 text-muted">{stopTimeLabel(stop)}</span>
+                      {stop.contactPhone && <span className="ml-2 text-muted">{stop.contactPhone}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="label">Driver *</label>
@@ -901,7 +976,7 @@ function AssignDrawer({
                 <option value="">Select driver</option>
                 {drivers.map((driver) => (
                   <option key={driver.id} value={driver.id}>
-                    {driver.displayName} - {driver.status === "active" ? "available profile" : "unavailable"}
+                    {driver.displayName} - {driver.status === "active" ? "available" : "unavailable"}
                   </option>
                 ))}
               </select>
@@ -912,17 +987,22 @@ function AssignDrawer({
 
             <div>
               <label className="label">Unit / truck *</label>
-              <select className="input" value={unitReg} onChange={(event) => setUnitReg(event.target.value)}>
-                <option value="">Select unit</option>
-                {unitReg && !selectedUnit && <option value={unitReg}>Current: {unitReg}</option>}
+              <input
+                className="input"
+                list="unit-suggestions"
+                value={unitReg}
+                onChange={(e) => setUnitReg(e.target.value.toUpperCase())}
+                placeholder="Type or select registration…"
+              />
+              <datalist id="unit-suggestions">
                 {units.map((unit) => (
                   <option key={unit.id} value={unit.registration}>
-                    {unit.registration} - {unit.vehicleClass} - {unit.status}
+                    {unit.registration} — {unit.vehicleClass} — {unit.status}
                   </option>
                 ))}
-              </select>
+              </datalist>
               <p className="mt-1 text-xs text-muted">
-                {selectedUnit ? `${selectedUnit.vehicleClass} | ${selectedUnit.status}${selectedUnit.yardLocation ? ` | ${selectedUnit.yardLocation}` : ""}` : "Unit class and status are checked before save."}
+                {selectedUnit ? `${selectedUnit.vehicleClass} | ${selectedUnit.status}${selectedUnit.yardLocation ? ` | ${selectedUnit.yardLocation}` : ""}` : "Fleet suggestions shown — or type any registration."}
               </p>
             </div>
           </div>
@@ -932,7 +1012,7 @@ function AssignDrawer({
               <div>
                 <div className="text-sm font-black text-primary">Trailer</div>
                 <p className="text-xs text-muted">
-                  Trailer is separate from the unit. Loaded trailers stay linked to their job.
+                  Type any registration or pick from fleet. Driver can also confirm at job start.
                 </p>
               </div>
               {requiresTrailer(context.job) && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Required/expected</span>}
@@ -941,22 +1021,30 @@ function AssignDrawer({
             <div className="mt-3">
               {linkedLoadedTrailer ? (
                 <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-900">
-                  Loaded {linkedLoadedTrailer.registration} remains linked to this job
-                  {linkedLoadedTrailer.yardLocation ? ` at ${linkedLoadedTrailer.yardLocation}` : ""}.
+                  <div className="font-bold">{linkedLoadedTrailer.registration} — loaded trailer waiting</div>
+                  {linkedLoadedTrailer.yardLocation && <div className="mt-0.5 text-xs">Location: {linkedLoadedTrailer.yardLocation}</div>}
+                  <div className="mt-0.5 text-xs text-purple-700">{loadedTrailerStandingDetail(linkedLoadedTrailer)}</div>
                 </div>
               ) : (
                 <>
-                  <select className="input" value={trailerReg} onChange={(event) => setTrailerReg(event.target.value)}>
-                    <option value="">No trailer selected - driver can confirm at start</option>
-                    {trailerReg && !selectedTrailer && <option value={trailerReg}>Current: {trailerReg}</option>}
+                  <input
+                    className="input"
+                    list="trailer-suggestions"
+                    value={trailerReg}
+                    onChange={(e) => setTrailerReg(e.target.value.toUpperCase())}
+                    placeholder="Type or select trailer registration… (leave blank = driver confirms)"
+                  />
+                  <datalist id="trailer-suggestions">
                     {trailers.map((trailer) => (
                       <option key={trailer.id} value={trailer.registration}>
-                        {trailer.registration} - {trailer.trailerType} - {trailer.status}
+                        {trailer.registration} — {trailer.trailerType} — {trailer.status}{trailer.yardLocation ? ` @ ${trailer.yardLocation}` : ""}
                       </option>
                     ))}
-                  </select>
+                  </datalist>
                   <p className="mt-1 text-xs text-muted">
-                    {selectedTrailer ? `${selectedTrailer.trailerType} | ${selectedTrailer.status}${selectedTrailer.yardLocation ? ` | ${selectedTrailer.yardLocation}` : ""}` : "Leave blank only when the driver will confirm/select at job start."}
+                    {selectedTrailer
+                      ? `${selectedTrailer.trailerType} | ${selectedTrailer.status}${selectedTrailer.yardLocation ? ` | ${selectedTrailer.yardLocation}` : ""}${selectedTrailer.status === "loaded" ? ` | ${loadedTrailerStandingText(selectedTrailer)}` : ""}`
+                      : trailerReg.trim() ? "Registration saved — not in fleet list (subcontractor or new unit)." : "Leave blank if driver will select or confirm at job start."}
                   </p>
                 </>
               )}
@@ -1222,7 +1310,7 @@ function JobDetailDrawer({
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
                     <DetailRow label="City/postcode" value={[stop.town, stop.postcode].filter(Boolean).join(" ")} />
-                    <DetailRow label="Date/time" value={stop.timeWindowStart ? `${dayKey(stop.timeWindowStart)} ${dateInputToTime(stop.timeWindowStart)}` : stop.bookedTime ? `${dayKey(stop.bookedTime)} ${dateInputToTime(stop.bookedTime)}` : ""} />
+                    <DetailRow label="Date/time" value={stopDateTimeLabel(stop)} />
                     <DetailRow label="Quantity" value={stop.numPallets != null ? `${stop.numPallets} pallets` : ""} />
                     <DetailRow label="Reference" value={stop.referenceNumber || stop.bookingRef} />
                     <DetailRow label="Contact phone" value={stop.contactPhone} />
@@ -1275,6 +1363,7 @@ function JobDetailDrawer({
               <DetailRow label="Driver" value={context.assignedDriver?.displayName} />
               <DetailRow label="Unit" value={job.assignedTruck || context.assignedUnit?.registration} />
               <DetailRow label="Linked trailer" value={context.loadedTrailer?.registration || job.assignedTrailer || context.assignedTrailer?.registration} />
+              <DetailRow label="Trailer standing" value={context.loadedTrailer ? loadedTrailerStandingDetail(context.loadedTrailer) : ""} />
               <DetailRow label="Validation" value={context.warnings.length ? `${context.warnings.length} issue(s)` : "Clear"} />
             </div>
             {context.warnings.length > 0 && (
@@ -1383,7 +1472,7 @@ export default function DashboardPage() {
   const filteredContexts = useMemo(() => {
     return contexts
       .filter((context) => {
-        if (statusFilter === "default" && ["completed", "cancelled"].includes(context.status)) return false;
+        if (statusFilter === "default" && ["draft", "completed", "cancelled"].includes(context.status)) return false;
         if (statusFilter !== "default" && context.status !== statusFilter) return false;
         if (customerFilter !== "all" && context.customer !== customerFilter) return false;
         if (vehicleFilter !== "all" && context.vehicle !== vehicleFilter) return false;

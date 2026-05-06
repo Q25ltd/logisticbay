@@ -116,7 +116,7 @@ export function validateCreateTemplate(body: CreateTemplateBody): ValidationResu
 
 export function validateCreateJob(body: CreateJobBody): ValidationResult {
   const errors: string[] = [];
-  if (body.plannedDate !== undefined && !body.plannedDate.trim()) {
+  if (body.plannedDate != null && !body.plannedDate.trim()) {
     errors.push("plannedDate must not be empty");
   }
   if (!body.plannedDate && body.saveMode !== "draft") errors.push("plannedDate is required");

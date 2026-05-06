@@ -53,10 +53,12 @@ function jobQuantity(job: PlannedJob) {
   return quantity ? `${quantity} ${unit || ""}`.trim() : "";
 }
 
-function JobRow({ job, onStatusChange, onNote }: {
+function JobRow({ job, onStatusChange, onNote, onEdit, onDelete }: {
   job: PlannedJob;
   onStatusChange: (id: number, status: string) => void;
   onNote: (id: number) => void;
+  onEdit: (id: number) => void;
+  onDelete: (job: PlannedJob) => void;
 }) {
   const canProgress = hasStatus(PROGRESSABLE_JOB_STATUSES, job.status);
   const nextStatus  = nextJobStatus(job.status);
@@ -90,6 +92,8 @@ function JobRow({ job, onStatusChange, onNote }: {
             </button>
           )}
           <button onClick={() => onNote(job.id)} className="text-xs text-muted hover:text-primary">+ Note</button>
+          <button onClick={() => onEdit(job.id)} className="text-xs text-muted hover:text-primary">Edit</button>
+          <button onClick={() => onDelete(job)} className="text-xs text-red-500 hover:underline font-semibold">Delete</button>
         </div>
       </td>
     </tr>
@@ -157,6 +161,18 @@ export default function JobsPage() {
     try {
       await jobsApi.updateStatus(id, status);
       setSuccess(`Job updated ✓`);
+      setTimeout(() => setSuccess(""), 3000);
+      load();
+    } catch (err: any) { alert(err.message); }
+  }
+
+  async function handleDelete(job: PlannedJob) {
+    const label = job.referenceNumber || `job #${job.id}`;
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+
+    try {
+      await jobsApi.remove(job.id);
+      setSuccess("Job deleted ✓");
       setTimeout(() => setSuccess(""), 3000);
       load();
     } catch (err: any) { alert(err.message); }
@@ -239,7 +255,14 @@ export default function JobsPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filtered.map(job => (
-                    <JobRow key={job.id} job={job} onStatusChange={handleStatusChange} onNote={id => setNoteJobId(id)} />
+                    <JobRow
+                      key={job.id}
+                      job={job}
+                      onStatusChange={handleStatusChange}
+                      onNote={id => setNoteJobId(id)}
+                      onEdit={id => navigate(`/app/jobs/${id}/edit`)}
+                      onDelete={handleDelete}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -275,6 +298,10 @@ export default function JobsPage() {
                     )}
                     <button onClick={() => setNoteJobId(job.id)}
                       className="text-xs text-muted hover:text-primary ml-auto">+ Note</button>
+                    <button onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
+                      className="text-xs text-muted hover:text-primary">Edit</button>
+                    <button onClick={() => handleDelete(job)}
+                      className="text-xs font-semibold text-red-500 hover:underline">Delete</button>
                   </div>
                 </div>
               );

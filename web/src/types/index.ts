@@ -62,12 +62,12 @@ export interface Driver {
   holidayRequests?: HolidayRequest[];
   defaultTruckReg: string;
   status: "active" | "inactive";
-  user?: { id: number; email: string; name: string } | null;
+  user?: { id: number; email: string; name: string; status?: string } | null;
 }
 export interface JobStop {
   id?: number;
   sequenceNumber: number;
-  type: "pickup" | "dropoff" | "handover" | "yard" | "depot";
+  type: "pickup" | "dropoff" | "collection" | "delivery" | "handover" | "yard" | "depot";
   savedLocationId?: number | null;
   siteName?: string;
   unitName?: string;
@@ -81,10 +81,21 @@ export interface JobStop {
   gateLng?: number | null;
   timeWindowStart?: string | null;
   timeWindowEnd?: string | null;
+  bookedTime?: string | null;
+  earliestArrivalMinutes?: number | null;
+  unloadingAllowanceMinutes?: number | null;
   contactName?: string;
   contactPhone?: string;
+  contactEmail?: string;
   referenceNumber?: string;
   instructions?: string;
+  bookingRequired?: boolean;
+  bookingRef?: string;
+  openingHours?: string;
+  locationType?: string;
+  navigationInstructions?: string;
+  numPallets?: number | null;
+  internalNotes?: string;
   status?: string;
 }
 
@@ -97,6 +108,18 @@ export interface LoadDetails {
   materialType?: string;
   hazardClass?: string;
   notes?: string;
+  dimensions?: string;
+  fragile?: boolean;
+  stackable?: boolean;
+  tempControlled?: boolean;
+  tempRange?: string;
+  photosRequired?: boolean;
+  weighbridgeRequired?: boolean;
+  forkliftRequired?: boolean;
+  tailLiftRequired?: boolean;
+  craneRequired?: boolean;
+  loadingMethod?: string;
+  unloadingMethod?: string;
 }
 
 export interface PlannedJob {
@@ -112,9 +135,33 @@ export interface PlannedJob {
   vehicleClass?: string;
   vehicleClassRequired?: string;
   trailerTypesAllowed?: string[];
+  trailerTypesForbidden?: string[];
+  equipmentRequired?: string[];
+  driverQualificationsReq?: string[];
   priority?: "low" | "normal" | "high";
   serviceType?: string;
+  jobType?: string;
+  jobTitle?: string;
+  customerRef?: string;
+  purchaseOrderNumber?: string;
+  bookingContactName?: string;
+  bookingContactPhone?: string;
+  bookingContactEmail?: string;
+  customerInstructions?: string;
+  minVehicleSize?: string;
+  heightRestriction?: string;
+  weightRestriction?: string;
+  lengthRestriction?: string;
+  vehicleAccessNotes?: string;
+  failureAction?: string;
+  assistancePhone?: string;
+  assistanceNote?: string;
+  returnDestination?: string;
+  altAddress?: unknown;
   internalNotes?: string;
+  requireCollection?: boolean;
+  requirePOD?: boolean;
+  requireDeliveryQty?: boolean;
   validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "planned";
   qualityScore?: number;
   stops?: JobStop[];
@@ -129,6 +176,8 @@ export interface FleetUnit {
   vehicleClass: string;
   status: string;
   notes?: string | null;
+  assignedDriverId?: number | null;
+  currentTrailerId?: number | null;
   yardLocation?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -140,6 +189,8 @@ export interface FleetTrailer {
   trailerType: string;
   status: string;
   notes?: string | null;
+  attachedUnitId?: number | null;
+  linkedJobId?: number | null;
   yardLocation?: string | null;
   createdAt: string;
   updatedAt: string;

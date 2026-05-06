@@ -38,7 +38,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error("Session expired. Please sign in again.");
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const detail = Array.isArray(data.errors) && data.errors.length
+      ? `: ${data.errors.join(", ")}`
+      : Array.isArray(data.details) && data.details.length
+        ? `: ${data.details.join(", ")}`
+        : "";
+    throw new Error(`${data.error || data.message || `Request failed (${res.status})`}${detail}`);
+  }
   return data;
 }
 

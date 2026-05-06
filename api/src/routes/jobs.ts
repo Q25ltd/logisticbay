@@ -436,6 +436,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const structuredValidation = validateStructuredJob({
       saveMode,
       customerId,
+      customerName,
       plannedDate:           body.plannedDate,
       vehicleClassRequired:  body.vehicleClassRequired,
       trailerTypesAllowed:   body.trailerTypesAllowed,
@@ -756,6 +757,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const structuredValidation = validateStructuredJob({
       saveMode,
       customerId:            effectiveCustomerId,
+      customerName:          patchCustomerName,
       plannedDate:           body.plannedDate ?? job.plannedDate ?? undefined,
       vehicleClassRequired:  body.vehicleClassRequired ?? job.vehicleClassRequired,
       trailerTypesAllowed:   body.trailerTypesAllowed ?? (Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []),
@@ -963,6 +965,29 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       validation: structuredValidation,
       quality,
     });
+  });
+
+  // ── DELETE /jobs/:id ──────────────────────────────────────────────────────
+  app.delete("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const { companyId } = request.user!;
+
+    const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
+    if (!job) return reply.status(404).send({ error: "Job not found" });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.fleetTrailer.updateMany({
+        where: { companyId, linkedJobId: id },
+        data:  { linkedJobId: null },
+      });
+      await tx.jobExecutionEvent.deleteMany({ where: { jobId: id, companyId } });
+      await tx.jobAudit.deleteMany({ where: { jobId: id, companyId } });
+      await tx.jobStop.deleteMany({ where: { jobId: id, companyId } });
+      await tx.loadDetails.deleteMany({ where: { jobId: id, companyId } });
+      await tx.plannedJob.delete({ where: { id } });
+    });
+
+    return reply.status(204).send();
   });
 
   // ── PATCH /jobs/:id/status — driver updates job status ────────────────────
