@@ -1326,47 +1326,8 @@ export default function CreateJobPage() {
   const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
   const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started;
 
-  // ── Auto-collapse completed sections ─────────────────────────────────────
-  const prevSec1 = useRef(false);
-  const prevSec2 = useRef(false);
-  const prevSec4 = useRef(false);
-  const prevSec5 = useRef(false);
-  const prevSec6 = useRef(false);
-  useEffect(() => {
-    if (basicsComplete && !prevSec1.current && !sec1Collapsed) {
-      const t = setTimeout(() => setSec1Collapsed(true), 1400);
-      return () => clearTimeout(t);
-    }
-    prevSec1.current = basicsComplete;
-  }, [basicsComplete, sec1Collapsed]);
-  useEffect(() => {
-    if (customerComplete && !prevSec2.current && !sec2Collapsed) {
-      const t = setTimeout(() => setSec2Collapsed(true), 1400);
-      return () => clearTimeout(t);
-    }
-    prevSec2.current = customerComplete;
-  }, [customerComplete, sec2Collapsed]);
-  useEffect(() => {
-    if (loadComplete && !prevSec4.current && !sec4Collapsed) {
-      const t = setTimeout(() => setSec4Collapsed(true), 1400);
-      return () => clearTimeout(t);
-    }
-    prevSec4.current = loadComplete;
-  }, [loadComplete, sec4Collapsed]);
-  useEffect(() => {
-    if (vehicleComplete && !prevSec5.current && !sec5Collapsed) {
-      const t = setTimeout(() => setSec5Collapsed(true), 1400);
-      return () => clearTimeout(t);
-    }
-    prevSec5.current = vehicleComplete;
-  }, [vehicleComplete, sec5Collapsed]);
-  useEffect(() => {
-    if (sec6Complete && !prevSec6.current && !sec6Collapsed) {
-      const t = setTimeout(() => setSec6Collapsed(true), 1400);
-      return () => clearTimeout(t);
-    }
-    prevSec6.current = sec6Complete;
-  }, [sec6Complete, sec6Collapsed]);
+  // Auto-collapse removed — sections stay open until the user manually closes them.
+  // The section headers already show a green checkmark when complete.
 
   // ── Edit mode: load job and populate all state ───────────────────────────
   useEffect(() => {
