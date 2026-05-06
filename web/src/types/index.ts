@@ -61,6 +61,7 @@ export interface Driver {
   holidayUsed?: number;
   holidayRequests?: HolidayRequest[];
   defaultTruckReg: string;
+  defaultTrailerReg: string;
   status: "active" | "inactive";
   user?: { id: number; email: string; name: string; status?: string } | null;
 }

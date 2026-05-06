@@ -722,38 +722,53 @@ function DriverSnapshot({
   onPickJobForDriver: (driver: Driver) => void;
   onViewMore: () => void;
   onMarkUnavailable: (driver: Driver) => void;
+  onUnitTrailerSaved: () => void;
 }) {
   const openContexts = contexts.filter((context) => !isClosed(context.job));
   const assignedIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
 
-  // A driver has a vehicle if their profile has a default truck OR any open job has a truck assigned to them
-  function driverHasVehicle(driver: Driver): boolean {
-    if (driver.defaultTruckReg) return true;
-    return openContexts.some((ctx) => ctx.job.assignedDriverId === driver.id && !!ctx.job.assignedTruck);
+  // Inline unit/trailer editing state — keyed by driver id
+  const [editing, setEditing] = useState<Record<number, { unit: string; trailer: string } | null>>({});
+  const [savingUnit, setSavingUnit] = useState<number | null>(null);
+
+  async function saveUnitTrailer(driver: Driver) {
+    const e = editing[driver.id];
+    if (!e) return;
+    setSavingUnit(driver.id);
+    try {
+      await driversApi.update(driver.id, {
+        defaultTruckReg:   e.unit.trim().toUpperCase(),
+        defaultTrailerReg: e.trailer.trim().toUpperCase(),
+      });
+      setEditing(prev => ({ ...prev, [driver.id]: null }));
+      onUnitTrailerSaved();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSavingUnit(null);
+    }
   }
 
-  // The effective unit reg to display for a driver
-  function driverUnitReg(driver: Driver): string {
-    if (driver.defaultTruckReg) return driver.defaultTruckReg;
-    const jobWithTruck = openContexts.find((ctx) => ctx.job.assignedDriverId === driver.id && !!ctx.job.assignedTruck);
-    return jobWithTruck?.job.assignedTruck ?? "";
+  function startEditing(driver: Driver) {
+    setEditing(prev => ({
+      ...prev,
+      [driver.id]: { unit: driver.defaultTruckReg, trailer: driver.defaultTrailerReg },
+    }));
   }
 
-  // Sort: needs-attention first (free with no vehicle, or free), then busy, then unavailable
+  // Sort: needs-attention first (no vehicle or no job), then busy, then unavailable
   function driverSortKey(driver: Driver) {
     if (driver.status !== "active") return 3;
     const hasJob = assignedIds.has(driver.id);
-    const hasVehicle = driverHasVehicle(driver);
-    if (!hasJob && !hasVehicle) return 0; // no job + no vehicle — top priority
-    if (!hasJob) return 1;               // no job but has vehicle
-    return 2;                            // assigned
+    const hasVehicle = !!driver.defaultTruckReg;
+    if (!hasJob && !hasVehicle) return 0;
+    if (!hasJob) return 1;
+    return 2;
   }
 
   const sortedDrivers = [...drivers].sort((a, b) => driverSortKey(a) - driverSortKey(b));
-
-  // Show all active drivers who need attention (no job or no vehicle)
-  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && (!assignedIds.has(d.id) || !driverHasVehicle(d)));
-  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && (!assignedIds.has(d.id) || !driverHasVehicle(d))));
+  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg));
+  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg)));
   const visibleDrivers = [...needsAttentionDrivers, ...otherDrivers].slice(0, 8);
 
   return (
@@ -777,64 +792,87 @@ function DriverSnapshot({
           const freeSoon = driver.status === "active" && !!activeJob && ["collected", "arrived_dropoff"].includes(activeJob.job.status);
           const hasJob = assignedIds.has(driver.id);
           const isActive = driver.status === "active";
-          const hasVehicle = driverHasVehicle(driver);
-          const unitReg = driverUnitReg(driver);
-          const defaultUnit = unitByRegistration(units, unitReg);
-          const currentTrailer = defaultUnit?.currentTrailerId
-            ? trailers.find((trailer) => trailer.id === defaultUnit.currentTrailerId)
-            : null;
           const noJob = isActive && !hasJob;
-          const noVehicle = isActive && !hasVehicle;
+          const noVehicle = isActive && !driver.defaultTruckReg;
           const needsAttention = noJob || noVehicle;
+          const editState = editing[driver.id];
+          const linkedTrailer = driver.defaultTrailerReg
+            ? trailers.find((t) => t.registration.toUpperCase() === driver.defaultTrailerReg.toUpperCase())
+            : null;
 
           return (
             <div key={driver.id} className={`rounded-lg border p-2.5 ${needsAttention ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-white"}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-bold text-primary">{driver.displayName}</div>
-                  {/* Status tags */}
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {!isActive && (
-                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-500">Unavailable</span>
-                    )}
-                    {isActive && noJob && (
-                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No job assigned</span>
-                    )}
-                    {isActive && hasJob && freeSoon && (
-                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-700">Free soon</span>
-                    )}
-                    {isActive && hasJob && !freeSoon && (
-                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-700">
-                        {driverJobs.length} job{driverJobs.length !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                    {isActive && noVehicle && (
-                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No vehicle</span>
-                    )}
-                    {isActive && hasVehicle && (
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-primary">{driver.displayName}</div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {!isActive && <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-500">Unavailable</span>}
+                  {isActive && noJob && <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No job</span>}
+                  {isActive && hasJob && freeSoon && <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-700">Free soon</span>}
+                  {isActive && hasJob && !freeSoon && (
+                    <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-700">
+                      {driverJobs.length} job{driverJobs.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {isActive && noVehicle
+                    ? <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No unit</span>
+                    : isActive && (
                       <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
-                        {unitReg}
-                        {currentTrailer ? ` + ${currentTrailer.registration}` : ""}
+                        🚛 {driver.defaultTruckReg}
+                        {driver.defaultTrailerReg && (
+                          <span className={linkedTrailer?.status === "vor" ? " text-red-600" : linkedTrailer?.status === "available" ? " text-green-700" : ""}>
+                            {" "}+ {driver.defaultTrailerReg}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </div>
+                    )
+                  }
                 </div>
               </div>
-              {isActive && (
+
+              {/* Inline unit / trailer edit */}
+              {isActive && editState && (
+                <div className="mt-2 space-y-1.5">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-muted">Unit reg</label>
+                      <input
+                        className="input text-xs py-1"
+                        placeholder="AB12 CDE"
+                        value={editState.unit}
+                        onChange={(e) => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, unit: e.target.value } }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-muted">Trailer reg (optional)</label>
+                      <input
+                        className="input text-xs py-1"
+                        placeholder="TR45 XYZ"
+                        value={editState.trailer}
+                        onChange={(e) => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailer: e.target.value } }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={savingUnit === driver.id} onClick={() => saveUnitTrailer(driver)}
+                      className="text-xs font-semibold text-accent hover:underline disabled:opacity-50">
+                      {savingUnit === driver.id ? "Saving…" : "Save"}
+                    </button>
+                    <button type="button" onClick={() => setEditing(prev => ({ ...prev, [driver.id]: null }))}
+                      className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {isActive && !editState && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {noJob && (
-                    <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-accent hover:underline">
-                      Assign job →
-                    </button>
-                  )}
-                  {!noJob && (
-                    <button type="button" onClick={() => onPickJobForDriver(driver)} className="text-xs font-semibold text-slate-500 hover:text-accent">
-                      Assign another →
-                    </button>
-                  )}
-                  <button type="button" onClick={() => onMarkUnavailable(driver)} className="text-xs text-slate-400 hover:text-red-600">
-                    Mark unavailable
+                  {noJob
+                    ? <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-accent hover:underline">Assign job →</button>
+                    : <button type="button" onClick={() => onPickJobForDriver(driver)} className="text-xs font-semibold text-slate-500 hover:text-accent">Assign another →</button>
+                  }
+                  <button type="button" onClick={() => startEditing(driver)} className="text-xs text-slate-500 hover:text-primary">
+                    {noVehicle ? "Assign unit →" : "Change unit"}
                   </button>
+                  <button type="button" onClick={() => onMarkUnavailable(driver)} className="text-xs text-slate-400 hover:text-red-600">Mark unavailable</button>
                 </div>
               )}
             </div>
@@ -1004,9 +1042,7 @@ function AssignDrawer({
   const linkedLoadedTrailer = loadedTrailerForJob(context.job, trailers);
   const initialDriver = presetDriverId ?? context.job.assignedDriverId ?? null;
   const [driverId, setDriverId] = useState(initialDriver ? String(initialDriver) : "");
-  const [unitReg, setUnitReg] = useState(context.job.assignedTruck || "");
   const [trailerReg, setTrailerReg] = useState(linkedLoadedTrailer?.registration || context.job.assignedTrailer || "");
-  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1041,48 +1077,35 @@ function AssignDrawer({
   }
 
   const selectedDriver = drivers.find((driver) => String(driver.id) === driverId) ?? null;
-
-  function changeDriver(value: string) {
-    setDriverId(value);
-    const driver = drivers.find((item) => String(item.id) === value);
-    if (driver?.defaultTruckReg && !unitReg.trim()) {
-      setUnitReg(driver.defaultTruckReg);
-    }
-  }
-
-  const assignment: AssignmentInput = {
-    assignedDriverId: driverId ? Number(driverId) : null,
-    assignedTruck: unitReg,
-    assignedTrailer: trailerReg,
-  };
+  // Unit comes from the driver's profile — not set on the job
+  const driverUnit = selectedDriver?.defaultTruckReg
+    ? unitByRegistration(units, selectedDriver.defaultTruckReg)
+    : null;
 
   const openOthers = allContexts.filter((ctx) => ctx.job.id !== context.job.id && !isClosed(ctx.job));
-
-  // Swap detection
   const driverOnOtherJob = driverId
     ? openOthers.find((ctx) => ctx.job.assignedDriverId === Number(driverId))
-    : null;
-  const truckOnOtherJob = unitReg.trim()
-    ? openOthers.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === unitReg.trim().toUpperCase())
     : null;
   const trailerOnOtherJob = trailerReg.trim() && !linkedLoadedTrailer
     ? openOthers.find((ctx) => ctx.job.assignedTrailer?.toUpperCase() === trailerReg.trim().toUpperCase())
     : null;
 
+  // Use driver's unit for validation purposes
+  const assignment: AssignmentInput = {
+    assignedDriverId: driverId ? Number(driverId) : null,
+    assignedTruck: selectedDriver?.defaultTruckReg ?? "",
+    assignedTrailer: trailerReg,
+  };
   const warnings = buildWarnings(context.job, drivers, units, trailers, assignment);
-  const nonInfoWarnings = warnings.filter((warning) => warning.level !== "info");
-  // A unit cannot be assigned without a driver — a truck doesn't drive itself
-  const unitWithoutDriver = !!unitReg.trim() && !driverId;
-  const hardBlocked = unitWithoutDriver || warnings.some((warning) => ["no_driver", "no_unit", "driver_unavailable"].includes(warning.type));
+  const nonInfoWarnings = warnings.filter((w) => w.level !== "info").filter((w) => w.type !== "no_unit"); // no_unit not a hard block — unit is on driver
+  const hardBlocked = warnings.some((w) => ["no_driver", "driver_unavailable"].includes(w.type));
   const needsReason = nonInfoWarnings.length > 0 && !hardBlocked;
-  const selectedUnit = unitByRegistration(units, unitReg);
   const selectedTrailer = selectedTrailerForJob(context.job, trailers, assignment);
 
   async function save() {
     setSaving(true);
     setError("");
     try {
-      // Build stopTimes payload
       const stopTimesPayload = sortedStops(context.job)
         .filter((stop) => stop.id != null)
         .map((stop) => {
@@ -1102,8 +1125,9 @@ function AssignDrawer({
 
       await jobsApi.allocate(context.job.id, {
         assignedDriverId: driverId ? Number(driverId) : null,
-        assignedTruck:    unitReg.trim(),
-        assignedTrailer:  trailerReg.trim(),
+        // Unit is carried from driver — pass their defaultTruckReg so it's recorded on the job
+        assignedTruck:   selectedDriver?.defaultTruckReg ?? "",
+        assignedTrailer: trailerReg.trim(),
         ...(stopTimesPayload.length > 0 ? { stopTimes: stopTimesPayload } : {}),
       });
       await onSaved();
@@ -1217,41 +1241,24 @@ function AssignDrawer({
             </div>
           </div>
 
-          {/* ── Unit / truck ─────────────────────────────────────── */}
-          <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-            <div className="text-xs font-bold uppercase tracking-wide text-muted">Unit / truck</div>
-            <div>
-              <input
-                className="input"
-                list="unit-suggestions"
-                value={unitReg}
-                onChange={(e) => setUnitReg(e.target.value.toUpperCase())}
-                placeholder="Type or select registration…"
-              />
-              <datalist id="unit-suggestions">
-                {units.map((unit) => (
-                  <option key={unit.id} value={unit.registration}>
-                    {unit.registration} — {unit.vehicleClass} — {unit.status}
-                  </option>
-                ))}
-              </datalist>
-              <p className="mt-1 text-xs text-muted">
-                {selectedUnit
-                  ? `${selectedUnit.vehicleClass} | ${selectedUnit.status}${selectedUnit.yardLocation ? ` | ${selectedUnit.yardLocation}` : ""}`
-                  : unitReg.trim() ? "Not in fleet list — will be saved as entered." : "Type any reg or pick from fleet."}
-              </p>
-              {unitWithoutDriver && (
-                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                  A unit must have a driver assigned — select a driver first.
+          {/* ── Driver's unit (read-only — unit belongs to driver) ── */}
+          {selectedDriver && (
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-muted mb-2">Driver's unit</div>
+              {selectedDriver.defaultTruckReg ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-primary">🚛 {selectedDriver.defaultTruckReg}</span>
+                  {driverUnit && (
+                    <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${driverUnit.status === "available" ? "bg-green-100 text-green-800" : driverUnit.status === "vor" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
+                      {driverUnit.vehicleClass} — {driverUnit.status}
+                    </span>
+                  )}
                 </div>
-              )}
-              {truckOnOtherJob && !unitWithoutDriver && (
-                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  ⚠ Unit <strong>{unitReg}</strong> is currently assigned to <strong>{truckOnOtherJob.route}</strong> (Job #{truckOnOtherJob.job.id}).
-                </div>
+              ) : (
+                <p className="text-xs text-amber-700 font-semibold">⚠ No unit assigned to this driver — assign a unit to the driver from the driver panel first.</p>
               )}
             </div>
-          </div>
+          )}
 
           {/* ── Trailer ──────────────────────────────────────────── */}
           <div className="rounded-xl border border-slate-200 p-4 space-y-3">
@@ -1954,6 +1961,7 @@ export default function DashboardPage() {
             onPickJobForDriver={setPickingForDriver}
             onViewMore={() => navigate("/app/drivers")}
             onMarkUnavailable={markDriverUnavailable}
+            onUnitTrailerSaved={load}
           />
           <FleetSnapshot
             units={units}
