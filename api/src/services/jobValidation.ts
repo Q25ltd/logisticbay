@@ -114,8 +114,8 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
     if (!hasText(input.vehicleClassRequired)) errors.push("Vehicle type is required");
 
     if (stops.length === 0) errors.push("At least one stop is required");
-    if (!stops.some(s => s.type === "pickup"))  errors.push("At least one pickup stop is required");
-    if (!stops.some(s => s.type === "dropoff")) errors.push("At least one dropoff stop is required");
+    if (!stops.some(s => s.type === "pickup" || s.type === "collection"))  errors.push("At least one pickup stop is required");
+    if (!stops.some(s => s.type === "dropoff" || s.type === "delivery")) errors.push("At least one dropoff stop is required");
 
     if (!input.loadDetails) {
       errors.push("Quantity is required");
@@ -166,10 +166,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
       if (!hasText(stop.locationTextSnapshot)) {
         errors.push(`Stop ${seq ?? "?"} is missing address`);
       }
-      if (!isFiniteNumber(stop.lat) || !isFiniteNumber(stop.lng)) {
-        errors.push(`Stop ${seq ?? "?"} is missing coordinates (lat/lng required)`);
-      }
-      if (stop.type === "dropoff" && !stop.bookedTime) {
+      if ((stop.type === "dropoff" || stop.type === "delivery") && !stop.bookedTime) {
         warnings.push(`Stop ${seq ?? "?"} (dropoff) has no booked delivery time`);
       }
     }
@@ -204,11 +201,15 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
     .filter(s => typeof s.sequenceNumber === "number")
     .sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
 
-  const firstStopType    = orderedStops[0]?.type;
-  const firstPickupIndex = orderedStops.findIndex(s => s.type === "pickup");
-  const lastDropoffIndex = orderedStops.map(s => s.type).lastIndexOf("dropoff");
+  const isPickupType  = (t: unknown) => t === "pickup"  || t === "collection";
+  const isDropoffType = (t: unknown) => t === "dropoff" || t === "delivery";
 
-  if (saveMode === "ready_to_plan" && firstStopType === "dropoff") {
+  const firstStopType    = orderedStops[0]?.type;
+  const firstPickupIndex = orderedStops.findIndex(s => isPickupType(s.type));
+  const stopTypes        = orderedStops.map(s => s.type);
+  const lastDropoffIndex: number = stopTypes.reduce<number>((last, t, i) => isDropoffType(t) ? i : last, -1);
+
+  if (saveMode === "ready_to_plan" && isDropoffType(firstStopType)) {
     errors.push("First stop cannot be a dropoff");
   }
 

@@ -30,6 +30,8 @@ export const TRAILER_TYPES = [
 export const JOB_STOP_TYPES = [
   "pickup",
   "dropoff",
+  "collection",
+  "delivery",
   "handover",
   "yard",
   "depot",
