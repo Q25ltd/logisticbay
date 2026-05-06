@@ -1253,6 +1253,7 @@ export default function CreateJobPage() {
   const [sec5Collapsed,    setSec5Collapsed]    = useState(true);
   const [vehicleType,      setVehicleType]      = useState("");
   const [vehicleTypeOther, setVehicleTypeOther] = useState("");
+  const [assignedTruck,    setAssignedTruck]    = useState("");
   const [assignedTrailer,  setAssignedTrailer]  = useState("");
   // Optional
   const [showVehicleOpts,  setShowVehicleOpts]  = useState(false);
@@ -1420,6 +1421,7 @@ export default function CreateJobPage() {
       setMinSize(job.minVehicleSize || "");
       setTrailersAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
       setTrailersForbidden(Array.isArray(job.trailerTypesForbidden) ? job.trailerTypesForbidden : []);
+      setAssignedTruck(job.assignedTruck || "");
       setAssignedTrailer(job.assignedTrailer || "");
       setEquipmentReq(Array.isArray(job.equipmentRequired) ? job.equipmentRequired : []);
       setDriverQuals(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq : []);
@@ -1618,6 +1620,7 @@ export default function CreateJobPage() {
       custRefRequired,
       poRequired,
       vehicleClassRequired,
+      assignedTruck:          assignedTruck.trim(),
       assignedTrailer:        assignedTrailer.trim(),
       minVehicleSize:         minSize,
       trailerTypesAllowed:    trailersAllowed,
@@ -2219,18 +2222,33 @@ export default function CreateJobPage() {
               )}
             </div>
 
-            <div className="max-w-xs">
-              <FieldLabel>Trailer Number, If Applicable</FieldLabel>
-              <input
-                type="text"
-                className="input"
-                placeholder="e.g. TR45"
-                value={assignedTrailer}
-                onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
-              />
-              <p className="text-xs text-muted mt-1.5">
-                Not required. Use when a trailer is already known, loaded, or must stay linked to this job.
-              </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-xl">
+              <div>
+                <FieldLabel>Truck / Unit Registration</FieldLabel>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. AB12 CDE"
+                  value={assignedTruck}
+                  onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
+                />
+                <p className="text-xs text-muted mt-1.5">
+                  Optional at creation. Planner assigns from dashboard.
+                </p>
+              </div>
+              <div>
+                <FieldLabel>Trailer Number Plate</FieldLabel>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. TR45 XYZ"
+                  value={assignedTrailer}
+                  onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
+                />
+                <p className="text-xs text-muted mt-1.5">
+                  Use when a trailer is already known or loaded.
+                </p>
+              </div>
             </div>
 
             <OptionalToggle open={showVehicleOpts} onToggle={() => setShowVehicleOpts(o => !o)} label="vehicle details" />
