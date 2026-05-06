@@ -710,6 +710,7 @@ function DriverSnapshot({
   units,
   trailers,
   onAssignDriver,
+  onPickJobForDriver,
   onViewMore,
   onMarkUnavailable,
 }: {
@@ -718,6 +719,7 @@ function DriverSnapshot({
   units: FleetUnit[];
   trailers: FleetTrailer[];
   onAssignDriver: (driver: Driver) => void;
+  onPickJobForDriver: (driver: Driver) => void;
   onViewMore: () => void;
   onMarkUnavailable: (driver: Driver) => void;
 }) {
@@ -826,8 +828,8 @@ function DriverSnapshot({
                     </button>
                   )}
                   {!noJob && (
-                    <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-slate-500 hover:text-accent">
-                      Assign another
+                    <button type="button" onClick={() => onPickJobForDriver(driver)} className="text-xs font-semibold text-slate-500 hover:text-accent">
+                      Assign another →
                     </button>
                   )}
                   <button type="button" onClick={() => onMarkUnavailable(driver)} className="text-xs text-slate-400 hover:text-red-600">
@@ -847,30 +849,67 @@ function DriverSnapshot({
   );
 }
 
+function fleetStatusRank(status: string) {
+  if (status === "available") return 0;
+  if (status === "vor") return 2;
+  return 1; // in_use, loaded, assigned, etc.
+}
+
 function FleetSnapshot({
   units,
   trailers,
+  drivers,
+  openContexts,
   onViewMore,
 }: {
   units: FleetUnit[];
   trailers: FleetTrailer[];
+  drivers: Driver[];
+  openContexts: JobContext[];
   onViewMore: () => void;
 }) {
-  const visibleUnits = [...units].sort((a, b) => a.registration.localeCompare(b.registration)).slice(0, 4);
-  const visibleTrailers = [...trailers]
-    .sort((a, b) => {
-      if (a.status === "loaded" && b.status !== "loaded") return -1;
-      if (b.status === "loaded" && a.status !== "loaded") return 1;
-      return a.registration.localeCompare(b.registration);
-    })
-    .slice(0, 5);
+  // Sort: available → assigned/in_use → vor
+  const sortedUnits = [...units].sort((a, b) =>
+    fleetStatusRank(a.status) - fleetStatusRank(b.status) || a.registration.localeCompare(b.registration)
+  );
+  const sortedTrailers = [...trailers].sort((a, b) =>
+    fleetStatusRank(a.status) - fleetStatusRank(b.status) || a.registration.localeCompare(b.registration)
+  );
+
+  // Find which driver/job has each unit reg
+  function unitDriver(reg: string): Driver | null {
+    const job = openContexts.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === reg.toUpperCase() && ctx.job.assignedDriverId);
+    if (job?.job.assignedDriverId) return drivers.find((d) => d.id === job.job.assignedDriverId) ?? null;
+    return drivers.find((d) => d.defaultTruckReg?.toUpperCase() === reg.toUpperCase()) ?? null;
+  }
+
+  // Find attached trailer for a unit
+  function unitTrailer(unit: FleetUnit): FleetTrailer | null {
+    if (unit.currentTrailerId) return trailers.find((t) => t.id === unit.currentTrailerId) ?? null;
+    // Also check job context
+    const job = openContexts.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === unit.registration.toUpperCase() && ctx.job.assignedTrailer);
+    if (job?.job.assignedTrailer) return trailers.find((t) => t.registration.toUpperCase() === job.job.assignedTrailer!.toUpperCase()) ?? null;
+    return null;
+  }
+
+  function unitBg(status: string) {
+    if (status === "available") return "bg-green-50 border-green-200";
+    if (status === "vor") return "bg-red-50 border-red-200";
+    return "bg-amber-50 border-amber-200";
+  }
+
+  function trailerBg(status: string) {
+    if (status === "available") return "bg-green-50 border-green-200";
+    if (status === "vor") return "bg-red-50 border-red-200";
+    return "bg-amber-50 border-amber-200";
+  }
 
   return (
     <section className="card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-primary">Fleet Snapshot</h2>
-          <p className="text-xs text-muted">Units and trailers only. Full management stays in Fleet.</p>
+          <p className="text-xs text-muted">Available → assigned → VOR. Full management in Fleet.</p>
         </div>
         <button type="button" onClick={onViewMore} className="text-xs font-semibold text-accent hover:underline">View fleet</button>
       </div>
@@ -879,40 +918,61 @@ function FleetSnapshot({
         <div>
           <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Units</div>
           <div className="space-y-1.5">
-            {visibleUnits.map((unit) => (
-              <div key={unit.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs">
-                <div className="min-w-0">
-                  <span className="font-bold text-primary">{unit.registration}</span>
-                  <span className="ml-2 text-muted">{unit.vehicleClass}</span>
+            {sortedUnits.map((unit) => {
+              const driver = unitDriver(unit.registration);
+              const trailer = unitTrailer(unit);
+              return (
+                <div key={unit.id} className={`rounded-lg border px-2.5 py-2 text-xs ${unitBg(unit.status)}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-bold text-primary">{unit.registration}</span>
+                      <span className="ml-2 text-muted">{unit.vehicleClass}</span>
+                    </div>
+                    <FleetStatus status={unit.status} />
+                  </div>
+                  {(driver || trailer) && (
+                    <div className="mt-0.5 text-[11px] text-slate-500">
+                      {driver && <span>Driver: {driver.displayName}</span>}
+                      {driver && trailer && <span className="mx-1">·</span>}
+                      {trailer && (
+                        <span>
+                          Trailer: {trailer.registration}
+                          {trailer.status === "available" && <span className="ml-1 text-green-600">●</span>}
+                          {trailer.status === "vor" && <span className="ml-1 text-red-600">●</span>}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <FleetStatus status={unit.status} />
-              </div>
-            ))}
-            {visibleUnits.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted">No units.</div>}
+              );
+            })}
+            {sortedUnits.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted">No units.</div>}
           </div>
         </div>
 
         <div>
           <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Trailers</div>
           <div className="space-y-1.5">
-            {visibleTrailers.map((trailer) => (
-              <div key={trailer.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs">
-                <div className="min-w-0">
-                  <div>
+            {sortedTrailers.map((trailer) => (
+              <div key={trailer.id} className={`rounded-lg border px-2.5 py-2 text-xs ${trailerBg(trailer.status)}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <span className="font-bold text-primary">{trailer.registration}</span>
                     <span className="ml-2 text-muted">{trailer.trailerType}</span>
-                    {trailer.linkedJobId && <span className="ml-2 text-muted">Job #{trailer.linkedJobId}</span>}
                   </div>
-                  {trailer.status === "loaded" && (
-                    <div className="mt-0.5 text-[11px] text-purple-700">
-                      {loadedTrailerStandingText(trailer)}{trailer.yardLocation ? ` at ${trailer.yardLocation}` : ""}
-                    </div>
-                  )}
+                  <FleetStatus status={trailer.status} />
                 </div>
-                <FleetStatus status={trailer.status} />
+                {(trailer.linkedJobId || trailer.yardLocation || trailer.status === "loaded") && (
+                  <div className="mt-0.5 text-[11px] text-slate-500">
+                    {trailer.linkedJobId && <span>Job #{trailer.linkedJobId}</span>}
+                    {trailer.linkedJobId && trailer.yardLocation && <span className="mx-1">·</span>}
+                    {trailer.yardLocation && <span>{trailer.yardLocation}</span>}
+                    {trailer.status === "loaded" && <span className="ml-1 text-purple-700">| {loadedTrailerStandingText(trailer)}</span>}
+                  </div>
+                )}
               </div>
             ))}
-            {visibleTrailers.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted">No trailers.</div>}
+            {sortedTrailers.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-xs text-muted">No trailers.</div>}
           </div>
         </div>
       </div>
@@ -1611,6 +1671,7 @@ export default function DashboardPage() {
   const [carriedOnly, setCarriedOnly] = useState(false);
 
   const [assigning, setAssigning] = useState<{ context: JobContext; presetDriverId?: number } | null>(null);
+  const [pickingForDriver, setPickingForDriver] = useState<Driver | null>(null);
   const [details, setDetails] = useState<JobContext | null>(null);
   const [quickFix, setQuickFix] = useState<JobContext | null>(null);
 
@@ -1890,12 +1951,72 @@ export default function DashboardPage() {
             units={units}
             trailers={trailers}
             onAssignDriver={assignFirstJobToDriver}
+            onPickJobForDriver={setPickingForDriver}
             onViewMore={() => navigate("/app/drivers")}
             onMarkUnavailable={markDriverUnavailable}
           />
-          <FleetSnapshot units={units} trailers={trailers} onViewMore={() => navigate("/app/fleet")} />
+          <FleetSnapshot
+            units={units}
+            trailers={trailers}
+            drivers={drivers}
+            openContexts={openContexts}
+            onViewMore={() => navigate("/app/fleet")}
+          />
         </aside>
       </div>
+
+      {/* ── Job picker — "Assign another" on a driver card ── */}
+      {pickingForDriver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-base font-black text-primary">Pick a job for {pickingForDriver.displayName}</h2>
+              <p className="mt-0.5 text-xs text-muted">Select any open job to open the allocation panel.</p>
+            </div>
+            <div className="max-h-96 overflow-y-auto p-3 space-y-1.5">
+              {contexts
+                .filter((ctx) => !isClosed(ctx.job))
+                .sort((a, b) => {
+                  // Unassigned first
+                  const aAssigned = !!a.job.assignedDriverId;
+                  const bAssigned = !!b.job.assignedDriverId;
+                  if (aAssigned !== bAssigned) return aAssigned ? 1 : -1;
+                  return a.route.localeCompare(b.route);
+                })
+                .map((ctx) => {
+                  const assignedDriver = ctx.job.assignedDriverId
+                    ? drivers.find((d) => d.id === ctx.job.assignedDriverId)
+                    : null;
+                  return (
+                    <button
+                      key={ctx.job.id}
+                      type="button"
+                      onClick={() => {
+                        setPickingForDriver(null);
+                        setAssigning({ context: ctx, presetDriverId: pickingForDriver.id });
+                      }}
+                      className="w-full text-left rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-2.5 transition-colors"
+                    >
+                      <div className="text-sm font-semibold text-primary truncate">{ctx.route}</div>
+                      <div className="text-xs text-muted mt-0.5">
+                        {ctx.job.referenceNumber && <span className="mr-2">Ref: {ctx.job.referenceNumber}</span>}
+                        {assignedDriver
+                          ? <span className="text-amber-700">Driver: {assignedDriver.displayName} — will be swapped</span>
+                          : <span className="text-green-700">No driver — free to assign</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              {contexts.filter((ctx) => !isClosed(ctx.job)).length === 0 && (
+                <p className="py-6 text-center text-sm text-muted">No open jobs today.</p>
+              )}
+            </div>
+            <div className="border-t border-border px-5 py-3 flex justify-end">
+              <button type="button" onClick={() => setPickingForDriver(null)} className="btn btn-outline text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {assigning && (
         <AssignDrawer
