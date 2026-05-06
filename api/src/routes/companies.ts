@@ -46,6 +46,7 @@ function driverProfileData(body: CreateDriverBody | PatchDriverBody) {
     ...(body.employeeNumber !== undefined ? { employeeNumber: optionalString(body.employeeNumber) || null } : {}),
     ...(body.phoneNumber !== undefined ? { phoneNumber: optionalString(body.phoneNumber) || null, contactPhone: optionalString(body.phoneNumber) || null } : {}),
     ...(body.defaultTruckReg   !== undefined ? { defaultTruckReg:   optionalString(body.defaultTruckReg)   ?? "" } : {}),
+    ...(body.defaultTruckClass !== undefined ? { defaultTruckClass: optionalString(body.defaultTruckClass) ?? "" } : {}),
     ...(body.defaultTrailerReg !== undefined ? { defaultTrailerReg: optionalString(body.defaultTrailerReg) ?? "" } : {}),
     ...(body.driverType !== undefined ? { driverType: optionalString(body.driverType) || "permanent" } : {}),
     ...(body.licenceClass !== undefined ? { licenceClass: optionalString(body.licenceClass) ?? "" } : {}),

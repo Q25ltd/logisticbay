@@ -729,8 +729,39 @@ function DriverSnapshot({
   const assignedIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
 
   // Inline unit/trailer editing state — keyed by driver id
-  const [editing, setEditing] = useState<Record<number, { unit: string; trailer: string } | null>>({});
+  const [editing, setEditing] = useState<Record<number, { unit: string; unitClass: string; trailer: string } | null>>({});
   const [savingUnit, setSavingUnit] = useState<number | null>(null);
+
+  const EXTERNAL_VEHICLE_TYPES: { value: string; label: string }[] = [
+    { value: "van",     label: "Van" },
+    { value: "class_1", label: "Class 1" },
+    { value: "class_2", label: "Class 2" },
+    { value: "artic",   label: "Artic" },
+  ];
+
+  function vehicleClassLabel(cls: string) {
+    return EXTERNAL_VEHICLE_TYPES.find((t) => t.value === cls)?.label
+      ?? (cls ? cls.charAt(0).toUpperCase() + cls.slice(1).replace(/_/g, " ") : "");
+  }
+
+  function fleetUnitForReg(reg: string) {
+    const clean = reg.trim().toUpperCase().replace(/\s+/g, "");
+    if (!clean) return null;
+    return units.find((u) => u.registration.toUpperCase().replace(/\s+/g, "") === clean) ?? null;
+  }
+
+  function handleUnitRegChange(driverId: number, value: string) {
+    const matched = fleetUnitForReg(value);
+    setEditing(prev => ({
+      ...prev,
+      [driverId]: {
+        ...prev[driverId]!,
+        unit: value,
+        // auto-fill class from fleet; keep existing if no match yet
+        unitClass: matched ? matched.vehicleClass : (prev[driverId]?.unitClass ?? ""),
+      },
+    }));
+  }
 
   async function saveUnitTrailer(driver: Driver) {
     const e = editing[driver.id];
@@ -739,6 +770,7 @@ function DriverSnapshot({
     try {
       await driversApi.update(driver.id, {
         defaultTruckReg:   (e.unit ?? "").trim().toUpperCase(),
+        defaultTruckClass: e.unitClass ?? "",
         defaultTrailerReg: (e.trailer ?? "").trim().toUpperCase(),
       });
       setEditing(prev => ({ ...prev, [driver.id]: null }));
@@ -751,9 +783,14 @@ function DriverSnapshot({
   }
 
   function startEditing(driver: Driver) {
+    const matched = fleetUnitForReg(driver.defaultTruckReg ?? "");
     setEditing(prev => ({
       ...prev,
-      [driver.id]: { unit: driver.defaultTruckReg ?? "", trailer: driver.defaultTrailerReg ?? "" },
+      [driver.id]: {
+        unit:      driver.defaultTruckReg ?? "",
+        unitClass: matched ? matched.vehicleClass : (driver.defaultTruckClass ?? ""),
+        trailer:   driver.defaultTrailerReg ?? "",
+      },
     }));
   }
 
@@ -816,33 +853,77 @@ function DriverSnapshot({
                   )}
                   {isActive && noVehicle
                     ? <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No unit</span>
-                    : isActive && (
-                      <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
-                        🚛 {driver.defaultTruckReg}
-                        {driver.defaultTrailerReg && (
-                          <span className={linkedTrailer?.status === "vor" ? " text-red-600" : linkedTrailer?.status === "available" ? " text-green-700" : ""}>
-                            {" "}+ {driver.defaultTrailerReg}
+                    : isActive && (() => {
+                        const fleetUnit = fleetUnitForReg(driver.defaultTruckReg ?? "");
+                        const cls = fleetUnit ? fleetUnit.vehicleClass : (driver.defaultTruckClass ?? "");
+                        const clsLabel = vehicleClassLabel(cls);
+                        return (
+                          <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
+                            🚛 {driver.defaultTruckReg}
+                            {clsLabel && <span className="ml-1 text-slate-400">· {clsLabel}</span>}
+                            {driver.defaultTrailerReg && (
+                              <span className={linkedTrailer?.status === "vor" ? " text-red-600" : linkedTrailer?.status === "available" ? " text-green-700" : ""}>
+                                {" "}+ {driver.defaultTrailerReg}
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                    )
+                        );
+                      })()
                   }
                 </div>
               </div>
 
               {/* Inline unit / trailer edit */}
-              {isActive && editState && (
-                <div className="mt-2 space-y-1.5">
-                  <div className="grid grid-cols-2 gap-1.5">
+              {isActive && editState && (() => {
+                const regClean = editState.unit.trim();
+                const matchedUnit = fleetUnitForReg(regClean);
+                const isExternal = !!regClean && !matchedUnit;
+                const needsClass = isExternal && !editState.unitClass;
+                const canSave = !!regClean && !needsClass;
+                return (
+                  <div className="mt-2 space-y-1.5">
+                    {/* Unit reg + fleet feedback */}
                     <div>
                       <label className="text-[10px] font-bold uppercase text-muted">Unit reg</label>
                       <input
                         className="input text-xs py-1"
                         placeholder="AB12 CDE"
                         value={editState.unit}
-                        onChange={(e) => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, unit: e.target.value } }))}
+                        onChange={(e) => handleUnitRegChange(driver.id, e.target.value)}
                       />
+                      {matchedUnit && (
+                        <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
+                          ✓ In fleet · {vehicleClassLabel(matchedUnit.vehicleClass) || matchedUnit.vehicleClass} · {matchedUnit.status}
+                        </p>
+                      )}
+                      {isExternal && (
+                        <p className="mt-0.5 text-[10px] text-amber-700 font-semibold">
+                          Not in company fleet — external vehicle. Select type:
+                        </p>
+                      )}
                     </div>
+
+                    {/* External vehicle type picker */}
+                    {isExternal && (
+                      <div className="flex flex-wrap gap-1">
+                        {EXTERNAL_VEHICLE_TYPES.map((t) => (
+                          <button
+                            key={t.value}
+                            type="button"
+                            onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, unitClass: t.value } }))}
+                            className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
+                              editState.unitClass === t.value
+                                ? "bg-primary text-white border-primary"
+                                : "bg-white text-slate-600 border-slate-300 hover:border-primary"
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Trailer reg */}
                     <div>
                       <label className="text-[10px] font-bold uppercase text-muted">Trailer reg (optional)</label>
                       <input
@@ -852,17 +933,18 @@ function DriverSnapshot({
                         onChange={(e) => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailer: e.target.value } }))}
                       />
                     </div>
+
+                    <div className="flex gap-2">
+                      <button type="button" disabled={savingUnit === driver.id || !canSave} onClick={() => saveUnitTrailer(driver)}
+                        className="text-xs font-semibold text-accent hover:underline disabled:opacity-40">
+                        {savingUnit === driver.id ? "Saving…" : needsClass ? "Select vehicle type first" : "Save"}
+                      </button>
+                      <button type="button" onClick={() => setEditing(prev => ({ ...prev, [driver.id]: null }))}
+                        className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button type="button" disabled={savingUnit === driver.id} onClick={() => saveUnitTrailer(driver)}
-                      className="text-xs font-semibold text-accent hover:underline disabled:opacity-50">
-                      {savingUnit === driver.id ? "Saving…" : "Save"}
-                    </button>
-                    <button type="button" onClick={() => setEditing(prev => ({ ...prev, [driver.id]: null }))}
-                      className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {isActive && !editState && (
                 <div className="mt-2 flex flex-wrap gap-2">
