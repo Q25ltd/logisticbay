@@ -341,10 +341,9 @@ function isClosed(job: PlannedJob) {
 
 function isCarriedOver(job: PlannedJob, date: string) {
   const planned = dayKey(job.plannedDate);
+  // Carried over = open job planned for a past date (no day limit — if it's open, it needs attention)
   if (!planned || planned >= date || isClosed(job)) return false;
-  // Only carry over jobs from the last 14 days — older than that are stale/abandoned
-  const daysDiff = (new Date(date).getTime() - new Date(planned).getTime()) / 86_400_000;
-  return daysDiff <= 14;
+  return true;
 }
 
 function hasMissingPlanningInfo(warning: JobWarning) {
@@ -1969,12 +1968,12 @@ export default function DashboardPage() {
     return jobs
       .map((job) => makeJobContext(job, drivers, units, trailers, date))
       .filter((context) => {
-        const planned = dayKey(context.job.plannedDate);
-        // Show: jobs planned for selected date, carried-over jobs (last 14 days),
-        // and unplanned (no date) jobs — but only when viewing today
-        return planned === date
-          || context.isCarriedOver
-          || (!planned && date === today() && !isClosed(context.job));
+        // Closed jobs (completed/cancelled) only show if they belong to the selected date
+        if (isClosed(context.job)) {
+          return dayKey(context.job.plannedDate) === date;
+        }
+        // All open jobs (any date, no date, in-progress, unplanned) always show
+        return true;
       });
   }, [jobs, drivers, units, trailers, date]);
 
@@ -2171,7 +2170,7 @@ export default function DashboardPage() {
             <div>
               <h2 className="text-sm font-black uppercase tracking-wide text-primary">Job Quick List</h2>
               <p className="text-xs text-muted">
-                {filteredContexts.length} shown. Completed jobs are hidden in the default action view.
+                {filteredContexts.length} shown — all open jobs (today, past, unplanned, in progress). Completed &amp; cancelled hidden by default.
               </p>
             </div>
           </div>
