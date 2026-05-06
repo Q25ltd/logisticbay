@@ -1,0 +1,6 @@
+web/
+mobile/
+node_modules/
+.claude/
+scripts/
+*.md
