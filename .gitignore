@@ -14,8 +14,9 @@ mobile/.env
 .DS_Store
 **/.DS_Store
 
-# Build outputs
-dist/
+# Build outputs (api/mobile only — web/dist is committed for Vercel)
+api/dist/
+mobile/dist/
 build/
 
 # Generated files
@@ -31,3 +32,5 @@ api/api@1.0.0
 .env
 api/.env
 .claude/
+.vercel
+.env*.local

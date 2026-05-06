@@ -1466,6 +1466,7 @@ export default function CreateJobPage() {
       navigate("/app/jobs");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save draft");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
       setSaving(null);
     }
@@ -1473,6 +1474,11 @@ export default function CreateJobPage() {
 
   async function handleSaveReady() {
     setTriedSave(true);
+    // If required fields are missing, just reveal the pills — don't call API
+    if (MISSING.length > 0) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     setSaving("ready");
     setError("");
     try {
@@ -1481,6 +1487,7 @@ export default function CreateJobPage() {
       navigate("/app/jobs");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save job");
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
       setSaving(null);
     }
@@ -2235,7 +2242,20 @@ export default function CreateJobPage() {
           <div className="h-full bg-slate-500 transition-all duration-700" style={{ width: `${reqScore}%` }} />
           <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${optScore}%` }} />
         </div>
-        <div className="max-w-3xl mx-auto px-5 py-4">
+        <div className="max-w-3xl mx-auto px-5 py-3">
+          {/* Inline error / missing hint */}
+          {triedSave && MISSING.length > 0 && (
+            <div className="flex items-center gap-2 mb-2 text-xs text-red-600 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+              {MISSING.length} required field{MISSING.length > 1 ? "s" : ""} still needed — scroll up to see
+            </div>
+          )}
+          {error && (
+            <div className="mb-2 text-xs text-red-600 font-medium flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+              {error}
+            </div>
+          )}
           <div className="flex items-center gap-3">
             {/* Cancel — quiet, left */}
             <button onClick={() => navigate(-1)}
@@ -2248,7 +2268,7 @@ export default function CreateJobPage() {
               (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
                totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
                "text-slate-400 bg-slate-50 border-slate-200")}>
-              {totalScore > 0 ? `${totalScore}%` : "—"}
+              {hasStarted ? `${totalScore}%` : "—"}
             </div>
             {/* Save Draft */}
             <button onClick={handleSaveDraft} disabled={saving !== null}
