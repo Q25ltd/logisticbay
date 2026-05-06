@@ -922,6 +922,7 @@ function FleetSnapshot({
 
 function AssignDrawer({
   context,
+  allContexts,
   drivers,
   units,
   trailers,
@@ -931,6 +932,7 @@ function AssignDrawer({
   onSaved,
 }: {
   context: JobContext;
+  allContexts: JobContext[];
   drivers: Driver[];
   units: FleetUnit[];
   trailers: FleetTrailer[];
@@ -948,6 +950,36 @@ function AssignDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // Stop timing state — keyed by stopId
+  const [stopTimes, setStopTimes] = useState<Record<number, {
+    bookedDate: string; bookedTime: string;
+    earliestArrival: string; unloading: string;
+  }>>(() => {
+    const init: Record<number, { bookedDate: string; bookedTime: string; earliestArrival: string; unloading: string }> = {};
+    for (const stop of sortedStops(context.job)) {
+      if (stop.id == null) continue;
+      let bDate = "", bTime = "";
+      if (stop.bookedTime) {
+        const d = new Date(stop.bookedTime);
+        if (!Number.isNaN(d.getTime())) {
+          bDate = d.toISOString().slice(0, 10);
+          bTime = d.toISOString().slice(11, 16);
+        }
+      }
+      init[stop.id] = {
+        bookedDate: bDate,
+        bookedTime: bTime,
+        earliestArrival: stop.earliestArrivalMinutes != null ? String(stop.earliestArrivalMinutes) : "",
+        unloading:        stop.unloadingAllowanceMinutes != null ? String(stop.unloadingAllowanceMinutes) : "",
+      };
+    }
+    return init;
+  });
+
+  function setStopField(stopId: number, field: string, value: string) {
+    setStopTimes(prev => ({ ...prev, [stopId]: { ...prev[stopId], [field]: value } }));
+  }
+
   const selectedDriver = drivers.find((driver) => String(driver.id) === driverId) ?? null;
 
   function changeDriver(value: string) {
@@ -964,6 +996,19 @@ function AssignDrawer({
     assignedTrailer: trailerReg,
   };
 
+  const openOthers = allContexts.filter((ctx) => ctx.job.id !== context.job.id && !isClosed(ctx.job));
+
+  // Swap detection
+  const driverOnOtherJob = driverId
+    ? openOthers.find((ctx) => ctx.job.assignedDriverId === Number(driverId))
+    : null;
+  const truckOnOtherJob = unitReg.trim()
+    ? openOthers.find((ctx) => ctx.job.assignedTruck?.toUpperCase() === unitReg.trim().toUpperCase())
+    : null;
+  const trailerOnOtherJob = trailerReg.trim() && !linkedLoadedTrailer
+    ? openOthers.find((ctx) => ctx.job.assignedTrailer?.toUpperCase() === trailerReg.trim().toUpperCase())
+    : null;
+
   const warnings = buildWarnings(context.job, drivers, units, trailers, assignment);
   const nonInfoWarnings = warnings.filter((warning) => warning.level !== "info");
   const hardBlocked = warnings.some((warning) => ["no_driver", "no_unit", "driver_unavailable"].includes(warning.type));
@@ -975,18 +1020,34 @@ function AssignDrawer({
     setSaving(true);
     setError("");
     try {
-      await jobsApi.update(context.job.id, {
+      // Build stopTimes payload
+      const stopTimesPayload = sortedStops(context.job)
+        .filter((stop) => stop.id != null)
+        .map((stop) => {
+          const t = stopTimes[stop.id!];
+          if (!t) return null;
+          const bookedIso = t.bookedDate && t.bookedTime
+            ? `${t.bookedDate}T${t.bookedTime}:00.000Z`
+            : (t.bookedDate || t.bookedTime ? null : undefined);
+          return {
+            stopId: stop.id!,
+            ...(bookedIso !== undefined ? { bookedTime: bookedIso } : {}),
+            ...(t.earliestArrival !== "" ? { earliestArrivalMinutes: parseInt(t.earliestArrival, 10) } : {}),
+            ...(t.unloading !== "" ? { unloadingAllowanceMinutes: parseInt(t.unloading, 10) } : {}),
+          };
+        })
+        .filter(Boolean);
+
+      await jobsApi.allocate(context.job.id, {
         assignedDriverId: driverId ? Number(driverId) : null,
-        assignedTruck: unitReg.trim(),
-        assignedTrailer: trailerReg.trim(),
-        plannedDate: context.job.plannedDate || `${date}T00:00:00.000Z`,
-        plannerNotes: appendPlannerReason(context.job.plannerNotes, reason),
-        saveMode: "draft",
+        assignedTruck:    unitReg.trim(),
+        assignedTrailer:  trailerReg.trim(),
+        ...(stopTimesPayload.length > 0 ? { stopTimes: stopTimesPayload } : {}),
       });
       await onSaved();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not assign job");
+      setError(e instanceof Error ? e.message : "Could not save allocation");
     } finally {
       setSaving(false);
     }
@@ -998,54 +1059,106 @@ function AssignDrawer({
         <div className="border-b border-border p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-black text-primary">Assign driver</h2>
+              <h2 className="text-lg font-black text-primary">Allocate job</h2>
               <p className="mt-1 text-sm text-muted">{context.route}</p>
+              {context.job.referenceNumber && (
+                <p className="text-xs text-muted">Ref: {context.job.referenceNumber}</p>
+              )}
             </div>
             <button type="button" onClick={onClose} className="btn btn-outline px-3 py-1.5 text-xs">Close</button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {error && <Alert type="error" message={error} />}
 
+          {/* ── Stop timing ──────────────────────────────────────── */}
           {sortedStops(context.job).length > 0 && (
-            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Job stops</div>
-              <div className="space-y-1.5">
-                {sortedStops(context.job).map((stop) => (
-                  <div key={stopKey(stop)} className="flex items-start gap-2 text-xs">
-                    <span className={`mt-0.5 rounded px-1.5 py-0.5 font-bold uppercase ${isPickup(stop) ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
-                      {isPickup(stop) ? "C" : "D"}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="font-semibold text-primary">{shortLocation(stop, stop.locationTextSnapshot)}</span>
-                      <span className="ml-2 text-muted">{stopTimeLabel(stop)}</span>
-                      {stop.contactPhone && <span className="ml-2 text-muted">{stop.contactPhone}</span>}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-muted">Stop times</div>
+              {sortedStops(context.job).map((stop) => {
+                if (stop.id == null) return null;
+                const t = stopTimes[stop.id] ?? { bookedDate: "", bookedTime: "", earliestArrival: "", unloading: "" };
+                return (
+                  <div key={stop.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded px-2 py-0.5 text-[11px] font-bold uppercase ${isPickup(stop) ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
+                        {isPickup(stop) ? "Collection" : "Delivery"}
+                      </span>
+                      <span className="text-sm font-semibold text-primary truncate">{shortLocation(stop, stop.locationTextSnapshot)}</span>
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label text-[11px]">Booked date</label>
+                        <input type="date" className="input text-sm"
+                          value={t.bookedDate}
+                          onChange={(e) => setStopField(stop.id!, "bookedDate", e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label text-[11px]">Booked time</label>
+                        <input type="time" className="input text-sm"
+                          value={t.bookedTime}
+                          onChange={(e) => setStopField(stop.id!, "bookedTime", e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label text-[11px]">Earliest arrival (mins before)</label>
+                        <input type="number" min="0" max="480" className="input text-sm"
+                          placeholder="e.g. 30"
+                          value={t.earliestArrival}
+                          onChange={(e) => setStopField(stop.id!, "earliestArrival", e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label text-[11px]">{isPickup(stop) ? "Loading" : "Unloading"} allowance (mins)</label>
+                        <input type="number" min="0" max="480" className="input text-sm"
+                          placeholder="e.g. 60"
+                          value={t.unloading}
+                          onChange={(e) => setStopField(stop.id!, "unloading", e.target.value)} />
+                      </div>
+                    </div>
+                    {stop.contactPhone && (
+                      <p className="text-xs text-muted">Contact: {stop.contactPhone}</p>
+                    )}
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* ── Driver ───────────────────────────────────────────── */}
+          <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+            <div className="text-xs font-bold uppercase tracking-wide text-muted">Driver</div>
             <div>
-              <label className="label">Driver *</label>
               <select className="input" value={driverId} onChange={(event) => changeDriver(event.target.value)}>
-                <option value="">Select driver</option>
-                {drivers.map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.displayName} - {driver.status === "active" ? "available" : "unavailable"}
-                  </option>
-                ))}
+                <option value="">— No driver —</option>
+                {drivers.map((driver) => {
+                  const onOther = openOthers.find((ctx) => ctx.job.assignedDriverId === driver.id);
+                  return (
+                    <option key={driver.id} value={driver.id}>
+                      {driver.displayName}
+                      {driver.status !== "active" ? " (unavailable)" : ""}
+                      {onOther ? ` — on ${onOther.route}` : ""}
+                    </option>
+                  );
+                })}
               </select>
-              <p className="mt-1 text-xs text-muted">
-                {selectedDriver ? `Status: ${selectedDriver.status}${selectedDriver.defaultTruckReg ? ` | Default unit ${selectedDriver.defaultTruckReg}` : ""}` : "Choose the driver who will run this job."}
-              </p>
+              {selectedDriver && (
+                <p className="mt-1 text-xs text-muted">
+                  {selectedDriver.status !== "active" ? "⚠ Driver marked unavailable" :
+                    selectedDriver.defaultTruckReg ? `Default unit: ${selectedDriver.defaultTruckReg}` : "No default unit set"}
+                </p>
+              )}
+              {driverOnOtherJob && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  ⚠ This driver is currently on <strong>{driverOnOtherJob.route}</strong> (Job #{driverOnOtherJob.job.id}). Saving will move them to this job.
+                </div>
+              )}
             </div>
+          </div>
 
+          {/* ── Unit / truck ─────────────────────────────────────── */}
+          <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+            <div className="text-xs font-bold uppercase tracking-wide text-muted">Unit / truck</div>
             <div>
-              <label className="label">Unit / truck *</label>
               <input
                 className="input"
                 list="unit-suggestions"
@@ -1061,95 +1174,106 @@ function AssignDrawer({
                 ))}
               </datalist>
               <p className="mt-1 text-xs text-muted">
-                {selectedUnit ? `${selectedUnit.vehicleClass} | ${selectedUnit.status}${selectedUnit.yardLocation ? ` | ${selectedUnit.yardLocation}` : ""}` : "Fleet suggestions shown — or type any registration."}
+                {selectedUnit
+                  ? `${selectedUnit.vehicleClass} | ${selectedUnit.status}${selectedUnit.yardLocation ? ` | ${selectedUnit.yardLocation}` : ""}`
+                  : unitReg.trim() ? "Not in fleet list — will be saved as entered." : "Type any reg or pick from fleet."}
               </p>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-black text-primary">Trailer</div>
-                <p className="text-xs text-muted">
-                  Type any registration or pick from fleet. Driver can also confirm at job start.
-                </p>
-              </div>
-              {requiresTrailer(context.job) && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Required/expected</span>}
-            </div>
-
-            <div className="mt-3">
-              {linkedLoadedTrailer ? (
-                <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-900">
-                  <div className="font-bold">{linkedLoadedTrailer.registration} — loaded trailer waiting</div>
-                  {linkedLoadedTrailer.yardLocation && <div className="mt-0.5 text-xs">Location: {linkedLoadedTrailer.yardLocation}</div>}
-                  <div className="mt-0.5 text-xs text-purple-700">{loadedTrailerStandingDetail(linkedLoadedTrailer)}</div>
+              {truckOnOtherJob && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  ⚠ Unit <strong>{unitReg}</strong> is currently assigned to <strong>{truckOnOtherJob.route}</strong> (Job #{truckOnOtherJob.job.id}).
                 </div>
-              ) : (
-                <>
-                  <input
-                    className="input"
-                    list="trailer-suggestions"
-                    value={trailerReg}
-                    onChange={(e) => setTrailerReg(e.target.value.toUpperCase())}
-                    placeholder="Type or select trailer registration… (leave blank = driver confirms)"
-                  />
-                  <datalist id="trailer-suggestions">
-                    {trailers.map((trailer) => (
-                      <option key={trailer.id} value={trailer.registration}>
-                        {trailer.registration} — {trailer.trailerType} — {trailer.status}{trailer.yardLocation ? ` @ ${trailer.yardLocation}` : ""}
-                      </option>
-                    ))}
-                  </datalist>
-                  <p className="mt-1 text-xs text-muted">
-                    {selectedTrailer
-                      ? `${selectedTrailer.trailerType} | ${selectedTrailer.status}${selectedTrailer.yardLocation ? ` | ${selectedTrailer.yardLocation}` : ""}${selectedTrailer.status === "loaded" ? ` | ${loadedTrailerStandingText(selectedTrailer)}` : ""}`
-                      : trailerReg.trim() ? "Registration saved — not in fleet list (subcontractor or new unit)." : "Leave blank if driver will select or confirm at job start."}
-                  </p>
-                </>
               )}
             </div>
           </div>
 
-          <div className="mt-4">
-            <div className="mb-2 text-sm font-black text-primary">System checks</div>
+          {/* ── Trailer ──────────────────────────────────────────── */}
+          <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold uppercase tracking-wide text-muted">Trailer</div>
+              {requiresTrailer(context.job) && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Required</span>
+              )}
+            </div>
+            {linkedLoadedTrailer ? (
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-900">
+                <div className="font-bold">{linkedLoadedTrailer.registration} — loaded trailer waiting</div>
+                {linkedLoadedTrailer.yardLocation && <div className="mt-0.5 text-xs">Location: {linkedLoadedTrailer.yardLocation}</div>}
+                <div className="mt-0.5 text-xs text-purple-700">{loadedTrailerStandingDetail(linkedLoadedTrailer)}</div>
+              </div>
+            ) : (
+              <div>
+                <input
+                  className="input"
+                  list="trailer-suggestions"
+                  value={trailerReg}
+                  onChange={(e) => setTrailerReg(e.target.value.toUpperCase())}
+                  placeholder="Registration… (leave blank = driver confirms)"
+                />
+                <datalist id="trailer-suggestions">
+                  {trailers.map((trailer) => (
+                    <option key={trailer.id} value={trailer.registration}>
+                      {trailer.registration} — {trailer.trailerType} — {trailer.status}{trailer.yardLocation ? ` @ ${trailer.yardLocation}` : ""}
+                    </option>
+                  ))}
+                </datalist>
+                <p className="mt-1 text-xs text-muted">
+                  {selectedTrailer
+                    ? `${selectedTrailer.trailerType} | ${selectedTrailer.status}${selectedTrailer.yardLocation ? ` | ${selectedTrailer.yardLocation}` : ""}${selectedTrailer.status === "loaded" ? ` | ${loadedTrailerStandingText(selectedTrailer)}` : ""}`
+                    : trailerReg.trim() ? "Not in fleet list — saved as entered." : "Leave blank if driver will confirm at job start."}
+                </p>
+                {trailerOnOtherJob && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    ⚠ Trailer <strong>{trailerReg}</strong> is currently on <strong>{trailerOnOtherJob.route}</strong> (Job #{trailerOnOtherJob.job.id}).
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── System checks ────────────────────────────────────── */}
+          {warnings.length > 0 && (
             <div className="space-y-2">
-              {warnings.length === 0 ? (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-800">
-                  Everything matches. Assignment can proceed quietly.
-                </div>
-              ) : warnings.map((warning, index) => (
+              <div className="text-xs font-bold uppercase tracking-wide text-muted">System checks</div>
+              {warnings.map((warning, index) => (
                 <div key={`${warning.type}-${index}`} className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${WARNING_CLASSES[warning.level]}`}>
                   {warningDot(warning.level)}
                   <span>{warning.message}</span>
                 </div>
               ))}
             </div>
-          </div>
+          )}
 
           {needsReason && (
-            <div className="mt-4">
-              <label className="label">Assign anyway reason</label>
+            <div>
+              <label className="label">Reason for override</label>
               <textarea
-                className="input min-h-20"
+                className="input min-h-16"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder="Explain why this mismatch is acceptable..."
+                placeholder="Explain why this mismatch is acceptable…"
               />
             </div>
           )}
         </div>
 
         <div className="border-t border-border p-5">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button type="button" onClick={onClose} className="btn btn-outline">Cancel</button>
-            <button
-              type="button"
-              disabled={saving || hardBlocked || (needsReason && !reason.trim())}
-              onClick={save}
-              className="btn btn-primary"
-            >
-              {saving ? "Saving..." : needsReason ? "Assign anyway" : "Assign job"}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted">
+              {driverOnOtherJob || truckOnOtherJob || trailerOnOtherJob
+                ? "Resources will be swapped from the other job on save."
+                : "Changes apply immediately on save."}
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="btn btn-outline">Cancel</button>
+              <button
+                type="button"
+                disabled={saving || hardBlocked || (needsReason && !reason.trim())}
+                onClick={save}
+                className="btn btn-primary"
+              >
+                {saving ? "Saving…" : (driverOnOtherJob || truckOnOtherJob || trailerOnOtherJob) ? "Swap & save" : "Save allocation"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1769,6 +1893,7 @@ export default function DashboardPage() {
       {assigning && (
         <AssignDrawer
           context={assigning.context}
+          allContexts={contexts}
           drivers={drivers}
           units={units}
           trailers={trailers}

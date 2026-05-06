@@ -995,6 +995,90 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.status(204).send();
   });
 
+  // ── PATCH /jobs/:id/allocate — planner swaps driver / truck / trailer + edits stop timing ──
+  app.patch("/jobs/:id/allocate", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id        = parseInt((request.params as { id: string }).id, 10);
+    const { companyId, id: userId } = request.user!;
+    const body = request.body as {
+      assignedDriverId?: number | null;
+      assignedTruck?:    string;
+      assignedTrailer?:  string;
+      stopTimes?: {
+        stopId:                    number;
+        bookedTime?:               string | null;
+        earliestArrivalMinutes?:   number | null;
+        unloadingAllowanceMinutes?: number | null;
+      }[];
+    };
+
+    const job = await prisma.plannedJob.findFirst({ where: { id, companyId }, include: { stops: true } });
+    if (!job) return reply.status(404).send({ error: "Job not found" });
+
+    await prisma.$transaction(async (tx) => {
+      // If swapping driver — remove from any other open job first
+      if (body.assignedDriverId !== undefined && body.assignedDriverId !== null) {
+        await tx.plannedJob.updateMany({
+          where: {
+            companyId,
+            assignedDriverId: body.assignedDriverId,
+            id: { not: id },
+            status: { notIn: ["completed", "cancelled"] },
+          },
+          data: { assignedDriverId: null },
+        });
+      }
+
+      // Update job-level allocation fields
+      const updateData: Record<string, unknown> = {};
+      if (body.assignedDriverId !== undefined) updateData.assignedDriverId = body.assignedDriverId;
+      if (body.assignedTruck    !== undefined) updateData.assignedTruck    = body.assignedTruck;
+      if (body.assignedTrailer  !== undefined) updateData.assignedTrailer  = body.assignedTrailer;
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.plannedJob.update({ where: { id }, data: updateData });
+      }
+
+      // Patch individual stop timing fields without touching other stop data
+      if (Array.isArray(body.stopTimes)) {
+        for (const st of body.stopTimes) {
+          const patch: Record<string, unknown> = {};
+          if ("bookedTime"               in st) patch.bookedTime               = st.bookedTime ? new Date(st.bookedTime) : null;
+          if ("earliestArrivalMinutes"   in st) patch.earliestArrivalMinutes   = st.earliestArrivalMinutes ?? null;
+          if ("unloadingAllowanceMinutes" in st) patch.unloadingAllowanceMinutes = st.unloadingAllowanceMinutes ?? null;
+          if (Object.keys(patch).length > 0) {
+            await tx.jobStop.updateMany({
+              where: { id: st.stopId, jobId: id, companyId },
+              data: patch,
+            });
+          }
+        }
+      }
+
+      await tx.jobAudit.create({
+        data: {
+          companyId,
+          jobId:     id,
+          changedBy: userId,
+          action:    "updated",
+          field:     "allocation",
+          oldValue:  { assignedDriverId: job.assignedDriverId, assignedTruck: job.assignedTruck, assignedTrailer: job.assignedTrailer },
+          newValue:  updateData,
+        },
+      });
+    });
+
+    const updated = await prisma.plannedJob.findFirst({
+      where: { id, companyId },
+      include: {
+        assignedDriver: true,
+        stops:          { orderBy: { sequenceNumber: "asc" } },
+        loadDetails:    true,
+      },
+    });
+
+    return reply.send(updated);
+  });
+
   // ── PATCH /jobs/:id/status — driver updates job status ────────────────────
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
     const id   = parseInt((request.params as { id: string }).id, 10);
