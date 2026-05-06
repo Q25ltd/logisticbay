@@ -293,7 +293,10 @@ function isClosed(job: PlannedJob) {
 
 function isCarriedOver(job: PlannedJob, date: string) {
   const planned = dayKey(job.plannedDate);
-  return !!planned && planned < date && !isClosed(job);
+  if (!planned || planned >= date || isClosed(job)) return false;
+  // Only carry over jobs from the last 14 days — older than that are stale/abandoned
+  const daysDiff = (new Date(date).getTime() - new Date(planned).getTime()) / 86_400_000;
+  return daysDiff <= 14;
 }
 
 function hasMissingPlanningInfo(warning: JobWarning) {
@@ -399,7 +402,7 @@ function buildWarnings(
   const missingPhones = stops.filter((stop) => !compact(stop.contactPhone, ""));
   if (missingPhones.length > 0) {
     warnings.push({
-      level: "warning",
+      level: "info",
       type: "missing_contact_phone",
       message: `${missingPhones.length} stop${missingPhones.length > 1 ? "s" : ""} missing contact phone.`,
       fix: { kind: "stop_phone", stopKey: stopKey(missingPhones[0]) },
@@ -409,7 +412,7 @@ function buildWarnings(
   const missingTimes = stops.filter((stop) => !stop.timeWindowStart && !stop.bookedTime);
   if (missingTimes.length > 0) {
     warnings.push({
-      level: "warning",
+      level: "info",
       type: "missing_stop_timing",
       message: `${missingTimes.length} stop${missingTimes.length > 1 ? "s" : ""} missing timing.`,
       fix: { kind: "stop_time", stopKey: stopKey(missingTimes[0]) },
@@ -1369,7 +1372,11 @@ export default function DashboardPage() {
       .map((job) => makeJobContext(job, drivers, units, trailers, date))
       .filter((context) => {
         const planned = dayKey(context.job.plannedDate);
-        return planned === date || context.isCarriedOver || (!planned && !isClosed(context.job));
+        // Show: jobs planned for selected date, carried-over jobs (last 14 days),
+        // and unplanned (no date) jobs — but only when viewing today
+        return planned === date
+          || context.isCarriedOver
+          || (!planned && date === today() && !isClosed(context.job));
       });
   }, [jobs, drivers, units, trailers, date]);
 
@@ -1381,7 +1388,7 @@ export default function DashboardPage() {
         if (customerFilter !== "all" && context.customer !== customerFilter) return false;
         if (vehicleFilter !== "all" && context.vehicle !== vehicleFilter) return false;
         if (driverFilter !== "all" && String(context.job.assignedDriverId ?? "unassigned") !== driverFilter) return false;
-        if (warningOnly && context.warnings.length === 0) return false;
+        if (warningOnly && !context.warnings.some((w) => w.level === "critical" || w.level === "warning")) return false;
         if (loadedOnly && !context.loadedTrailer) return false;
         if (carriedOnly && !context.isCarriedOver) return false;
         return true;
