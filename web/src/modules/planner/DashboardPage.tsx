@@ -865,14 +865,35 @@ function DriverSnapshot({
 
               {isActive && !editState && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {noJob
-                    ? <button type="button" onClick={() => onAssignDriver(driver)} className="text-xs font-semibold text-accent hover:underline">Assign job →</button>
-                    : <button type="button" onClick={() => onPickJobForDriver(driver)} className="text-xs font-semibold text-slate-500 hover:text-accent">Assign another →</button>
-                  }
-                  <button type="button" onClick={() => startEditing(driver)} className="text-xs text-slate-500 hover:text-primary">
-                    {noVehicle ? "Assign unit →" : "Change unit"}
+                  {/* Unit assignment is the first priority — driver needs a unit before a job */}
+                  {noVehicle && (
+                    <button type="button" onClick={() => startEditing(driver)}
+                      className="text-xs font-semibold text-accent hover:underline">
+                      Assign unit →
+                    </button>
+                  )}
+                  {!noVehicle && noJob && (
+                    <button type="button" onClick={() => onAssignDriver(driver)}
+                      className="text-xs font-semibold text-accent hover:underline">
+                      Assign job →
+                    </button>
+                  )}
+                  {!noVehicle && !noJob && (
+                    <button type="button" onClick={() => onPickJobForDriver(driver)}
+                      className="text-xs font-semibold text-slate-500 hover:text-accent">
+                      Assign another →
+                    </button>
+                  )}
+                  {!noVehicle && (
+                    <button type="button" onClick={() => startEditing(driver)}
+                      className="text-xs text-slate-500 hover:text-primary">
+                      Change unit
+                    </button>
+                  )}
+                  <button type="button" onClick={() => onMarkUnavailable(driver)}
+                    className="text-xs text-slate-400 hover:text-red-600">
+                    Mark unavailable
                   </button>
-                  <button type="button" onClick={() => onMarkUnavailable(driver)} className="text-xs text-slate-400 hover:text-red-600">Mark unavailable</button>
                 </div>
               )}
             </div>
@@ -1043,6 +1064,7 @@ function AssignDrawer({
   const initialDriver = presetDriverId ?? context.job.assignedDriverId ?? null;
   const [driverId, setDriverId] = useState(initialDriver ? String(initialDriver) : "");
   const [trailerReg, setTrailerReg] = useState(linkedLoadedTrailer?.registration || context.job.assignedTrailer || "");
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1333,8 +1355,8 @@ function AssignDrawer({
         <div className="border-t border-border p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted">
-              {driverOnOtherJob || truckOnOtherJob || trailerOnOtherJob
-                ? "Resources will be swapped from the other job on save."
+              {driverOnOtherJob || trailerOnOtherJob
+                ? "Driver/trailer will be swapped from the other job on save."
                 : "Changes apply immediately on save."}
             </p>
             <div className="flex gap-2">
@@ -1345,7 +1367,7 @@ function AssignDrawer({
                 onClick={save}
                 className="btn btn-primary"
               >
-                {saving ? "Saving…" : (driverOnOtherJob || truckOnOtherJob || trailerOnOtherJob) ? "Swap & save" : "Save allocation"}
+                {saving ? "Saving…" : (driverOnOtherJob || trailerOnOtherJob) ? "Swap & save" : "Save allocation"}
               </button>
             </div>
           </div>
