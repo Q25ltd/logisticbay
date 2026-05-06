@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "npx tsx src/server.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "migrate:local": "prisma db push",
+    "migrate:prod": "railway run npx prisma migrate deploy",
+    "studio:local": "prisma studio",
+    "generate": "prisma generate"
   },
   "keywords": [],
   "author": "",
