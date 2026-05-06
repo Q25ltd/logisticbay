@@ -6,11 +6,35 @@ import type { PlannedJob, Driver, JobTemplate } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
+import {
+  ACTIVE_JOB_STATUSES,
+  JOB_STATUS_FLOW,
+  PENDING_JOB_STATUSES,
+  PROGRESSABLE_JOB_STATUSES,
+} from "../../constants/jobStatuses";
 
 const today = () => new Date().toISOString().split("T")[0];
 const fmt   = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day:"2-digit", month:"short" });
 
-const STATUS_FLOW = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff","completed","cancelled"];
+function hasStatus(statuses: readonly string[], status: string) {
+  return statuses.includes(status);
+}
+
+function nextJobStatus(status: string) {
+  const index = JOB_STATUS_FLOW.findIndex(value => value === status);
+  return index >= 0 ? JOB_STATUS_FLOW[index + 1] : undefined;
+}
+
+function statusActionLabel(status: string) {
+  switch (status) {
+    case "in_progress": return "▶ Start";
+    case "arrived_pickup": return "📍 At Pickup";
+    case "collected": return "✅ Collected";
+    case "arrived_dropoff": return "📍 At Dropoff";
+    case "completed": return "✅ Complete";
+    default: return status;
+  }
+}
 
 function firstStopText(job: PlannedJob, type: "pickup" | "dropoff") {
   const stop = job.stops
@@ -34,8 +58,8 @@ function JobRow({ job, onStatusChange, onNote }: {
   onStatusChange: (id: number, status: string) => void;
   onNote: (id: number) => void;
 }) {
-  const canProgress = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff"].includes(job.status);
-  const nextStatus  = STATUS_FLOW[STATUS_FLOW.indexOf(job.status) + 1];
+  const canProgress = hasStatus(PROGRESSABLE_JOB_STATUSES, job.status);
+  const nextStatus  = nextJobStatus(job.status);
   const lastEvent   = job.events?.[job.events.length - 1];
   const hasNote     = job.events?.some(e => e.eventType === "note_added" && e.note);
 
@@ -62,11 +86,7 @@ function JobRow({ job, onStatusChange, onNote }: {
           {canProgress && nextStatus && (
             <button onClick={() => onStatusChange(job.id, nextStatus)}
               className="text-xs text-accent hover:underline font-semibold whitespace-nowrap">
-              {nextStatus === "in_progress"     ? "▶ Start"         :
-               nextStatus === "arrived_pickup"  ? "📍 At Pickup"   :
-               nextStatus === "collected"       ? "✅ Collected"    :
-               nextStatus === "arrived_dropoff" ? "📍 At Dropoff"  :
-               nextStatus === "completed"       ? "✅ Complete"     : nextStatus}
+              {statusActionLabel(nextStatus)}
             </button>
           )}
           <button onClick={() => onNote(job.id)} className="text-xs text-muted hover:text-primary">+ Note</button>
@@ -149,8 +169,8 @@ export default function JobsPage() {
   const stats = {
     total:     jobs.length,
     completed: jobs.filter(j => j.status === "completed").length,
-    active:    jobs.filter(j => ["in_progress","arrived_pickup","collected","arrived_dropoff"].includes(j.status)).length,
-    pending:   jobs.filter(j => ["pending","accepted"].includes(j.status)).length,
+    active:    jobs.filter(j => hasStatus(ACTIVE_JOB_STATUSES, j.status)).length,
+    pending:   jobs.filter(j => hasStatus(PENDING_JOB_STATUSES, j.status)).length,
   };
 
   return (
@@ -229,9 +249,8 @@ export default function JobsPage() {
           {/* Mobile cards */}
           <div className="sm:hidden space-y-3">
             {filtered.map(job => {
-              const canProgress = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff"].includes(job.status);
-              const STATUS_FLOW = ["pending","accepted","in_progress","arrived_pickup","collected","arrived_dropoff","completed","cancelled"];
-              const nextStatus = STATUS_FLOW[STATUS_FLOW.indexOf(job.status) + 1];
+              const canProgress = hasStatus(PROGRESSABLE_JOB_STATUSES, job.status);
+              const nextStatus = nextJobStatus(job.status);
               return (
                 <div key={job.id} className="card p-4 space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
@@ -251,11 +270,7 @@ export default function JobsPage() {
                     {canProgress && nextStatus && (
                       <button onClick={() => handleStatusChange(job.id, nextStatus)}
                         className="text-xs font-semibold text-accent bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
-                        {nextStatus === "in_progress"     ? "▶ Start"       :
-                         nextStatus === "arrived_pickup"  ? "📍 At Pickup"  :
-                         nextStatus === "collected"       ? "✅ Collected"   :
-                         nextStatus === "arrived_dropoff" ? "📍 At Dropoff" :
-                         nextStatus === "completed"       ? "✅ Complete"    : nextStatus}
+                        {statusActionLabel(nextStatus)}
                       </button>
                     )}
                     <button onClick={() => setNoteJobId(job.id)}

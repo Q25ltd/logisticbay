@@ -5,6 +5,38 @@
  * The mobile equivalent lives at mobile/src/constants/jobStatuses.ts.
  */
 
+export const JOB_STATUS_FLOW = [
+  "pending",
+  "accepted",
+  "in_progress",
+  "arrived_pickup",
+  "collected",
+  "arrived_dropoff",
+  "completed",
+  "cancelled",
+] as const;
+
+export const PROGRESSABLE_JOB_STATUSES = [
+  "pending",
+  "accepted",
+  "in_progress",
+  "arrived_pickup",
+  "collected",
+  "arrived_dropoff",
+] as const;
+
+export const ACTIVE_JOB_STATUSES = [
+  "in_progress",
+  "arrived_pickup",
+  "collected",
+  "arrived_dropoff",
+] as const;
+
+export const PENDING_JOB_STATUSES = [
+  "pending",
+  "accepted",
+] as const;
+
 export const JOB_STATUS_LABELS: Record<string, string> = {
   pending:         "Pending",
   accepted:        "Accepted",
