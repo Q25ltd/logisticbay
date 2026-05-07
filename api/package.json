@@ -10,7 +10,8 @@
     "migrate:local": "prisma db push",
     "migrate:prod": "sh -c 'set -a && . ./.env && set +a && DATABASE_URL=$DATABASE_URL_PROD npx prisma migrate deploy'",
     "studio:local": "prisma studio",
-    "generate": "prisma generate"
+    "generate": "prisma generate",
+    "test": "node --import tsx/esm --test src/tests/*.test.ts"
   },
   "keywords": [],
   "author": "",

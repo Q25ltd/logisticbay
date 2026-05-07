@@ -245,7 +245,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── GET /jobs — planner / driver view ─────────────────────────────────────
   app.get("/jobs", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, role, userId } = request.user!;
-    const q = request.query as { date?: string; dateFrom?: string; dateTo?: string; driverId?: string; status?: string };
+    const q = request.query as { date?: string; dateFrom?: string; dateTo?: string; driverId?: string; status?: string; limit?: string; cursor?: string };
 
     let driverProfileId: number | undefined;
     if (role === "driver") {
@@ -279,6 +279,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       };
     }
 
+    // Pagination — cursor-based, backwards compatible (no params = max 200)
+    const limit  = Math.min(parseInt(q.limit  ?? "200", 10) || 200, 200);
+    const cursor = q.cursor ? parseInt(q.cursor, 10) : undefined;
+    if (cursor && !Number.isInteger(cursor)) {
+      return reply.status(400).send({ error: "cursor must be a valid job id" });
+    }
+
     const jobs = await prisma.plannedJob.findMany({
       where,
       include: {
@@ -292,9 +299,15 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         events:          { orderBy: { createdAt: "asc" } },
       },
       orderBy: [{ plannedDate: "asc" }, { sequence: "asc" }],
+      take:   limit + 1,                              // fetch one extra to know if there's a next page
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
-    return reply.send({ data: jobs });
+    const hasNextPage = jobs.length > limit;
+    const page        = hasNextPage ? jobs.slice(0, limit) : jobs;
+    const nextCursor  = hasNextPage ? page[page.length - 1].id : null;
+
+    return reply.send({ data: page, pagination: { limit, nextCursor, hasNextPage } });
   });
 
   // ── GET /jobs/my — driver's own jobs ──────────────────────────────────────
