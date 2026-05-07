@@ -238,7 +238,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── GET /jobs — planner / driver view ─────────────────────────────────────
   app.get("/jobs", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, role, userId } = request.user!;
-    const q = request.query as { date?: string; driverId?: string; status?: string };
+    const q = request.query as { date?: string; dateFrom?: string; dateTo?: string; driverId?: string; status?: string };
 
     let driverProfileId: number | undefined;
     if (role === "driver") {
@@ -260,7 +260,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     if (q.status) where.status = q.status;
-    if (q.date) {
+    if (q.dateFrom && q.dateTo) {
+      where.plannedDate = {
+        gte: new Date(`${q.dateFrom}T00:00:00.000Z`),
+        lte: new Date(`${q.dateTo}T23:59:59.999Z`),
+      };
+    } else if (q.date) {
       where.plannedDate = {
         gte: new Date(`${q.date}T00:00:00.000Z`),
         lt:  new Date(`${q.date}T23:59:59.999Z`),

@@ -1909,7 +1909,16 @@ function JobDetailDrawer({
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [date, setDate] = useState(today());
+  const [dateRange, setDateRange] = useState({ from: today(), to: today() });
+
+  function addDays(dateStr: string, n: number) {
+    const d = new Date(dateStr + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function applyRange(back: number, forward: number) {
+    setDateRange({ from: addDays(today(), -back), to: addDays(today(), forward) });
+  }
   const [jobs, setJobs] = useState<PlannedJob[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [units, setUnits] = useState<FleetUnit[]>([]);
@@ -1935,18 +1944,18 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setError("");
     try {
-      // Load jobs for selected date + open jobs from other dates (carry-over / unplanned)
-      const [jobDateRes, jobOpenRes, driverRes, unitRes, trailerRes] = await Promise.all([
-        jobsApi.list(date),
-        jobsApi.list(),   // all jobs for carry-over detection (open jobs from past dates)
+      // Load jobs for selected range + all open jobs (carry-over / unplanned)
+      const [jobRangeRes, jobOpenRes, driverRes, unitRes, trailerRes] = await Promise.all([
+        jobsApi.listRange(dateRange.from, dateRange.to),
+        jobsApi.list(),   // all open jobs regardless of date (carry-over / unplanned)
         driversApi.list(),
         fleetApi.units.list(),
         fleetApi.trailers.list(),
       ]);
-      // Merge: jobs for selected date + open jobs not on selected date (carry-over / unplanned)
-      const dateJobIds = new Set(jobDateRes.data.map((j) => j.id));
-      const extra = jobOpenRes.data.filter((j) => !dateJobIds.has(j.id) && !CLOSED_JOB_STATUSES.has(j.status));
-      setJobs([...jobDateRes.data, ...extra]);
+      // Merge: jobs in range + open jobs outside the range
+      const rangeJobIds = new Set(jobRangeRes.data.map((j) => j.id));
+      const extra = jobOpenRes.data.filter((j) => !rangeJobIds.has(j.id) && !CLOSED_JOB_STATUSES.has(j.status));
+      setJobs([...jobRangeRes.data, ...extra]);
       setDrivers(driverRes.data);
       setUnits(unitRes.data);
       setTrailers(trailerRes.data);
@@ -1956,7 +1965,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [dateRange]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -1966,16 +1975,17 @@ export default function DashboardPage() {
 
   const contexts = useMemo(() => {
     return jobs
-      .map((job) => makeJobContext(job, drivers, units, trailers, date))
+      .map((job) => makeJobContext(job, drivers, units, trailers, today()))
       .filter((context) => {
-        // Closed jobs (completed/cancelled) only show if they belong to the selected date
+        // Closed jobs only show if planned within the selected range
         if (isClosed(context.job)) {
-          return dayKey(context.job.plannedDate) === date;
+          const planned = dayKey(context.job.plannedDate);
+          return !!planned && planned >= dateRange.from && planned <= dateRange.to;
         }
-        // All open jobs (any date, no date, in-progress, unplanned) always show
+        // All open jobs always show
         return true;
       });
-  }, [jobs, drivers, units, trailers, date]);
+  }, [jobs, drivers, units, trailers, dateRange]);
 
   const filteredContexts = useMemo(() => {
     return contexts
@@ -2074,11 +2084,40 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-black text-primary">Dashboard</h1>
           <p className="text-xs text-muted">
-            Planner view for {date} | Refreshed {refreshed.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+            {dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} → ${dateRange.to}`} | Refreshed {refreshed.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="input w-auto text-sm" />
+          {/* Quick range pills */}
+          {([
+            { label: "Today",   back: 0,  fwd: 0  },
+            { label: "← 7d",   back: 7,  fwd: 0  },
+            { label: "7d →",   back: 0,  fwd: 7  },
+            { label: "← 14d",  back: 14, fwd: 0  },
+            { label: "14d →",  back: 0,  fwd: 14 },
+            { label: "← 30d",  back: 30, fwd: 0  },
+            { label: "30d →",  back: 0,  fwd: 30 },
+          ] as { label: string; back: number; fwd: number }[]).map(({ label, back, fwd }) => {
+            const isActive = dateRange.from === addDays(today(), -back) && dateRange.to === addDays(today(), fwd);
+            return (
+              <button key={label} type="button" onClick={() => applyRange(back, fwd)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  isActive ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
+                }`}>
+                {label}
+              </button>
+            );
+          })}
+          {/* Manual from/to inputs */}
+          <div className="flex items-center gap-1 text-xs text-muted">
+            <input type="date" value={dateRange.from}
+              onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+              className="input py-1 text-xs w-36" />
+            <span>→</span>
+            <input type="date" value={dateRange.to}
+              onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+              className="input py-1 text-xs w-36" />
+          </div>
           <button type="button" onClick={load} className="btn btn-outline text-sm">Refresh</button>
           <button type="button" onClick={() => navigate("/app/jobs/create")} className="btn btn-primary text-sm">New job</button>
         </div>
@@ -2283,7 +2322,7 @@ export default function DashboardPage() {
           drivers={drivers}
           units={units}
           trailers={trailers}
-          date={date}
+          date={dateRange.from}
           presetDriverId={assigning.presetDriverId}
           onClose={() => setAssigning(null)}
           onSaved={load}

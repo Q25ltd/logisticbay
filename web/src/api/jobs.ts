@@ -3,6 +3,7 @@ import type { PlannedJob, JobTemplate, SavedLocation } from "../types";
 
 export const jobsApi = {
   list:           (date?: string) => api.get<{ data: PlannedJob[] }>(`/jobs${date ? "?date=" + date : ""}`),
+  listRange:      (from: string, to: string) => api.get<{ data: PlannedJob[] }>(`/jobs?dateFrom=${from}&dateTo=${to}`),
   get:            (id: number) => api.get<PlannedJob>(`/jobs/${id}`),
   create:         (body: unknown) => api.post<PlannedJob>("/jobs", body),
   update:         (id: number, b: unknown) => api.patch<PlannedJob>(`/jobs/${id}`, b),
