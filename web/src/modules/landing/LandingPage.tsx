@@ -21,7 +21,7 @@ const FEATURES = [
     icon: "🚛",
     name: "Fleet & Equipment",
     desc: "Track trucks, trailers, VOR status, and upcoming maintenance schedules automatically.",
-    badge: "Coming Soon",
+    badge: "Live",
     color: "from-orange-400 to-orange-500",
     bg: "bg-orange-50",
   },
