@@ -1,1 +1,1 @@
-ALTER TABLE "DriverProfile" ADD COLUMN "defaultTruckClass" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "DriverProfile" ADD COLUMN IF NOT EXISTS "defaultTruckClass" TEXT NOT NULL DEFAULT '';
