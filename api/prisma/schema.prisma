@@ -37,6 +37,8 @@ model Company {
   plannedJobs      PlannedJob[]
   jobEvents        JobExecutionEvent[]
   shifts           Shift[]
+  shiftSegments    ShiftSegment[]
+  deliveryTasks    DeliveryTask[]
   availability     DriverAvailability[]
   shiftPreferences ShiftPreference[]
   holidayRequests  HolidayRequest[]
@@ -45,6 +47,7 @@ model Company {
   jobStops         JobStop[]
   loadDetails      LoadDetails[]
   jobAudits        JobAudit[]
+  auditLogs        AuditLog[]
   fleetUnits       FleetUnit[]
   fleetTrailers    FleetTrailer[]
 }
@@ -83,6 +86,7 @@ model User {
   createdJobs   PlannedJob[]        @relation("JobCreatedBy")
   jobEvents     JobExecutionEvent[]
   jobAudits     JobAudit[]
+  auditLogs     AuditLog[]
 }
 
 model CompanyMembership {
@@ -149,6 +153,9 @@ model DriverProfile {
   shiftPreferences ShiftPreference[]
   holidayRequests  HolidayRequest[]
   workingSummaries DriverWorkingTimeSummary[]
+
+  @@index([companyId, status])
+  @@index([companyId, displayName])
 }
 
 model SavedLocation {
@@ -182,6 +189,9 @@ model SavedLocation {
   pickupJobs       PlannedJob[]  @relation("JobPickupLocation")
   dropoffJobs      PlannedJob[]  @relation("JobDropoffLocation")
   jobStops         JobStop[]
+
+  @@index([companyId, name])
+  @@index([companyId, postcode])
 }
 
 model JobTemplate {
@@ -207,6 +217,8 @@ model JobTemplate {
   pickupLocation  SavedLocation? @relation("PickupLocation", fields: [pickupLocationId], references: [id])
   dropoffLocation SavedLocation? @relation("DropoffLocation", fields: [dropoffLocationId], references: [id])
   plannedJobs     PlannedJob[]
+
+  @@index([companyId, status])
 }
 
 model PlannedJob {
@@ -285,6 +297,13 @@ model PlannedJob {
   stops           JobStop[]
   loadDetails     LoadDetails?
   audits          JobAudit[]
+
+  @@index([companyId, plannedDate])
+  @@index([companyId, status])
+  @@index([companyId, assignedDriverId])
+  @@index([companyId, customerId])
+  @@index([companyId, updatedAt])
+  @@index([companyId, validationStatus])
 }
 
 model JobStop {
@@ -342,6 +361,7 @@ model JobStop {
 
   @@unique([jobId, sequenceNumber])
   @@index([companyId, jobId])
+  @@index([companyId, savedLocationId])
 }
 
 model LoadDetails {
@@ -420,6 +440,7 @@ model JobExecutionEvent {
   driver  User       @relation(fields: [driverId], references: [id])
 
   @@unique([companyId, clientEventId])
+  @@index([companyId, createdAt])
 }
 
 model SyncEventLog {
@@ -464,10 +485,14 @@ model Shift {
   company  Company        @relation(fields: [companyId], references: [id])
   driver   User           @relation(fields: [driverId], references: [id])
   segments ShiftSegment[]
+
+  @@index([companyId, driverId, shiftDate])
+  @@index([companyId, status])
 }
 
 model ShiftSegment {
   id                Int       @id @default(autoincrement())
+  companyId         Int
   shiftId           Int
   segmentNumber     Int
   vehicleClass      String    @default("class1")
@@ -485,12 +510,17 @@ model ShiftSegment {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  company    Company        @relation(fields: [companyId], references: [id])
   shift      Shift          @relation(fields: [shiftId], references: [id])
   deliveries DeliveryTask[]
+
+  @@index([companyId, shiftId])
+  @@index([companyId, startTime])
 }
 
 model DeliveryTask {
   id          Int      @id @default(autoincrement())
+  companyId   Int
   shiftId     Int
   segmentId   Int
   materials   String   @default("")
@@ -509,7 +539,11 @@ model DeliveryTask {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  company Company      @relation(fields: [companyId], references: [id])
   segment ShiftSegment @relation(fields: [segmentId], references: [id])
+
+  @@index([companyId, segmentId])
+  @@index([companyId, shiftId])
 }
 
 model DriverAvailability {
@@ -541,6 +575,8 @@ model DriverAvailability {
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 
   @@unique([driverProfileId, weekStartDate])
+  @@index([companyId, status])
+  @@index([companyId, weekStartDate])
 }
 
 model ShiftPreference {
@@ -563,6 +599,9 @@ model ShiftPreference {
 
   company       Company       @relation(fields: [companyId], references: [id])
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
+
+  @@index([companyId, driverProfileId, shiftDate])
+  @@index([companyId, status])
 }
 
 model HolidayRequest {
@@ -583,6 +622,9 @@ model HolidayRequest {
 
   company       Company       @relation(fields: [companyId], references: [id])
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
+
+  @@index([companyId, status])
+  @@index([companyId, startDate])
 }
 
 model DriverWorkingTimeSummary {
@@ -600,6 +642,7 @@ model DriverWorkingTimeSummary {
   driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id])
 
   @@unique([driverProfileId, weekStartDate])
+  @@index([companyId, driverProfileId, weekStartDate])
 }
 
 model FleetUnit {
@@ -620,6 +663,8 @@ model FleetUnit {
   updatedAt     DateTime @updatedAt
 
   @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, registration])
 }
 
 model FleetTrailer {
@@ -640,4 +685,36 @@ model FleetTrailer {
   updatedAt     DateTime @updatedAt
 
   @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, registration])
+  @@index([companyId, linkedJobId])
+}
+
+// ── Append-only audit log ─────────────────────────────────────────────────────
+// Every sensitive create/update/delete/read action is recorded here.
+// Rows are NEVER updated or deleted — only appended.
+// For job-specific audit use JobAudit; this table covers everything else.
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  actorId    Int?     // User.id who performed the action (null = system)
+  entityType String   // "Driver", "FleetUnit", "FleetTrailer", "HolidayRequest", "Shift", "Job", etc.
+  entityId   Int      // Primary key of the affected row
+  action     String   // "create", "update", "delete", "status_change", "read_sensitive"
+  field      String   @default("") // specific field name for updates (empty = whole-record action)
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  requestId  String?
+  note       String   @default("") // human-readable summary
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  actor   User?   @relation(fields: [actorId], references: [id])
+
+  @@index([companyId, entityType, entityId])
+  @@index([companyId, actorId])
+  @@index([companyId, createdAt])
+  @@index([createdAt])
 }

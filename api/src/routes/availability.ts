@@ -8,6 +8,14 @@ import type {
   HolidayRequestBody,
   PatchHolidayBody,
 } from "../types/requests.js";
+import {
+  HolidayRequestSchema,
+  PatchHolidaySchema,
+  SetAvailabilitySchema,
+  SetShiftPreferenceSchema,
+} from "../schemas/availability.js";
+import { parseBody } from "../lib/validate.js";
+import { writeAudit } from "../lib/audit.js";
 
 // UK bank holidays England & Wales 2025–2026 (mirrors mobile constant)
 const BANK_HOLIDAYS = new Set([
@@ -86,7 +94,9 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
   // ── POST /availability/my ──────────────────────────────────────────────────
   app.post("/availability/my", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const body = request.body as SetAvailabilityBody;
+    const zodParsed = parseBody(SetAvailabilitySchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as SetAvailabilityBody;
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
@@ -148,7 +158,9 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
   // ── POST /shift-preferences ────────────────────────────────────────────────
   app.post("/shift-preferences", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const body = request.body as SetShiftPreferenceBody;
+    const zodParsed = parseBody(SetShiftPreferenceSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as SetShiftPreferenceBody;
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
@@ -275,7 +287,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     if (!profile) return reply.status(404).send({ error: "Driver profile not found" });
 
     const requests = await prisma.holidayRequest.findMany({
-      where:   { companyId, driverProfileId: profile.id },
+      where:   { companyId, driverProfileId: profile.id, status: { not: "deleted" } },
       orderBy: { startDate: "desc" },
     });
 
@@ -293,7 +305,9 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
   // ── POST /holiday-requests ────────────────────────────────────────────────
   app.post("/holiday-requests", { preHandler: authenticate }, async (request, reply) => {
     const { companyId, userId } = request.user!;
-    const body = request.body as HolidayRequestBody;
+    const zodParsed = parseBody(HolidayRequestSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as HolidayRequestBody;
 
     const v = validateHolidayRequest(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
@@ -357,6 +371,17 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       },
     });
 
+    await writeAudit(prisma, {
+      companyId,
+      actorId:    userId,
+      entityType: "HolidayRequest",
+      entityId:   holidayRequest.id,
+      action:     "create",
+      newValue:   { startDate: body.startDate, endDate: body.endDate, totalDays, status: "pending" },
+      note:       `Driver created holiday request for ${totalDays} day(s)`,
+      request,
+    });
+
     return reply.status(201).send({
       ...holidayRequest,
       warning: conflicts.length > 0
@@ -371,7 +396,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const q = request.query as { status?: string };
 
     const requests = await prisma.holidayRequest.findMany({
-      where:   { companyId, ...(q.status ? { status: q.status } : {}) },
+      where:   { companyId, ...(q.status ? { status: q.status } : { status: { not: "deleted" } }) },
       include: { driverProfile: { select: { id: true, displayName: true, holidayAllowance: true, holidayUsed: true } } },
       orderBy: { createdAt: "desc" },
     });
@@ -382,13 +407,15 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
   // ── PATCH /holiday-requests/:id ───────────────────────────────────────────
   app.patch("/holiday-requests/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as PatchHolidayBody;
+    const zodParsed = parseBody(PatchHolidaySchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as PatchHolidayBody;
     const { companyId, userId } = request.user!;
 
     const v = validatePatchHoliday(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    const req = await prisma.holidayRequest.findFirst({ where: { id, companyId } });
+    const req = await prisma.holidayRequest.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
     if (!req) return reply.status(404).send({ error: "Holiday request not found" });
 
     const previousStatus = req.status;
@@ -420,6 +447,19 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       }
 
       return saved;
+    });
+
+    await writeAudit(prisma, {
+      companyId,
+      actorId:    userId,
+      entityType: "HolidayRequest",
+      entityId:   id,
+      action:     "status_change",
+      field:      "status",
+      oldValue:   { status: previousStatus },
+      newValue:   { status: nextStatus, plannerNote: body.plannerNote ?? "" },
+      note:       `Planner changed holiday request status from ${previousStatus} to ${nextStatus}`,
+      request,
     });
 
     return reply.send(updated);

@@ -11,12 +11,21 @@ import type {
   CreateDeliveryBody,
   SubmitShiftBody,
 } from "../types/requests.js";
+import {
+  CreateShiftSchema,
+  CreateSegmentSchema,
+  CreateDeliverySchema,
+  SubmitShiftSchema,
+} from "../schemas/shifts.js";
+import { parseBody } from "../lib/validate.js";
 
 export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /shifts ────────────────────────────────────────────────────────────
   app.post("/shifts", { preHandler: authenticate }, async (request, reply) => {
-    const body = request.body as CreateShiftBody;
+    const parsed = parseBody(CreateShiftSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as CreateShiftBody;
     const { userId, companyId } = request.user!;
 
     const driver = await prisma.user.findUnique({
@@ -43,7 +52,9 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /shifts/:id/segments ───────────────────────────────────────────────
   app.post("/shifts/:id/segments", { preHandler: authenticate }, async (request, reply) => {
     const shiftId = parseInt((request.params as { id: string }).id, 10);
-    const body    = request.body as CreateSegmentBody;
+    const zodParsed = parseBody(CreateSegmentSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body    = zodParsed.data as CreateSegmentBody;
     const { userId, companyId } = request.user!;
 
     const segValidation = validateCreateSegment(body);
@@ -83,6 +94,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const segment = await prisma.shiftSegment.create({
       data: {
+        companyId,
         shiftId,
         segmentNumber,
         vehicleClass:      body.vehicleClass      ?? "class1",
@@ -117,7 +129,9 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.post("/shifts/:id/segments/:segId/deliveries", { preHandler: authenticate }, async (request, reply) => {
     const shiftId   = parseInt((request.params as { id: string; segId: string }).id, 10);
     const segmentId = parseInt((request.params as { id: string; segId: string }).segId, 10);
-    const body      = request.body as CreateDeliveryBody;
+    const zodParsed = parseBody(CreateDeliverySchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body      = zodParsed.data as CreateDeliveryBody;
     const { userId, companyId } = request.user!;
 
     const segment = await prisma.shiftSegment.findFirst({
@@ -127,6 +141,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const delivery = await prisma.deliveryTask.create({
       data: {
+        companyId,
         shiftId,
         segmentId,
         materials:   body.materials   ?? "",
@@ -151,7 +166,9 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── PATCH /shifts/:id/submit ────────────────────────────────────────────────
   app.patch("/shifts/:id/submit", { preHandler: authenticate }, async (request, reply) => {
     const shiftId = parseInt((request.params as { id: string }).id, 10);
-    const body    = request.body as SubmitShiftBody;
+    const zodParsed = parseBody(SubmitShiftSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body    = zodParsed.data as SubmitShiftBody;
     const { userId, companyId } = request.user!;
 
     const shift = await prisma.shift.findFirst({
@@ -449,6 +466,9 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DEV: reset all shifts for testing ─────────────────────────────────────
   app.delete("/dev/reset-shifts", { preHandler: [authenticate, requireRole("company_owner")] }, async (request, reply) => {
+    if (process.env.NODE_ENV === "production") {
+      return reply.status(404).send({ error: "Not found" });
+    }
     const { companyId } = request.user!;
     await prisma.shift.updateMany({ where: { companyId }, data: { status: "deleted" } });
     return reply.send({ ok: true });

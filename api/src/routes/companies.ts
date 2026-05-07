@@ -15,6 +15,14 @@ import type {
   PatchDriverBody,
   PatchDriverStatusBody,
 } from "../types/requests.js";
+import {
+  CreateDriverSchema,
+  PatchDriverSchema,
+  PatchDriverStatusSchema,
+} from "../schemas/drivers.js";
+import { RegisterCompanySchema } from "../schemas/auth.js";
+import { parseBody } from "../lib/validate.js";
+import { writeAudit } from "../lib/audit.js";
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -103,7 +111,9 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
   // ── POST /auth/register-company ────────────────────────────────────────────
   app.post("/auth/register-company", async (request, reply) => {
-    const body = request.body as RegisterCompanyBody;
+    const zodParsed = parseBody(RegisterCompanySchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as RegisterCompanyBody;
 
     const v = validateRegisterCompany(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
@@ -201,7 +211,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
     const drivers = await prisma.driverProfile.findMany({
       where: { companyId, ...(q.status ? { status: q.status } : {}) },
-      include: { user: { select: { id: true, email: true, name: true, status: true } }, holidayRequests: { orderBy: { startDate: "asc" } } },
+      include: {
+        user: { select: { id: true, email: true, name: true, status: true } },
+        holidayRequests: { where: { status: { not: "deleted" } }, orderBy: { startDate: "asc" } },
+      },
       orderBy: { displayName: "asc" },
     });
 
@@ -210,8 +223,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
   // ── POST /drivers ──────────────────────────────────────────────────────────
   app.post("/drivers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as CreateDriverBody;
-    const { companyId } = request.user!;
+    const zodParsed = parseBody(CreateDriverSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as CreateDriverBody;
+    const { companyId, userId: actorId } = request.user!;
 
     const v = validateCreateDriver(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
@@ -265,6 +280,15 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         },
       });
 
+      await writeAudit(prisma, {
+        companyId, actorId,
+        entityType: "Driver", entityId: driver.id,
+        action: "create",
+        newValue: { displayName: driver.displayName, email: emailLower },
+        note: isNewUser ? "Driver created with new login" : "Agency driver linked",
+        request,
+      });
+
       return reply.status(201).send({
         ...driver,
         defaultPin:     isNewUser ? DEFAULT_PIN : null,
@@ -286,14 +310,26 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         status: "active",
       },
     });
+
+    await writeAudit(prisma, {
+      companyId, actorId,
+      entityType: "Driver", entityId: driver.id,
+      action: "create",
+      newValue: { displayName: driver.displayName },
+      note: "Driver created without login account",
+      request,
+    });
+
     return reply.status(201).send(driver);
   });
 
   // ── PATCH /drivers/:id ─────────────────────────────────────────────────────
   app.patch("/drivers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as PatchDriverBody;
-    const { companyId } = request.user!;
+    const zodParsed = parseBody(PatchDriverSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as PatchDriverBody;
+    const { companyId, userId: actorId } = request.user!;
 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
     if (!driver) return reply.status(404).send({ error: "Driver not found" });
@@ -305,7 +341,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       });
 
       if (Array.isArray(body.holidayRequests)) {
-        await tx.holidayRequest.deleteMany({ where: { companyId, driverProfileId: id } });
+        await tx.holidayRequest.updateMany({
+          where: { companyId, driverProfileId: id, status: { not: "deleted" } },
+          data:  { status: "deleted" },
+        });
 
         for (const holiday of body.holidayRequests) {
           if (!holiday.startDate || !holiday.endDate) continue;
@@ -334,9 +373,18 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         where: { id: saved.id },
         include: {
           user: { select: { id: true, email: true, name: true, status: true } },
-          holidayRequests: { orderBy: { startDate: "asc" } },
+          holidayRequests: { where: { status: { not: "deleted" } }, orderBy: { startDate: "asc" } },
         },
       });
+    });
+
+    await writeAudit(prisma, {
+      companyId, actorId,
+      entityType: "Driver", entityId: id,
+      action: "update",
+      newValue: body,
+      note: "Driver profile updated",
+      request,
     });
 
     return reply.send(updated);
@@ -345,8 +393,10 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   // ── PATCH /drivers/:id/status ──────────────────────────────────────────────
   app.patch("/drivers/:id/status", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as PatchDriverStatusBody;
-    const { companyId } = request.user!;
+    const zodParsed = parseBody(PatchDriverStatusSchema, request.body);
+    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    const body = zodParsed.data as PatchDriverStatusBody;
+    const { companyId, userId: actorId } = request.user!;
 
     const v = validatePatchDriverStatus(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
@@ -354,9 +404,20 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
     if (!driver) return reply.status(404).send({ error: "Driver not found" });
 
+    const oldStatus = driver.status;
     const updated = await prisma.driverProfile.update({
       where: { id },
       data:  { status: body.status },
+    });
+
+    await writeAudit(prisma, {
+      companyId, actorId,
+      entityType: "Driver", entityId: id,
+      action: "status_change", field: "status",
+      oldValue: { status: oldStatus },
+      newValue: { status: body.status },
+      note: `Driver status changed from ${oldStatus} to ${body.status}`,
+      request,
     });
 
     return reply.send(updated);

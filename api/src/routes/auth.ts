@@ -3,6 +3,8 @@ import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { LoginBody, RefreshBody, ChangePasswordBody } from "../types/requests.js";
+import { LoginSchema, RefreshSchema, ChangePasswordSchema } from "../schemas/auth.js";
+import { parseBody } from "../lib/validate.js";
 
 function generateToken(payload: object): string {
   return jwt.sign(payload, process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "7d" });
@@ -16,9 +18,10 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.post("/auth/login", {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
   }, async (request, reply) => {
-    const body = request.body as LoginBody;
+    const parsed = parseBody(LoginSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as LoginBody;
     const { email, password } = body;
-    if (!email || !password) return reply.status(400).send({ error: "Email and password are required" });
 
     const user = await prisma.user.findUnique({
       where:   { email: email.toLowerCase().trim() },
@@ -58,8 +61,9 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   app.post("/auth/refresh", async (request, reply) => {
-    const body = request.body as RefreshBody;
-    if (!body.refreshToken) return reply.status(400).send({ error: "Refresh token required" });
+    const parsed = parseBody(RefreshSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as RefreshBody;
     try {
       const decoded = jwt.verify(body.refreshToken, process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!) as { userId: number; companyId: number; role: string };
       const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
@@ -87,9 +91,10 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.post("/auth/change-password", async (request, reply) => {
     const auth = request.headers.authorization;
     if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
-    const body = request.body as ChangePasswordBody;
+    const parsed = parseBody(ChangePasswordSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as ChangePasswordBody;
     const { currentPassword, newPassword } = body;
-    if (!currentPassword || !newPassword) return reply.status(400).send({ error: "Current and new password are required" });
     const isPin = /^\d{6}$/.test(newPassword);
     if (!isPin && newPassword.length < 8) return reply.status(400).send({ error: "PIN must be 6 digits, or password at least 8 characters" });
     if (newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
