@@ -758,3 +758,50 @@ All 4 migrations applied and confirmed. Database schema is up to date.
 ### 2026-05-07 — Devlog rewrite and architecture charter
 
 This document was rewritten to combine the historical session log with the architecture rules, tenant isolation discipline, scale planning, and prioritised roadmap. Engineers must read the top half (rules + roadmap) at the start of every chat session and before every PR review. Session history below the roadmap is appended; do not edit historical entries.
+
+---
+
+### 2026-05-07 — Phase 0 foundations batch (database empty, safe to restructure)
+
+**companyId on ShiftSegment and DeliveryTask (migration 20260507200000)**
+- Both models now carry `companyId` with FK to Company and tenant-scoped indexes.
+- Two-step SQL: add nullable → backfill from parent Shift → make NOT NULL.
+- Shifts route now passes `companyId` when creating segments and deliveries.
+
+**Append-only AuditLog table (migration 20260507210000)**
+- General audit table covering all entity types (Driver, FleetUnit, FleetTrailer, HolidayRequest, Shift, Job, etc.).
+- DB-level `RULE` blocks UPDATE and DELETE — rows are immutable once written.
+- `src/lib/audit.ts`: `writeAudit()` and `writeAuditBatch()` helpers. Failures are caught and logged — audit never breaks the main request.
+- Wired into: driver create, driver update, driver status change, holiday request create, holiday request approve/reject.
+- `JobAudit` table kept for backward compat; `AuditLog` is the new general table.
+
+**Zod validation schemas — Phase 0.11**
+- `src/schemas/auth.ts`, `drivers.ts`, `jobs.ts`, `shifts.ts`, `availability.ts`, `locations.ts`, `fleet.ts`
+- `src/lib/validate.ts`: `parseBody()` and `parseQuery()` helpers returning typed result objects.
+- Wired into: auth login/refresh/change-password, register-company, driver create/patch/status, shift create/segment/delivery/submit, holiday request create/approve, availability POST, shift-preference POST.
+- All covered route handlers now validate before use; no bare `body as any` on these paths.
+
+**Also committed this session (carried from previous session):**
+- Web Dashboard and Jobs: date range quick pills (Today | ±7d | ±14d | ±30d) + manual from/to inputs.
+- API: `dateFrom`/`dateTo` range filter on `GET /jobs`.
+- API: soft-cancel on job delete; fleet unit/trailer soft-archive.
+- API: `clientEventId` deduplication on online job status updates.
+- API: `DELETE /dev/reset-shifts` returns 404 in production.
+- API: structured logging with `requestId`, `companyId`, `userId`.
+- API: `prisma migrate deploy` on startup (removed unsafe `db push` from production).
+- API: tenant-scale indexes migration (20260507170000).
+- DEVLOG/SAFETY: architecture charter and safety rules documents.
+
+**Remaining Phase 0 items (not yet done):**
+- 0.1 RLS policies — Postgres Row-Level Security on every tenant-scoped table.
+- 0.2 Structured logging — Pino with redaction, `requestId` + `companyId` + `userId` in every line (partial: exists on request level, not in all background jobs).
+- 0.4 Backup strategy + tested restore (Railway point-in-time, quarterly drill).
+- 0.5 Sentry error tracking on API, web, mobile.
+- 0.6 Schema migration discipline — runbook per migration (ongoing practice).
+- 0.7 Idempotency on ALL write endpoints — extend clientEventId to all writes (only job events today).
+- 0.8 API versioning strategy — `/v1/jobs`, `X-App-Version`, deprecation policy.
+- 0.9 Staging environment — separate DB, no prod data.
+- 0.10 Secrets management — confirm `JWT_ACCESS_SECRET` ≠ `JWT_REFRESH_SECRET` in Railway.
+- 0.12 CI gates — typecheck, lint, unit tests, tenant-isolation integration test on every PR.
+- Server-side Dashboard API and Jobs cursor pagination.
+- Repository pattern — typed repositories requiring `companyId` as first argument.
