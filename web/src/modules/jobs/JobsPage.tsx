@@ -16,6 +16,22 @@ import {
 const today = () => new Date().toISOString().split("T")[0];
 const fmt   = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day:"2-digit", month:"short" });
 
+function addDays(dateStr: string, n: number) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+const RANGE_PRESETS = [
+  { label: "Today",  back: 0,  fwd: 0  },
+  { label: "← 7d",  back: 7,  fwd: 0  },
+  { label: "7d →",  back: 0,  fwd: 7  },
+  { label: "← 14d", back: 14, fwd: 0  },
+  { label: "14d →", back: 0,  fwd: 14 },
+  { label: "← 30d", back: 30, fwd: 0  },
+  { label: "30d →", back: 0,  fwd: 30 },
+];
+
 function hasStatus(statuses: readonly string[], status: string) {
   return statuses.includes(status);
 }
@@ -135,24 +151,28 @@ export default function JobsPage() {
   const [templates,     setTemplates]     = useState<JobTemplate[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState("");
-  const [date,          setDate]          = useState(today());
+  const [dateRange,     setDateRange]     = useState({ from: today(), to: today() });
   const [statusFilter,  setStatusFilter]  = useState("all");
   const [driverFilter,  setDriverFilter]  = useState("all");
   const [noteJobId,     setNoteJobId]     = useState<number|null>(null);
   const [success,       setSuccess]       = useState("");
 
+  function applyRange(back: number, fwd: number) {
+    setDateRange({ from: addDays(today(), -back), to: addDays(today(), fwd) });
+  }
+
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [j,d,t] = await Promise.all([
-        jobsApi.list(date),
+      const [j, d, t] = await Promise.all([
+        jobsApi.listRange(dateRange.from, dateRange.to),
         driversApi.list("active"),
         jobsApi.templates(),
       ]);
       setJobs(j.data); setDrivers(d.data); setTemplates(t.data);
     } catch (err: any) { setError(err.message); }
     setLoading(false);
-  }, [date]);
+  }, [dateRange]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const i = setInterval(load, 30000); return () => clearInterval(i); }, [load]);
@@ -169,7 +189,6 @@ export default function JobsPage() {
   async function handleDelete(job: PlannedJob) {
     const label = job.referenceNumber || `job #${job.id}`;
     if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
-
     try {
       await jobsApi.remove(job.id);
       setSuccess("Job deleted ✓");
@@ -189,25 +208,46 @@ export default function JobsPage() {
     pending:   jobs.filter(j => hasStatus(PENDING_JOB_STATUSES, j.status)).length,
   };
 
+  const rangeLabel = dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} → ${dateRange.to}`;
+
   return (
     <div className="p-4 sm:p-6">
-      <div className="flex items-start justify-between mb-5 gap-4">
+      <div className="flex items-start justify-between mb-4 gap-4">
         <div>
           <h1 className="text-xl font-black text-primary">Jobs</h1>
           <p className="text-sm text-muted mt-0.5">
-            {stats.total} total · {stats.completed} done · {stats.active} active · {stats.pending} pending
+            {stats.total} total · {stats.completed} done · {stats.active} active · {stats.pending} pending · {rangeLabel}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-auto text-sm hidden sm:block"/>
           <button onClick={load} className="btn btn-outline text-sm px-3">↻</button>
           <Button onClick={() => navigate("/app/jobs/create")}>+ New Job</Button>
         </div>
       </div>
 
-      {/* Mobile date picker */}
-      <div className="sm:hidden mb-4">
-        <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input w-full text-sm"/>
+      {/* Quick range pills */}
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {RANGE_PRESETS.map(({ label, back, fwd }) => {
+          const isActive = dateRange.from === addDays(today(), -back) && dateRange.to === addDays(today(), fwd);
+          return (
+            <button key={label} type="button" onClick={() => applyRange(back, fwd)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                isActive ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
+              }`}>
+              {label}
+            </button>
+          );
+        })}
+        {/* Manual from/to */}
+        <div className="flex items-center gap-1 ml-1">
+          <input type="date" value={dateRange.from}
+            onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+            className="input py-1 text-xs w-36" />
+          <span className="text-xs text-muted">→</span>
+          <input type="date" value={dateRange.to}
+            onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+            className="input py-1 text-xs w-36" />
+        </div>
       </div>
 
       {success && <Alert type="success" message={success} />}
@@ -236,8 +276,8 @@ export default function JobsPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📋</div>
-          <div className="font-bold text-primary mb-1">No jobs for this date</div>
-          <div className="text-sm text-muted mb-4">Create a job or select a different date</div>
+          <div className="font-bold text-primary mb-1">No jobs for this period</div>
+          <div className="text-sm text-muted mb-4">Create a job or select a different date range</div>
           <Button onClick={() => navigate("/app/jobs/create")}>Create Job</Button>
         </div>
       ) : (
