@@ -188,10 +188,10 @@ export default function JobsPage() {
 
   async function handleDelete(job: PlannedJob) {
     const label = job.referenceNumber || `job #${job.id}`;
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+    if (!window.confirm(`Cancel ${label}? It will be hidden from active planning but kept for audit/history.`)) return;
     try {
       await jobsApi.remove(job.id);
-      setSuccess("Job deleted ✓");
+      setSuccess("Job cancelled ✓");
       setTimeout(() => setSuccess(""), 3000);
       load();
     } catch (err: any) { alert(err.message); }

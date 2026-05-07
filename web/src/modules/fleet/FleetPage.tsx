@@ -268,10 +268,10 @@ export default function FleetPage() {
   }, [success]);
 
   async function handleDeleteUnit(unit: FleetUnit) {
-    if (!confirm(`Delete unit ${unit.registration}? This cannot be undone.`)) return;
+    if (!confirm(`Archive unit ${unit.registration}? It will be hidden from planning but kept for audit/history.`)) return;
     try {
       await fleetApi.units.remove(unit.id);
-      setSuccess("Unit deleted");
+      setSuccess("Unit archived");
       load();
     } catch (err: any) {
       alert(err.message);
@@ -279,10 +279,10 @@ export default function FleetPage() {
   }
 
   async function handleDeleteTrailer(trailer: FleetTrailer) {
-    if (!confirm(`Delete trailer ${trailer.registration}? This cannot be undone.`)) return;
+    if (!confirm(`Archive trailer ${trailer.registration}? It will be hidden from planning but kept for audit/history.`)) return;
     try {
       await fleetApi.trailers.remove(trailer.id);
-      setSuccess("Trailer deleted");
+      setSuccess("Trailer archived");
       load();
     } catch (err: any) {
       alert(err.message);

@@ -167,8 +167,8 @@ Job status is derived from events, not stored directly. The `status` field on `P
 
 ### Migration rules
 
-**⚠️ CURRENT REALITY vs INTENDED:**
-The project currently uses `prisma db push` in production (set as Railway pre-deploy command). This is faster but bypasses migration history. For a paying-customer system, migrate to `prisma migrate deploy` which tracks every schema change.
+**Current production behavior:**
+Production startup uses `prisma migrate deploy` via `api/start.sh`. `prisma db push` is allowed only for local development and must never run during production startup/deploy.
 
 **Intended (post-launch hardening):**
 ```bash
@@ -203,12 +203,21 @@ Never combine schema change + data migration in one step.
 
 ### Rule
 Every query must scope by:
+- `companyId` from `request.user.companyId`
 
 Never trust frontend.
 
+Frontend may display or submit IDs, but it must never be the source of truth
+for tenant ownership. A request body `companyId` must be ignored or rejected.
+
 ### Enforcement
 - Middleware injects companyId from JWT
-- All Prisma queries scoped by companyId
+- All Prisma reads, writes, updates, deletes, counts, dashboard summaries, search queries, sync queries, and background jobs are scoped by companyId
+- Every related ID must be validated inside companyId before use: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, linkedJobId, shiftId, and any future foreign key
+- Create routes must write companyId from JWT only
+- Update/delete routes must first find the target row by `{ id, companyId }`, then mutate it
+- Dashboard/search endpoints must never aggregate across tenants unless the route is explicitly an internal admin route with separate authorization
+- Raw SQL must include companyId predicates and must be reviewed as high risk
 - Integration test on every deploy proves Company A cannot read Company B data
 
 ### Failure consequence
@@ -221,6 +230,64 @@ Write one test that:
 3. Tries to fetch Company B's jobs
 4. Expects 404 or empty array
 5. Run on every deploy
+
+---
+
+## 6A. SCALE AND SEARCH SAFETY (CRITICAL)
+
+### Rule
+Do not build pages that load all tenant data into the browser.
+
+The product must be designed for:
+- unbounded tenant growth
+- operational records that may grow from millions into billions or trillions
+- Many planners filtering/searching at the same time
+
+### Mandatory API shape
+- Dashboard must use dedicated server-side endpoints, e.g. `/dashboard?date=YYYY-MM-DD`, not `GET /jobs` plus React filtering
+- Jobs list must support server-side filters: date, status, customer, vehicle type, driver, warnings, loaded trailer, carried over
+- Jobs list must support pagination or cursor pagination before large customer rollout
+- Search must be server-side and tenant-scoped
+- Summary counts must be computed server-side, cached, or pre-aggregated when needed
+
+### Database requirements
+Every high-volume model must have indexes that match production queries.
+
+Minimum indexes to plan for:
+- `PlannedJob(companyId, plannedDate)`
+- `PlannedJob(companyId, status)`
+- `PlannedJob(companyId, assignedDriverId)`
+- `PlannedJob(companyId, customerId)`
+- `PlannedJob(companyId, updatedAt)`
+- `JobExecutionEvent(companyId, jobId)`
+- `JobExecutionEvent(companyId, createdAt)`
+- `FleetTrailer(companyId, status)`
+- `FleetUnit(companyId, status)`
+- Search indexes for customer/reference/site fields before global search rollout
+
+### AI / smart features
+AI must not scan all tenant data live on a request.
+
+Allowed:
+- Background analysis per company
+- Cached recommendations
+- Rule-based warnings at request time
+- Tenant-scoped search results passed into AI
+
+Not allowed:
+- Cross-company prompts
+- Sending unfiltered database dumps to AI
+- Live dashboard AI calls over unbounded job history
+
+### Implementation rule
+Any new list, dashboard, search, export, report, or smart suggestion must answer:
+1. Where is companyId enforced?
+2. What is the maximum number of rows returned?
+3. Which database index supports it?
+4. Does it paginate?
+5. Can it leak another tenant through related records?
+
+If those questions are not answered, do not ship it.
 
 ---
 
@@ -474,13 +541,17 @@ These must be in place:
 - [x] Per-stop location IDOR fixed — savedLocationId validated against companyId before write (fixed 2026-05-05)
 - [ ] Database backups verified by restore test — Railway auto-backups exist but restore NOT tested
 - [ ] Staging environment separate from production — NO staging, all deploys go direct to production
-- [ ] Migration safety — using `prisma db push` NOT `prisma migrate deploy` (see note below)
-- [ ] Structured logging with requestId/userId/companyId — Fastify logger enabled but NOT structured per request
+- [x] Migration safety — production startup uses `prisma migrate deploy`, not `prisma db push` (fixed 2026-05-07)
+- [x] Structured logging with requestId/userId/companyId — request completion and server errors log tenant/user context when authenticated
 - [ ] Error monitoring (Sentry) — NOT set up
 - [ ] System state banner (manual toggle) — NOT built
 - [ ] Manual override flag for planner — NOT built
 - [ ] /health endpoint with metrics — EXISTS but minimal (only checks DB reachable, no queue depth or latency)
 - [ ] Tenant isolation integration test on every deploy — NOT built
+- [ ] Server-side dashboard endpoint — NOT built; current dashboard must not remain client-filtered before scale rollout
+- [ ] Pagination on high-volume list endpoints — NOT complete
+- [ ] Database indexes reviewed against planner/search/dashboard queries — baseline tenant-first operational indexes added 2026-05-07; search/trigram and production query-plan review still needed
+- [ ] Tenant-scoped search architecture — NOT built
 - [ ] Rollback procedure documented and tested — NOT documented
 
 ---
@@ -491,6 +562,8 @@ These must be in place:
 - Idempotency (clientEventId)
 - Event-based model for job status
 - Tenant isolation test
+- CompanyId enforcement review for every API route
+- Server-side pagination/filtering for jobs/dashboard before customer scale
 
 ### Phase 2 — Offline driver flow
 - AsyncStorage queue
@@ -511,6 +584,9 @@ These must be in place:
 - Per-tenant rate limiting
 
 ### Phase 5 — Scale safety
+- Dedicated dashboard summary API
+- Server-side search with companyId and indexes
+- Per-company cached smart warnings/recommendations
 - Automated incident detection
 - Reconciliation dashboard
 - Post-mortem template

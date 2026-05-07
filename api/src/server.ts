@@ -25,8 +25,20 @@ const allowedOrigins = process.env.NODE_ENV === "production"
 await app.register(cors, {
   origin: allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-App-Version", "Idempotency-Key"],
   credentials: true,
+});
+
+app.addHook("onResponse", async (request, reply) => {
+  app.log.info({
+    requestId: request.id,
+    userId:    request.user?.userId,
+    companyId: request.user?.companyId,
+    role:      request.user?.role,
+    method:    request.method,
+    url:       request.url,
+    statusCode: reply.statusCode,
+  }, "request completed");
 });
 
 // Rate limiting
@@ -45,7 +57,15 @@ app.setErrorHandler((error, request, reply) => {
   const err = error as any;
   const statusCode = err.statusCode ?? 500;
   if (statusCode >= 500) {
-    app.log.error({ err: error, req: request.id }, "Internal server error");
+    app.log.error({
+      err: error,
+      requestId: request.id,
+      userId:    request.user?.userId,
+      companyId: request.user?.companyId,
+      role:      request.user?.role,
+      method:    request.method,
+      url:       request.url,
+    }, "Internal server error");
     return reply.status(500).send({
       error: "Internal Server Error",
       message: "Something went wrong. Please try again.",

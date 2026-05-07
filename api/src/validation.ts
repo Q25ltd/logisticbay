@@ -135,6 +135,9 @@ export function validateUpdateJobStatus(body: UpdateJobStatusBody): ValidationRe
   } else if (!VALID_JOB_STATUSES.includes(body.status)) {
     errors.push(`status must be one of: ${VALID_JOB_STATUSES.join(", ")}`);
   }
+  if (body.clientEventId !== undefined && (typeof body.clientEventId !== "string" || !body.clientEventId.trim())) {
+    errors.push("clientEventId must be a non-empty string when provided");
+  }
   return ok(errors);
 }
 

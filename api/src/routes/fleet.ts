@@ -47,6 +47,7 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const where: Record<string, unknown> = { companyId };
     if (q.status) where.status = q.status;
+    else where.status = { not: "deleted" };
 
     const units = await prisma.fleetUnit.findMany({
       where,
@@ -84,7 +85,7 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = request.body as PatchUnitBody;
     const { companyId } = request.user!;
 
-    const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId } });
+    const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
     if (!unit) return reply.status(404).send({ error: "Fleet unit not found" });
 
     const updated = await prisma.fleetUnit.update({
@@ -108,8 +109,17 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId } });
     if (!unit) return reply.status(404).send({ error: "Fleet unit not found" });
+    if (unit.status === "deleted") return reply.status(204).send();
 
-    await prisma.fleetUnit.delete({ where: { id } });
+    await prisma.fleetUnit.update({
+      where: { id },
+      data: {
+        status:           "deleted",
+        assignedDriverId: null,
+        currentTrailerId: null,
+        notes:            [unit.notes?.trim(), "Deleted by planner. Record kept for audit/history."].filter(Boolean).join("\n"),
+      },
+    });
     return reply.status(204).send();
   });
 
@@ -120,6 +130,7 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const where: Record<string, unknown> = { companyId };
     if (q.status) where.status = q.status;
+    else where.status = { not: "deleted" };
 
     const trailers = await prisma.fleetTrailer.findMany({
       where,
@@ -157,7 +168,7 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = request.body as PatchTrailerBody;
     const { companyId } = request.user!;
 
-    const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId } });
+    const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
     if (!trailer) return reply.status(404).send({ error: "Fleet trailer not found" });
 
     const updated = await prisma.fleetTrailer.update({
@@ -181,8 +192,23 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId } });
     if (!trailer) return reply.status(404).send({ error: "Fleet trailer not found" });
+    if (trailer.status === "deleted") return reply.status(204).send();
+    if (trailer.status === "loaded" && trailer.linkedJobId) {
+      return reply.status(409).send({
+        error: "Cannot delete a loaded trailer",
+        message: `Trailer ${trailer.registration} is loaded and linked to job #${trailer.linkedJobId}. Replan or unload it before deleting.`,
+      });
+    }
 
-    await prisma.fleetTrailer.delete({ where: { id } });
+    await prisma.fleetTrailer.update({
+      where: { id },
+      data: {
+        status:         "deleted",
+        attachedUnitId: null,
+        linkedJobId:    null,
+        notes:          [trailer.notes?.trim(), "Deleted by planner. Record kept for audit/history."].filter(Boolean).join("\n"),
+      },
+    });
     return reply.status(204).send();
   });
 }

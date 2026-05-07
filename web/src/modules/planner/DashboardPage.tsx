@@ -350,6 +350,10 @@ function hasMissingPlanningInfo(warning: JobWarning) {
   return warning.type.startsWith("missing_") || warning.type === "load_split_missing" || warning.type === "no_customer";
 }
 
+function hasMissingAssignment(warning: JobWarning) {
+  return ["no_driver", "driver_unavailable", "no_unit", "unit_vor"].includes(warning.type);
+}
+
 function buildWarnings(
   job: PlannedJob,
   drivers: Driver[],
@@ -499,11 +503,12 @@ function buildWarnings(
 function deriveStatus(job: PlannedJob, warnings: JobWarning[], loadedTrailer: FleetTrailer | null): PlannerStatus {
   if (job.status === "completed") return "completed";
   if (job.status === "cancelled") return "cancelled";
-  if (loadedTrailer) return "loaded_trailer";
   if (ACTIVE_JOB_STATUSES.has(job.status)) return "active";
+  if (warnings.some(hasMissingAssignment)) return "needs_planning";
+  if (warnings.some(hasMissingPlanningInfo)) return "needs_planning";
+  if (loadedTrailer) return "loaded_trailer";
   if (job.assignedDriverId && job.assignedTruck) return "planned";
   if (job.validationStatus === "draft") return "draft";
-  if (warnings.some(hasMissingPlanningInfo)) return "needs_planning";
   if (job.validationStatus === "ready_to_plan") return "ready_to_plan";
   return "ready_to_plan";
 }
@@ -1336,6 +1341,7 @@ function AssignDrawer({
   const driverOnOtherJob = driverId
     ? openOthers.find((ctx) => ctx.job.assignedDriverId === Number(driverId))
     : null;
+  const removingDriver = context.job.assignedDriverId != null && !driverId;
   const trailerOnOtherJob = trailerReg.trim() && !linkedLoadedTrailer
     ? openOthers.find((ctx) => ctx.job.assignedTrailer?.toUpperCase() === trailerReg.trim().toUpperCase())
     : null;
@@ -1347,8 +1353,11 @@ function AssignDrawer({
     assignedTrailer: trailerReg,
   };
   const warnings = buildWarnings(context.job, drivers, units, trailers, assignment);
-  const nonInfoWarnings = warnings.filter((w) => w.level !== "info").filter((w) => w.type !== "no_unit"); // no_unit not a hard block — unit is on driver
-  const hardBlocked = warnings.some((w) => ["no_driver", "driver_unavailable"].includes(w.type));
+  const nonInfoWarnings = warnings
+    .filter((w) => w.level !== "info")
+    .filter((w) => w.type !== "no_unit")
+    .filter((w) => !(removingDriver && w.type === "no_driver"));
+  const hardBlocked = warnings.some((w) => w.type === "driver_unavailable") || (!driverId && !removingDriver);
   const needsReason = nonInfoWarnings.length > 0 && !hardBlocked;
   const selectedTrailer = selectedTrailerForJob(context.job, trailers, assignment);
 
@@ -1378,6 +1387,7 @@ function AssignDrawer({
         // Unit is carried from driver — pass their defaultTruckReg so it's recorded on the job
         assignedTruck:   selectedDriver?.defaultTruckReg ?? "",
         assignedTrailer: trailerReg.trim(),
+        overrideReason:  reason.trim() || (removingDriver ? "Driver removed by planner. Job needs replanning." : undefined),
         ...(stopTimesPayload.length > 0 ? { stopTimes: stopTimesPayload } : {}),
       });
       await onSaved();
@@ -1465,7 +1475,7 @@ function AssignDrawer({
             <div className="text-xs font-bold uppercase tracking-wide text-muted">Driver</div>
             <div>
               <select className="input" value={driverId} onChange={(event) => setDriverId(event.target.value)}>
-                <option value="">— No driver —</option>
+                <option value="">No driver — needs replanning</option>
                 {drivers.map((driver) => {
                   const onOther = openOthers.find((ctx) => ctx.job.assignedDriverId === driver.id);
                   return (
@@ -1486,6 +1496,11 @@ function AssignDrawer({
               {driverOnOtherJob && (
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   ⚠ This driver is currently on <strong>{driverOnOtherJob.route}</strong> (Job #{driverOnOtherJob.job.id}). Saving will move them to this job.
+                </div>
+              )}
+              {removingDriver && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Removing the driver will clear the unit and put this job back into Needs planning. Any linked or typed trailer stays on the job.
                 </div>
               )}
             </div>
@@ -1583,7 +1598,9 @@ function AssignDrawer({
         <div className="border-t border-border p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted">
-              {driverOnOtherJob || trailerOnOtherJob
+              {removingDriver
+                ? "This job will be unassigned and flagged for planning."
+                : driverOnOtherJob || trailerOnOtherJob
                 ? "Driver/trailer will be swapped from the other job on save."
                 : "Changes apply immediately on save."}
             </p>
@@ -1595,7 +1612,7 @@ function AssignDrawer({
                 onClick={save}
                 className="btn btn-primary"
               >
-                {saving ? "Saving…" : (driverOnOtherJob || trailerOnOtherJob) ? "Swap & save" : "Save allocation"}
+                {saving ? "Saving…" : removingDriver ? "Remove driver" : (driverOnOtherJob || trailerOnOtherJob) ? "Swap & save" : "Save allocation"}
               </button>
             </div>
           </div>
@@ -2227,8 +2244,36 @@ export default function DashboardPage() {
 
             {filteredContexts.length === 0 && (
               <div className="card p-8 text-center">
-                <div className="text-sm font-bold text-primary">No dashboard jobs match these filters</div>
-                <div className="mt-1 text-sm text-muted">Try clearing filters or choosing another planning date.</div>
+                <div className="text-sm font-bold text-primary">
+                  {contexts.length ? "Jobs are loaded but hidden by filters" : "No dashboard jobs loaded"}
+                </div>
+                <div className="mt-1 text-sm text-muted">
+                  {contexts.length
+                    ? `${contexts.length} job${contexts.length > 1 ? "s are" : " is"} available in this dashboard range. Clear filters or choose a status like Draft/Completed to show hidden work.`
+                    : "Try another planning date range or refresh after the API restarts."}
+                </div>
+                {contexts.length > 0 && (
+                  <div className="mt-4 flex justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter("default");
+                        setCustomerFilter("all");
+                        setVehicleFilter("all");
+                        setDriverFilter("all");
+                        resetToggles();
+                      }}
+                      className="btn btn-outline text-sm"
+                    >
+                      Clear filters
+                    </button>
+                    {contexts.some((context) => context.status === "draft") && (
+                      <button type="button" onClick={() => setStatusFilter("draft")} className="btn btn-outline text-sm">
+                        Show drafts
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

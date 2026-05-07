@@ -24,7 +24,7 @@ import {
   type StructuredLoadDetailsInput,
 } from "../services/jobValidation.js";
 import { scoreStructuredJob } from "../services/jobQuality.js";
-import { ALLOWED_JOB_TRANSITIONS } from "../sync/sync.constants.js";
+import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES } from "../sync/sync.constants.js";
 
 const EVENT_TYPE_MAP: Record<string, string> = {
   in_progress:     "started",
@@ -50,6 +50,13 @@ function toNullableDate(value: string | Date | null | undefined): Date | null {
 function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | undefined): boolean {
   if (!loadDetails) return false;
   return Object.values(loadDetails).some(v => v !== undefined && v !== null && v !== "");
+}
+
+function appendPlannerReason(existing: string, reason: string): string {
+  const cleanReason = reason.trim();
+  if (!cleanReason) return existing;
+  const stamp = new Date().toISOString();
+  return [existing?.trim(), `[Planner allocation ${stamp}] ${cleanReason}`].filter(Boolean).join("\n");
 }
 
 async function findInvalidStopLocationId(
@@ -980,21 +987,58 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── DELETE /jobs/:id ──────────────────────────────────────────────────────
   app.delete("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
-    const { companyId } = request.user!;
+    const { companyId, userId } = request.user!;
 
     const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (job.status === "cancelled") return reply.status(204).send();
+
+    const loadedTrailer = await prisma.fleetTrailer.findFirst({
+      where: { companyId, linkedJobId: id, status: "loaded" },
+      select: { registration: true },
+    });
+    if (loadedTrailer) {
+      return reply.status(409).send({
+        error: "Cannot delete a job with a loaded linked trailer",
+        message: `Loaded trailer ${loadedTrailer.registration} is still linked to this job. Replan or unload it before deleting the job.`,
+      });
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.fleetTrailer.updateMany({
         where: { companyId, linkedJobId: id },
         data:  { linkedJobId: null },
       });
-      await tx.jobExecutionEvent.deleteMany({ where: { jobId: id, companyId } });
-      await tx.jobAudit.deleteMany({ where: { jobId: id, companyId } });
-      await tx.jobStop.deleteMany({ where: { jobId: id, companyId } });
-      await tx.loadDetails.deleteMany({ where: { jobId: id, companyId } });
-      await tx.plannedJob.delete({ where: { id } });
+      await tx.plannedJob.update({
+        where: { id },
+        data: {
+          status:           "cancelled",
+          assignedDriverId: null,
+          assignedTruck:    "",
+          plannerNotes:     appendPlannerReason(job.plannerNotes, "Job deleted by planner. Record kept as cancelled for audit and reporting."),
+        },
+      });
+      await tx.jobAudit.create({
+        data: {
+          companyId,
+          jobId:     id,
+          changedBy: userId,
+          action:    "deleted",
+          field:     "job",
+          oldValue:  {
+            status:           job.status,
+            assignedDriverId: job.assignedDriverId,
+            assignedTruck:    job.assignedTruck,
+            assignedTrailer:  job.assignedTrailer,
+          },
+          newValue:  {
+            status:           "cancelled",
+            assignedDriverId: null,
+            assignedTruck:    "",
+            assignedTrailer:  job.assignedTrailer,
+          },
+        },
+      });
     });
 
     return reply.status(204).send();
@@ -1003,11 +1047,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── PATCH /jobs/:id/allocate — planner swaps driver / truck / trailer + edits stop timing ──
   app.patch("/jobs/:id/allocate", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id        = parseInt((request.params as { id: string }).id, 10);
-    const { companyId, id: userId } = request.user!;
+    const { companyId, userId } = request.user!;
     const body = request.body as {
       assignedDriverId?: number | null;
       assignedTruck?:    string;
       assignedTrailer?:  string;
+      overrideReason?:   string;
       stopTimes?: {
         stopId:                    number;
         bookedTime?:               string | null;
@@ -1019,32 +1064,92 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.plannedJob.findFirst({ where: { id, companyId }, include: { stops: true } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
-    // A unit cannot be assigned without a driver
+    const overrideReason = typeof body.overrideReason === "string" ? body.overrideReason.trim() : "";
+
+    // A unit cannot be assigned without a driver. If the planner is removing the
+    // driver, the unit is cleared automatically so the job returns to planning.
     const effectiveDriverId = body.assignedDriverId !== undefined ? body.assignedDriverId : job.assignedDriverId;
-    const effectiveTruck    = body.assignedTruck    !== undefined ? body.assignedTruck    : job.assignedTruck;
+    const effectiveTruck    = body.assignedTruck !== undefined
+      ? body.assignedTruck
+      : body.assignedDriverId === null
+        ? ""
+        : job.assignedTruck;
     if (effectiveTruck?.trim() && !effectiveDriverId) {
       return reply.status(400).send({ error: "A unit cannot be assigned without a driver" });
+    }
+
+    if (body.assignedDriverId !== undefined && body.assignedDriverId !== null) {
+      const driver = await prisma.driverProfile.findFirst({
+        where: { id: body.assignedDriverId, companyId, status: "active" },
+      });
+      if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
     }
 
     await prisma.$transaction(async (tx) => {
       // If swapping driver — remove from any other open job first
       if (body.assignedDriverId !== undefined && body.assignedDriverId !== null) {
-        await tx.plannedJob.updateMany({
+        const displacedJobs = await tx.plannedJob.findMany({
           where: {
             companyId,
             assignedDriverId: body.assignedDriverId,
             id: { not: id },
             status: { notIn: ["completed", "cancelled"] },
           },
-          data: { assignedDriverId: null },
+          select: {
+            id:               true,
+            assignedDriverId: true,
+            assignedTruck:    true,
+            assignedTrailer:  true,
+            plannerNotes:     true,
+          },
         });
+        for (const displacedJob of displacedJobs) {
+          await tx.plannedJob.update({
+            where: { id: displacedJob.id },
+            data: {
+              assignedDriverId: null,
+              assignedTruck:    "",
+              plannerNotes:     appendPlannerReason(
+                displacedJob.plannerNotes,
+                `Driver removed because they were reassigned to job #${id}. Job needs replanning.`,
+              ),
+            },
+          });
+          await tx.jobAudit.create({
+            data: {
+              companyId,
+              jobId:     displacedJob.id,
+              changedBy: userId,
+              action:    "updated",
+              field:     "allocation",
+              oldValue:  {
+                assignedDriverId: displacedJob.assignedDriverId,
+                assignedTruck:    displacedJob.assignedTruck,
+                assignedTrailer:  displacedJob.assignedTrailer,
+              },
+              newValue:  {
+                assignedDriverId: null,
+                assignedTruck:    "",
+                assignedTrailer:  displacedJob.assignedTrailer,
+                reason:           `Driver reassigned to job #${id}`,
+              },
+            },
+          });
+        }
       }
 
       // Update job-level allocation fields
       const updateData: Record<string, unknown> = {};
       if (body.assignedDriverId !== undefined) updateData.assignedDriverId = body.assignedDriverId;
       if (body.assignedTruck    !== undefined) updateData.assignedTruck    = body.assignedTruck;
+      else if (body.assignedDriverId === null) updateData.assignedTruck    = "";
       if (body.assignedTrailer  !== undefined) updateData.assignedTrailer  = body.assignedTrailer;
+      if (overrideReason || body.assignedDriverId === null) {
+        updateData.plannerNotes = appendPlannerReason(
+          job.plannerNotes,
+          overrideReason || "Driver removed by planner. Job needs replanning.",
+        );
+      }
 
       if (Object.keys(updateData).length > 0) {
         await tx.plannedJob.update({ where: { id }, data: updateData });
@@ -1074,7 +1179,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           action:    "updated",
           field:     "allocation",
           oldValue:  { assignedDriverId: job.assignedDriverId, assignedTruck: job.assignedTruck, assignedTrailer: job.assignedTrailer },
-          newValue:  updateData,
+          newValue:  JSON.parse(JSON.stringify(updateData)) as Prisma.InputJsonValue,
         },
       });
     });
@@ -1113,6 +1218,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       }
     }
 
+    const clientEventId = body.clientEventId?.trim() || `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const duplicateEvent = await prisma.jobExecutionEvent.findUnique({
+      where: { companyId_clientEventId: { companyId, clientEventId } },
+    });
+    if (duplicateEvent) {
+      return reply.send({ status: job.status, id, duplicate: true });
+    }
+
     const allowed = ALLOWED_JOB_TRANSITIONS[job.status] ?? [];
     if (!allowed.includes(body.status)) {
       return reply.status(400).send({
@@ -1134,9 +1247,27 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     let clientTs = new Date();
     if (body.clientTimestamp) {
       const parsedClientTs = new Date(body.clientTimestamp);
-      if (!isNaN(parsedClientTs.getTime())) {
-        clientTs = parsedClientTs;
+      const parsedTime = parsedClientTs.getTime();
+      if (Number.isNaN(parsedTime)) {
+        return reply.status(400).send({
+          error: "BAD_REQUEST",
+          message: "clientTimestamp must be a valid ISO date",
+        });
       }
+      const now = Date.now();
+      if (now - parsedTime > SYNC_REVIEW_RULES.MAX_EVENT_AGE_MS) {
+        return reply.status(400).send({
+          error: "BAD_REQUEST",
+          message: "clientTimestamp is older than 7 days",
+        });
+      }
+      if (parsedTime - now > SYNC_REVIEW_RULES.MAX_FUTURE_DRIFT_MS) {
+        return reply.status(400).send({
+          error: "BAD_REQUEST",
+          message: "clientTimestamp is more than 1 hour in the future",
+        });
+      }
+      clientTs = parsedClientTs;
     }
 
     if (
@@ -1186,7 +1317,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           driverId:        userId,
           eventType:       EVENT_TYPE_MAP[body.status] ?? "note_added",
           note:            body.note ?? "",
-          clientEventId:   `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          clientEventId,
           clientTimestamp: clientTs,
           gpsLat:          body.gpsLat,
           gpsLng:          body.gpsLng,
