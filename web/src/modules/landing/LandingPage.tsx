@@ -133,19 +133,27 @@ export default function LandingPage() {
       </section>
 
       {/* ── REPLACE THESE ── */}
-      <section className="bg-slate-800 py-10">
+      <section className="bg-slate-900 py-14">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <p className="text-center text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">
-            LogisticBay replaces
+          <p className="text-center text-white text-lg font-black uppercase tracking-widest mb-2">
+            LogisticBay <span className="text-red-400">replaces</span>
           </p>
+          <p className="text-center text-slate-400 text-sm mb-8">Stop patching it together. Replace the mess with one platform.</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {PAIN_POINTS.map(p => (
-              <div key={p.old} className="flex flex-col items-center gap-2 bg-slate-700/50 rounded-xl px-4 py-5 text-center">
-                <span className="text-2xl opacity-60">{p.icon}</span>
-                <span className="text-sm text-slate-400 line-through">{p.old}</span>
+              <div key={p.old} className="relative flex flex-col items-center gap-3 bg-red-950/40 border border-red-800/40 rounded-2xl px-4 py-6 text-center group hover:border-red-600/60 transition-colors">
+                {/* big X badge */}
+                <div className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/40">
+                  <span className="text-white text-xs font-black leading-none">✕</span>
+                </div>
+                <span className="text-3xl grayscale group-hover:grayscale-0 transition-all duration-200">{p.icon}</span>
+                <span className="text-sm font-semibold text-red-300 line-through decoration-red-500 decoration-2">{p.old}</span>
               </div>
             ))}
           </div>
+          <p className="text-center text-slate-500 text-xs mt-6 tracking-wide">
+            ↑ These are gone. One platform does it all.
+          </p>
         </div>
       </section>
 
