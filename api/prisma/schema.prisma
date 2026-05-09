@@ -11,7 +11,7 @@ model Company {
   id                           Int      @id @default(autoincrement())
   name                         String
   slug                         String   @unique
-  ticker                       String   @unique
+  ticker                       String?  @unique
   nextJobSequence              Int      @default(1)
   jobSequenceYear              Int      @default(2026)
   status                       String   @default("trial")

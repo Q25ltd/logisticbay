@@ -1,5 +1,8 @@
--- Migration: Add company ticker (required), job sequence counters, and job reference
--- Idempotent: uses IF NOT EXISTS / IF EXISTS throughout.
+-- Migration: Add company ticker, job sequence counters, and job reference
+-- Idempotent: uses IF NOT EXISTS throughout.
+-- NOTE: ticker stays nullable at DB level here.
+-- Existing companies are backfilled with a safe temp ticker.
+-- A follow-up migration will enforce NOT NULL once all rows have a value.
 
 -- ── Company: nextJobSequence and jobSequenceYear ──────────────────────────────
 
@@ -9,9 +12,9 @@ ALTER TABLE "Company"
 ALTER TABLE "Company"
   ADD COLUMN IF NOT EXISTS "jobSequenceYear" INTEGER NOT NULL DEFAULT 2026;
 
--- ── Company: make ticker NOT NULL ─────────────────────────────────────────────
--- ticker already exists as nullable TEXT UNIQUE.
--- Backfill any existing companies with a safe temporary ticker derived from slug.
+-- ── Company: backfill ticker for existing companies ───────────────────────────
+-- ticker column already exists as nullable TEXT UNIQUE.
+-- Generate a safe unique temp ticker from the company slug for any NULL rows.
 
 DO $$
 DECLARE
@@ -20,7 +23,6 @@ DECLARE
   cand    TEXT;
   suffix  INT;
 BEGIN
-  -- Pass 1: generate a candidate from slug letters
   FOR rec IN SELECT id, slug FROM "Company" WHERE ticker IS NULL LOOP
     base_t := UPPER(REGEXP_REPLACE(rec.slug, '[^A-Za-z]', '', 'g'));
     base_t := SUBSTRING(base_t, 1, 4);
@@ -28,7 +30,6 @@ BEGIN
       base_t := 'CO';
     END IF;
 
-    -- Find a unique candidate
     cand   := base_t;
     suffix := 1;
     WHILE EXISTS (SELECT 1 FROM "Company" WHERE ticker = cand) LOOP
@@ -40,15 +41,11 @@ BEGIN
   END LOOP;
 END $$;
 
--- Now make ticker NOT NULL (safe — every row has a value)
-ALTER TABLE "Company" ALTER COLUMN ticker SET NOT NULL;
-
 -- ── PlannedJob: jobReference ──────────────────────────────────────────────────
 
 ALTER TABLE "PlannedJob"
   ADD COLUMN IF NOT EXISTS "jobReference" TEXT;
 
--- Composite unique index (NULLs are not considered equal, so drafts with NULL are fine)
 DO $$
 BEGIN
   IF NOT EXISTS (
