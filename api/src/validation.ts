@@ -44,6 +44,10 @@ export function validateLogin(body: LoginBody): ValidationResult {
   return ok(errors);
 }
 
+const RESERVED_TICKERS = new Set([
+  "ADMIN", "API", "APP", "NULL", "ROOT", "SYSTEM", "TEST", "USER", "JOB", "DRAFT",
+]);
+
 export function validateRegisterCompany(body: RegisterCompanyBody): ValidationResult {
   const errors: string[] = [];
   requireString(body.companyName, "companyName", errors);
@@ -51,6 +55,16 @@ export function validateRegisterCompany(body: RegisterCompanyBody): ValidationRe
   requireString(body.email,       "email",       errors);
   requireStringMinLength(body.password, "password", 8, errors);
   if (body.password !== body.confirmPassword) errors.push("passwords do not match");
+
+  const ticker = typeof body.ticker === "string" ? body.ticker.trim().toUpperCase() : "";
+  if (!ticker) {
+    errors.push("ticker is required");
+  } else if (!/^[A-Z]{2,5}$/.test(ticker)) {
+    errors.push("Ticker must be 2–5 letters only, for example LGB.");
+  } else if (RESERVED_TICKERS.has(ticker)) {
+    errors.push("This ticker is reserved. Please choose another one.");
+  }
+
   return ok(errors);
 }
 

@@ -11,7 +11,9 @@ model Company {
   id                           Int      @id @default(autoincrement())
   name                         String
   slug                         String   @unique
-  ticker                       String?  @unique
+  ticker                       String   @unique
+  nextJobSequence              Int      @default(1)
+  jobSequenceYear              Int      @default(2026)
   status                       String   @default("trial")
   reportEmail                  String?
   reportEmailEnabled           Boolean  @default(true)
@@ -235,6 +237,7 @@ model PlannedJob {
   dropoffLocationId    Int?
   pickupTextSnapshot   String    @default("")
   dropoffTextSnapshot  String    @default("")
+  jobReference         String?
   referenceNumber      String    @default("")
   materialType         String    @default("")
   quantityExpected     String    @default("")
@@ -298,12 +301,14 @@ model PlannedJob {
   loadDetails     LoadDetails?
   audits          JobAudit[]
 
+  @@unique([companyId, jobReference])
   @@index([companyId, plannedDate])
   @@index([companyId, status])
   @@index([companyId, assignedDriverId])
   @@index([companyId, customerId])
   @@index([companyId, updatedAt])
   @@index([companyId, validationStatus])
+  @@index([companyId, jobReference])
 }
 
 model JobStop {

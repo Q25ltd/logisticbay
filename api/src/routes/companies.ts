@@ -121,15 +121,32 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (existing) return reply.status(409).send({ error: "Email already registered" });
 
-    let slug = slugify(body.companyName.trim());
-    const slugExists = await prisma.company.findUnique({ where: { slug } });
-    if (slugExists) slug = `${slug}-${Date.now()}`;
+    const companyNameTrimmed = body.companyName.trim();
+    const nameExists = await prisma.company.findFirst({ where: { name: { equals: companyNameTrimmed, mode: "insensitive" } } });
+    if (nameExists) return reply.status(409).send({ error: "A company with this name is already registered. Please use a different name.", field: "companyName" });
+
+    const ticker = body.ticker.trim().toUpperCase();
+    const tickerExists = await prisma.company.findUnique({ where: { ticker } });
+    if (tickerExists) return reply.status(409).send({ error: "This ticker is already taken. Please choose another one.", field: "ticker" });
+
+    let slug = slugify(companyNameTrimmed);
+    let slugSuffix = 2;
+    while (await prisma.company.findUnique({ where: { slug } })) {
+      slug = `${slugify(companyNameTrimmed)}-${slugSuffix++}`;
+    }
 
     const passwordHash = await bcrypt.hash(body.password, 12);
 
     const result = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
-        data: { name: body.companyName.trim(), slug, status: "trial" },
+        data: {
+          name:            companyNameTrimmed,
+          slug,
+          ticker,
+          nextJobSequence: 1,
+          jobSequenceYear: new Date().getFullYear(),
+          status:          "trial",
+        },
       });
 
       const user = await tx.user.create({

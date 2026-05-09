@@ -89,6 +89,11 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete }: {
         <div className="text-xs text-muted">→ {firstStopText(job, "dropoff")}</div>
       </td>
       <td className="px-4 py-3 text-sm text-muted">{job.assignedDriver?.displayName ?? "—"}</td>
+      <td className="px-4 py-3 text-sm font-mono">
+        {job.jobReference
+          ? <span className="text-primary font-semibold">{job.jobReference}</span>
+          : <span className="text-muted italic text-xs">Assigned when ready</span>}
+      </td>
       <td className="px-4 py-3 text-sm text-muted">{job.referenceNumber || "—"}</td>
       <td className="px-4 py-3 text-sm text-muted">
         <div>{jobMaterial(job)}</div>
@@ -288,7 +293,7 @@ export default function JobsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    {["Date","Route","Driver","Reference","Material","Status","Last Update","Actions"].map(h => (
+                    {["Date","Route","Driver","Job Ref","Cust Ref","Material","Status","Last Update","Actions"].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -327,7 +332,10 @@ export default function JobsPage() {
                     {job.plannedDate && <span>📅 {fmt(job.plannedDate)}</span>}
                     {job.assignedDriver && <span>👤 {job.assignedDriver.displayName}</span>}
                     {jobMaterial(job) !== "—" && <span>📦 {jobMaterial(job)}</span>}
-                    {job.referenceNumber && <span>#{job.referenceNumber}</span>}
+                    {job.jobReference
+                      ? <span className="font-mono font-semibold text-primary">{job.jobReference}</span>
+                      : <span className="italic text-muted">Assigned when ready</span>}
+                    {job.referenceNumber && <span className="text-muted">#{job.referenceNumber}</span>}
                   </div>
                   <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
                     {canProgress && nextStatus && (

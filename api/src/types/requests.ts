@@ -27,6 +27,7 @@ export interface ChangePasswordBody {
 
 export interface RegisterCompanyBody {
   companyName:     string;
+  ticker:          string;
   name:            string;
   email:           string;
   password:        string;

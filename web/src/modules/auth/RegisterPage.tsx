@@ -6,10 +6,17 @@ import { Input } from "../../components/Input";
 import { Alert } from "../../components/Alert";
 
 export default function RegisterPage({ onLogin }: { onLogin: () => void }) {
-  const [form, setForm] = useState({ companyName:"", name:"", email:"", password:"", confirmPassword:"" });
+  const [form, setForm] = useState({
+    companyName: "", ticker: "", name: "", email: "", password: "", confirmPassword: "",
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [f]: e.target.value }));
+
+  const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(p => ({ ...p, [f]: e.target.value }));
+
+  const setTicker = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(p => ({ ...p, ticker: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") }));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(""); setLoading(true);
@@ -31,6 +38,15 @@ export default function RegisterPage({ onLogin }: { onLogin: () => void }) {
           {error && <Alert type="error" message={error} />}
           <form onSubmit={handleSubmit}>
             <Input label="Company Name" value={form.companyName} onChange={set("companyName")} placeholder="Acme Haulage Ltd" required />
+            <Input
+              label="Company Ticker"
+              value={form.ticker}
+              onChange={setTicker}
+              placeholder="Example: LGB"
+              maxLength={5}
+              hint="Used to create job reference numbers, for example LGB-26-000001."
+              required
+            />
             <Input label="Your Name" value={form.name} onChange={set("name")} placeholder="John Smith" required />
             <Input label="Email" type="email" value={form.email} onChange={set("email")} placeholder="john@acme.com" required />
             <div className="grid grid-cols-2 gap-3">

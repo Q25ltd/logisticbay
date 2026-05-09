@@ -25,6 +25,7 @@ import {
 } from "../services/jobValidation.js";
 import { scoreStructuredJob } from "../services/jobQuality.js";
 import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES } from "../sync/sync.constants.js";
+import { generateJobReference } from "../lib/jobReference.js";
 
 const EVENT_TYPE_MAP: Record<string, string> = {
   in_progress:     "started",
@@ -484,11 +485,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
 
     const job = await prisma.$transaction(async (tx) => {
+      const jobReference = saveMode === "ready_to_plan"
+        ? await generateJobReference(companyId, tx)
+        : null;
+
       const created = await tx.plannedJob.create({
         data: {
           companyId,
           customerId,
           customerName,
+          jobReference,
           templateId:            body.templateId ?? null,
           assignedDriverId:      body.assignedDriverId ?? null,
           createdByUserId:       userId,
@@ -809,6 +815,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Generate job reference if this is the first time the job becomes ready_to_plan
+      const jobReference = (saveMode === "ready_to_plan" && !job.jobReference)
+        ? await generateJobReference(companyId, tx)
+        : undefined; // undefined = don't touch existing value
+
       await tx.jobStop.deleteMany({ where: { jobId: id, companyId } });
 
       if (stops.length > 0) {
@@ -927,6 +938,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return tx.plannedJob.update({
         where: { id },
         data: {
+          ...(jobReference !== undefined ? { jobReference } : {}),
           customerId:            effectiveCustomerId ?? null,
           customerName:  patchCustomerName,
           pickupLocationId:      firstPickup?.savedLocationId ?? job.pickupLocationId,

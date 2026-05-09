@@ -18,6 +18,7 @@ export const ChangePasswordSchema = z.object({
 
 export const RegisterCompanySchema = z.object({
   companyName:     z.string().min(1).max(200),
+  ticker:          z.string().min(2).max(5).regex(/^[A-Z]{2,5}$/, "Ticker must be 2–5 letters only, for example LGB."),
   name:            z.string().min(1).max(200),
   email:           z.string().email(),
   password:        z.string().min(8, "Password must be at least 8 characters"),

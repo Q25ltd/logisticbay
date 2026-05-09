@@ -130,6 +130,7 @@ export interface PlannedJob {
   customerId?: number | null;
   customerName?: string;
   customer?: Customer | null;
+  jobReference?: string | null;
   plannedDate: string | null; pickupTextSnapshot: string; dropoffTextSnapshot: string;
   referenceNumber: string; materialType: string; quantityExpected: string;
   quantityUnit: string; plannerNotes: string;

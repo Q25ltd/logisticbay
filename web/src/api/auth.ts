@@ -21,7 +21,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function registerCompany(form: {
-  companyName: string; name: string; email: string; password: string; confirmPassword: string;
+  companyName: string; ticker: string; name: string; email: string; password: string; confirmPassword: string;
 }) {
   const data = await api.post<AuthResponse>("/auth/register-company", form);
   storeAuthSession(data);

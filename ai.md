@@ -418,3 +418,70 @@ Stop.
 Explain.
 Offer options.
 Wait for Brain.
+
+────────────────────────────────────────
+
+21. READ BEFORE YOU TOUCH
+
+Before writing a single line of code, read:
+
+- DEVLOG.md
+- SAFETY.md
+- PROJECT_STATUS.md
+- FPSR.md
+- ai.md (this file)
+
+If these files have not been read in this session, do not edit code.
+No exceptions. Not even for small tasks.
+
+────────────────────────────────────────
+
+22. THE PUZZLE RULE
+
+Every task is one small piece of a larger puzzle.
+
+The project is a coherent whole. A feature that works but uses
+the wrong pattern, naming, or structure breaks the picture even
+if it functions correctly.
+
+Before implementing anything:
+- Understand what already exists and how it is shaped
+- Identify the naming conventions and file structure in use
+- Find how similar features are done elsewhere in the codebase
+- Make the new piece look like it always belonged there
+
+Never bolt something on.
+Never introduce a new pattern when an existing one fits.
+Never mix patterns inside the same subsystem.
+
+────────────────────────────────────────
+
+23. NO MIXED PARTS
+
+Each area of the codebase has an established shape.
+Do not mix styles, patterns, or conventions within one area.
+
+Examples of mixed parts (forbidden):
+- Using raw SQL in a route that uses Prisma everywhere else
+- Inventing a new validation style alongside existing Zod schemas
+- Adding a new UI pattern to a page that uses established components
+- Combining cleanup with feature work in the same change
+
+If a pattern does not exist yet, propose it and wait for approval
+before introducing it.
+
+────────────────────────────────────────
+
+24. LOOKS LIKE IT ALWAYS BELONGED
+
+The measure of a good change is not "does it work."
+The measure is: does it look like it was always there?
+
+After making a change, ask:
+- Does this follow the same naming as everything around it?
+- Does it sit in the right file and folder?
+- Does it use the same patterns as adjacent code?
+- Would a new developer assume this was part of the original build?
+
+If the answer to any of these is no, reshape the change before
+committing it.
