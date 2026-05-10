@@ -344,8 +344,8 @@ test("Tenant isolation — full suite", async (t) => {
         }),
       });
       if (res.statusCode === 200) {
-        const result = (JSON.parse(res.body).results ?? [])[0] as { status?: string; error?: string; needsReview?: boolean } | undefined;
-        const rejected = result?.status === "error" || result?.error || result?.needsReview;
+        const result = (JSON.parse(res.body).results ?? [])[0] as { status?: string; error?: string; failureReason?: string; needsReview?: boolean } | undefined;
+        const rejected = result?.status === "failed" || result?.status === "error" || result?.error || result?.failureReason || result?.needsReview;
         assert.ok(rejected, `BREACH: sync event for Company B job accepted without error. Result: ${JSON.stringify(result)}`);
       } else {
         assert.ok([400, 403, 404].includes(res.statusCode), `Unexpected status ${res.statusCode}: ${res.body}`);
