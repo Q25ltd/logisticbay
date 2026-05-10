@@ -229,7 +229,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── GET /request-links ─────────────────────────────────────────────────────
   app.get(
     "/request-links",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const links = await prisma.clientRequestLink.findMany({
@@ -244,7 +244,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── POST /request-links ────────────────────────────────────────────────────
   app.post<{ Body: { name: string; customerId?: number; expiresAt?: string } }>(
     "/request-links",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const userId    = req.user!.userId;
@@ -273,7 +273,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── PATCH /request-links/:id ───────────────────────────────────────────────
   app.patch<{ Params: { id: string }; Body: { name?: string; isActive?: boolean; expiresAt?: string | null } }>(
     "/request-links/:id",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const id = parseInt(req.params.id, 10);
@@ -297,7 +297,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── GET /job-requests ──────────────────────────────────────────────────────
   app.get<{ Querystring: { status?: string; page?: string } }>(
     "/job-requests",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const status    = req.query.status;
@@ -326,7 +326,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── GET /job-requests/:id ──────────────────────────────────────────────────
   app.get<{ Params: { id: string } }>(
     "/job-requests/:id",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const id = parseInt(req.params.id, 10);
@@ -347,7 +347,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── POST /job-requests (internal manual creation) ──────────────────────────
   app.post<{ Body: InternalRequestBody }>(
     "/job-requests",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const body = req.body as InternalRequestBody;
@@ -408,7 +408,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // Converts JobRequest → PlannedJob + two JobStops (pickup + delivery) + LoadDetails
   app.post<{ Params: { id: string }; Body: { plannerNotes?: string } }>(
     "/job-requests/:id/accept",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const userId    = req.user!.userId;
@@ -588,7 +588,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── POST /job-requests/:id/reject ──────────────────────────────────────────
   app.post<{ Params: { id: string }; Body: { reason: string; notes?: string } }>(
     "/job-requests/:id/reject",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const userId    = req.user!.userId;
