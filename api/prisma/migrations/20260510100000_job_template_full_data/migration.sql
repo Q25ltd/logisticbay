@@ -1,2 +1,1 @@
--- Add defaultJobData JSON column to JobTemplate for full non-variable template storage
-ALTER TABLE "JobTemplate" ADD COLUMN IF NOT EXISTS "defaultJobData" JSONB;
+-- Superseded by 20260313172724_init current-schema baseline.

@@ -1,2 +1,1 @@
--- AlterTable
-ALTER TABLE "PlannedJob" ALTER COLUMN "plannedDate" DROP NOT NULL;
+-- Superseded by 20260313172724_init current-schema baseline.

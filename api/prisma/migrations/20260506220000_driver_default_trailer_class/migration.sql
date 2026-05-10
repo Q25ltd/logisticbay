@@ -1,1 +1,1 @@
-ALTER TABLE "DriverProfile" ADD COLUMN IF NOT EXISTS "defaultTrailerClass" TEXT NOT NULL DEFAULT '';
+-- Superseded by 20260313172724_init current-schema baseline.

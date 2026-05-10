@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main, staging]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -35,11 +32,9 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: npm
@@ -49,13 +44,13 @@ jobs:
         run: npm ci --prefix api
 
       - name: Typecheck
-        run: cd api && npx tsc --noEmit
+        run: cd api && ./node_modules/.bin/tsc --noEmit
 
       - name: Check vocab sync
         run: npm run check:vocab
 
       - name: Apply migrations
-        run: cd api && npx prisma migrate deploy --schema prisma/schema.prisma
+        run: cd api && npx prisma migrate deploy
 
       - name: Run integration tests
         run: npm test --prefix api
