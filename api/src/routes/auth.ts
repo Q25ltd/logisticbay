@@ -69,7 +69,9 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
   });
 
-  app.post("/auth/refresh", async (request, reply) => {
+  app.post("/auth/refresh", {
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+  }, async (request, reply) => {
     const parsed = parseBody(RefreshSchema, request.body);
     if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
     const body = parsed.data as RefreshBody;
@@ -156,7 +158,9 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
   });
 
-  app.post("/auth/change-password", async (request, reply) => {
+  app.post("/auth/change-password", {
+    config: { rateLimit: { max: 5, timeWindow: "10 minutes" } },
+  }, async (request, reply) => {
     const auth = request.headers.authorization;
     if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
     const parsed = parseBody(ChangePasswordSchema, request.body);

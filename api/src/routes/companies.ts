@@ -107,7 +107,9 @@ function holidayDates(input: { startDate: string; endDate: string }) {
 export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /auth/register-company ────────────────────────────────────────────
-  app.post("/auth/register-company", async (request, reply) => {
+  app.post("/auth/register-company", {
+    config: { rateLimit: { max: 5, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
     const zodParsed = parseBody(RegisterCompanySchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body = zodParsed.data as RegisterCompanyBody;

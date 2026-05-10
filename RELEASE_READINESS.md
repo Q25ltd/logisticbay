@@ -131,13 +131,18 @@ Notes: 26 subtests covering all P0.6 routes in one shared-fixture suite. CI runs
   - Always call `clearQueue()` and `AsyncStorage.removeItem("shiftDraft")` on logout to prevent cross-driver leakage on shared devices.
   - Add a unit test in mobile that asserts logout aborts when queue is non-empty unless `force=true`.
 
-### [ ] P0.8 — Rate-limit `/auth/register-company`, `/auth/refresh`, `/auth/change-password`
+### [x] P0.8 — Rate-limit `/auth/register-company`, `/auth/refresh`, `/auth/change-password`
 - **Why:** `routes/companies.ts:121` is unauthenticated and has no per-route limit; refresh & change-password also have none.
 - **Acceptance:**
   - `/auth/register-company`: `{ max: 5, timeWindow: "1 hour" }` per IP.
   - `/auth/refresh`: `{ max: 30, timeWindow: "1 minute" }`.
   - `/auth/change-password`: `{ max: 5, timeWindow: "10 minutes" }`.
   - Add CAPTCHA or email-verification step on register-company before activating the company (status remains `pending` until email confirmed).
+
+Done: worktree pensive-wilbur-0a4d13
+Files: api/src/routes/auth.ts, api/src/routes/companies.ts
+Verified: tsc --noEmit exit 0
+Notes: Rate limits added via @fastify/rate-limit per-route config (plugin already registered globally in app.ts). Email verification requirement is the same scope as P1.11 — tracked there.
 
 ### [ ] P0.9 — Per-user lockout on failed logins
 - **Why:** the global limiter is per IP; a botnet can bypass.
