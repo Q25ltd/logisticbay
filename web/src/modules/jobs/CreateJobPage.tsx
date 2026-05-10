@@ -9,6 +9,7 @@ import {
   BODY_CATEGORY_OPTS, BODY_TYPE_OPTS, GVW_CLASS_OPTS,
   ONBOARD_EQUIPMENT_OPTS, DRIVER_LICENCE_OPTS, DRIVER_ENDORSEMENT_OPTS,
   TRAILER_LENGTH_OPTS, LOAD_UNITS, HANDLING_METHODS,
+  TRAILER_BODY_TYPE_VALUES, equipmentForBodyType,
 } from "./createJobConstants";
 import type { StopState } from "./createJobTypes";
 import { today, nowDisplay, makeStop, jobStopToStopState, stopComplete } from "./createJobUtils";
@@ -428,11 +429,16 @@ export default function CreateJobPage() {
   const visibleBodyTypeOptions = selectedBodyTypes.length > 0
     ? BODY_TYPE_OPTS.filter(([value]) => selectedBodyTypes.includes(value as BodyType))
     : BODY_TYPE_OPTS;
+  const trailerBodyTypeOpts = BODY_TYPE_OPTS.filter(([value]) =>
+    (TRAILER_BODY_TYPE_VALUES as readonly string[]).includes(value),
+  );
   const visibleGvwOptions = reqBodyCategory
     ? gvwForCategory(reqBodyCategory).map(g => [g.value, g.label] as [string, string])
     : GVW_CLASS_OPTS;
   const trailerRequired = reqBodyCategory ? bodyCategoryNeedsTrailer(reqBodyCategory) : false;
   const bodyTypeRequired = !!reqBodyCategory && selectedBodyTypes.length > 0 && !trailerRequired;
+  const visibleEquipmentOpts = equipmentForBodyType(reqBodyType, reqBodyCategory)
+    .map(e => [e.value, e.label] as [string, string]);
   const vehicleComplete  =
     !!reqBodyCategory &&
     (!trailerRequired || trailersAllowed.length > 0) &&
@@ -1469,7 +1475,7 @@ export default function CreateJobPage() {
                 <div>
                   <FieldLabel required>Trailer Body Type</FieldLabel>
                   <div className="flex flex-wrap gap-2 mt-1">
-                    {BODY_TYPE_OPTS.map(([key, label]) => (
+                    {trailerBodyTypeOpts.map(([key, label]) => (
                       <button key={key} type="button"
                         onClick={() => setTrailersAllowed(prev =>
                           prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]
@@ -1539,7 +1545,7 @@ export default function CreateJobPage() {
 
             <div>
               <FieldLabel>Onboard Equipment</FieldLabel>
-              <MultiCheck options={ONBOARD_EQUIPMENT_OPTS} value={reqEquipment} onChange={v => setReqEquipment(v as OnboardEquipment[])} />
+              <MultiCheck options={visibleEquipmentOpts} value={reqEquipment} onChange={v => setReqEquipment(v as OnboardEquipment[])} />
             </div>
 
             <div>

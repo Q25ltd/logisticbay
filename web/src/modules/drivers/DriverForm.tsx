@@ -4,7 +4,7 @@ import type { Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
 import { Input } from "../../components/Input";
-import { BODY_TYPES, DRIVER_ENDORSEMENTS, DRIVER_LICENCE_CLASSES } from "../../constants/vehicleTaxonomy";
+import { BODY_TYPES, DRIVER_ENDORSEMENTS, DRIVER_LICENCE_CLASSES, TRAILER_BODY_TYPE_VALUES, type BodyType } from "../../constants/vehicleTaxonomy";
 import { MultiCheck } from "../jobs/CreateJobFormComponents";
 
 export default function DriverForm({ initial, onSave, onCancel }: {
@@ -238,7 +238,7 @@ export default function DriverForm({ initial, onSave, onCancel }: {
         <div className="mt-3">
           <div className="text-sm font-semibold mb-2">Trailer types allowed</div>
           <div className="flex flex-wrap gap-2">
-            {BODY_TYPES.map((type) => (
+            {BODY_TYPES.filter(t => (TRAILER_BODY_TYPE_VALUES as readonly string[]).includes(t.value)).map((type) => (
               <label key={type.value} className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm">
                 <input type="checkbox" checked={form.trailerTypesAllowed.includes(type.value)} onChange={() => toggleList("trailerTypesAllowed", type.value)} />
                 {type.label}

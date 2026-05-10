@@ -8,6 +8,8 @@ import {
   ONBOARD_EQUIPMENT,
   SERVICE_TYPES as TAXONOMY_SERVICE_TYPES,
   TRAILER_LENGTHS,
+  TRAILER_BODY_TYPE_VALUES,
+  equipmentForBodyType,
 } from "../../constants/vehicleTaxonomy";
 
 // ── Options ───────────────────────────────────────────────────────────────────
@@ -20,6 +22,8 @@ export {
   DRIVER_LICENCE_CLASSES,
   DRIVER_ENDORSEMENTS,
   TRAILER_LENGTHS,
+  TRAILER_BODY_TYPE_VALUES,
+  equipmentForBodyType,
 };
 
 export const SERVICE_TYPES: [string, string][] = TAXONOMY_SERVICE_TYPES.map(x => [x.value, x.label]);
