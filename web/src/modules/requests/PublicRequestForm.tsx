@@ -1,10 +1,10 @@
 /**
- * Public transport request form.
- * Accessible at /request/:token — no login required.
- * Replaces phone calls, WhatsApp messages, and email chaos.
+ * Public transport request form — customer-facing, no login required.
+ * Design matches CreateJobPage exactly: same section headers, field labels,
+ * optional toggles, and card layout.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
   jobRequestsPublicApi,
@@ -14,242 +14,215 @@ import {
   type LoadDataInput,
   type SubmitRequestBody,
 } from "../../api/jobRequests";
+import {
+  FieldLabel,
+  TextField,
+  SectionHeader,
+  SectionFooter,
+  OptionalToggle,
+  Toggle,
+} from "../jobs/CreateJobFormComponents";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const LOADING_TIME_OPTS = [
-  ["15", "15 minutes"], ["30", "30 minutes"], ["45", "45 minutes"],
-  ["60", "1 hour"], ["90", "1.5 hours"], ["120", "2 hours"], ["custom", "Custom"],
+const LOADING_TIME_OPTS: [string, string][] = [
+  ["15", "15 min"], ["30", "30 min"], ["45", "45 min"],
+  ["60", "1 hour"], ["90", "1.5 hrs"], ["120", "2 hours"], ["custom", "Custom"],
 ];
 
-const LOAD_UNITS = [
+const LOAD_UNITS: [string, string][] = [
   ["pallets", "Pallets"], ["tonnes", "Tonnes"], ["kg", "Kilograms"],
   ["bags", "Bags"], ["items", "Items"], ["loads", "Loads"],
   ["litres", "Litres"], ["cubic_metres", "Cubic metres"], ["other", "Other"],
 ];
 
-// ── Pin picker component ───────────────────────────────────────────────────────
-// Simple coordinate input — lat/lng text boxes with postcode auto-lookup.
-// Phase 2 will replace this with a map picker.
+// ── Reusable time button group ─────────────────────────────────────────────────
+function TimeButtons({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {LOADING_TIME_OPTS.map(([v, l]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={
+            "px-3 py-2 rounded-xl border text-sm font-medium transition-colors " +
+            (value === v
+              ? "bg-accent text-white border-accent"
+              : "bg-white text-muted border-border hover:border-gray-400")
+          }
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Entrance pin — manual lat/lng only ────────────────────────────────────────
 function EntrancePinInput({
-  label, postcode, lat, lng,
-  onChange,
+  lat, lng, onChange,
 }: {
-  label: string;
-  postcode: string;
-  lat: number | null;
-  lng: number | null;
-  onChange: (lat: number, lng: number) => void;
+  lat: string; lng: string;
+  onChange: (lat: string, lng: string) => void;
 }) {
-  const [looking, setLooking] = useState(false);
-  const [looked, setLooked] = useState(false);
-  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-
-  async function lookupPostcode() {
-    if (!postcode.trim()) return;
-    setLooking(true);
-    try {
-      const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode.replace(/\s+/g, "").toUpperCase())}`);
-      const data = await res.json();
-      if (data.result) {
-        onChange(data.result.latitude, data.result.longitude);
-        setLooked(true);
-      }
-    } catch { /* silent */ }
-    setLooking(false);
-  }
-
   return (
     <div>
-      <div className="label" style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
-      <p className="text-xs mb-2" style={{ color: "#6b7280" }}>
-        Place the pin where the driver should enter the site: gate, yard entrance, goods-in, or security barrier.
-        <br /><em>This is NOT the postcode centre — it must be the exact truck entrance point.</em>
-      </p>
-      {lat == null || lng == null ? (
+      <FieldLabel required>Exact entrance pin — latitude / longitude</FieldLabel>
+      <div className="text-xs text-muted mb-2">
+        Enter the exact coordinates where the driver should enter the site: gate, yard entrance, goods-in door, or security barrier.
+        <br />Use Google Maps → right-click the exact point → copy coordinates.
+        <strong className="text-primary"> This must be the truck entrance, not the postcode centre.</strong>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <button
-            type="button"
-            className="btn btn-secondary text-sm"
-            onClick={lookupPostcode}
-            disabled={!postcode.trim() || looking}
-          >
-            {looking ? "Looking up…" : `Use ${postcode.trim() || "postcode"} as starting point`}
-          </button>
-          <p className="text-xs mt-1" style={{ color: "#ef4444" }}>
-            Entrance pin is required. Click to start from the postcode, then adjust coordinates manually.
-          </p>
+          <FieldLabel>Latitude</FieldLabel>
+          <input
+            className="input font-mono"
+            type="number"
+            step="0.000001"
+            placeholder="e.g. 53.483959"
+            value={lat}
+            onChange={e => onChange(e.target.value, lng)}
+          />
         </div>
-      ) : (
-        <div className="flex items-center gap-3 p-3 rounded-xl border bg-green-50 border-green-200">
-          <div className="flex-1 text-sm font-mono" style={{ color: "#0f172a" }}>
-            {lat.toFixed(6)}, {lng.toFixed(6)}
-            {looked && <span className="ml-2 text-xs text-amber-600">(postcode centre — drag to exact entrance)</span>}
-          </div>
-          <button
-            type="button"
-            className="text-xs underline"
-            style={{ color: "#6b7280" }}
-            onClick={() => onChange(0, 0)}
-          >
-            Reset
-          </button>
+        <div>
+          <FieldLabel>Longitude</FieldLabel>
+          <input
+            className="input font-mono"
+            type="number"
+            step="0.000001"
+            placeholder="e.g. -2.244644"
+            value={lng}
+            onChange={e => onChange(lat, e.target.value)}
+          />
         </div>
-      )}
-      {lat != null && lng != null && (
-        <div className="grid grid-cols-2 gap-2 mt-2">
-          <div>
-            <label className="text-xs font-medium" style={{ color: "#6b7280" }}>Latitude</label>
-            <input
-              className="input text-sm font-mono"
-              type="number"
-              step="0.000001"
-              value={lat || ""}
-              onChange={e => onChange(parseFloat(e.target.value) || 0, lng)}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium" style={{ color: "#6b7280" }}>Longitude</label>
-            <input
-              className="input text-sm font-mono"
-              type="number"
-              step="0.000001"
-              value={lng || ""}
-              onChange={e => onChange(lat, parseFloat(e.target.value) || 0)}
-            />
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
 
-// ── Section toggle ─────────────────────────────────────────────────────────────
-function OptSection({ label, children }: { label: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-3">
-      <button
-        type="button"
-        className="text-sm font-medium underline"
-        style={{ color: "#6366f1" }}
-        onClick={() => setOpen(o => !o)}
-      >
-        {open ? "▾ Hide" : "▸ Add"} {label}
-      </button>
-      {open && <div className="mt-3 space-y-3 pl-2 border-l-2 border-indigo-100">{children}</div>}
-    </div>
-  );
-}
-
-function Field({ label, required, children, hint }: {
-  label: string; required?: boolean; children: React.ReactNode; hint?: string;
-}) {
-  return (
-    <div>
-      <label className="label">
-        {label}{required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      {children}
-      {hint && <p className="text-xs mt-1" style={{ color: "#6b7280" }}>{hint}</p>}
-    </div>
-  );
-}
-
-// ── Main form ─────────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PublicRequestForm() {
   const { token } = useParams<{ token: string }>();
-  const [linkInfo, setLinkInfo]   = useState<PublicLinkInfo | null>(null);
-  const [linkError, setLinkError] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [warnings, setWarnings]   = useState<string[]>([]);
+  const [linkInfo,   setLinkInfo]   = useState<PublicLinkInfo | null>(null);
+  const [linkError,  setLinkError]  = useState("");
+  const [submitted,  setSubmitted]  = useState(false);
+  const [warnings,   setWarnings]   = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors]       = useState<string[]>([]);
+  const [errors,     setErrors]     = useState<string[]>([]);
 
-  // Contact
+  // Section collapse state
+  const [s1, setS1] = useState(false);
+  const [s2, setS2] = useState(false);
+  const [s3, setS3] = useState(false);
+  const [s4, setS4] = useState(false);
+  const [s5, setS5] = useState(false);
+  const [s6, setS6] = useState(false);
+
+  // Optional panels
+  const [showCollectionOpts,  setShowCollectionOpts]  = useState(false);
+  const [showDeliveryOpts,    setShowDeliveryOpts]    = useState(false);
+  const [showLoadOpts,        setShowLoadOpts]        = useState(false);
+  const [showNoteOpts,        setShowNoteOpts]        = useState(false);
+
+  // ── Section 1: Your details ──────────────────────────────────────────────
   const [customerCompanyName, setCustomerCompanyName] = useState("");
-  const [contactName, setContactName]   = useState("");
+  const [contactName,  setContactName]  = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
 
-  // References
+  // ── Section 2: Collection ────────────────────────────────────────────────
   const [collectionReference, setCollectionReference] = useState("");
-  const [deliveryReference,   setDeliveryReference]   = useState("");
+  const [pSiteName,   setPSiteName]   = useState("");
+  const [pUnitName,   setPUnitName]   = useState("");
+  const [pAddress1,   setPAddress1]   = useState("");
+  const [pAddress2,   setPAddress2]   = useState("");
+  const [pTownCity,   setPTownCity]   = useState("");
+  const [pCounty,     setPCounty]     = useState("");
+  const [pPostcode,   setPPostcode]   = useState("");
+  const [pLatStr,     setPLatStr]     = useState("");
+  const [pLngStr,     setPLngStr]     = useState("");
+  const [pEntrance,   setPEntrance]   = useState("");
+  const [pDate,       setPDate]       = useState("");
+  const [pEarliest,   setPEarliest]   = useState("");
+  const [pLatest,     setPLatest]     = useState("");
+  const [pLoadTime,   setPLoadTime]   = useState("30");
+  const [pLoadCustom, setPLoadCustom] = useState("");
+  const [pContact,    setPContact]    = useState("");
+  const [pPhone,      setPPhone]      = useState("");
+  const [pEmail,      setPEmail]      = useState("");
+  const [pBookingReq, setPBookingReq] = useState(false);
+  const [pBookingRef, setPBookingRef] = useState("");
+  const [pHours,      setPHours]      = useState("");
+  const [pRestrict,   setPRestrict]   = useState("");
+
+  // ── Section 3: Delivery ──────────────────────────────────────────────────
+  const [deliveryReference, setDeliveryReference] = useState("");
+  const [dSiteName,   setDSiteName]   = useState("");
+  const [dUnitName,   setDUnitName]   = useState("");
+  const [dAddress1,   setDAddress1]   = useState("");
+  const [dAddress2,   setDAddress2]   = useState("");
+  const [dTownCity,   setDTownCity]   = useState("");
+  const [dCounty,     setDCounty]     = useState("");
+  const [dPostcode,   setDPostcode]   = useState("");
+  const [dLatStr,     setDLatStr]     = useState("");
+  const [dLngStr,     setDLngStr]     = useState("");
+  const [dEntrance,   setDEntrance]   = useState("");
+  const [dDate,       setDDate]       = useState("");
+  const [dEarliest,   setDEarliest]   = useState("");
+  const [dLatest,     setDLatest]     = useState("");
+  const [dUnloadTime, setDUnloadTime] = useState("30");
+  const [dUnloadCustom, setDUnloadCustom] = useState("");
+  const [dContact,    setDContact]    = useState("");
+  const [dPhone,      setDPhone]      = useState("");
+  const [dEmail,      setDEmail]      = useState("");
+  const [dBookingReq, setDBookingReq] = useState(false);
+  const [dBookingRef, setDBookingRef] = useState("");
+  const [dHours,      setDHours]      = useState("");
+  const [dRestrict,   setDRestrict]   = useState("");
+
+  // ── Section 4: Load ──────────────────────────────────────────────────────
+  const [goodsDesc,   setGoodsDesc]   = useState("");
+  const [quantity,    setQuantity]    = useState("");
+  const [unit,        setUnit]        = useState("pallets");
+  const [otherUnit,   setOtherUnit]   = useState("");
+  const [estWeight,   setEstWeight]   = useState("");
+  const [palletCount, setPalletCount] = useState("");
+  const [hazardous,   setHazardous]   = useState(false);
+  const [adrClass,    setAdrClass]    = useState("");
+  const [tempCtrl,    setTempCtrl]    = useState(false);
+  const [tempRange,   setTempRange]   = useState("");
+  const [fragile,     setFragile]     = useState(false);
+  const [forklift,    setForklift]    = useState(false);
+  const [tailLift,    setTailLift]    = useState(false);
+  const [loadNotes,   setLoadNotes]   = useState("");
+
+  // ── Section 5: References & billing ─────────────────────────────────────
   const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
   const [billingReference,    setBillingReference]    = useState("");
   const [declaredGoodsValue,  setDeclaredGoodsValue]  = useState("");
 
-  // Pickup
-  const [pSiteName,    setPSiteName]    = useState("");
-  const [pUnitName,    setPUnitName]    = useState("");
-  const [pAddress1,    setPAddress1]    = useState("");
-  const [pAddress2,    setPAddress2]    = useState("");
-  const [pTownCity,    setPTownCity]    = useState("");
-  const [pCounty,      setPCounty]      = useState("");
-  const [pPostcode,    setPPostcode]    = useState("");
-  const [pLat,         setPLat]         = useState<number | null>(null);
-  const [pLng,         setPLng]         = useState<number | null>(null);
-  const [pEntrance,    setPEntrance]    = useState("");
-  const [pContact,     setPContact]     = useState("");
-  const [pPhone,       setPPhone]       = useState("");
-  const [pEmail,       setPEmail]       = useState("");
-  const [pBookingReq,  setPBookingReq]  = useState(false);
-  const [pBookingRef,  setPBookingRef]  = useState("");
-  const [pHours,       setPHours]       = useState("");
-  const [pRestrict,    setPRestrict]    = useState("");
-  const [pDate,        setPDate]        = useState("");
-  const [pEarliest,    setPEarliest]    = useState("");
-  const [pLatest,      setPLatest]      = useState("");
-  const [pLoadTime,    setPLoadTime]    = useState("30");
-  const [pLoadCustom,  setPLoadCustom]  = useState("");
-
-  // Delivery
-  const [dSiteName,    setDSiteName]    = useState("");
-  const [dUnitName,    setDUnitName]    = useState("");
-  const [dAddress1,    setDAddress1]    = useState("");
-  const [dAddress2,    setDAddress2]    = useState("");
-  const [dTownCity,    setDTownCity]    = useState("");
-  const [dCounty,      setDCounty]      = useState("");
-  const [dPostcode,    setDPostcode]    = useState("");
-  const [dLat,         setDLat]         = useState<number | null>(null);
-  const [dLng,         setDLng]         = useState<number | null>(null);
-  const [dEntrance,    setDEntrance]    = useState("");
-  const [dContact,     setDContact]     = useState("");
-  const [dPhone,       setDPhone]       = useState("");
-  const [dEmail,       setDEmail]       = useState("");
-  const [dBookingReq,  setDBookingReq]  = useState(false);
-  const [dBookingRef,  setDBookingRef]  = useState("");
-  const [dHours,       setDHours]       = useState("");
-  const [dRestrict,    setDRestrict]    = useState("");
-  const [dDate,        setDDate]        = useState("");
-  const [dEarliest,    setDEarliest]    = useState("");
-  const [dLatest,      setDLatest]      = useState("");
-  const [dUnloadTime,  setDUnloadTime]  = useState("30");
-  const [dUnloadCustom, setDUnloadCustom] = useState("");
-
-  // Load
-  const [goodsDesc,    setGoodsDesc]    = useState("");
-  const [quantity,     setQuantity]     = useState("");
-  const [unit,         setUnit]         = useState("pallets");
-  const [otherUnit,    setOtherUnit]    = useState("");
-  const [estWeight,    setEstWeight]    = useState("");
-  const [palletCount,  setPalletCount]  = useState("");
-  const [hazardous,    setHazardous]    = useState(false);
-  const [adrClass,     setAdrClass]     = useState("");
-  const [tempCtrl,     setTempCtrl]     = useState(false);
-  const [tempRange,    setTempRange]    = useState("");
-  const [fragile,      setFragile]      = useState(false);
-  const [forklift,     setForklift]     = useState(false);
-  const [tailLift,     setTailLift]     = useState(false);
-  const [loadNotes,    setLoadNotes]    = useState("");
-
-  // Notes
+  // ── Section 6: Notes ────────────────────────────────────────────────────
   const [driverNotes,   setDriverNotes]   = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
   const [safetyNotes,   setSafetyNotes]   = useState("");
 
-  // Load link info
+  // ── Completeness checks ──────────────────────────────────────────────────
+  const sec1Complete = !!(customerCompanyName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
+  const sec2Complete = !!(collectionReference.trim() && pSiteName.trim() && pAddress1.trim() && pTownCity.trim() && pPostcode.trim() && pDate && pEarliest && pLatest && pLatStr && pLngStr && pEntrance.trim());
+  const sec3Complete = !!(deliveryReference.trim() && dSiteName.trim() && dAddress1.trim() && dTownCity.trim() && dPostcode.trim() && dDate && dEarliest && dLatest && dLatStr && dLngStr && dEntrance.trim());
+  const sec4Complete = !!(goodsDesc.trim() && quantity && unit);
+  const sec5Complete = true; // all optional
+  const sec6Complete = true; // all optional
+
+  const sec1Started = !!(customerCompanyName || contactName || contactPhone || contactEmail);
+  const sec2Started = !!(collectionReference || pSiteName || pAddress1);
+  const sec3Started = !!(deliveryReference || dSiteName || dAddress1);
+  const sec4Started = !!(goodsDesc || quantity);
+
+  // ── Load link info ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
     jobRequestsPublicApi.getLinkInfo(token)
@@ -263,11 +236,12 @@ export default function PublicRequestForm() {
       .catch(() => setLinkError("This request link is not valid or has expired."));
   }, [token]);
 
+  // ── Submit ───────────────────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrors([]);
 
-    const pLoadMin = pLoadTime === "custom" ? parseInt(pLoadCustom, 10) : parseInt(pLoadTime, 10);
+    const pLoadMin   = pLoadTime   === "custom" ? parseInt(pLoadCustom, 10)   : parseInt(pLoadTime, 10);
     const dUnloadMin = dUnloadTime === "custom" ? parseInt(dUnloadCustom, 10) : parseInt(dUnloadTime, 10);
 
     const pickupData: PickupDataInput = {
@@ -278,19 +252,19 @@ export default function PublicRequestForm() {
       townCity:    pTownCity.trim(),
       countyRegion: pCounty.trim() || undefined,
       postcode:    pPostcode.trim(),
-      entranceLat: pLat!,
-      entranceLng: pLng!,
+      entranceLat: parseFloat(pLatStr),
+      entranceLng: parseFloat(pLngStr),
       entranceInstructions: pEntrance.trim(),
       contactName:  pContact.trim() || undefined,
-      contactPhone: pPhone.trim() || undefined,
-      contactEmail: pEmail.trim() || undefined,
+      contactPhone: pPhone.trim()   || undefined,
+      contactEmail: pEmail.trim()   || undefined,
       bookingRequired:  pBookingReq,
       bookingReference: pBookingRef.trim() || undefined,
-      openingHours:     pHours.trim() || undefined,
-      siteRestrictions: pRestrict.trim() || undefined,
-      pickupDate:    pDate,
-      earliestTime:  pEarliest,
-      latestTime:    pLatest,
+      openingHours:     pHours.trim()      || undefined,
+      siteRestrictions: pRestrict.trim()   || undefined,
+      pickupDate:   pDate,
+      earliestTime: pEarliest,
+      latestTime:   pLatest,
       estimatedLoadingMinutes: pLoadMin,
     };
 
@@ -302,16 +276,16 @@ export default function PublicRequestForm() {
       townCity:    dTownCity.trim(),
       countyRegion: dCounty.trim() || undefined,
       postcode:    dPostcode.trim(),
-      entranceLat: dLat!,
-      entranceLng: dLng!,
+      entranceLat: parseFloat(dLatStr),
+      entranceLng: parseFloat(dLngStr),
       entranceInstructions: dEntrance.trim(),
       contactName:  dContact.trim() || undefined,
-      contactPhone: dPhone.trim() || undefined,
-      contactEmail: dEmail.trim() || undefined,
+      contactPhone: dPhone.trim()   || undefined,
+      contactEmail: dEmail.trim()   || undefined,
       bookingRequired:  dBookingReq,
       bookingReference: dBookingRef.trim() || undefined,
-      openingHours:     dHours.trim() || undefined,
-      siteRestrictions: dRestrict.trim() || undefined,
+      openingHours:     dHours.trim()      || undefined,
+      siteRestrictions: dRestrict.trim()   || undefined,
       deliveryDate:  dDate,
       earliestTime:  dEarliest,
       latestTime:    dLatest,
@@ -322,8 +296,8 @@ export default function PublicRequestForm() {
       goodsDescription: goodsDesc.trim(),
       quantity:         parseFloat(quantity),
       unit:             unit === "other" ? (otherUnit.trim() || "other") : unit,
-      estimatedWeight:  estWeight ? parseFloat(estWeight) : undefined,
-      palletCount:      palletCount ? parseInt(palletCount, 10) : undefined,
+      estimatedWeight:  estWeight    ? parseFloat(estWeight)    : undefined,
+      palletCount:      palletCount  ? parseInt(palletCount, 10) : undefined,
       hazardousGoods:   hazardous,
       adrClass:         adrClass.trim() || undefined,
       temperatureControlled: tempCtrl,
@@ -342,14 +316,14 @@ export default function PublicRequestForm() {
       collectionReference: collectionReference.trim(),
       deliveryReference:   deliveryReference.trim(),
       purchaseOrderNumber: purchaseOrderNumber.trim() || undefined,
-      billingReference:    billingReference.trim() || undefined,
+      billingReference:    billingReference.trim()    || undefined,
       declaredGoodsValue:  declaredGoodsValue ? parseFloat(declaredGoodsValue) : undefined,
       pickupData,
       deliveryData,
       loadData,
-      driverVisibleNotes:  driverNotes.trim() || undefined,
+      driverVisibleNotes:  driverNotes.trim()   || undefined,
       customerNotes:       customerNotes.trim() || undefined,
-      safetyInstructions:  safetyNotes.trim() || undefined,
+      safetyInstructions:  safetyNotes.trim()   || undefined,
     };
 
     setSubmitting(true);
@@ -358,24 +332,21 @@ export default function PublicRequestForm() {
       setWarnings(result.warnings ?? []);
       setSubmitted(true);
     } catch (err: any) {
-      if (err.errors) {
-        setErrors(err.errors);
-      } else {
-        setErrors([err.message ?? "Submission failed. Please try again."]);
-      }
+      setErrors(err.errors ?? [err.message ?? "Submission failed. Please try again."]);
     } finally {
       setSubmitting(false);
     }
   }
 
-  // ── Error / loading states ───────────────────────────────────────────────
+  // ── States ───────────────────────────────────────────────────────────────
+
   if (linkError) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#f8fafc" }}>
-        <div className="text-center max-w-md">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-surface">
+        <div className="card p-8 text-center max-w-md">
           <div className="text-4xl mb-4">🔒</div>
-          <h1 className="text-xl font-bold mb-2" style={{ color: "#0f172a" }}>Link not available</h1>
-          <p className="text-sm" style={{ color: "#6b7280" }}>{linkError}</p>
+          <h1 className="text-xl font-black text-primary mb-2">Link not available</h1>
+          <p className="text-sm text-muted">{linkError}</p>
         </div>
       </div>
     );
@@ -383,32 +354,31 @@ export default function PublicRequestForm() {
 
   if (!linkInfo) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-sm" style={{ color: "#6b7280" }}>Loading…</div>
+      <div className="min-h-screen flex items-center justify-center bg-surface">
+        <div className="text-sm text-muted animate-pulse">Loading…</div>
       </div>
     );
   }
 
-  // ── Success state ────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#f8fafc" }}>
-        <div className="text-center max-w-lg">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-surface">
+        <div className="card p-8 text-center max-w-lg">
           <div className="text-5xl mb-4">✅</div>
-          <h1 className="text-2xl font-black mb-3" style={{ color: "#0f172a" }}>Request submitted</h1>
-          <p className="text-base mb-4" style={{ color: "#374151" }}>
+          <h1 className="text-2xl font-black text-primary mb-3">Request submitted</h1>
+          <p className="text-base text-secondary mb-4">
             Your transport request has been submitted to <strong>{linkInfo.companyName}</strong>.
-            Our operations team will review it and contact you if any further information is needed.
+            The operations team will review it and contact you if anything is needed.
           </p>
           {warnings.length > 0 && (
             <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-left text-sm space-y-1">
-              <div className="font-semibold text-amber-800 mb-2">⚠ Notes on your submission:</div>
-              {warnings.map((w, i) => <div key={i} className="text-amber-700">{w}</div>)}
+              <div className="font-semibold text-amber-800 mb-1">⚠ Notes on your submission:</div>
+              {warnings.map((w, i) => <div key={i} className="text-amber-700">• {w}</div>)}
             </div>
           )}
           <button
             type="button"
-            className="mt-6 btn btn-primary"
+            className="btn btn-primary mt-6"
             onClick={() => { setSubmitted(false); setErrors([]); }}
           >
             Submit another request
@@ -420,378 +390,360 @@ export default function PublicRequestForm() {
 
   // ── Form ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen" style={{ background: "#f8fafc" }}>
-      {/* Header */}
-      <div className="py-6 px-4 text-center border-b bg-white shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "#6366f1" }}>
-          Transport Request
-        </div>
-        <h1 className="text-xl font-black" style={{ color: "#0f172a" }}>{linkInfo.companyName}</h1>
-        <p className="text-sm mt-1" style={{ color: "#6b7280" }}>
-          Fill in the details below to submit a transport request.
-        </p>
+    <div className="min-h-screen bg-surface">
+      {/* Page header */}
+      <div className="bg-white border-b border-border px-4 py-5 text-center shadow-sm">
+        <div className="text-xs font-bold uppercase tracking-widest text-accent mb-1">Transport Request</div>
+        <h1 className="text-xl font-black text-primary">{linkInfo.companyName}</h1>
+        <p className="text-sm text-muted mt-1">Fill in all sections to submit a transport request.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 
-        {/* Errors */}
+        {/* Global error list */}
         {errors.length > 0 && (
-          <div className="p-4 rounded-xl bg-red-50 border border-red-200">
-            <div className="font-semibold text-red-800 mb-2">Please fix the following:</div>
+          <div className="card border-red-200 p-4">
+            <div className="font-semibold text-red-800 mb-2 text-sm">Please fix the following before submitting:</div>
             {errors.map((e, i) => <div key={i} className="text-sm text-red-700">• {e}</div>)}
           </div>
         )}
 
-        {/* ── 1. Contact ── */}
-        <div className="card p-5 space-y-4">
-          <h2 className="font-bold text-base" style={{ color: "#0f172a" }}>1. Your details</h2>
-          <Field label="Company / Organisation name" required>
-            <input className="input" value={customerCompanyName}
-              onChange={e => setCustomerCompanyName(e.target.value)} placeholder="Acme Distribution Ltd" />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Contact name" required>
-              <input className="input" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Jane Smith" />
-            </Field>
-            <Field label="Contact phone" required>
-              <input className="input" type="tel" value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="+44 7700 900123" />
-            </Field>
-          </div>
-          <Field label="Contact email" required>
-            <input className="input" type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="jane@acme.com" />
-          </Field>
-        </div>
-
-        {/* ── 2. Collection ── */}
-        <div className="card p-5 space-y-4">
-          <h2 className="font-bold text-base" style={{ color: "#0f172a" }}>2. Collection</h2>
-
-          <Field label="Collection reference" required
-            hint="Warehouse release number, booking reference, or site collection code. The driver will need this on arrival.">
-            <input className="input font-mono" value={collectionReference}
-              onChange={e => setCollectionReference(e.target.value)} placeholder="COL-2026-001234" />
-          </Field>
-
-          <Field label="Site name" required>
-            <input className="input" value={pSiteName} onChange={e => setPSiteName(e.target.value)} placeholder="Acme Warehouse — Unit 5" />
-          </Field>
-
-          <Field label="Address line 1" required>
-            <input className="input" value={pAddress1} onChange={e => setPAddress1(e.target.value)} placeholder="Industrial Estate Road" />
-          </Field>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <Field label="Town / City" required>
-                <input className="input" value={pTownCity} onChange={e => setPTownCity(e.target.value)} placeholder="Birmingham" />
-              </Field>
-            </div>
-            <Field label="Postcode" required>
-              <input className="input uppercase" value={pPostcode}
-                onChange={e => { setPPostcode(e.target.value.toUpperCase()); setPLat(null); setPLng(null); }}
-                placeholder="B1 1AA" />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Collection date" required>
-              <input className="input" type="date" value={pDate} onChange={e => setPDate(e.target.value)} />
-            </Field>
-            <Field label="Earliest time" required>
-              <input className="input" type="time" value={pEarliest} onChange={e => setPEarliest(e.target.value)} />
-            </Field>
-            <Field label="Latest time" required>
-              <input className="input" type="time" value={pLatest} onChange={e => setPLatest(e.target.value)} />
-            </Field>
-          </div>
-
-          <Field label="Estimated loading time" required>
-            <div className="flex gap-2 flex-wrap">
-              {LOADING_TIME_OPTS.map(([v, l]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setPLoadTime(v)}
-                  className={"px-3 py-1.5 rounded-lg border text-sm font-medium " +
-                    (pLoadTime === v ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-border bg-white text-slate-600 hover:border-indigo-300")}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            {pLoadTime === "custom" && (
-              <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
-                value={pLoadCustom} onChange={e => setPLoadCustom(e.target.value)} />
-            )}
-          </Field>
-
-          <EntrancePinInput
-            label="Exact entrance pin *"
-            postcode={pPostcode}
-            lat={pLat} lng={pLng}
-            onChange={(lat, lng) => { setPLat(lat === 0 && lng === 0 ? null : lat); setPLng(lat === 0 && lng === 0 ? null : lng); }}
+        {/* ── Section 1: Your details ── */}
+        <div className="card overflow-hidden">
+          <SectionHeader
+            num={1} icon="👤" title="Your details" subtitle="Company name and contact information"
+            active collapsed={s1} onToggle={() => setS1(o => !o)}
+            complete={sec1Complete} started={sec1Started}
+            summary={customerCompanyName || contactName}
           />
-
-          <Field label="Entrance instructions" required
-            hint="Gate code, security procedure, which entrance to use, barriers to be aware of.">
-            <textarea className="input" rows={3} value={pEntrance} onChange={e => setPEntrance(e.target.value)}
-              placeholder="Enter via Gate B on the left side. Intercom code 1234. Ask for goods-in." />
-          </Field>
-
-          <OptSection label="site contact details">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Contact name"><input className="input" value={pContact} onChange={e => setPContact(e.target.value)} /></Field>
-              <Field label="Contact phone"><input className="input" type="tel" value={pPhone} onChange={e => setPPhone(e.target.value)} /></Field>
-              <Field label="Contact email"><input className="input" type="email" value={pEmail} onChange={e => setPEmail(e.target.value)} /></Field>
+          {!s1 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <TextField label="Company / organisation name" required value={customerCompanyName}
+                onChange={setCustomerCompanyName} placeholder="Acme Distribution Ltd" caseRule="proper_name" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TextField label="Contact name" required value={contactName}
+                  onChange={setContactName} placeholder="Jane Smith" caseRule="proper_name" />
+                <TextField label="Contact phone" required type="tel" value={contactPhone}
+                  onChange={setContactPhone} placeholder="+44 7700 900123" />
+              </div>
+              <TextField label="Contact email" required type="email" value={contactEmail}
+                onChange={setContactEmail} placeholder="jane@acme.com" />
+              <SectionFooter complete={sec1Complete} label="Your details" onCollapse={() => setS1(true)} />
             </div>
-          </OptSection>
-
-          <OptSection label="booking & opening hours">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="pBookingReq" checked={pBookingReq} onChange={e => setPBookingReq(e.target.checked)} />
-              <label htmlFor="pBookingReq" className="text-sm cursor-pointer">Booking required before arrival</label>
-            </div>
-            {pBookingReq && (
-              <Field label="Booking reference">
-                <input className="input" value={pBookingRef} onChange={e => setPBookingRef(e.target.value)} placeholder="BKG-2026-5678" />
-              </Field>
-            )}
-            <Field label="Opening hours">
-              <input className="input" value={pHours} onChange={e => setPHours(e.target.value)} placeholder="Mon–Fri 06:00–18:00" />
-            </Field>
-          </OptSection>
-
-          <OptSection label="site restrictions or special notes">
-            <Field label="Site restrictions">
-              <textarea className="input" rows={2} value={pRestrict} onChange={e => setPRestrict(e.target.value)}
-                placeholder="Height restriction 4.0m, max 44t, no overnight parking" />
-            </Field>
-          </OptSection>
-        </div>
-
-        {/* ── 3. Delivery ── */}
-        <div className="card p-5 space-y-4">
-          <h2 className="font-bold text-base" style={{ color: "#0f172a" }}>3. Delivery</h2>
-
-          <Field label="Delivery reference" required
-            hint="Delivery booking number, purchase order, or goods-in reference. The driver will need this to unload.">
-            <input className="input font-mono" value={deliveryReference}
-              onChange={e => setDeliveryReference(e.target.value)} placeholder="DEL-2026-001234" />
-          </Field>
-
-          <Field label="Site name" required>
-            <input className="input" value={dSiteName} onChange={e => setDSiteName(e.target.value)} placeholder="Customer Distribution Centre" />
-          </Field>
-
-          <Field label="Address line 1" required>
-            <input className="input" value={dAddress1} onChange={e => setDAddress1(e.target.value)} placeholder="Logistics Park, Unit 12" />
-          </Field>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <Field label="Town / City" required>
-                <input className="input" value={dTownCity} onChange={e => setDTownCity(e.target.value)} placeholder="Manchester" />
-              </Field>
-            </div>
-            <Field label="Postcode" required>
-              <input className="input uppercase" value={dPostcode}
-                onChange={e => { setDPostcode(e.target.value.toUpperCase()); setDLat(null); setDLng(null); }}
-                placeholder="M1 1AA" />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Delivery date" required>
-              <input className="input" type="date" value={dDate} onChange={e => setDDate(e.target.value)} />
-            </Field>
-            <Field label="Earliest time" required>
-              <input className="input" type="time" value={dEarliest} onChange={e => setDEarliest(e.target.value)} />
-            </Field>
-            <Field label="Latest time" required>
-              <input className="input" type="time" value={dLatest} onChange={e => setDLatest(e.target.value)} />
-            </Field>
-          </div>
-
-          <Field label="Estimated unloading time" required>
-            <div className="flex gap-2 flex-wrap">
-              {LOADING_TIME_OPTS.map(([v, l]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setDUnloadTime(v)}
-                  className={"px-3 py-1.5 rounded-lg border text-sm font-medium " +
-                    (dUnloadTime === v ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-border bg-white text-slate-600 hover:border-indigo-300")}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            {dUnloadTime === "custom" && (
-              <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
-                value={dUnloadCustom} onChange={e => setDUnloadCustom(e.target.value)} />
-            )}
-          </Field>
-
-          <EntrancePinInput
-            label="Exact entrance pin *"
-            postcode={dPostcode}
-            lat={dLat} lng={dLng}
-            onChange={(lat, lng) => { setDLat(lat === 0 && lng === 0 ? null : lat); setDLng(lat === 0 && lng === 0 ? null : lng); }}
-          />
-
-          <Field label="Entrance instructions" required
-            hint="Gate code, security procedure, goods-in entrance, dock number.">
-            <textarea className="input" rows={3} value={dEntrance} onChange={e => setDEntrance(e.target.value)}
-              placeholder="Goods-in via roller shutters at rear. Report to warehouse office first." />
-          </Field>
-
-          <OptSection label="site contact details">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Contact name"><input className="input" value={dContact} onChange={e => setDContact(e.target.value)} /></Field>
-              <Field label="Contact phone"><input className="input" type="tel" value={dPhone} onChange={e => setDPhone(e.target.value)} /></Field>
-              <Field label="Contact email"><input className="input" type="email" value={dEmail} onChange={e => setDEmail(e.target.value)} /></Field>
-            </div>
-          </OptSection>
-
-          <OptSection label="booking & opening hours">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="dBookingReq" checked={dBookingReq} onChange={e => setDBookingReq(e.target.checked)} />
-              <label htmlFor="dBookingReq" className="text-sm cursor-pointer">Booking required before arrival</label>
-            </div>
-            {dBookingReq && (
-              <Field label="Booking reference">
-                <input className="input" value={dBookingRef} onChange={e => setDBookingRef(e.target.value)} placeholder="BKG-2026-9012" />
-              </Field>
-            )}
-            <Field label="Opening hours">
-              <input className="input" value={dHours} onChange={e => setDHours(e.target.value)} placeholder="Mon–Fri 07:00–17:00" />
-            </Field>
-          </OptSection>
-
-          <OptSection label="site restrictions or special notes">
-            <Field label="Site restrictions">
-              <textarea className="input" rows={2} value={dRestrict} onChange={e => setDRestrict(e.target.value)}
-                placeholder="FORS Silver required, max vehicle width 2.4m, no tail-lift deliveries" />
-            </Field>
-          </OptSection>
-        </div>
-
-        {/* ── 4. Load ── */}
-        <div className="card p-5 space-y-4">
-          <h2 className="font-bold text-base" style={{ color: "#0f172a" }}>4. Load details</h2>
-
-          <Field label="Description of goods" required hint="What is being transported?">
-            <textarea className="input" rows={2} value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
-              placeholder="Automotive parts — engine components, boxed" />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Quantity" required>
-              <input className="input" type="number" min="0" step="any" value={quantity}
-                onChange={e => setQuantity(e.target.value)} placeholder="12" />
-            </Field>
-            <Field label="Unit" required>
-              <select className="input" value={unit} onChange={e => setUnit(e.target.value)}>
-                {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </Field>
-          </div>
-          {unit === "other" && (
-            <Field label="Describe unit">
-              <input className="input" value={otherUnit} onChange={e => setOtherUnit(e.target.value)} placeholder="e.g. rolls" />
-            </Field>
           )}
-
-          <OptSection label="weight, dimensions &amp; special requirements">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Estimated total weight (kg)">
-                <input className="input" type="number" value={estWeight} onChange={e => setEstWeight(e.target.value)} placeholder="14000" />
-              </Field>
-              <Field label="Pallet count">
-                <input className="input" type="number" value={palletCount} onChange={e => setPalletCount(e.target.value)} placeholder="24" />
-              </Field>
-            </div>
-
-            <div className="space-y-2">
-              {[
-                [fragile, setFragile, "Fragile / handle with care"] as const,
-                [hazardous, setHazardous, "Hazardous goods (ADR)"] as const,
-                [tempCtrl, setTempCtrl, "Temperature controlled"] as const,
-                [forklift, setForklift, "Forklift required at collection"] as const,
-                [tailLift, setTailLift, "Tail lift required"] as const,
-              ].map(([val, setter, label], i) => (
-                <label key={i} className="flex items-center gap-2 cursor-pointer text-sm">
-                  <input type="checkbox" checked={val} onChange={e => (setter as any)(e.target.checked)} />
-                  {label}
-                </label>
-              ))}
-            </div>
-
-            {hazardous && (
-              <Field label="ADR class">
-                <input className="input max-w-xs" value={adrClass} onChange={e => setAdrClass(e.target.value)} placeholder="Class 3 — Flammable liquid" />
-              </Field>
-            )}
-            {tempCtrl && (
-              <Field label="Temperature range">
-                <input className="input max-w-xs" value={tempRange} onChange={e => setTempRange(e.target.value)} placeholder="2°C – 8°C" />
-              </Field>
-            )}
-
-            <Field label="Load notes">
-              <textarea className="input" rows={2} value={loadNotes} onChange={e => setLoadNotes(e.target.value)}
-                placeholder="Stacked 3 high. Do not tip. Tail lift required for unloading." />
-            </Field>
-          </OptSection>
         </div>
 
-        {/* ── 5. Commercial ── */}
-        <div className="card p-5 space-y-4">
-          <h2 className="font-bold text-base" style={{ color: "#0f172a" }}>5. References &amp; billing</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Your purchase order number"
-              hint="Required on our invoice by your finance team.">
-              <input className="input" value={purchaseOrderNumber} onChange={e => setPurchaseOrderNumber(e.target.value)} placeholder="PO-2026-12345" />
-            </Field>
-            <Field label="Billing reference / cost code">
-              <input className="input" value={billingReference} onChange={e => setBillingReference(e.target.value)} placeholder="COST-CENTRE-123" />
-            </Field>
+        {/* ── Section 2: Collection ── */}
+        <div className="card overflow-hidden">
+          <SectionHeader
+            num={2} icon="📦" title="Collection" subtitle="Where and when the driver collects the load"
+            active collapsed={s2} onToggle={() => setS2(o => !o)}
+            complete={sec2Complete} started={sec2Started}
+            summary={pSiteName ? `${pSiteName}${pDate ? " · " + pDate : ""}` : undefined}
+          />
+          {!s2 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+
+              <TextField label="Collection reference" required value={collectionReference}
+                onChange={setCollectionReference} placeholder="COL-2026-001234"
+                hint="Warehouse release number, booking ref, or site collection code. Driver needs this on arrival." />
+
+              <TextField label="Site name" required value={pSiteName}
+                onChange={setPSiteName} placeholder="Acme Warehouse — Unit 5" caseRule="proper_name" />
+              <TextField label="Address line 1" required value={pAddress1}
+                onChange={setPAddress1} placeholder="Industrial Estate Road" caseRule="proper_name" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <TextField label="Town / city" required value={pTownCity}
+                    onChange={setPTownCity} placeholder="Birmingham" caseRule="proper_name" />
+                </div>
+                <TextField label="Postcode" required value={pPostcode}
+                  onChange={v => setPPostcode(v.toUpperCase())} placeholder="B1 1AA" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <TextField label="Collection date" required type="date" value={pDate} onChange={setPDate} />
+                <TextField label="Earliest time" required type="time" value={pEarliest} onChange={setPEarliest} />
+                <TextField label="Latest time" required type="time" value={pLatest} onChange={setPLatest} />
+              </div>
+
+              <div>
+                <FieldLabel required>Estimated loading time</FieldLabel>
+                <TimeButtons value={pLoadTime} onChange={setPLoadTime} />
+                {pLoadTime === "custom" && (
+                  <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
+                    value={pLoadCustom} onChange={e => setPLoadCustom(e.target.value)} />
+                )}
+              </div>
+
+              <EntrancePinInput lat={pLatStr} lng={pLngStr}
+                onChange={(lat, lng) => { setPLatStr(lat); setPLngStr(lng); }} />
+
+              <div>
+                <FieldLabel required>Entrance instructions</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={3} value={pEntrance}
+                  onChange={e => setPEntrance(e.target.value)}
+                  placeholder="Enter via Gate B on the left. Intercom code 1234. Ask for goods-in." />
+                <div className="text-xs text-muted mt-1">Gate code, security procedure, which entrance to use, barriers to be aware of.</div>
+              </div>
+
+              <OptionalToggle open={showCollectionOpts} onToggle={() => setShowCollectionOpts(o => !o)} label="collection site details" />
+              {showCollectionOpts && (
+                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
+                  <TextField label="Unit / building name" value={pUnitName} onChange={setPUnitName} placeholder="Unit 12B" />
+                  <TextField label="Address line 2" value={pAddress2} onChange={setPAddress2} placeholder="Business Park" />
+                  <TextField label="County / region" value={pCounty} onChange={setPCounty} placeholder="West Midlands" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <TextField label="Site contact name" value={pContact} onChange={setPContact} />
+                    <TextField label="Site contact phone" type="tel" value={pPhone} onChange={setPPhone} />
+                    <TextField label="Site contact email" type="email" value={pEmail} onChange={setPEmail} />
+                  </div>
+                  <Toggle value={pBookingReq} onChange={setPBookingReq} label="Booking required before arrival" />
+                  {pBookingReq && (
+                    <TextField label="Booking reference" value={pBookingRef} onChange={setPBookingRef} placeholder="BKG-2026-5678" />
+                  )}
+                  <TextField label="Opening hours" value={pHours} onChange={setPHours} placeholder="Mon–Fri 06:00–18:00" />
+                  <div>
+                    <FieldLabel>Site restrictions</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2} value={pRestrict}
+                      onChange={e => setPRestrict(e.target.value)}
+                      placeholder="Height limit 4.0m, max 44t, no overnight parking" />
+                  </div>
+                </div>
+              )}
+
+              <SectionFooter complete={sec2Complete} label="Collection" onCollapse={() => setS2(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Section 3: Delivery ── */}
+        <div className="card overflow-hidden">
+          <SectionHeader
+            num={3} icon="🏁" title="Delivery" subtitle="Where and when the driver delivers the load"
+            active collapsed={s3} onToggle={() => setS3(o => !o)}
+            complete={sec3Complete} started={sec3Started}
+            summary={dSiteName ? `${dSiteName}${dDate ? " · " + dDate : ""}` : undefined}
+          />
+          {!s3 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+
+              <TextField label="Delivery reference" required value={deliveryReference}
+                onChange={setDeliveryReference} placeholder="DEL-2026-001234"
+                hint="Delivery booking number, PO, or goods-in reference. Driver needs this to unload." />
+
+              <TextField label="Site name" required value={dSiteName}
+                onChange={setDSiteName} placeholder="Customer Distribution Centre" caseRule="proper_name" />
+              <TextField label="Address line 1" required value={dAddress1}
+                onChange={setDAddress1} placeholder="Logistics Park, Unit 12" caseRule="proper_name" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <TextField label="Town / city" required value={dTownCity}
+                    onChange={setDTownCity} placeholder="Manchester" caseRule="proper_name" />
+                </div>
+                <TextField label="Postcode" required value={dPostcode}
+                  onChange={v => setDPostcode(v.toUpperCase())} placeholder="M1 1AA" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <TextField label="Delivery date" required type="date" value={dDate} onChange={setDDate} />
+                <TextField label="Earliest time" required type="time" value={dEarliest} onChange={setDEarliest} />
+                <TextField label="Latest time" required type="time" value={dLatest} onChange={setDLatest} />
+              </div>
+
+              <div>
+                <FieldLabel required>Estimated unloading time</FieldLabel>
+                <TimeButtons value={dUnloadTime} onChange={setDUnloadTime} />
+                {dUnloadTime === "custom" && (
+                  <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
+                    value={dUnloadCustom} onChange={e => setDUnloadCustom(e.target.value)} />
+                )}
+              </div>
+
+              <EntrancePinInput lat={dLatStr} lng={dLngStr}
+                onChange={(lat, lng) => { setDLatStr(lat); setDLngStr(lng); }} />
+
+              <div>
+                <FieldLabel required>Entrance instructions</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={3} value={dEntrance}
+                  onChange={e => setDEntrance(e.target.value)}
+                  placeholder="Goods-in via roller shutters at rear. Report to warehouse office first." />
+                <div className="text-xs text-muted mt-1">Gate code, security procedure, goods-in entrance, dock number.</div>
+              </div>
+
+              <OptionalToggle open={showDeliveryOpts} onToggle={() => setShowDeliveryOpts(o => !o)} label="delivery site details" />
+              {showDeliveryOpts && (
+                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
+                  <TextField label="Unit / building name" value={dUnitName} onChange={setDUnitName} placeholder="Unit 12B" />
+                  <TextField label="Address line 2" value={dAddress2} onChange={setDAddress2} placeholder="Business Park" />
+                  <TextField label="County / region" value={dCounty} onChange={setDCounty} placeholder="Greater Manchester" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <TextField label="Site contact name" value={dContact} onChange={setDContact} />
+                    <TextField label="Site contact phone" type="tel" value={dPhone} onChange={setDPhone} />
+                    <TextField label="Site contact email" type="email" value={dEmail} onChange={setDEmail} />
+                  </div>
+                  <Toggle value={dBookingReq} onChange={setDBookingReq} label="Booking required before arrival" />
+                  {dBookingReq && (
+                    <TextField label="Booking reference" value={dBookingRef} onChange={setDBookingRef} placeholder="BKG-2026-9012" />
+                  )}
+                  <TextField label="Opening hours" value={dHours} onChange={setDHours} placeholder="Mon–Fri 07:00–17:00" />
+                  <div>
+                    <FieldLabel>Site restrictions</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2} value={dRestrict}
+                      onChange={e => setDRestrict(e.target.value)}
+                      placeholder="FORS Silver required, max width 2.4m, no tail-lift deliveries" />
+                  </div>
+                </div>
+              )}
+
+              <SectionFooter complete={sec3Complete} label="Delivery" onCollapse={() => setS3(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Section 4: Load details ── */}
+        <div className="card overflow-hidden">
+          <SectionHeader
+            num={4} icon="🏗️" title="Load details" subtitle="What is being transported"
+            active collapsed={s4} onToggle={() => setS4(o => !o)}
+            complete={sec4Complete} started={sec4Started}
+            summary={goodsDesc ? `${goodsDesc}${quantity ? " · " + quantity + " " + unit : ""}` : undefined}
+          />
+          {!s4 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <div>
+                <FieldLabel required>Description of goods</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={2} value={goodsDesc}
+                  onChange={e => setGoodsDesc(e.target.value)}
+                  placeholder="Automotive parts — engine components, boxed" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField label="Quantity" required type="number" value={quantity}
+                  onChange={setQuantity} placeholder="12" />
+                <div>
+                  <FieldLabel required>Unit</FieldLabel>
+                  <select className="input mt-1 w-full" value={unit} onChange={e => setUnit(e.target.value)}>
+                    {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              {unit === "other" && (
+                <TextField label="Describe unit" value={otherUnit} onChange={setOtherUnit} placeholder="e.g. rolls" />
+              )}
+
+              <OptionalToggle open={showLoadOpts} onToggle={() => setShowLoadOpts(o => !o)} label="weight, dimensions & special requirements" />
+              {showLoadOpts && (
+                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="Estimated total weight (kg)" type="number" value={estWeight}
+                      onChange={setEstWeight} placeholder="14000" />
+                    <TextField label="Pallet count" type="number" value={palletCount}
+                      onChange={setPalletCount} placeholder="24" />
+                  </div>
+                  <div className="space-y-3">
+                    <Toggle value={fragile}   onChange={setFragile}   label="Fragile / handle with care" />
+                    <Toggle value={hazardous} onChange={setHazardous} label="Hazardous goods (ADR)" />
+                    <Toggle value={tempCtrl}  onChange={setTempCtrl}  label="Temperature controlled" />
+                    <Toggle value={forklift}  onChange={setForklift}  label="Forklift required at collection" />
+                    <Toggle value={tailLift}  onChange={setTailLift}  label="Tail lift required" />
+                  </div>
+                  {hazardous && (
+                    <TextField label="ADR class" value={adrClass} onChange={setAdrClass} placeholder="Class 3 — Flammable liquid" />
+                  )}
+                  {tempCtrl && (
+                    <TextField label="Temperature range" value={tempRange} onChange={setTempRange} placeholder="2°C – 8°C" />
+                  )}
+                  <div>
+                    <FieldLabel>Load notes</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2} value={loadNotes}
+                      onChange={e => setLoadNotes(e.target.value)}
+                      placeholder="Stacked 3 high. Do not tip. Tail lift required for unloading." />
+                  </div>
+                </div>
+              )}
+
+              <SectionFooter complete={sec4Complete} label="Load details" onCollapse={() => setS4(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Section 5: References & billing ── */}
+        <div className="card overflow-hidden">
+          <SectionHeader
+            num={5} icon="📄" title="References & billing" subtitle="Purchase order and billing details"
+            active collapsed={s5} onToggle={() => setS5(o => !o)}
+            complete={sec5Complete} optional
+            summary={purchaseOrderNumber || billingReference || undefined}
+          />
+          {!s5 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TextField label="Your purchase order number" value={purchaseOrderNumber}
+                  onChange={setPurchaseOrderNumber} placeholder="PO-2026-12345"
+                  hint="Required on our invoice by your finance team." />
+                <TextField label="Billing reference / cost code" value={billingReference}
+                  onChange={setBillingReference} placeholder="COST-CENTRE-123" />
+              </div>
+              <TextField label="Declared value of goods (£)" type="number" value={declaredGoodsValue}
+                onChange={setDeclaredGoodsValue} placeholder="0.00"
+                hint="For insurance purposes — not the transport charge." />
+              <SectionFooter complete={sec5Complete} label="References" onCollapse={() => setS5(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Section 6: Notes ── */}
+        <div className="card overflow-hidden">
+          <SectionHeader
+            num={6} icon="📝" title="Notes" subtitle="Instructions for the driver and any other notes"
+            active collapsed={s6} onToggle={() => setS6(o => !o)}
+            complete={sec6Complete} optional
+            summary={driverNotes ? driverNotes.slice(0, 40) + (driverNotes.length > 40 ? "…" : "") : undefined}
+          />
+          {!s6 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <div>
+                <FieldLabel>Driver notes</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={3} value={driverNotes}
+                  onChange={e => setDriverNotes(e.target.value)}
+                  placeholder="Ask for John at site office. Wear PPE — hi-vis and steel caps required." />
+                <div className="text-xs text-muted mt-1">
+                  Instructions the driver must see: access codes, procedures, what to ask for on arrival.
+                </div>
+              </div>
+
+              <OptionalToggle open={showNoteOpts} onToggle={() => setShowNoteOpts(o => !o)} label="safety & office notes" />
+              {showNoteOpts && (
+                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
+                  <div>
+                    <FieldLabel>Safety instructions</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2} value={safetyNotes}
+                      onChange={e => setSafetyNotes(e.target.value)}
+                      placeholder="COSHH data sheets provided. No open flames near load." />
+                  </div>
+                  <div>
+                    <FieldLabel>Other notes for the office</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2} value={customerNotes}
+                      onChange={e => setCustomerNotes(e.target.value)}
+                      placeholder="Please call to confirm day before. Back-up contact is Mike." />
+                  </div>
+                </div>
+              )}
+
+              <SectionFooter complete={sec6Complete} label="Notes" onCollapse={() => setS6(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Submit bar ── */}
+        <div className="card px-5 py-4 flex items-center justify-between gap-4">
+          <div className="text-sm text-muted">
+            {[sec1Complete, sec2Complete, sec3Complete, sec4Complete].filter(Boolean).length} / 4 required sections complete
           </div>
-          <Field label="Declared value of goods (£)"
-            hint="For insurance purposes — not the transport charge.">
-            <input className="input max-w-xs" type="number" min="0" step="0.01" value={declaredGoodsValue}
-              onChange={e => setDeclaredGoodsValue(e.target.value)} placeholder="0.00" />
-          </Field>
-        </div>
-
-        {/* ── 6. Notes ── */}
-        <div className="card p-5 space-y-4">
-          <h2 className="font-bold text-base" style={{ color: "#0f172a" }}>6. Notes</h2>
-
-          <Field label="Driver notes"
-            hint="Instructions the driver must see: access codes, procedures, what to ask for on arrival.">
-            <textarea className="input" rows={3} value={driverNotes} onChange={e => setDriverNotes(e.target.value)}
-              placeholder="Ask for John at site office. Wear PPE — hi-vis and steel caps required." />
-          </Field>
-
-          <OptSection label="safety instructions or other notes">
-            <Field label="Safety instructions">
-              <textarea className="input" rows={2} value={safetyNotes} onChange={e => setSafetyNotes(e.target.value)}
-                placeholder="COSHH data sheets provided. No open flames near load." />
-            </Field>
-            <Field label="Other notes for the office">
-              <textarea className="input" rows={2} value={customerNotes} onChange={e => setCustomerNotes(e.target.value)}
-                placeholder="Please call to confirm day before. Back-up contact is Mike." />
-            </Field>
-          </OptSection>
-        </div>
-
-        {/* Submit */}
-        <div className="flex justify-end pb-8">
           <button
             type="submit"
             disabled={submitting}
-            className="btn btn-primary text-base px-8 py-3"
+            className="btn btn-primary px-8"
           >
             {submitting ? "Submitting…" : "Submit transport request →"}
           </button>

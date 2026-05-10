@@ -1544,7 +1544,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // Used by the planner to see if assigning a new job would be possible.
   app.get<{ Params: { driverId: string }; Querystring: { date?: string } }>(
     "/drivers/:driverId/schedule",
-    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const companyId = req.user!.companyId;
       const driverId  = parseInt(req.params.driverId, 10);
