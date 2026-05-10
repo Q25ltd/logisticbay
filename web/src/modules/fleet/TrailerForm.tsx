@@ -8,6 +8,7 @@ import { TRAILER_STATUSES } from "./fleetConstants";
 import { statusLabel } from "./fleetUtils";
 import {
   BODY_TYPES,
+  TRAILER_BODY_TYPE_VALUES,
   TRAILER_LENGTHS,
   equipmentForTrailerType,
   type BodyType,
@@ -35,7 +36,10 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
 
+  const trailerBodyTypes = BODY_TYPES.filter(t => TRAILER_BODY_TYPE_VALUES.includes(t.value as BodyType));
   const equipmentOptions = equipmentForTrailerType(form.bodyType as BodyType | "");
+  const showDecks = ["double_deck_curtain", "double_deck_box", "car_transporter", "livestock", "fridge_multi_temp"].includes(form.bodyType);
+  const showCompartments = form.bodyType.startsWith("tanker") || form.bodyType.includes("_tanker");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -86,7 +90,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
             setForm(p => ({ ...p, bodyType: next, trailerType: next, onboardEquipment: [] }));
           }} required>
             <option value="">Select body type...</option>
-            {BODY_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {trailerBodyTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </label>
         <label className="block text-sm font-semibold">
@@ -98,7 +102,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
           </select>
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
+      <div className={`grid gap-3 mt-3 ${showDecks ? "grid-cols-2" : "grid-cols-1"}`}>
         <label className="block text-sm font-semibold">
           Trailer Length
           <select className="input mt-1 w-full" value={form.trailerLength} onChange={set("trailerLength")}>
@@ -106,15 +110,17 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
             {TRAILER_LENGTHS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
           </select>
         </label>
-        <label className="block text-sm font-semibold">
-          Decks
-          <select className="input mt-1 w-full" value={form.decks} onChange={set("decks")}>
-            <option value="1">1</option>
-            <option value="2">2</option>
-          </select>
-        </label>
+        {showDecks && (
+          <label className="block text-sm font-semibold">
+            Decks
+            <select className="input mt-1 w-full" value={form.decks} onChange={set("decks")}>
+              <option value="1">1</option>
+              <option value="2">2</option>
+            </select>
+          </label>
+        )}
       </div>
-      {(form.bodyType.startsWith("tanker") || form.bodyType.includes("_tanker")) && (
+      {showCompartments && (
         <Input
           label="Compartments"
           type="number"

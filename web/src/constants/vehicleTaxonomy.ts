@@ -15,7 +15,7 @@ export const BODY_CATEGORIES = [
 export type BodyCategory = typeof BODY_CATEGORIES[number]["value"];
 
 export const GVW_CLASSES = [
-  { value: "3.5t", label: "3.5t", applicableTo: ["van"] },
+  { value: "3.5t", label: "3.5t", applicableTo: ["van", "luton_van", "pickup"] },
   { value: "7.5t", label: "7.5t", applicableTo: ["rigid"] },
   { value: "12t", label: "12t", applicableTo: ["rigid"] },
   { value: "18t", label: "18t", applicableTo: ["rigid"] },
@@ -28,7 +28,7 @@ export type GvwClass = typeof GVW_CLASSES[number]["value"];
 export const BODY_TYPES = [
   { value: "curtain_sider", label: "Curtain sider / tautliner", group: "general" },
   { value: "double_deck_curtain", label: "Double-deck curtain", group: "general" },
-  { value: "box", label: "Box (rigid box body)", group: "general" },
+  { value: "box", label: "Box body", group: "general" },
   { value: "double_deck_box", label: "Double-deck box", group: "general" },
   { value: "panel", label: "Panel van body", group: "general" },
   { value: "luton", label: "Luton (overcab box)", group: "general" },
@@ -85,6 +85,18 @@ export const BODY_TYPES = [
   { value: "other", label: "Other (specify in notes)", group: "other" },
 ] as const;
 export type BodyType = typeof BODY_TYPES[number]["value"];
+
+export const TRAILER_BODY_TYPE_VALUES: readonly BodyType[] = [
+  "curtain_sider", "double_deck_curtain", "box", "double_deck_box", "sliding_tarp",
+  "flatbed", "dropside", "extending_flat", "step_frame", "beavertail",
+  "tipper", "bulk_tipper", "walking_floor", "ejector_trailer", "powder_tanker", "blower_tanker",
+  "tanker_food", "tanker_fuel", "tanker_chemical", "tanker_water", "tanker_vacuum", "tanker_bitumen", "tanker_other",
+  "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+  "skeletal_20", "skeletal_40", "skeletal_45", "skeletal_extending", "swap_body",
+  "low_loader", "low_loader_extending", "modular_heavy", "girder_frame",
+  "car_transporter", "boat_trailer", "livestock", "horsebox", "pole_timber", "coil_carrier", "glass_inloader",
+  "other",
+];
 
 export const BODY_TYPES_BY_CATEGORY: Record<BodyCategory, BodyType[]> = {
   van: ["panel", "luton", "box", "fridge", "insulated", "dropside", "flatbed", "tipper", "other"],
