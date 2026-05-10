@@ -1,0 +1,404 @@
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { jobsApi } from "../../api/jobs";
+import { driversApi } from "../../api/drivers";
+import type { PlannedJob, Driver } from "../../types";
+import { Badge } from "../../components/Badge";
+import { Button } from "../../components/Button";
+import { Alert } from "../../components/Alert";
+
+const fmt = (iso: string) =>
+  new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+const EVENT_LABELS: Record<string, string> = {
+  started:         "▶ Started",
+  arrived_pickup:  "📍 Arrived at pickup",
+  collected:       "✅ Collected",
+  arrived_dropoff: "📍 Arrived at dropoff",
+  completed:       "✅ Completed",
+  cancelled:       "🚫 Cancelled",
+  note_added:      "📝 Note",
+  status_override: "⚙ Status override",
+  driver_assigned: "👤 Driver assigned",
+};
+
+const STATUS_FLOW = [
+  "pending","accepted","in_progress","arrived_pickup",
+  "collected","arrived_dropoff","completed",
+] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  pending:         "Pending",
+  accepted:        "Accepted",
+  in_progress:     "In Progress",
+  arrived_pickup:  "At Pickup",
+  collected:       "Collected",
+  arrived_dropoff: "At Dropoff",
+  completed:       "Completed",
+  cancelled:       "Cancelled",
+};
+
+function AssignPanel({ job, drivers, onSaved }: {
+  job: PlannedJob; drivers: Driver[]; onSaved: () => void;
+}) {
+  const [driverId, setDriverId] = useState(job.assignedDriverId ? String(job.assignedDriverId) : "");
+  const [truck,    setTruck]    = useState(job.assignedTruck   ?? "");
+  const [trailer,  setTrailer]  = useState(job.assignedTrailer ?? "");
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
+
+  const selectedDriver = drivers.find(d => String(d.id) === driverId);
+
+  async function save() {
+    if (!driverId) { setError("Select a driver"); return; }
+    setLoading(true); setError("");
+    try {
+      await jobsApi.allocate(job.id, {
+        assignedDriverId: parseInt(driverId, 10),
+        assignedTruck:    truck.trim()   || selectedDriver?.defaultTruckReg   || "",
+        assignedTrailer:  trailer.trim() || selectedDriver?.defaultTrailerReg || "",
+      });
+      onSaved();
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  async function unassign() {
+    if (!window.confirm("Remove driver from this job?")) return;
+    setLoading(true); setError("");
+    try {
+      await jobsApi.allocate(job.id, { assignedDriverId: null });
+      onSaved();
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="card p-4">
+      <h2 className="font-bold text-primary mb-3">Driver Assignment</h2>
+      {error && <Alert type="error" message={error} />}
+      <label className="block text-sm font-semibold mb-1">Driver</label>
+      <select className="input w-full mb-3" value={driverId} onChange={e => {
+        const d = drivers.find(dr => String(dr.id) === e.target.value);
+        setDriverId(e.target.value);
+        if (d) { setTruck(d.defaultTruckReg ?? ""); setTrailer(d.defaultTrailerReg ?? ""); }
+      }}>
+        <option value="">Select driver...</option>
+        {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+      </select>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="block text-sm font-semibold mb-1">Truck</label>
+          <input className="input w-full" value={truck} onChange={e => setTruck(e.target.value)}
+            placeholder={selectedDriver?.defaultTruckReg || "Registration"} />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1">Trailer</label>
+          <input className="input w-full" value={trailer} onChange={e => setTrailer(e.target.value)}
+            placeholder={selectedDriver?.defaultTrailerReg || "Optional"} />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button className="flex-1" onClick={save} loading={loading}>
+          {job.assignedDriverId ? "Reassign" : "Assign Driver"}
+        </Button>
+        {job.assignedDriverId && (
+          <Button variant="outline" onClick={unassign} loading={loading}
+            className="text-red-600 border-red-300 hover:bg-red-50">
+            Unassign
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusOverridePanel({ job, onSaved }: { job: PlannedJob; onSaved: () => void }) {
+  const [status,  setStatus]  = useState<string>(job.status);
+  const [note,    setNote]    = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+
+  async function save() {
+    if (status === job.status && !note.trim()) return;
+    setLoading(true); setError("");
+    try {
+      await jobsApi.updateStatus(job.id, status, note.trim() || undefined);
+      onSaved();
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="card p-4">
+      <h2 className="font-bold text-primary mb-3">Status Override</h2>
+      {error && <Alert type="error" message={error} />}
+      <label className="block text-sm font-semibold mb-1">Status</label>
+      <select className="input w-full mb-3" value={status} onChange={e => setStatus(e.target.value)}>
+        {STATUS_FLOW.map(s => (
+          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+        ))}
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <label className="block text-sm font-semibold mb-1">Override note (optional)</label>
+      <textarea className="input w-full min-h-16 mb-3" value={note} onChange={e => setNote(e.target.value)}
+        placeholder="Reason for manual override..." />
+      <Button className="w-full" onClick={save} loading={loading}
+        disabled={status === job.status && !note.trim()}>
+        Apply Override
+      </Button>
+    </div>
+  );
+}
+
+export default function JobDetailPage() {
+  const { id }      = useParams<{ id: string }>();
+  const navigate    = useNavigate();
+  const [job,       setJob]     = useState<PlannedJob | null>(null);
+  const [drivers,   setDrivers] = useState<Driver[]>([]);
+  const [loading,   setLoading] = useState(true);
+  const [error,     setError]   = useState("");
+  const [success,   setSuccess] = useState("");
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const [j, d] = await Promise.all([
+        jobsApi.get(parseInt(id!, 10)),
+        driversApi.list("active"),
+      ]);
+      setJob(j); setDrivers(d.data);
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, [id]);
+
+  function onSaved(msg = "Saved ✓") {
+    setSuccess(msg);
+    setTimeout(() => setSuccess(""), 3000);
+    load();
+  }
+
+  if (loading) return <div className="p-6 text-center text-muted">Loading...</div>;
+  if (error)   return <div className="p-6"><Alert type="error" message={error} /></div>;
+  if (!job)    return null;
+
+  const plannedQty  = job.loadDetails?.quantity ?? job.quantityExpected;
+  const plannedUnit = job.loadDetails?.unit     ?? job.quantityUnit;
+  const stops       = [...(job.stops ?? [])].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+  return (
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <button onClick={() => navigate("/app/jobs")}
+            className="text-xs text-muted hover:text-primary mb-2 block">← Back to Jobs</button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl font-black text-primary">
+              {job.jobReference || `Job #${job.id}`}
+            </h1>
+            <Badge status={job.status} />
+          </div>
+          {job.plannedDate && (
+            <p className="text-sm text-muted mt-1">{fmtDate(job.plannedDate)}</p>
+          )}
+        </div>
+        <Button variant="outline" onClick={() => navigate(`/app/jobs/${job.id}/edit`)}>Edit Job</Button>
+      </div>
+
+      {success && <Alert type="success" message={success} />}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left — main info */}
+        <div className="lg:col-span-2 space-y-5">
+
+          {/* Route & load summary */}
+          <div className="card p-4 space-y-3">
+            <h2 className="font-bold text-primary">Job Summary</h2>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div>
+                <span className="text-muted text-xs uppercase tracking-wide">Customer</span>
+                <div className="font-medium">{job.customerName || job.customer?.name || "—"}</div>
+              </div>
+              <div>
+                <span className="text-muted text-xs uppercase tracking-wide">Job Type</span>
+                <div className="font-medium">{job.jobType || job.serviceType || "—"}</div>
+              </div>
+              <div>
+                <span className="text-muted text-xs uppercase tracking-wide">Cust. Ref</span>
+                <div className="font-medium font-mono">{job.referenceNumber || "—"}</div>
+              </div>
+              <div>
+                <span className="text-muted text-xs uppercase tracking-wide">Priority</span>
+                <div className="font-medium capitalize">{job.priority || "Normal"}</div>
+              </div>
+              {job.assignedTruck && (
+                <div>
+                  <span className="text-muted text-xs uppercase tracking-wide">Truck</span>
+                  <div className="font-medium font-mono">{job.assignedTruck}</div>
+                </div>
+              )}
+              {job.assignedTrailer && (
+                <div>
+                  <span className="text-muted text-xs uppercase tracking-wide">Trailer</span>
+                  <div className="font-medium font-mono">{job.assignedTrailer}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Load — planned vs actual */}
+          <div className="card p-4">
+            <h2 className="font-bold text-primary mb-3">Load</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-muted text-xs uppercase tracking-wide">Material</span>
+                <div className="font-medium">
+                  {job.loadDetails?.materialType || job.materialType || "—"}
+                </div>
+              </div>
+              <div>
+                <span className="text-muted text-xs uppercase tracking-wide">Planned Qty</span>
+                <div className="font-medium">
+                  {plannedQty ? `${plannedQty} ${plannedUnit || ""}`.trim() : "—"}
+                </div>
+              </div>
+              {job.loadDetails?.weight && (
+                <div>
+                  <span className="text-muted text-xs uppercase tracking-wide">Weight</span>
+                  <div className="font-medium">{job.loadDetails.weight} t</div>
+                </div>
+              )}
+            </div>
+            {job.plannerNotes && (
+              <div className="mt-3 text-sm bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <span className="font-semibold text-yellow-800">Planner notes: </span>
+                <span className="text-yellow-900">{job.plannerNotes}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Stops */}
+          {stops.length > 0 && (
+            <div className="card p-4">
+              <h2 className="font-bold text-primary mb-3">Stops</h2>
+              <div className="space-y-3">
+                {stops.map((stop, i) => (
+                  <div key={stop.id ?? i} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${
+                        stop.type === "pickup" || stop.type === "collection" ? "bg-blue-500"
+                        : stop.type === "dropoff" || stop.type === "delivery" ? "bg-green-500"
+                        : "bg-slate-400"
+                      }`}>
+                        {stop.sequenceNumber}
+                      </div>
+                      {i < stops.length - 1 && <div className="w-0.5 bg-slate-200 flex-1 my-1" />}
+                    </div>
+                    <div className="flex-1 pb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                          {stop.type}
+                        </span>
+                        {stop.referenceNumber && (
+                          <span className="text-xs font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {stop.referenceNumber}
+                          </span>
+                        )}
+                        {stop.status && (
+                          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+                            stop.status === "completed" ? "bg-green-100 text-green-700"
+                            : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {stop.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm font-medium text-primary mt-0.5">
+                        {stop.siteName || stop.locationTextSnapshot}
+                      </div>
+                      {stop.siteName && stop.locationTextSnapshot !== stop.siteName && (
+                        <div className="text-xs text-muted">{stop.locationTextSnapshot}</div>
+                      )}
+                      {(stop.timeWindowStart || stop.bookedTime) && (
+                        <div className="text-xs text-slate-500 mt-1">
+                          {stop.bookedTime && <span>Booked: {stop.bookedTime}</span>}
+                          {stop.timeWindowStart && !stop.bookedTime && (
+                            <span>Window: {stop.timeWindowStart}{stop.timeWindowEnd ? ` – ${stop.timeWindowEnd}` : ""}</span>
+                          )}
+                        </div>
+                      )}
+                      {stop.contactName && (
+                        <div className="text-xs text-muted mt-0.5">{stop.contactName} {stop.contactPhone && `· ${stop.contactPhone}`}</div>
+                      )}
+                      {stop.numPallets != null && (
+                        <div className="text-xs text-slate-600 mt-0.5">Pallets: {stop.numPallets}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Events timeline */}
+          {job.events && job.events.length > 0 && (
+            <div className="card p-4">
+              <h2 className="font-bold text-primary mb-3">Activity</h2>
+              <div className="space-y-2">
+                {job.events.map(ev => (
+                  <div key={ev.id} className="flex gap-3 text-sm">
+                    <div className="text-xs text-muted w-28 flex-shrink-0 pt-0.5">
+                      {fmt(ev.createdAt)}
+                    </div>
+                    <div>
+                      <span className="font-semibold">
+                        {EVENT_LABELS[ev.eventType] ?? ev.eventType}
+                      </span>
+                      {ev.note && <div className="text-muted text-xs mt-0.5">{ev.note}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right sidebar */}
+        <div className="space-y-4">
+          {/* Driver card */}
+          <div className="card p-4">
+            <h2 className="font-bold text-primary mb-2">Driver</h2>
+            {job.assignedDriver ? (
+              <div className="text-sm">
+                <div className="font-semibold text-primary">{job.assignedDriver.displayName}</div>
+                {job.assignedDriver.phoneNumber && (
+                  <a href={`tel:${job.assignedDriver.phoneNumber}`}
+                    className="text-muted hover:text-primary block mt-0.5">
+                    {job.assignedDriver.phoneNumber}
+                  </a>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted italic">Not assigned</p>
+            )}
+          </div>
+
+          <AssignPanel job={job} drivers={drivers} onSaved={() => onSaved("Driver assigned ✓")} />
+          <StatusOverridePanel job={job} onSaved={() => onSaved("Status updated ✓")} />
+
+          {/* Metadata */}
+          <div className="card p-4 text-xs text-muted space-y-1">
+            <div>Created: {fmt(job.createdAt)}</div>
+            <div>Updated: {fmt(job.updatedAt)}</div>
+            <div>Job ID: #{job.id}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

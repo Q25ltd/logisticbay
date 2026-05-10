@@ -69,12 +69,95 @@ function jobQuantity(job: PlannedJob) {
   return quantity ? `${quantity} ${unit || ""}`.trim() : "";
 }
 
-function JobRow({ job, onStatusChange, onNote, onEdit, onDelete }: {
+function AssignModal({ job, drivers, onClose, onSaved }: {
+  job: PlannedJob;
+  drivers: Driver[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [driverId,  setDriverId]  = useState<string>(job.assignedDriverId ? String(job.assignedDriverId) : "");
+  const [truck,     setTruck]     = useState(job.assignedTruck    ?? "");
+  const [trailer,   setTrailer]   = useState(job.assignedTrailer  ?? "");
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState("");
+
+  const selectedDriver = drivers.find(d => String(d.id) === driverId);
+
+  async function save() {
+    if (!driverId) { setError("Select a driver"); return; }
+    setLoading(true); setError("");
+    try {
+      await jobsApi.allocate(job.id, {
+        assignedDriverId: parseInt(driverId, 10),
+        assignedTruck:    truck.trim()   || selectedDriver?.defaultTruckReg    || "",
+        assignedTrailer:  trailer.trim() || selectedDriver?.defaultTrailerReg  || "",
+      });
+      onSaved();
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  async function unassign() {
+    if (!window.confirm("Remove driver from this job?")) return;
+    setLoading(true); setError("");
+    try {
+      await jobsApi.allocate(job.id, { assignedDriverId: null });
+      onSaved();
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <h3 className="font-bold text-primary mb-1">
+          {job.assignedDriverId ? "Reassign Driver" : "Assign Driver"}
+        </h3>
+        <p className="text-xs text-muted mb-4">
+          {job.jobReference || `Job #${job.id}`} · {job.plannedDate || "No date set"}
+        </p>
+
+        {error && <div className="text-xs text-red-600 bg-red-50 rounded-lg p-2 mb-3">{error}</div>}
+
+        <label className="block text-sm font-semibold mb-1">Driver *</label>
+        <select className="input w-full mb-3" value={driverId} onChange={e => {
+          const d = drivers.find(dr => String(dr.id) === e.target.value);
+          setDriverId(e.target.value);
+          if (d) { setTruck(d.defaultTruckReg ?? ""); setTrailer(d.defaultTrailerReg ?? ""); }
+        }}>
+          <option value="">Select driver...</option>
+          {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+        </select>
+
+        <label className="block text-sm font-semibold mb-1">Truck</label>
+        <input className="input w-full mb-3" value={truck} onChange={e => setTruck(e.target.value)}
+          placeholder={selectedDriver?.defaultTruckReg || "Registration"} />
+
+        <label className="block text-sm font-semibold mb-1">Trailer</label>
+        <input className="input w-full mb-4" value={trailer} onChange={e => setTrailer(e.target.value)}
+          placeholder={selectedDriver?.defaultTrailerReg || "Registration (optional)"} />
+
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={save} loading={loading}>Assign</Button>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          {job.assignedDriverId && (
+            <Button variant="outline" onClick={unassign} loading={loading}
+              className="text-red-600 border-red-300 hover:bg-red-50">Unassign</Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobRow({ job, onStatusChange, onNote, onEdit, onAssign, onDelete, onView }: {
   job: PlannedJob;
   onStatusChange: (id: number, status: string) => void;
   onNote: (id: number) => void;
   onEdit: (id: number) => void;
+  onAssign: (job: PlannedJob) => void;
   onDelete: (job: PlannedJob) => void;
+  onView: (id: number) => void;
 }) {
   const canProgress = hasStatus(PROGRESSABLE_JOB_STATUSES, job.status);
   const nextStatus  = nextJobStatus(job.status);
@@ -84,8 +167,8 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete }: {
   return (
     <tr className={"hover:bg-gray-50 transition-colors " + (hasNote ? "bg-yellow-50" : "")}>
       <td className="px-4 py-3 text-sm text-primary">{job.plannedDate ? fmt(job.plannedDate) : "Draft"}</td>
-      <td className="px-4 py-3">
-        <div className="text-sm font-medium text-primary truncate max-w-48">{firstStopText(job, "pickup")}</div>
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onView(job.id)}>
+        <div className="text-sm font-medium text-primary truncate max-w-48 hover:underline">{firstStopText(job, "pickup")}</div>
         <div className="text-xs text-muted">→ {firstStopText(job, "dropoff")}</div>
       </td>
       <td className="px-4 py-3 text-sm text-muted">{job.assignedDriver?.displayName ?? "—"}</td>
@@ -112,6 +195,10 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete }: {
               {statusActionLabel(nextStatus)}
             </button>
           )}
+          <button onClick={() => onAssign(job)}
+            className={`text-xs font-semibold whitespace-nowrap ${job.assignedDriverId ? "text-muted hover:text-primary" : "text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded hover:bg-green-100"}`}>
+            {job.assignedDriverId ? "Reassign" : "Assign"}
+          </button>
           <button onClick={() => onNote(job.id)} className="text-xs text-muted hover:text-primary">+ Note</button>
           <button onClick={() => onEdit(job.id)} className="text-xs text-muted hover:text-primary">Edit</button>
           <button onClick={() => onDelete(job)} className="text-xs text-red-500 hover:underline font-semibold">Delete</button>
@@ -160,6 +247,7 @@ export default function JobsPage() {
   const [statusFilter,  setStatusFilter]  = useState("all");
   const [driverFilter,  setDriverFilter]  = useState("all");
   const [noteJobId,     setNoteJobId]     = useState<number|null>(null);
+  const [assignJob,     setAssignJob]     = useState<PlannedJob|null>(null);
   const [success,       setSuccess]       = useState("");
 
   function applyRange(back: number, fwd: number) {
@@ -305,7 +393,9 @@ export default function JobsPage() {
                       job={job}
                       onStatusChange={handleStatusChange}
                       onNote={id => setNoteJobId(id)}
+                      onView={id => navigate(`/app/jobs/${id}`)}
                       onEdit={id => navigate(`/app/jobs/${id}/edit`)}
+                      onAssign={setAssignJob}
                       onDelete={handleDelete}
                     />
                   ))}
@@ -321,7 +411,7 @@ export default function JobsPage() {
               const nextStatus = nextJobStatus(job.status);
               return (
                 <div key={job.id} className="card p-4 space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => navigate(`/app/jobs/${job.id}`)}>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-primary truncate">{firstStopText(job, "pickup")}</div>
                       <div className="text-xs text-muted truncate">→ {firstStopText(job, "dropoff")}</div>
@@ -337,13 +427,17 @@ export default function JobsPage() {
                       : <span className="italic text-muted">Assigned when ready</span>}
                     {job.referenceNumber && <span className="text-muted">#{job.referenceNumber}</span>}
                   </div>
-                  <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                  <div className="flex items-center gap-3 pt-1 border-t border-slate-100 flex-wrap">
                     {canProgress && nextStatus && (
                       <button onClick={() => handleStatusChange(job.id, nextStatus)}
                         className="text-xs font-semibold text-accent bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
                         {statusActionLabel(nextStatus)}
                       </button>
                     )}
+                    <button onClick={() => setAssignJob(job)}
+                      className={`text-xs font-semibold ${job.assignedDriverId ? "text-muted" : "text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded"}`}>
+                      {job.assignedDriverId ? "Reassign" : "Assign"}
+                    </button>
                     <button onClick={() => setNoteJobId(job.id)}
                       className="text-xs text-muted hover:text-primary ml-auto">+ Note</button>
                     <button onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
@@ -360,6 +454,19 @@ export default function JobsPage() {
 
       {noteJobId && (
         <NoteModal jobId={noteJobId} onClose={() => { setNoteJobId(null); load(); }} />
+      )}
+      {assignJob && (
+        <AssignModal
+          job={assignJob}
+          drivers={drivers}
+          onClose={() => setAssignJob(null)}
+          onSaved={() => {
+            setAssignJob(null);
+            setSuccess("Driver assigned ✓");
+            setTimeout(() => setSuccess(""), 3000);
+            load();
+          }}
+        />
       )}
     </div>
   );
