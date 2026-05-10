@@ -26,6 +26,7 @@ import {
 import { scoreStructuredJob } from "../services/jobQuality.js";
 import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES } from "../sync/sync.constants.js";
 import { generateJobReference } from "../lib/jobReference.js";
+import { checkDayFeasibility, type ScheduleStop } from "../lib/driverSchedule.js";
 
 const EVENT_TYPE_MAP: Record<string, string> = {
   in_progress:     "started",
@@ -1537,4 +1538,70 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     return reply.status(201).send({ ok: true });
   });
+
+  // ── GET /drivers/:driverId/schedule ─────────────────────────────────────────
+  // Returns a driver's feasibility check for a given date.
+  // Used by the planner to see if assigning a new job would be possible.
+  app.get<{ Params: { driverId: string }; Querystring: { date?: string } }>(
+    "/drivers/:driverId/schedule",
+    { preHandler: [authenticate, requireRole("admin", "planner", "manager")] },
+    async (req, reply) => {
+      const companyId = req.user!.companyId;
+      const driverId  = parseInt(req.params.driverId, 10);
+      const date      = req.query.date;
+
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return reply.status(400).send({ error: "date query param required (YYYY-MM-DD)" });
+      }
+
+      // Verify driver belongs to this company
+      const driver = await prisma.driverProfile.findFirst({
+        where: { id: driverId, companyId },
+        select: { id: true, preferredStartTime: true, earliestStartTime: true },
+      });
+      if (!driver) return reply.status(404).send({ error: "Driver not found" });
+
+      // Fetch all jobs assigned to this driver on the given date (with stops)
+      const dayStart = new Date(`${date}T00:00:00`);
+      const dayEnd   = new Date(`${date}T23:59:59`);
+
+      const jobs = await prisma.plannedJob.findMany({
+        where: {
+          companyId,
+          assignedDriverId: driverId,
+          plannedDate:      { gte: dayStart, lte: dayEnd },
+          status:           { notIn: ["cancelled"] },
+        },
+        include: {
+          stops: { orderBy: { sequenceNumber: "asc" } },
+        },
+        orderBy: { sequence: "asc" },
+      });
+
+      // Build the ScheduleStop array from all jobs' stops
+      const stops: ScheduleStop[] = [];
+      for (const job of jobs) {
+        for (const s of job.stops) {
+          stops.push({
+            jobId:          job.id,
+            jobReference:   job.jobReference,
+            stopSequence:   s.sequenceNumber,
+            type:           s.type,
+            postcode:       s.postcode || null,
+            lat:            s.lat,
+            lng:            s.lng,
+            windowStart:    s.timeWindowStart?.toISOString() ?? null,
+            windowEnd:      s.timeWindowEnd?.toISOString()   ?? null,
+            bookedTime:     s.bookedTime?.toISOString()      ?? null,
+            serviceMinutes: s.unloadingAllowanceMinutes ?? 30,
+          });
+        }
+      }
+
+      const dayStart24 = driver.earliestStartTime ?? driver.preferredStartTime ?? "06:00";
+      const result = await checkDayFeasibility(driverId, date, stops, dayStart24);
+
+      return reply.send(result);
+    },
+  );
 }

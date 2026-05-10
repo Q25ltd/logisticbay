@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import { driversApi } from "../../api/drivers";
+import { driversApi, type DayScheduleResult } from "../../api/drivers";
 import { api } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
 import type { Customer, Driver, JobTemplate, PlannedJob, SavedLocation } from "../../types";
@@ -55,6 +55,53 @@ function optionLabel(options: [string, string][], value: string) {
   return options.find(([v]) => v === value)?.[1] ?? value;
 }
 
+// ── Driver schedule feasibility banner ────────────────────────────────────────
+
+function DriverScheduleWarning({ schedule }: { schedule: import("../../api/drivers").DayScheduleResult }) {
+  const { overallStatus, stops, totalDriveMin, warnings } = schedule;
+
+  if (overallStatus === "ok") {
+    return (
+      <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-green-50 border border-green-200 text-sm text-green-800">
+        <span className="mt-0.5">✓</span>
+        <div>
+          <span className="font-semibold">Driver schedule looks feasible</span>
+          {" — "}{stops.length} stop{stops.length !== 1 ? "s" : ""} already assigned,{" "}
+          {Math.round(totalDriveMin / 6) / 10}h total drive time.
+        </div>
+      </div>
+    );
+  }
+
+  const impossibleStops = stops.filter(s => s.status === "impossible");
+  const tightStops      = stops.filter(s => s.status === "tight");
+  const bgCls  = overallStatus === "impossible" ? "bg-red-50 border-red-300 text-red-800"   : "bg-amber-50 border-amber-300 text-amber-800";
+  const icon   = overallStatus === "impossible" ? "⛔" : "⚠️";
+  const label  = overallStatus === "impossible" ? "Schedule conflict — driver may miss a delivery" : "Tight schedule — check times carefully";
+
+  return (
+    <div className={`px-3 py-2 rounded-xl border text-sm ${bgCls}`}>
+      <div className="font-semibold mb-1">{icon} {label}</div>
+      {impossibleStops.map(s => (
+        <div key={s.stopIdx} className="text-xs ml-4">
+          Stop {s.stopIdx + 1} ({s.jobReference ?? `Job ${s.jobId}`} — {s.postcode ?? s.type}): {s.issue}
+        </div>
+      ))}
+      {tightStops.map(s => (
+        <div key={s.stopIdx} className="text-xs ml-4">
+          Stop {s.stopIdx + 1} ({s.jobReference ?? `Job ${s.jobId}`} — {s.postcode ?? s.type}): {s.issue}
+        </div>
+      ))}
+      {warnings.map((w, i) => (
+        <div key={i} className="text-xs ml-4 mt-0.5">{w}</div>
+      ))}
+      <div className="text-xs mt-1 opacity-70">
+        {stops.length} stop{stops.length !== 1 ? "s" : ""} · {Math.round(totalDriveMin / 6) / 10}h drive on this date
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CreateJobPage() {
@@ -86,6 +133,8 @@ export default function CreateJobPage() {
   const [jobReference,     setJobReference]     = useState<string | null>(null);
   const [drivers,          setDrivers]          = useState<Driver[]>([]);
   const [assignedDriverId, setAssignedDriverId] = useState<number | null>(null);
+  const [driverSchedule,   setDriverSchedule]   = useState<DayScheduleResult | null>(null);
+  const [scheduleLoading,  setScheduleLoading]  = useState(false);
 
   // templateId in URL = open blank job pre-filled with template (Use → button)
   const preloadTemplateId = searchParams.get("templateId");
@@ -566,6 +615,17 @@ export default function CreateJobPage() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editJobId]);
+
+  // ── Fetch driver day schedule when driver or date changes ───────────────────
+  useEffect(() => {
+    setDriverSchedule(null);
+    if (!assignedDriverId || !plannedDate) return;
+    setScheduleLoading(true);
+    driversApi.getSchedule(assignedDriverId, plannedDate)
+      .then(r => setDriverSchedule(r))
+      .catch(() => setDriverSchedule(null))
+      .finally(() => setScheduleLoading(false));
+  }, [assignedDriverId, plannedDate]);
 
   // ── Template-edit mode: load template and populate all state ────────────────
   useEffect(() => {
@@ -1147,6 +1207,17 @@ export default function CreateJobPage() {
                 </select>
               </div>
             </div>
+
+            {/* Driver schedule feasibility warning */}
+            {scheduleLoading && (
+              <div className="text-sm text-muted px-3 py-2 rounded-xl bg-slate-50 border">
+                Checking driver schedule...
+              </div>
+            )}
+            {!scheduleLoading && driverSchedule && driverSchedule.stops.length > 0 && (
+              <DriverScheduleWarning schedule={driverSchedule} />
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FieldLabel required>Service Type</FieldLabel>
