@@ -391,7 +391,7 @@ export default function JobsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    {["Date","Route","Driver","Job Ref","Cust Ref","Material","Status","Last Update","Actions"].map(h => (
+                    {["Date","Route","Driver","Job Ref","Cust Ref / PO","Material","Status","Last Update","Actions"].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>

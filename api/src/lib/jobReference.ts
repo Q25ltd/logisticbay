@@ -9,7 +9,7 @@
 export async function generateJobReference(
   companyId: number,
   tx: { $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T> },
-): Promise<string> {
+): Promise<string | null> {
   const currentYear = new Date().getFullYear();
   const yy = String(currentYear).slice(-2);
 
@@ -39,6 +39,7 @@ export async function generateJobReference(
   }
 
   const { ticker, seq } = rows[0];
+  if (!ticker) return null; // company hasn't set a ticker yet — caller handles
   const padded = String(seq).padStart(6, "0");
   return `${ticker}-${yy}-${padded}`;
 }

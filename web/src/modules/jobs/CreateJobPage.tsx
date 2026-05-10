@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
+import { api } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
 import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
 
@@ -77,14 +78,19 @@ export default function CreateJobPage() {
   const [templateName, setTemplateName] = useState("");
 
   // Saved locations (loaded once)
-  const [locations,  setLocations]  = useState<SavedLocation[]>([]);
-  const [templates,  setTemplates]  = useState<JobTemplate[]>([]);
-  const [tplQuery,   setTplQuery]   = useState("");
+  const [locations,     setLocations]     = useState<SavedLocation[]>([]);
+  const [templates,     setTemplates]     = useState<JobTemplate[]>([]);
+  const [tplQuery,      setTplQuery]      = useState("");
+  const [companyTicker, setCompanyTicker] = useState<string | null>(null);
+  const [jobReference,  setJobReference]  = useState<string | null>(null);
 
   // templateId in URL = open blank job pre-filled with template (Use → button)
   const preloadTemplateId = searchParams.get("templateId");
 
-  useEffect(() => { jobsApi.locations().then(r => setLocations(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    jobsApi.locations().then(r => setLocations(r.data)).catch(() => {});
+    api.get<{ ticker?: string | null }>("/company").then(c => setCompanyTicker(c.ticker ?? null)).catch(() => {});
+  }, []);
   useEffect(() => {
     jobsApi.templates().then(r => {
       setTemplates(r.data);
@@ -478,6 +484,7 @@ export default function CreateJobPage() {
       setServiceType(job.serviceType || "");
       setJobType(job.jobType || "");
       setJobTitle(job.jobTitle || "");
+      setJobReference(job.jobReference ?? null);
       setReferenceNumber(job.referenceNumber || "");
       setCustomerRef(job.customerRef || "");
       setPurchaseOrderNumber(job.purchaseOrderNumber || "");
@@ -1144,9 +1151,24 @@ export default function CreateJobPage() {
                   placeholder="e.g. Overnight trunking — North to South depot"
                   caseRule="proper_name"
                 />
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <TextField label="Job Reference No." value={referenceNumber} onChange={setReferenceNumber} placeholder="JB-00123" />
-                  <TextField label="Customer Reference No." value={customerRef} onChange={setCustomerRef} placeholder="CUST-REF-456" />
+                {/* Auto-generated job reference */}
+                <div className="flex items-center gap-3 py-2 px-3 rounded-xl border bg-slate-50">
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-0.5">Job Reference No.</div>
+                    {jobReference ? (
+                      <div className="font-mono font-bold text-green-700 text-base">{jobReference}</div>
+                    ) : (
+                      <div className="text-sm text-muted italic">
+                        {companyTicker
+                          ? `${companyTicker}-${String(new Date().getFullYear()).slice(-2)}-XXXXXX — auto-assigned on save`
+                          : "Auto-assigned on save (set company ticker in Settings first)"}
+                      </div>
+                    )}
+                  </div>
+                  {jobReference && <div className="text-green-600 text-lg">✓</div>}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <TextField label="Customer Reference No." value={referenceNumber} onChange={setReferenceNumber} placeholder="CUST-REF-456" />
                   <TextField label="Purchase Order No." value={purchaseOrderNumber} onChange={setPurchaseOrderNumber} placeholder="PO-789" />
                 </div>
                 <div className="max-w-xs">

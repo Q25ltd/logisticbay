@@ -550,9 +550,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
 
     const job = await prisma.$transaction(async (tx) => {
-      const jobReference = saveMode === "ready_to_plan"
-        ? await generateJobReference(companyId, tx)
-        : null;
+      const jobReference = await generateJobReference(companyId, tx);
 
       const created = await tx.plannedJob.create({
         data: {
@@ -971,8 +969,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
 
     const updated = await prisma.$transaction(async (tx) => {
-      // Generate job reference if this is the first time the job becomes ready_to_plan
-      const jobReference = (saveMode === "ready_to_plan" && !job.jobReference)
+      // Generate job reference on first save if company has a ticker and none assigned yet
+      const jobReference = !job.jobReference
         ? await generateJobReference(companyId, tx)
         : undefined; // undefined = don't touch existing value
 
