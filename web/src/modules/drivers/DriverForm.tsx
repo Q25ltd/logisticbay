@@ -4,7 +4,7 @@ import type { Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
 import { Input } from "../../components/Input";
-import { BODY_TYPES, DRIVER_ENDORSEMENTS, DRIVER_LICENCE_CLASSES, TRAILER_BODY_TYPE_VALUES, type BodyType } from "../../constants/vehicleTaxonomy";
+import { BODY_TYPES, DRIVER_ENDORSEMENTS, DRIVER_LICENCE_CLASSES, TRAILER_BODY_TYPE_VALUES } from "../../constants/vehicleTaxonomy";
 import { MultiCheck } from "../jobs/CreateJobFormComponents";
 
 export default function DriverForm({ initial, onSave, onCancel }: {

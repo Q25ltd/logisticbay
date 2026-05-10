@@ -265,7 +265,6 @@ export interface TemplateJobData {
   trailerLength?: string;
   minSize?: string;
   trailersAllowed?: string[];
-  trailersForbidden?: string[];
   equipmentReq?: string[];
   driverQuals?: string[];
   heightRestriction?: string;
