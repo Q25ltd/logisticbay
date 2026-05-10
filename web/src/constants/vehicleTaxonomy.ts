@@ -279,9 +279,8 @@ const EXTRA_EQUIPMENT_BY_BODY_GROUP: Record<string, readonly string[]> = {
 };
 
 const EXTRA_EQUIPMENT_BY_CATEGORY: Partial<Record<BodyCategory, readonly string[]>> = {
-  tractor:       ["lifting"],
   drawbar:       ["lifting", "secure", "spec"],
-  heavy_haulage: ["lifting", "secure", "spec", "other"],
+  heavy_haulage: ["secure", "spec", "other"],
   spmt:          ["other"],
   plant:         [],
   van:           ["lifting", "secure", "spec"],
@@ -290,13 +289,27 @@ const EXTRA_EQUIPMENT_BY_CATEGORY: Partial<Record<BodyCategory, readonly string[
   rigid:         ["lifting", "secure", "spec"],
 };
 
+const ITEM_ALLOWLIST_BY_CATEGORY: Partial<Record<BodyCategory, readonly OnboardEquipment[]>> = {
+  tractor:       ["hiab_crane", "hiab_jib", "winch"],
+  heavy_haulage: ["hiab_crane", "hiab_jib", "winch"],
+};
+
 export function equipmentForBodyType(
   bodyType: BodyType | "",
   bodyCategory: BodyCategory | "" = "",
 ): typeof ONBOARD_EQUIPMENT[number][] {
-  const always = ["safety", "telematics"];
-  let extra: readonly string[];
+  const alwaysGroups = ["safety", "telematics"];
 
+  if (!bodyType && bodyCategory) {
+    const itemList = ITEM_ALLOWLIST_BY_CATEGORY[bodyCategory as BodyCategory];
+    if (itemList) {
+      return ONBOARD_EQUIPMENT.filter(
+        e => alwaysGroups.includes(e.group) || (itemList as readonly string[]).includes(e.value),
+      );
+    }
+  }
+
+  let extra: readonly string[];
   if (bodyType) {
     const bt = BODY_TYPES.find(b => b.value === bodyType);
     extra = EXTRA_EQUIPMENT_BY_BODY_GROUP[bt?.group ?? "other"] ?? [];
@@ -306,6 +319,6 @@ export function equipmentForBodyType(
     return [...ONBOARD_EQUIPMENT];
   }
 
-  const allowed = new Set([...always, ...extra]);
+  const allowed = new Set([...alwaysGroups, ...extra]);
   return ONBOARD_EQUIPMENT.filter(e => allowed.has(e.group));
 }
