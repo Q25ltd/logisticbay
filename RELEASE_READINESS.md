@@ -93,7 +93,7 @@ Files: api/src/lib/env.ts (new), api/src/server.ts, api/src/middleware.ts, api/s
 Verified: typecheck OK (tsc --noEmit exit 0), grep confirms zero remaining `?? process.env.JWT_SECRET` occurrences
 Notes: Railway must have JWT_ACCESS_SECRET and JWT_REFRESH_SECRET set before this is deployed — server will refuse to start if either is missing or if they are equal. JWT_SECRET legacy var can be removed from Railway once confirmed both new vars are in place.
 
-### [ ] P0.5 — Shorten access tokens, rotate + persist refresh tokens
+### [x] P0.5 — Shorten access tokens, rotate + persist refresh tokens
 - **Why:** `routes/auth.ts:10` issues access tokens for `7d`. `api/src/auth.ts` (dead code) says `15m`. No refresh-token rotation, no server-side revocation.
 - **Acceptance:**
   - Access token TTL ≤ 1h (recommend 15m).
@@ -103,6 +103,11 @@ Notes: Railway must have JWT_ACCESS_SECRET and JWT_REFRESH_SECRET set before thi
   - `/auth/logout` endpoint that revokes the presented refresh token.
   - Mobile `clearTokens()` calls `/auth/logout` when online (best-effort).
   - Delete `api/src/auth.ts` (dead) once migration done; consolidate on `bcryptjs`.
+
+Done: worktree pensive-wilbur-0a4d13
+Files: api/prisma/schema.prisma, api/prisma/migrations/20260510140000_add_refresh_token_table/migration.sql, api/src/lib/tokens.ts (new), api/src/lib/env.ts, api/src/routes/auth.ts, api/src/routes/companies.ts, api/src/schemas/auth.ts, api/src/types/requests.ts
+Verified: prisma generate OK, tsc --noEmit exit 0
+Notes: All sessions already logged in will hit 401 on next refresh (their token is not in RefreshToken table). One-time forced re-login on deploy — expected and intentional. api/src/auth.ts dead code left for P1.7. Mobile /auth/logout call left for mobile session (P0.7).
 
 ### [ ] P0.6 — Tenant-isolation test on every route + CI gate
 - **Why:** today only 2 endpoints are covered; no `.github/` exists, so nothing runs on PR.

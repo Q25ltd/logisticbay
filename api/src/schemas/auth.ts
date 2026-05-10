@@ -11,6 +11,10 @@ export const RefreshSchema = z.object({
   refreshToken: z.string().min(1, "Refresh token is required"),
 });
 
+export const LogoutSchema = z.object({
+  refreshToken: z.string().min(1, "Refresh token is required"),
+});
+
 export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
   newPassword:     z.string().min(8, "New password must be at least 8 characters"),
@@ -30,5 +34,6 @@ export const RegisterCompanySchema = z.object({
 
 export type LoginBody            = z.infer<typeof LoginSchema>;
 export type RefreshBody          = z.infer<typeof RefreshSchema>;
+export type LogoutBody           = z.infer<typeof LogoutSchema>;
 export type ChangePasswordBody   = z.infer<typeof ChangePasswordSchema>;
 export type RegisterCompanyBody  = z.infer<typeof RegisterCompanySchema>;

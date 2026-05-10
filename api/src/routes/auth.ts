@@ -3,16 +3,16 @@ import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../lib/env.js";
-import type { LoginBody, RefreshBody, ChangePasswordBody } from "../types/requests.js";
-import { LoginSchema, RefreshSchema, ChangePasswordSchema } from "../schemas/auth.js";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  hashToken,
+  storeRefreshToken,
+  revokeTokenFamily,
+} from "../lib/tokens.js";
+import type { LoginBody, RefreshBody, LogoutBody, ChangePasswordBody } from "../types/requests.js";
+import { LoginSchema, RefreshSchema, LogoutSchema, ChangePasswordSchema } from "../schemas/auth.js";
 import { parseBody } from "../lib/validate.js";
-
-function generateToken(payload: object): string {
-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, { expiresIn: "7d" });
-}
-function generateRefreshToken(payload: object): string {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: "30d" });
-}
 
 export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -50,12 +50,20 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!membership) return reply.status(401).send({ error: "Company not found or access denied" });
 
     const tokenPayload = { userId: user.id, companyId: membership.companyId, role: membership.role };
-    const token = generateToken(tokenPayload);
+    const accessToken  = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
+
+    await storeRefreshToken(prisma, {
+      userId:    user.id,
+      companyId: membership.companyId,
+      token:     refreshToken,
+      userAgent: request.headers["user-agent"] ?? "",
+    });
+
     const usingDefaultPin = await bcrypt.compare("123456", user.passwordHash);
 
     return reply.send({
-      accessToken: token, refreshToken,
+      accessToken, refreshToken,
       mustChangePin: usingDefaultPin && membership.role === "driver",
       user: { id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role },
     });
@@ -65,15 +73,74 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const parsed = parseBody(RefreshSchema, request.body);
     if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
     const body = parsed.data as RefreshBody;
+
+    let decoded: { userId: number; companyId: number; role: string };
     try {
-      const decoded = jwt.verify(body.refreshToken, env.JWT_REFRESH_SECRET) as { userId: number; companyId: number; role: string };
-      const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
-      if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found or inactive" });
-      const membership = user.memberships[0];
-      if (!membership) return reply.status(401).send({ error: "No active membership" });
-      const newToken = generateToken({ userId: user.id, companyId: membership.companyId, role: membership.role });
-      return reply.send({ accessToken: newToken, user: { id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role } });
-    } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
+      decoded = jwt.verify(body.refreshToken, env.JWT_REFRESH_SECRET) as typeof decoded;
+    } catch {
+      return reply.status(401).send({ error: "Token expired or invalid" });
+    }
+
+    const hash = hashToken(body.refreshToken);
+    const stored = await prisma.refreshToken.findUnique({ where: { tokenHash: hash } });
+
+    if (!stored) {
+      return reply.status(401).send({ error: "Token expired or invalid" });
+    }
+
+    if (stored.revokedAt) {
+      await revokeTokenFamily(prisma, stored.familyId);
+      return reply.status(401).send({ error: "Token reuse detected. Please log in again." });
+    }
+
+    if (stored.expiresAt < new Date()) {
+      return reply.status(401).send({ error: "Token expired or invalid" });
+    }
+
+    await prisma.refreshToken.update({
+      where: { id: stored.id },
+      data:  { revokedAt: new Date(), lastUsedAt: new Date() },
+    });
+
+    const user = await prisma.user.findUnique({
+      where:   { id: decoded.userId },
+      include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } },
+    });
+    if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found or inactive" });
+    const membership = user.memberships[0];
+    if (!membership) return reply.status(401).send({ error: "No active membership" });
+
+    const newPayload      = { userId: user.id, companyId: membership.companyId, role: membership.role };
+    const newAccessToken  = generateAccessToken(newPayload);
+    const newRefreshToken = generateRefreshToken(newPayload);
+
+    await storeRefreshToken(prisma, {
+      userId:    user.id,
+      companyId: membership.companyId,
+      token:     newRefreshToken,
+      userAgent: request.headers["user-agent"] ?? "",
+      familyId:  stored.familyId,
+    });
+
+    return reply.send({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user: { id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role },
+    });
+  });
+
+  app.post("/auth/logout", async (request, reply) => {
+    const parsed = parseBody(LogoutSchema, request.body);
+    if (!parsed.ok) return reply.status(200).send({ ok: true });
+    const body = parsed.data as LogoutBody;
+
+    const hash = hashToken(body.refreshToken);
+    await prisma.refreshToken.updateMany({
+      where: { tokenHash: hash, revokedAt: null },
+      data:  { revokedAt: new Date() },
+    });
+
+    return reply.send({ ok: true });
   });
 
   app.get("/auth/me", async (request, reply) => {

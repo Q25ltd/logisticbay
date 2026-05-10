@@ -1,9 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { authenticate, requireRole } from "../middleware.js";
-import { env } from "../lib/env.js";
+import { generateAccessToken, generateRefreshToken, storeRefreshToken } from "../lib/tokens.js";
 import {
   validateRegisterCompany,
   validateCreateDriver,
@@ -104,13 +103,6 @@ function holidayDates(input: { startDate: string; endDate: string }) {
   return { start, end };
 }
 
-function generateToken(payload: object): string {
-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, { expiresIn: "7d" });
-}
-
-function generateRefreshToken(payload: object): string {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: "30d" });
-}
 
 export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -176,11 +168,20 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       role:      "company_owner",
     };
 
+    const accessToken  = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
+    await storeRefreshToken(prisma, {
+      userId:    result.user.id,
+      companyId: result.company.id,
+      token:     refreshToken,
+      userAgent: request.headers["user-agent"] ?? "",
+    });
+
     return reply.status(201).send({
-      accessToken:  generateToken(tokenPayload),
-      refreshToken: generateRefreshToken(tokenPayload),
-      companyId:    result.company.id,
-      userId:       result.user.id,
+      accessToken,
+      refreshToken,
+      companyId: result.company.id,
+      userId:    result.user.id,
       user: {
         id:        result.user.id,
         name:      result.user.name,

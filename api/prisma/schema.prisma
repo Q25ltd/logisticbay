@@ -82,13 +82,32 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships   CompanyMembership[]
-  driverProfile DriverProfile?
-  shifts        Shift[]
-  createdJobs   PlannedJob[]        @relation("JobCreatedBy")
-  jobEvents     JobExecutionEvent[]
-  jobAudits     JobAudit[]
-  auditLogs     AuditLog[]
+  memberships    CompanyMembership[]
+  driverProfile  DriverProfile?
+  shifts         Shift[]
+  createdJobs    PlannedJob[]        @relation("JobCreatedBy")
+  jobEvents      JobExecutionEvent[]
+  jobAudits      JobAudit[]
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
+}
+
+model RefreshToken {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  companyId  Int
+  tokenHash  String    @unique
+  familyId   String
+  userAgent  String    @default("")
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
 }
 
 model CompanyMembership {

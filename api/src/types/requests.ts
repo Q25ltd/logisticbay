@@ -18,6 +18,10 @@ export interface RefreshBody {
   refreshToken: string;
 }
 
+export interface LogoutBody {
+  refreshToken: string;
+}
+
 export interface ChangePasswordBody {
   currentPassword: string;
   newPassword:     string;
