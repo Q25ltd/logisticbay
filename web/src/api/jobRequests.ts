@@ -176,8 +176,8 @@ export interface RequestLink {
   rawToken?:   string; // only returned on create
 }
 
-// Public (no-auth) calls — use base URL directly
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+// Public (no-auth) calls — same base URL as the authenticated client
+const API_BASE = import.meta.env.VITE_API_URL || "http://192.168.0.45:3000";
 
 async function publicGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`);
