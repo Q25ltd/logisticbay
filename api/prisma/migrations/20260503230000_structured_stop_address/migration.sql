@@ -1,7 +1,1 @@
--- AlterTable
-ALTER TABLE "JobStop"
-ADD COLUMN "siteName" TEXT NOT NULL DEFAULT '',
-ADD COLUMN "unitName" TEXT NOT NULL DEFAULT '',
-ADD COLUMN "street" TEXT NOT NULL DEFAULT '',
-ADD COLUMN "town" TEXT NOT NULL DEFAULT '',
-ADD COLUMN "postcode" TEXT NOT NULL DEFAULT '';
+-- Superseded by 20260313172724_init current-schema baseline.

@@ -1,0 +1,3 @@
+-- Historical local baseline retained so existing development databases with this
+-- migration recorded in _prisma_migrations remain compatible.
+-- The current-schema baseline lives in 20260313172724_init.
