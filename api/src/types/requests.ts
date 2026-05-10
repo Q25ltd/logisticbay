@@ -65,6 +65,8 @@ export interface DriverPlanningFields {
   employmentStartDate?: string | null;
   driverType?: string;
   licenceClass?: string;
+  endorsements?: string[];
+  canDriveCategories?: string[];
   canUseTrailer?: boolean;
   trailerTypesAllowed?: string[];
   adrAllowed?: boolean;
@@ -268,6 +270,11 @@ export interface CreateJobBody {
   assignedTrailer?:      string;
   vehicleClass?:         string;
   vehicleClassRequired?: string;
+  reqBodyCategory?:      string;
+  reqGvwMin?:            string;
+  reqBodyType?:          string;
+  reqEquipment?:         string[];
+  reqLicenceClass?:      string;
   trailerTypesAllowed?:  string[];
   priority?:             "low" | "normal" | "high";
   serviceType?:          "delivery" | "collection" | "transfer" | string;
@@ -293,7 +300,6 @@ export interface CreateJobBody {
   custRefRequired?:           boolean;
   poRequired?:                boolean;
   minVehicleSize?:            string;
-  trailerTypesForbidden?:     string[];
   equipmentRequired?:         string[];
   driverQualificationsReq?:   string[];
   heightRestriction?:         string;
@@ -323,6 +329,11 @@ export interface PatchJobBody {
   assignedTrailer?:      string;
   vehicleClass?:         string;
   vehicleClassRequired?: string;
+  reqBodyCategory?:      string;
+  reqGvwMin?:            string;
+  reqBodyType?:          string;
+  reqEquipment?:         string[];
+  reqLicenceClass?:      string;
   trailerTypesAllowed?:  string[];
   priority?:             "low" | "normal" | "high";
   serviceType?:          "delivery" | "collection" | "transfer" | string;
@@ -346,7 +357,6 @@ export interface PatchJobBody {
   custRefRequired?:           boolean;
   poRequired?:                boolean;
   minVehicleSize?:            string;
-  trailerTypesForbidden?:     string[];
   equipmentRequired?:         string[];
   driverQualificationsReq?:   string[];
   heightRestriction?:         string;

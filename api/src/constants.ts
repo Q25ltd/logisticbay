@@ -6,7 +6,7 @@ export interface CheckItem {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLASS 1 — Truck checks (DVSA 2023 + oil/water pre-drive)
+// TRACTOR UNIT — Truck checks (DVSA 2023 + oil/water pre-drive)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const TRUCK_CHECKS: CheckItem[] = [
@@ -32,7 +32,7 @@ export const TRUCK_CHECKS: CheckItem[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLASS 1 — Trailer checks (10 items)
+// TRACTOR UNIT — Trailer checks (10 items)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const TRAILER_CHECKS: CheckItem[] = [
@@ -49,10 +49,10 @@ export const TRAILER_CHECKS: CheckItem[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLASS 2 — Rigid HGV checks (truck + body)
+// RIGID HGV — Truck + body checks
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const CLASS2_CHECKS: CheckItem[] = [
+export const RIGID_CHECKS: CheckItem[] = [
   { key: "oil_water",          label: "Oil and water levels — checked and topped up if needed",              category: "inside",  naAllowed: false },
   { key: "mirrors_glass",      label: "Mirrors, cameras and glass — no cracks, scratches or tint",          category: "inside",  naAllowed: false },
   { key: "wipers_washers",     label: "Windscreen wipers and washers — working, not damaged",                category: "inside",  naAllowed: false },
@@ -102,12 +102,12 @@ export const VAN_CHECKS: CheckItem[] = [
 
 export const TRUCK_CHECK_KEYS   = TRUCK_CHECKS.map(c => c.key);
 export const TRAILER_CHECK_KEYS = TRAILER_CHECKS.map(c => c.key);
-export const CLASS2_CHECK_KEYS  = CLASS2_CHECKS.map(c => c.key);
+export const RIGID_CHECK_KEYS   = RIGID_CHECKS.map(c => c.key);
 export const VAN_CHECK_KEYS     = VAN_CHECKS.map(c => c.key);
 
 // All possible truck-side keys across all vehicle classes
 export const ALL_TRUCK_KEYS = [
-  ...new Set([...TRUCK_CHECK_KEYS, ...CLASS2_CHECK_KEYS, ...VAN_CHECK_KEYS])
+  ...new Set([...TRUCK_CHECK_KEYS, ...RIGID_CHECK_KEYS, ...VAN_CHECK_KEYS])
 ];
 
 export const SHIFT_STATUSES = ["draft","submitted","completed","failed","deleted"] as const;

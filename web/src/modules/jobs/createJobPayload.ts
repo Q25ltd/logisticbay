@@ -27,6 +27,12 @@ export interface CreateJobPayload {
   unloadingMethod: string;
   vehicleType: string;
   vehicleTypeOther: string;
+  reqBodyCategory: string;
+  reqGvwMin: string;
+  reqBodyType: string;
+  reqEquipment: string[];
+  reqLicenceClass: string;
+  reqEndorsements: string[];
   customerId: number | null;
   customerName: string;
   plannedDate: string;
@@ -48,7 +54,6 @@ export interface CreateJobPayload {
   assignedTrailer: string;
   minSize: string;
   trailersAllowed: string[];
-  trailersForbidden: string[];
   equipmentReq: string[];
   driverQuals: string[];
   heightRestriction: string;
@@ -109,6 +114,12 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     unloadingMethod,
     vehicleType,
     vehicleTypeOther,
+    reqBodyCategory,
+    reqGvwMin,
+    reqBodyType,
+    reqEquipment,
+    reqLicenceClass,
+    reqEndorsements,
     customerId,
     customerName,
     plannedDate,
@@ -130,7 +141,6 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     assignedTrailer,
     minSize,
     trailersAllowed,
-    trailersForbidden,
     equipmentReq,
     driverQuals,
     heightRestriction,
@@ -232,9 +242,9 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     unloadingMethod,
   };
 
-  const vehicleClassRequired = vehicleType === "other"
+  const vehicleClassRequired = reqBodyCategory || (vehicleType === "other"
     ? `other: ${vehicleTypeOther}`.trim()
-    : vehicleType;
+    : vehicleType);
 
   return {
     saveMode,
@@ -256,13 +266,17 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     custRefRequired,
     poRequired,
     vehicleClassRequired,
+    reqBodyCategory,
+    reqGvwMin,
+    reqBodyType,
+    reqEquipment,
+    reqLicenceClass,
     assignedTruck:          assignedTruck.trim(),
     assignedTrailer:        assignedTrailer.trim(),
-    minVehicleSize:         minSize,
+    minVehicleSize:         reqGvwMin || minSize,
     trailerTypesAllowed:    trailersAllowed,
-    trailerTypesForbidden:  trailersForbidden,
-    equipmentRequired:      equipmentReq,
-    driverQualificationsReq: driverQuals,
+    equipmentRequired:      reqEquipment.length ? reqEquipment : equipmentReq,
+    driverQualificationsReq: reqEndorsements.length ? reqEndorsements : driverQuals,
     heightRestriction,
     weightRestriction,
     lengthRestriction,

@@ -23,6 +23,7 @@ import {
 import { RegisterCompanySchema } from "../schemas/auth.js";
 import { parseBody } from "../lib/validate.js";
 import { writeAudit } from "../lib/audit.js";
+import { DRIVER_LICENCE_CLASSES } from "../constants/jobCreation.js";
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -47,7 +48,13 @@ function optionalDate(value: unknown): Date | null | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+function canDriveCategoriesForLicence(licenceClass: unknown): string[] {
+  if (typeof licenceClass !== "string" || !licenceClass) return [];
+  return [...(DRIVER_LICENCE_CLASSES.find(l => l.value === licenceClass)?.drives ?? [])];
+}
+
 function driverProfileData(body: CreateDriverBody | PatchDriverBody) {
+  const licenceClass = body.licenceClass !== undefined ? optionalString(body.licenceClass) ?? "" : undefined;
   return {
     ...(body.displayName !== undefined ? { displayName: optionalString(body.displayName) ?? "" } : {}),
     ...(body.employmentStartDate !== undefined ? { employmentStartDate: optionalDate(body.employmentStartDate) } : {}),
@@ -58,7 +65,8 @@ function driverProfileData(body: CreateDriverBody | PatchDriverBody) {
     ...(body.defaultTrailerReg    !== undefined ? { defaultTrailerReg:    optionalString(body.defaultTrailerReg)    ?? "" } : {}),
     ...(body.defaultTrailerClass  !== undefined ? { defaultTrailerClass:  optionalString(body.defaultTrailerClass)  ?? "" } : {}),
     ...(body.driverType !== undefined ? { driverType: optionalString(body.driverType) || "permanent" } : {}),
-    ...(body.licenceClass !== undefined ? { licenceClass: optionalString(body.licenceClass) ?? "" } : {}),
+    ...(licenceClass !== undefined ? { licenceClass, canDriveCategories: canDriveCategoriesForLicence(licenceClass) } : {}),
+    ...(body.endorsements !== undefined ? { endorsements: Array.isArray(body.endorsements) ? body.endorsements : [] } : {}),
     ...(body.canUseTrailer !== undefined ? { canUseTrailer: Boolean(body.canUseTrailer) } : {}),
     ...(body.trailerTypesAllowed !== undefined ? { trailerTypesAllowed: Array.isArray(body.trailerTypesAllowed) ? body.trailerTypesAllowed : [] } : {}),
     ...(body.adrAllowed !== undefined ? { adrAllowed: Boolean(body.adrAllowed) } : {}),

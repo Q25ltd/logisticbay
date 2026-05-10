@@ -11,6 +11,7 @@
     "migrate:prod": "sh -c 'set -a && . ./.env && set +a && DATABASE_URL=$DATABASE_URL_PROD npx prisma migrate deploy'",
     "studio:local": "prisma studio",
     "generate": "prisma generate",
+    "backfill:vocab": "tsx scripts/backfill_vocab_v1.ts",
     "test": "node --import tsx/esm --test src/tests/*.test.ts"
   },
   "keywords": [],

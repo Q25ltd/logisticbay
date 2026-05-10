@@ -118,6 +118,8 @@ model DriverProfile {
   contactPhone          String?
   driverType            String    @default("permanent")
   licenceClass          String    @default("")
+  endorsements          Json?
+  canDriveCategories    Json?
   canUseTrailer         Boolean   @default(false)
   trailerTypesAllowed   Json?
   adrAllowed            Boolean   @default(false)
@@ -248,6 +250,11 @@ model PlannedJob {
   assignedTrailer      String    @default("")
   vehicleClass         String    @default("")
   vehicleClassRequired String    @default("")
+  reqBodyCategory      String    @default("")
+  reqGvwMin            String    @default("")
+  reqBodyType          String    @default("")
+  reqEquipment         Json?
+  reqLicenceClass      String    @default("")
   trailerTypesAllowed  Json?
   priority             String    @default("normal")
   serviceType          String    @default("")
@@ -501,7 +508,7 @@ model ShiftSegment {
   companyId         Int
   shiftId           Int
   segmentNumber     Int
-  vehicleClass      String    @default("class1")
+  vehicleClass      String    @default("tractor")
   truckReg          String
   trailerReg        String?
   odometerStart     Int
@@ -658,6 +665,11 @@ model FleetUnit {
 
   registration  String
   vehicleClass  String
+  vehicleClassLegacy String @default("")
+  bodyCategory       String @default("")
+  gvwClass           String @default("")
+  bodyType           String @default("")
+  onboardEquipment   Json?
   status        String   @default("available")
   notes         String?
 
@@ -680,6 +692,11 @@ model FleetTrailer {
 
   registration  String
   trailerType   String
+  bodyType      String @default("")
+  trailerLength String @default("")
+  decks         Int    @default(1)
+  compartments  Int?
+  onboardEquipment Json?
   status        String   @default("available")
   notes         String?
 

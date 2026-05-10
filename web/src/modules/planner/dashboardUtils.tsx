@@ -1,6 +1,27 @@
 import type { Driver, FleetTrailer, FleetUnit, JobStop, PlannedJob } from "../../types";
 import type { AssignmentInput, JobContext, JobWarning, PlannerStatus, WarningLevel } from "./dashboardTypes";
 import { ACTIVE_JOB_STATUSES, CLOSED_JOB_STATUSES, STATUS_LABELS } from "./dashboardConstants";
+import { BODY_CATEGORIES, BODY_TYPES, bodyCategoryNeedsTrailer, isBodyCategory } from "../../constants/vehicleTaxonomy";
+
+function taxonomyLabel(options: readonly { value: string; label: string }[], value?: string | null) {
+  return value ? options.find((option) => option.value === value)?.label ?? value : "";
+}
+
+function bodyTypeList(values?: string[] | null) {
+  return compactArray(values).map((value) => taxonomyLabel(BODY_TYPES, value)).join(", ");
+}
+
+function unitRequirementLabel(unit: FleetUnit) {
+  return [
+    taxonomyLabel(BODY_CATEGORIES, unit.bodyCategory || unit.vehicleClass),
+    unit.gvwClass,
+    taxonomyLabel(BODY_TYPES, unit.bodyType),
+  ].filter(Boolean).join(" / ");
+}
+
+function trailerRequirementLabel(trailer: FleetTrailer) {
+  return taxonomyLabel(BODY_TYPES, trailer.bodyType || trailer.trailerType);
+}
 
 export function dayKey(value?: string | null) {
   if (!value) return "";
@@ -144,12 +165,19 @@ export function loadSummary(job: PlannedJob) {
 }
 
 export function vehicleRequirement(job: PlannedJob) {
-  return job.vehicleClassRequired || job.vehicleClass || job.minVehicleSize || "Vehicle not set";
+  const category = BODY_CATEGORIES.find(c => c.value === job.reqBodyCategory)?.label ?? job.reqBodyCategory;
+  const bodyType = BODY_TYPES.find(t => t.value === job.reqBodyType)?.label ?? job.reqBodyType;
+  return [category, job.reqGvwMin, bodyType].filter(Boolean).join(" / ")
+    || job.vehicleClassRequired
+    || job.vehicleClass
+    || job.minVehicleSize
+    || "Vehicle not set";
 }
 
 export function requiresTrailer(job: PlannedJob) {
-  const vehicle = normalizeVehicle(vehicleRequirement(job));
-  return vehicle === "artic" || compactArray(job.trailerTypesAllowed).length > 0 || !!job.assignedTrailer;
+  return (isBodyCategory(job.reqBodyCategory) && bodyCategoryNeedsTrailer(job.reqBodyCategory))
+    || compactArray(job.trailerTypesAllowed).length > 0
+    || !!job.assignedTrailer;
 }
 
 export function timeRange(job: PlannedJob) {
@@ -189,39 +217,39 @@ export function normalizeRegistration(value?: string | null) {
 
 export function normalizeVehicle(value?: string | null) {
   const text = String(value ?? "").toLowerCase();
-  if (text.includes("class1") || text.includes("class 1") || text.includes("artic")) return "artic";
-  if (text.includes("class2") || text.includes("class 2") || text.includes("rigid")) return "rigid";
+  if (text.includes("tractor") || text.includes("artic")) return "tractor";
+  if (text.includes("rigid")) return "rigid";
   if (text.includes("van")) return "van";
-  if (text.includes("tipper")) return "tipper";
-  if (text.includes("grab")) return "grab";
-  if (text.includes("mixer")) return "mixer";
-  if (text.includes("hiab")) return "hiab";
+  if (text.includes("tipper")) return "rigid";
+  if (text.includes("grab")) return "rigid";
+  if (text.includes("mixer")) return "rigid";
+  if (text.includes("hiab")) return "rigid";
   if (!text.trim() || text === "vehicle not set") return "";
   return text.trim();
 }
 
 export function normalizeTrailer(value?: string | null) {
   const text = String(value ?? "").toLowerCase();
-  if (text.includes("refrigerated") || text.includes("fridge") || text.includes("reefer")) return "refrigerated";
-  if (text.includes("curtain")) return "curtain";
+  if (text.includes("refrigerated") || text.includes("fridge") || text.includes("reefer")) return "fridge";
+  if (text.includes("curtain")) return "curtain_sider";
   if (text.includes("box")) return "box";
-  if (text.includes("flat")) return "flat";
-  if (text.includes("low")) return "low-loader";
+  if (text.includes("flat")) return "flatbed";
+  if (text.includes("low")) return "low_loader";
   if (text.includes("tipper")) return "tipper";
   if (!text.trim()) return "";
   return text.trim();
 }
 
 export function unitMatchesRequirement(job: PlannedJob, unit: FleetUnit | null) {
-  const required = normalizeVehicle(vehicleRequirement(job));
+  const required = job.reqBodyCategory || normalizeVehicle(vehicleRequirement(job));
   if (!required || !unit) return true;
-  return normalizeVehicle(unit.vehicleClass) === required;
+  return (unit.bodyCategory || normalizeVehicle(unit.vehicleClass)) === required;
 }
 
 export function trailerMatchesRequirement(job: PlannedJob, trailer: FleetTrailer | null) {
   const allowed = compactArray(job.trailerTypesAllowed).map(normalizeTrailer).filter(Boolean);
   if (!allowed.length || !trailer) return true;
-  return allowed.includes(normalizeTrailer(trailer.trailerType));
+  return allowed.includes(trailer.bodyType || normalizeTrailer(trailer.trailerType));
 }
 
 export function assignedDriver(job: PlannedJob, drivers: Driver[], driverId = job.assignedDriverId) {
@@ -299,7 +327,7 @@ export function buildWarnings(
     warnings.push({ level: "critical", type: "missing_stops", message: "Collection/drop-off stops are incomplete." });
   }
 
-  if (!job.vehicleClassRequired && !job.vehicleClass && !job.minVehicleSize) {
+  if (!job.reqBodyCategory && !job.vehicleClassRequired && !job.vehicleClass && !job.minVehicleSize) {
     warnings.push({ level: "warning", type: "missing_vehicle", message: "Vehicle type requirement is missing." });
   }
 
@@ -327,7 +355,7 @@ export function buildWarnings(
       warnings.push({
         level: "warning",
         type: "vehicle_mismatch",
-        message: `Job requires ${vehicleRequirement(job)}. Selected unit is ${unit.vehicleClass}.`,
+        message: `Job requires ${vehicleRequirement(job)}. Selected unit is ${unitRequirementLabel(unit) || unit.registration}.`,
       });
     }
   }
@@ -360,7 +388,7 @@ export function buildWarnings(
         warnings.push({
           level: "warning",
           type: "trailer_mismatch",
-          message: `Job requires ${compactArray(job.trailerTypesAllowed).join(", ")} trailer. Selected trailer is ${trailer.trailerType}.`,
+          message: `Job requires ${bodyTypeList(job.trailerTypesAllowed)} trailer. Selected trailer is ${trailerRequirementLabel(trailer) || trailer.registration}.`,
         });
       }
     }

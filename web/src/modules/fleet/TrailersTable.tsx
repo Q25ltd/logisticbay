@@ -1,6 +1,11 @@
 import type { FleetTrailer } from "../../types";
 import { Button } from "../../components/Button";
 import { statusBadgeClass, statusLabel } from "./fleetUtils";
+import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
+
+function trailerSpec(trailer: FleetTrailer) {
+  return BODY_TYPES.find(t => t.value === trailer.bodyType)?.label ?? trailer.bodyType ?? trailer.trailerType;
+}
 
 export default function TrailersTable({ trailers, allEmpty, onEdit, onDelete, onAddFirst }: {
   trailers: FleetTrailer[];
@@ -39,7 +44,7 @@ export default function TrailersTable({ trailers, allEmpty, onEdit, onDelete, on
             {trailers.map((trailer, i) => (
               <tr key={trailer.id} className={"border-b border-border last:border-0 " + (i % 2 === 1 ? "bg-slate-50/50" : "")}>
                 <td className="px-4 py-3 font-bold text-primary">{trailer.registration}</td>
-                <td className="px-4 py-3 text-muted">{trailer.trailerType}</td>
+                <td className="px-4 py-3 text-muted">{trailerSpec(trailer)}</td>
                 <td className="px-4 py-3">
                   <span className={statusBadgeClass(trailer.status)}>{statusLabel(trailer.status)}</span>
                 </td>
@@ -65,7 +70,7 @@ export default function TrailersTable({ trailers, allEmpty, onEdit, onDelete, on
                   <span className="font-bold text-primary">{trailer.registration}</span>
                   <span className={statusBadgeClass(trailer.status)}>{statusLabel(trailer.status)}</span>
                 </div>
-                <div className="text-sm text-muted">{trailer.trailerType}</div>
+                <div className="text-sm text-muted">{trailerSpec(trailer)}</div>
                 {trailer.yardLocation && <div className="text-xs text-muted mt-1">Yard: {trailer.yardLocation}</div>}
                 {trailer.notes && <div className="text-xs text-muted mt-1 line-clamp-2">{trailer.notes}</div>}
               </div>

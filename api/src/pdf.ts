@@ -210,7 +210,7 @@ export async function generateShiftPDF(shift: any): Promise<Buffer> {
 
       // Build descriptive segment header
       const vehicleTypeLabel =
-        seg.vehicleClass === "class2" ? "Rigid" :
+        seg.vehicleClass === "rigid" ? "Rigid" :
         seg.vehicleClass === "van"    ? "Van" :
         seg.trailerReg ? "" : "Solo Unit";
       const segmentTitle =
@@ -240,7 +240,7 @@ export async function generateShiftPDF(shift: any): Promise<Buffer> {
         y = checkPage(doc, y, 40);
         const truckLabel =
           seg.vehicleClass === "van"    ? "VAN WALK ROUND CHECKS" :
-          seg.vehicleClass === "class2" ? "RIGID HGV WALK ROUND CHECKS (DVSA 2023)" :
+          seg.vehicleClass === "rigid" ? "RIGID HGV WALK ROUND CHECKS (DVSA 2023)" :
                                           "TRUCK WALK ROUND CHECKS (DVSA 2023)";
         doc.fillColor(C.muted).fontSize(8).font("Helvetica-Bold").text(truckLabel, MARGIN, y);
         y += 12;
@@ -269,7 +269,7 @@ export async function generateShiftPDF(shift: any): Promise<Buffer> {
           y = checkRow(doc, item, i, y);
         });
         y += 6;
-      } else if (seg.vehicleClass === "class1" && seg.trailerReg && seg.needsTrailerCheck === false) {
+      } else if (seg.vehicleClass === "tractor" && seg.trailerReg && seg.needsTrailerCheck === false) {
         doc.rect(MARGIN, y, CONTENT, 14).fill(C.bg);
         doc.fillColor(C.muted).fontSize(7).font("Helvetica-Oblique")
           .text("Trailer unchanged from previous segment — walk round check not repeated", MARGIN + 6, y + 3);

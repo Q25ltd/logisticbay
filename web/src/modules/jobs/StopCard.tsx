@@ -4,6 +4,7 @@ import type { StopState } from "./createJobTypes";
 import { stopComplete, toMins, fmtMins } from "./createJobUtils";
 import { FieldLabel, OptionalToggle, Toggle } from "./CreateJobFormComponents";
 import { LOCATION_TYPES } from "./createJobConstants";
+import { applyCase, type CaseRule } from "../../lib/textCase";
 
 // ── Location typeahead (per stop) ─────────────────────────────────────────────
 
@@ -339,6 +340,10 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
 }) {
   const set = (field: keyof StopState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     onChange({ [field]: e.target.value });
+  const setCase = (field: keyof StopState, rule: CaseRule) => (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const next = applyCase(e.currentTarget.value, rule);
+    if (next !== e.currentTarget.value) onChange({ [field]: next });
+  };
 
   function applyLocation(loc: SavedLocation) {
     onChange({
@@ -448,32 +453,32 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           <div>
             <FieldLabel required>Company / Site Name</FieldLabel>
             <input type="text" className="input" placeholder="Acme Distribution Centre"
-              value={stop.siteName} onChange={set("siteName")} />
+              value={stop.siteName} onChange={set("siteName")} onBlur={setCase("siteName", "proper_name")} autoCapitalize="words" />
           </div>
 
           <div>
             <FieldLabel required>Address Line 1 / Street</FieldLabel>
             <input type="text" className="input" placeholder="1 Example Street"
-              value={stop.street} onChange={set("street")} />
+              value={stop.street} onChange={set("street")} onBlur={setCase("street", "address_line")} autoCapitalize="words" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel required>Town / City</FieldLabel>
               <input type="text" className="input" placeholder="Sampletown"
-                value={stop.town} onChange={set("town")} />
+                value={stop.town} onChange={set("town")} onBlur={setCase("town", "proper_name")} autoCapitalize="words" />
             </div>
             <div>
               <FieldLabel required>Postcode</FieldLabel>
               <input type="text" className="input placeholder:uppercase" placeholder="EX1 1AA"
-                value={stop.postcode} onChange={set("postcode")} />
+                value={stop.postcode} onChange={set("postcode")} onBlur={setCase("postcode", "upper")} autoCapitalize="characters" />
             </div>
           </div>
 
           <div>
             <FieldLabel required>Country</FieldLabel>
             <input type="text" className="input" placeholder="United Kingdom"
-              value={stop.country} onChange={set("country")} />
+              value={stop.country} onChange={set("country")} onBlur={setCase("country", "proper_name")} autoCapitalize="words" />
           </div>
 
           {/* Lat / Lng — required */}
@@ -567,17 +572,17 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 <div>
                   <FieldLabel>Unit / Building</FieldLabel>
                   <input type="text" className="input" placeholder="Unit 4 / Gatehouse"
-                    value={stop.unitBuilding} onChange={set("unitBuilding")} />
+                    value={stop.unitBuilding} onChange={set("unitBuilding")} onBlur={setCase("unitBuilding", "address_line")} autoCapitalize="words" />
                 </div>
                 <div>
                   <FieldLabel>Address Line 2</FieldLabel>
                   <input type="text" className="input" placeholder="Industrial estate, zone B"
-                    value={stop.addressLine2} onChange={set("addressLine2")} />
+                    value={stop.addressLine2} onChange={set("addressLine2")} onBlur={setCase("addressLine2", "address_line")} autoCapitalize="words" />
                 </div>
                 <div>
                   <FieldLabel>County / Region</FieldLabel>
                   <input type="text" className="input" placeholder="Exampleshire"
-                    value={stop.countyRegion} onChange={set("countyRegion")} />
+                    value={stop.countyRegion} onChange={set("countyRegion")} onBlur={setCase("countyRegion", "proper_name")} autoCapitalize="words" />
                 </div>
               </div>
             </div>
@@ -593,7 +598,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                   <div>
                     <FieldLabel>Contact Name</FieldLabel>
                     <input type="text" className="input" placeholder="Goods In"
-                      value={stop.contactName} onChange={set("contactName")} />
+                      value={stop.contactName} onChange={set("contactName")} onBlur={setCase("contactName", "proper_name")} autoCapitalize="words" />
                   </div>
                   <div>
                     <FieldLabel>Contact Phone</FieldLabel>
@@ -604,7 +609,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 <div>
                   <FieldLabel>Contact Email</FieldLabel>
                   <input type="email" className="input" placeholder="goodsin@example.com"
-                    value={stop.contactEmail} onChange={set("contactEmail")} />
+                    value={stop.contactEmail} onChange={set("contactEmail")} onBlur={setCase("contactEmail", "lower")} autoCapitalize="off" />
                 </div>
               </div>
             </div>
@@ -657,12 +662,12 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 <div>
                   <FieldLabel>Driver Notes / Instructions</FieldLabel>
                   <textarea className="input min-h-16 resize-none" placeholder="Use gate 3, call ahead 30 min before arrival…"
-                    value={stop.driverNotes} onChange={set("driverNotes")} />
+                    value={stop.driverNotes} onChange={set("driverNotes")} onBlur={setCase("driverNotes", "sentence")} />
                 </div>
                 <div>
                   <FieldLabel>Navigation Instructions</FieldLabel>
                   <input type="text" className="input" placeholder="Paste Google Maps or Waze link…"
-                    value={stop.navigationInstructions} onChange={set("navigationInstructions")} />
+                    value={stop.navigationInstructions} onChange={set("navigationInstructions")} onBlur={setCase("navigationInstructions", "sentence")} autoCapitalize="sentences" />
                 </div>
               </div>
             </div>
@@ -673,7 +678,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               <div>
                 <FieldLabel>Internal Notes</FieldLabel>
                 <textarea className="input min-h-16 resize-none" placeholder="Not shown to driver — planner only…"
-                  value={stop.internalNotes} onChange={set("internalNotes")} />
+                  value={stop.internalNotes} onChange={set("internalNotes")} onBlur={setCase("internalNotes", "sentence")} />
               </div>
             </div>
 

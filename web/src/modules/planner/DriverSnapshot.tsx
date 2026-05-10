@@ -3,6 +3,7 @@ import { driversApi } from "../../api/drivers";
 import type { Driver, FleetTrailer, FleetUnit } from "../../types";
 import type { JobContext } from "./dashboardTypes";
 import { isClosed } from "./dashboardUtils";
+import { BODY_CATEGORIES, BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 export default function DriverSnapshot({
   drivers,
@@ -35,31 +36,13 @@ export default function DriverSnapshot({
   } | null>>({});
   const [savingUnit, setSavingUnit] = useState<number | null>(null);
 
-  const EXTERNAL_VEHICLE_TYPES: { value: string; label: string }[] = [
-    { value: "van",     label: "Van" },
-    { value: "class_1", label: "Class 1" },
-    { value: "class_2", label: "Class 2" },
-    { value: "artic",   label: "Artic" },
-  ];
-
-  const EXTERNAL_TRAILER_TYPES: { value: string; label: string }[] = [
-    { value: "curtainsider", label: "Curtainsider" },
-    { value: "flatbed",      label: "Flatbed" },
-    { value: "fridge",       label: "Fridge" },
-    { value: "box",          label: "Box" },
-    { value: "skeletal",     label: "Skeletal" },
-    { value: "tipper",       label: "Tipper" },
-    { value: "tanker",       label: "Tanker" },
-    { value: "lowloader",    label: "Lowloader" },
-  ];
-
   function vehicleClassLabel(cls: string) {
-    return EXTERNAL_VEHICLE_TYPES.find((t) => t.value === cls)?.label
+    return BODY_CATEGORIES.find((t) => t.value === cls)?.label
       ?? (cls ? cls.charAt(0).toUpperCase() + cls.slice(1).replace(/_/g, " ") : "");
   }
 
   function trailerClassLabel(cls: string) {
-    return EXTERNAL_TRAILER_TYPES.find((t) => t.value === cls)?.label
+    return BODY_TYPES.find((t) => t.value === cls)?.label
       ?? (cls ? cls.charAt(0).toUpperCase() + cls.slice(1).replace(/_/g, " ") : "");
   }
 
@@ -82,7 +65,7 @@ export default function DriverSnapshot({
       [driverId]: {
         ...prev[driverId]!,
         unit: value,
-        unitClass: matched ? matched.vehicleClass : (prev[driverId]?.unitClass ?? ""),
+        unitClass: matched ? (matched.bodyCategory || matched.vehicleClass) : (prev[driverId]?.unitClass ?? ""),
       },
     }));
   }
@@ -94,7 +77,7 @@ export default function DriverSnapshot({
       [driverId]: {
         ...prev[driverId]!,
         trailer: value,
-        trailerClass: matched ? matched.trailerType : (prev[driverId]?.trailerClass ?? ""),
+        trailerClass: matched ? (matched.bodyType || matched.trailerType) : (prev[driverId]?.trailerClass ?? ""),
       },
     }));
   }
@@ -126,9 +109,9 @@ export default function DriverSnapshot({
       ...prev,
       [driver.id]: {
         unit:         driver.defaultTruckReg ?? "",
-        unitClass:    matchedUnit    ? matchedUnit.vehicleClass  : (driver.defaultTruckClass    ?? ""),
+        unitClass:    matchedUnit    ? (matchedUnit.bodyCategory || matchedUnit.vehicleClass) : (driver.defaultTruckClass    ?? ""),
         trailer:      driver.defaultTrailerReg ?? "",
-        trailerClass: matchedTrailer ? matchedTrailer.trailerType : (driver.defaultTrailerClass ?? ""),
+        trailerClass: matchedTrailer ? (matchedTrailer.bodyType || matchedTrailer.trailerType) : (driver.defaultTrailerClass ?? ""),
       },
     }));
   }
@@ -194,10 +177,10 @@ export default function DriverSnapshot({
                     ? <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No unit</span>
                     : isActive && (() => {
                         const fleetUnit = fleetUnitForReg(driver.defaultTruckReg ?? "");
-                        const cls = fleetUnit ? fleetUnit.vehicleClass : (driver.defaultTruckClass ?? "");
+                        const cls = fleetUnit ? (fleetUnit.bodyCategory || fleetUnit.vehicleClass) : (driver.defaultTruckClass ?? "");
                         const clsLabel = vehicleClassLabel(cls);
                         const matchedTrailerFleet = fleetTrailerForReg(driver.defaultTrailerReg ?? "");
-                        const trailerCls = matchedTrailerFleet ? matchedTrailerFleet.trailerType : (driver.defaultTrailerClass ?? "");
+                        const trailerCls = matchedTrailerFleet ? (matchedTrailerFleet.bodyType || matchedTrailerFleet.trailerType) : (driver.defaultTrailerClass ?? "");
                         const trailerClsLabel = trailerClassLabel(trailerCls);
                         return (
                           <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-600">
@@ -257,7 +240,7 @@ export default function DriverSnapshot({
                       />
                       {matchedUnit && (
                         <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
-                          ✓ In fleet · {vehicleClassLabel(matchedUnit.vehicleClass) || matchedUnit.vehicleClass} · {matchedUnit.status}
+                          ✓ In fleet · {vehicleClassLabel(matchedUnit.bodyCategory || matchedUnit.vehicleClass) || matchedUnit.bodyCategory || matchedUnit.vehicleClass} · {matchedUnit.status}
                         </p>
                       )}
                       {isExternal && (
@@ -270,7 +253,7 @@ export default function DriverSnapshot({
                     {/* External vehicle type picker */}
                     {isExternal && (
                       <div className="flex flex-wrap gap-1">
-                        {EXTERNAL_VEHICLE_TYPES.map((t) => (
+                        {BODY_CATEGORIES.map((t) => (
                           <button key={t.value} type="button"
                             onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, unitClass: t.value } }))}
                             className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${
@@ -303,7 +286,7 @@ export default function DriverSnapshot({
                       />
                       {matchedTrailer && (
                         <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
-                          ✓ In fleet · {trailerClassLabel(matchedTrailer.trailerType) || matchedTrailer.trailerType} · {matchedTrailer.status}
+                          ✓ In fleet · {trailerClassLabel(matchedTrailer.bodyType || matchedTrailer.trailerType) || matchedTrailer.bodyType || matchedTrailer.trailerType} · {matchedTrailer.status}
                         </p>
                       )}
                       {isExternalTrailer && (
@@ -316,7 +299,7 @@ export default function DriverSnapshot({
                     {/* External trailer type picker */}
                     {isExternalTrailer && (
                       <div className="flex flex-wrap gap-1">
-                        {EXTERNAL_TRAILER_TYPES.map((t) => (
+                        {BODY_TYPES.map((t) => (
                           <button key={t.value} type="button"
                             onClick={() => setEditing(prev => ({ ...prev, [driver.id]: { ...prev[driver.id]!, trailerClass: t.value } }))}
                             className={`rounded px-2 py-0.5 text-[11px] font-bold border transition-colors ${

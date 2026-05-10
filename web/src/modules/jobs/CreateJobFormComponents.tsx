@@ -1,4 +1,5 @@
 import React from "react";
+import { applyCase, autoCapitalizeFor, type CaseRule } from "../../lib/textCase";
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -16,6 +17,47 @@ export function ReadOnlyField({ label, value }: { label: string; value: string }
       <FieldLabel>{label}</FieldLabel>
       <div className="input bg-gray-50 text-muted cursor-default select-none text-sm py-2.5">{value}</div>
     </div>
+  );
+}
+
+export function TextField({
+  label,
+  value,
+  onChange,
+  caseRule = "none",
+  required,
+  hint,
+  placeholder,
+  type = "text",
+  className = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  caseRule?: CaseRule;
+  required?: boolean;
+  hint?: string;
+  placeholder?: string;
+  type?: "text" | "email" | "tel" | "number" | "date" | "time";
+  className?: string;
+}) {
+  return (
+    <label className="block">
+      <FieldLabel required={required}>{label}</FieldLabel>
+      <input
+        className={`input mt-1 w-full ${className}`}
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={event => onChange(event.target.value)}
+        onBlur={event => {
+          const next = applyCase(event.target.value, caseRule);
+          if (next !== value) onChange(next);
+        }}
+        autoCapitalize={autoCapitalizeFor(caseRule)}
+      />
+      {hint && <div className="text-xs text-muted mt-1">{hint}</div>}
+    </label>
   );
 }
 

@@ -4,6 +4,8 @@ import type { Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
 import { Input } from "../../components/Input";
+import { BODY_TYPES, DRIVER_ENDORSEMENTS, DRIVER_LICENCE_CLASSES } from "../../constants/vehicleTaxonomy";
+import { MultiCheck } from "../jobs/CreateJobFormComponents";
 
 export default function DriverForm({ initial, onSave, onCancel }: {
   initial?: Driver; onSave: () => void; onCancel: () => void;
@@ -16,6 +18,7 @@ export default function DriverForm({ initial, onSave, onCancel }: {
     employmentStartDate: initial?.employmentStartDate ? String(initial.employmentStartDate).slice(0, 10) : "",
     driverType: initial?.driverType ?? "permanent",
     licenceClass: initial?.licenceClass ?? "",
+    endorsements: Array.isArray(initial?.endorsements) ? initial.endorsements : [] as string[],
     canUseTrailer: Boolean(initial?.canUseTrailer),
     trailerTypesAllowed: Array.isArray(initial?.trailerTypesAllowed) ? initial.trailerTypesAllowed : [] as string[],
     adrAllowed: Boolean(initial?.adrAllowed),
@@ -134,13 +137,13 @@ export default function DriverForm({ initial, onSave, onCancel }: {
   return (
     <form onSubmit={handleSubmit}>
       {error && <Alert type="error" message={error} />}
-      <Input label="Full Name *" value={form.displayName} onChange={set("displayName")} placeholder="John Smith" required />
+      <Input label="Full Name *" value={form.displayName} onChange={set("displayName")} placeholder="John Smith" caseRule="proper_name" required />
       <div className="grid grid-cols-2 gap-3">
         <Input label="Employee No." value={form.employeeNumber} onChange={set("employeeNumber")} placeholder="D001" />
         <Input label="Phone" value={form.phoneNumber} onChange={set("phoneNumber")} placeholder="07700 000000" />
       </div>
       {!initial && (
-        <Input label="Email (creates login)" type="email" value={form.email} onChange={set("email")}
+        <Input label="Email (creates login)" type="email" value={form.email} onChange={set("email")} caseRule="lower"
           placeholder="driver@company.com" hint="Driver logs into mobile app with this email + PIN (default PIN: 123456 — must change on first login)" />
       )}
 
@@ -157,7 +160,24 @@ export default function DriverForm({ initial, onSave, onCancel }: {
             </select>
           </label>
 
-          <Input label="Licence class" value={form.licenceClass} onChange={set("licenceClass")} placeholder="Class 1 / CE" />
+          <label className="block text-sm font-semibold">
+            Licence class
+            <select className="input mt-1 w-full" value={form.licenceClass} onChange={set("licenceClass")}>
+              <option value="">Select...</option>
+              {DRIVER_LICENCE_CLASSES.map(l => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-3">
+          <div className="text-sm font-semibold mb-2">Endorsements</div>
+          <MultiCheck
+            options={DRIVER_ENDORSEMENTS.map(e => [e.value, e.label] as [string, string])}
+            value={form.endorsements}
+            onChange={list => setForm(p => ({ ...p, endorsements: list }))}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-3">
@@ -218,10 +238,10 @@ export default function DriverForm({ initial, onSave, onCancel }: {
         <div className="mt-3">
           <div className="text-sm font-semibold mb-2">Trailer types allowed</div>
           <div className="flex flex-wrap gap-2">
-            {["curtain", "box", "flatbed", "fridge", "low-loader", "tipper", "tanker"].map((type) => (
-              <label key={type} className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm">
-                <input type="checkbox" checked={form.trailerTypesAllowed.includes(type)} onChange={() => toggleList("trailerTypesAllowed", type)} />
-                {type}
+            {BODY_TYPES.map((type) => (
+              <label key={type.value} className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm">
+                <input type="checkbox" checked={form.trailerTypesAllowed.includes(type.value)} onChange={() => toggleList("trailerTypesAllowed", type.value)} />
+                {type.label}
               </label>
             ))}
           </div>
@@ -230,8 +250,8 @@ export default function DriverForm({ initial, onSave, onCancel }: {
 
       <div className="mt-5 border-t pt-4">
         <h3 className="font-bold text-primary mb-3">Base / area</h3>
-        <Input label="Base location" value={form.baseLocation} onChange={set("baseLocation")} placeholder="Depot / home base" />
-        <Input label="Operating area" value={form.operatingArea} onChange={set("operatingArea")} placeholder="North West, Liverpool, Manchester..." />
+        <Input label="Base location" value={form.baseLocation} onChange={set("baseLocation")} placeholder="Depot / home base" caseRule="proper_name" />
+        <Input label="Operating area" value={form.operatingArea} onChange={set("operatingArea")} placeholder="North West, Liverpool, Manchester..." caseRule="proper_name" />
         <Input label="Avoid areas" value={form.avoidAreas} onChange={set("avoidAreas")} placeholder="Areas to avoid if possible" />
       </div>
 
@@ -254,7 +274,7 @@ export default function DriverForm({ initial, onSave, onCancel }: {
                   <option value="other">Other</option>
                 </select>
               </label>
-              <Input label="Note" value={holiday.note} onChange={(e) => updateHoliday(index, "note", e.target.value)} placeholder="Optional" />
+              <Input label="Note" value={holiday.note} onChange={(e) => updateHoliday(index, "note", e.target.value)} placeholder="Optional" caseRule="sentence" />
             </div>
             <Button type="button" variant="outline" className="mt-2" onClick={() => removeHoliday(index)}>Remove date</Button>
           </div>

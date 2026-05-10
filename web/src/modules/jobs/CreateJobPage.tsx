@@ -6,20 +6,51 @@ import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../typ
 
 import {
   SERVICE_TYPES, JOB_TYPES, PRIORITY_OPTS,
-  VEHICLE_TYPES, MIN_SIZES, TRAILER_REQUIRED_TYPES, TRAILER_TYPES,
-  EQUIPMENT_OPTS, DRIVER_QUALS, LOAD_UNITS, HANDLING_METHODS,
+  BODY_CATEGORY_OPTS, BODY_TYPE_OPTS, GVW_CLASS_OPTS,
+  ONBOARD_EQUIPMENT_OPTS, DRIVER_LICENCE_OPTS, DRIVER_ENDORSEMENT_OPTS,
+  TRAILER_LENGTH_OPTS, LOAD_UNITS, HANDLING_METHODS,
 } from "./createJobConstants";
 import type { StopState } from "./createJobTypes";
 import { today, nowDisplay, makeStop, jobStopToStopState, stopComplete } from "./createJobUtils";
 import {
   FieldLabel, ReadOnlyField, SectionHeader, SectionFooter,
-  OptionalToggle, Toggle, MultiCheck,
+  OptionalToggle, Toggle, MultiCheck, TextField,
 } from "./CreateJobFormComponents";
 import CustomerSearch from "./CustomerSearch";
 import StopCard from "./StopCard";
 import { LocationSearch } from "./StopCard";
 import { buildBody } from "./createJobPayload";
 import type { CreateJobPayload } from "./createJobPayload";
+import {
+  BODY_TYPES_BY_CATEGORY,
+  bodyCategoryNeedsTrailer,
+  gvwForCategory,
+  licencesThatCanDrive,
+  type BodyCategory,
+  type BodyType,
+  type DriverEndorsement,
+  type DriverLicenceClass,
+  type GvwClass,
+  type OnboardEquipment,
+} from "../../constants/vehicleTaxonomy";
+
+function legacyVehicleToRequirement(value: string | undefined | null) {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "artic" || /^class\s*1$/.test(v)) return { bodyCategory: "tractor", bodyType: "", equipment: [] as string[], licenceClass: "CE" };
+  if (v === "van") return { bodyCategory: "van", bodyType: "panel", equipment: [] as string[], licenceClass: "B" };
+  if (v === "rigid" || /^class\s*2$/.test(v)) return { bodyCategory: "rigid", bodyType: "", equipment: [] as string[], licenceClass: "C" };
+  if (v === "tipper") return { bodyCategory: "rigid", bodyType: "tipper", equipment: [] as string[], licenceClass: "C" };
+  if (v === "grab") return { bodyCategory: "rigid", bodyType: "tipper", equipment: ["hiab_crane"], licenceClass: "C" };
+  if (v === "mixer") return { bodyCategory: "rigid", bodyType: "mixer", equipment: [] as string[], licenceClass: "C" };
+  if (v === "hiab") return { bodyCategory: "rigid", bodyType: "flatbed", equipment: ["hiab_crane"], licenceClass: "C" };
+  if (v === "refrigerated") return { bodyCategory: "rigid", bodyType: "fridge", equipment: ["fridge_unit"], licenceClass: "C" };
+  if (v === "other" || v.startsWith("other:")) return { bodyCategory: "rigid", bodyType: "other", equipment: [] as string[], licenceClass: "C" };
+  return { bodyCategory: "", bodyType: "", equipment: [] as string[], licenceClass: "" };
+}
+
+function optionLabel(options: [string, string][], value: string) {
+  return options.find(([v]) => v === value)?.[1] ?? value;
+}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -123,6 +154,21 @@ export default function CreateJobPage() {
 
     // ── Vehicle requirements ────────────────────────────────────────────────
     const vClass = jd?.vehicleType ?? "";
+    const legacyReq = legacyVehicleToRequirement(vClass);
+    const nextReqBodyCategory = jd?.reqBodyCategory ?? legacyReq.bodyCategory;
+    if (nextReqBodyCategory) setReqBodyCategory(nextReqBodyCategory as BodyCategory);
+    if (jd?.reqGvwMin) setReqGvwMin(jd.reqGvwMin as GvwClass);
+    else if (jd?.minSize) setReqGvwMin(jd.minSize as GvwClass);
+    const nextReqBodyType = jd?.reqBodyType ?? legacyReq.bodyType;
+    if (nextReqBodyType) setReqBodyType(nextReqBodyType as BodyType);
+    if (jd?.reqEquipment?.length) setReqEquipment(jd.reqEquipment as OnboardEquipment[]);
+    else if (jd?.equipmentReq?.length) setReqEquipment(jd.equipmentReq as OnboardEquipment[]);
+    else if (legacyReq.equipment.length) setReqEquipment(legacyReq.equipment as OnboardEquipment[]);
+    const nextReqLicence = jd?.reqLicenceClass ?? legacyReq.licenceClass;
+    if (nextReqLicence) setReqLicenceClass(nextReqLicence as DriverLicenceClass);
+    if (jd?.reqEndorsements?.length) setReqEndorsements(jd.reqEndorsements as DriverEndorsement[]);
+    else if (jd?.driverQuals?.length) setReqEndorsements(jd.driverQuals as DriverEndorsement[]);
+    if (jd?.trailerLength) setTrailerLength(jd.trailerLength);
     if (vClass) {
       if (vClass.startsWith("other:")) {
         setVehicleType("other");
@@ -135,7 +181,6 @@ export default function CreateJobPage() {
     if (jd?.minSize)          setMinSize(jd.minSize);
     if (jd?.trailersAllowed?.length)   setTrailersAllowed(jd.trailersAllowed);
     else if (t.trailerTypesAllowed?.length) setTrailersAllowed(t.trailerTypesAllowed);
-    if (jd?.trailersForbidden?.length) setTrailersForbidden(jd.trailersForbidden);
     if (jd?.equipmentReq?.length)      setEquipmentReq(jd.equipmentReq);
     if (jd?.driverQuals?.length)       setDriverQuals(jd.driverQuals);
     if (jd?.heightRestriction) setHeightRestriction(jd.heightRestriction);
@@ -304,6 +349,13 @@ export default function CreateJobPage() {
 
   // ── Section 05 — Vehicle Requirements ───────────────────────────────────
   const [sec5Collapsed,    setSec5Collapsed]    = useState(true);
+  const [reqBodyCategory,  setReqBodyCategory]  = useState<BodyCategory | "">("");
+  const [reqGvwMin,        setReqGvwMin]        = useState<GvwClass | "">("");
+  const [reqBodyType,      setReqBodyType]      = useState<BodyType | "">("");
+  const [reqEquipment,     setReqEquipment]     = useState<OnboardEquipment[]>([]);
+  const [reqLicenceClass,  setReqLicenceClass]  = useState<DriverLicenceClass | "">("");
+  const [reqEndorsements,  setReqEndorsements]  = useState<DriverEndorsement[]>([]);
+  const [trailerLength,    setTrailerLength]    = useState("");
   const [vehicleType,      setVehicleType]      = useState("");
   const [vehicleTypeOther, setVehicleTypeOther] = useState("");
   const [assignedTruck,    setAssignedTruck]    = useState("");
@@ -312,7 +364,6 @@ export default function CreateJobPage() {
   const [showVehicleOpts,  setShowVehicleOpts]  = useState(false);
   const [minSize,          setMinSize]          = useState("");
   const [trailersAllowed,  setTrailersAllowed]  = useState<string[]>([]);
-  const [trailersForbidden,setTrailersForbidden]= useState<string[]>([]);
   const [equipmentReq,     setEquipmentReq]     = useState<string[]>([]);
   const [driverQuals,      setDriverQuals]      = useState<string[]>([]);
   const [heightRestriction,setHeightRestriction]= useState("");
@@ -352,14 +403,40 @@ export default function CreateJobPage() {
     failureAction === "deliver_alternative" ||
     (failureAction === "finish_then_return" && returnDestination === "alternative");
 
+  useEffect(() => {
+    if (!reqBodyCategory) return;
+    const candidates = licencesThatCanDrive(reqBodyCategory);
+    if (candidates.length > 0 && !reqLicenceClass) {
+      setReqLicenceClass(candidates[0].value);
+    }
+  }, [reqBodyCategory, reqGvwMin, reqLicenceClass]);
+
+  useEffect(() => {
+    if (!reqBodyCategory) return;
+    const allowed = gvwForCategory(reqBodyCategory).map(g => g.value);
+    if (reqGvwMin && !allowed.includes(reqGvwMin)) setReqGvwMin("");
+    const bodyTypes = BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? [];
+    if (reqBodyType && !bodyTypes.includes(reqBodyType)) setReqBodyType("");
+  }, [reqBodyCategory, reqGvwMin, reqBodyType]);
+
   // ── Quality / missing fields ─────────────────────────────────────────────
   const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
   const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
   const loadComplete     = !!(materialDesc.trim() && totalQty.trim() && qtyUnit && totalWeight.trim());
-  const vehicleComplete  = !!vehicleType &&
-    (vehicleType !== "other" || !!vehicleTypeOther.trim()) &&
-    (!TRAILER_REQUIRED_TYPES.has(vehicleType) || trailersAllowed.length > 0);
+  const selectedBodyTypes = reqBodyCategory ? (BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []) : [];
+  const visibleBodyTypeOptions = selectedBodyTypes.length > 0
+    ? BODY_TYPE_OPTS.filter(([value]) => selectedBodyTypes.includes(value as BodyType))
+    : BODY_TYPE_OPTS;
+  const visibleGvwOptions = reqBodyCategory
+    ? gvwForCategory(reqBodyCategory).map(g => [g.value, g.label] as [string, string])
+    : GVW_CLASS_OPTS;
+  const trailerRequired = reqBodyCategory ? bodyCategoryNeedsTrailer(reqBodyCategory) : false;
+  const bodyTypeRequired = !!reqBodyCategory && selectedBodyTypes.length > 0 && !trailerRequired;
+  const vehicleComplete  =
+    !!reqBodyCategory &&
+    (!trailerRequired || trailersAllowed.length > 0) &&
+    (!bodyTypeRequired || !!reqBodyType);
 
   const altAddressComplete = !needsAltAddress || !!(
     altCompanyName.trim() && altStreet.trim() && altTown.trim() && altPostcode.trim() && altCountry.trim()
@@ -377,7 +454,7 @@ export default function CreateJobPage() {
   const sec2Started = !!(contactName || contactPhone);
   const sec3Started = stops.some(s => s.siteName || s.street);
   const sec4Started = !!(materialDesc || totalQty || totalWeight);
-  const sec5Started = !!vehicleType;
+  const sec5Started = !!(reqBodyCategory || reqGvwMin || reqBodyType || reqEquipment.length || reqLicenceClass || trailersAllowed.length);
   const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
   const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started;
 
@@ -428,6 +505,15 @@ export default function CreateJobPage() {
       setWeighbridgeReq(ld?.weighbridgeRequired ?? false);
       setPodRequired(job.requirePOD ?? true);
       const vClass = job.vehicleClassRequired || job.vehicleClass || "";
+      const legacyReq = legacyVehicleToRequirement(vClass);
+      setReqBodyCategory((job.reqBodyCategory || legacyReq.bodyCategory || "") as BodyCategory | "");
+      setReqGvwMin((job.reqGvwMin || job.minVehicleSize || "") as GvwClass | "");
+      setReqBodyType((job.reqBodyType || legacyReq.bodyType || "") as BodyType | "");
+      setReqEquipment(Array.isArray(job.reqEquipment)
+        ? job.reqEquipment as OnboardEquipment[]
+        : legacyReq.equipment as OnboardEquipment[]);
+      setReqLicenceClass((job.reqLicenceClass || legacyReq.licenceClass || "") as DriverLicenceClass | "");
+      setReqEndorsements(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq as DriverEndorsement[] : []);
       if (vClass.startsWith("other:")) {
         setVehicleType("other");
         setVehicleTypeOther(vClass.replace("other:", "").trim());
@@ -436,7 +522,6 @@ export default function CreateJobPage() {
       }
       setMinSize(job.minVehicleSize || "");
       setTrailersAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
-      setTrailersForbidden(Array.isArray(job.trailerTypesForbidden) ? job.trailerTypesForbidden : []);
       setAssignedTruck(job.assignedTruck || "");
       setAssignedTrailer(job.assignedTrailer || "");
       setEquipmentReq(Array.isArray(job.equipmentRequired) ? job.equipmentRequired : []);
@@ -558,9 +643,15 @@ export default function CreateJobPage() {
         podRequired:      params.podRequired,
         vehicleType:      params.vehicleType,
         vehicleTypeOther: params.vehicleTypeOther,
+        reqBodyCategory:  params.reqBodyCategory,
+        reqGvwMin:        params.reqGvwMin,
+        reqBodyType:      params.reqBodyType,
+        reqEquipment:     params.reqEquipment,
+        reqLicenceClass:  params.reqLicenceClass,
+        reqEndorsements:  params.reqEndorsements,
+        trailerLength:    trailerLength,
         minSize:          params.minSize,
         trailersAllowed:  params.trailersAllowed,
-        trailersForbidden: params.trailersForbidden,
         equipmentReq:     params.equipmentReq,
         driverQuals:      params.driverQuals,
         heightRestriction: params.heightRestriction,
@@ -637,7 +728,7 @@ export default function CreateJobPage() {
     !totalQty.trim()       && "Total quantity",
     !qtyUnit               && "Unit",
     !totalWeight.trim()    && "Total weight",
-    !vehicleComplete       && "Vehicle type",
+    !vehicleComplete       && "Vehicle requirements",
     !sec6Complete          && "Return / failure instruction",
   ].filter(Boolean) as string[];
 
@@ -666,12 +757,12 @@ export default function CreateJobPage() {
     { label: "Booking references",    pts: 2, ok: stops.some(s => s.bookingRequired && !!s.bookingRef.trim()) },
     { label: "Driver stop notes",     pts: 2, ok: stops.some(s => !!s.driverNotes.trim()) },
     { label: "Volume / dimensions",   pts: 2, ok: !!(volume.trim() || dimensions.trim()) },
-    { label: "Equipment required",    pts: 4, ok: equipmentReq.length > 0 },
-    { label: "Driver qualifications", pts: 4, ok: driverQuals.length > 0 },
-    { label: "Trailer rules",         pts: 2, ok: trailersAllowed.length > 0 || trailersForbidden.length > 0 },
+    { label: "Equipment required",    pts: 4, ok: reqEquipment.length > 0 },
+    { label: "Driver endorsements",   pts: 4, ok: reqEndorsements.length > 0 },
+    { label: "Trailer rules",         pts: 2, ok: trailersAllowed.length > 0 },
     { label: "Vehicle restrictions",  pts: 2, ok: !!(heightRestriction.trim() || weightRestriction.trim() || lengthRestriction.trim()) },
     { label: "Access notes",          pts: 3, ok: !!accessNotes.trim() },
-    { label: "Min vehicle size",      pts: 2, ok: !!minSize },
+    { label: "Min vehicle size",      pts: 2, ok: !!reqGvwMin },
     { label: "Load notes",            pts: 1, ok: !!loadNotes.trim() },
   ];
 
@@ -716,6 +807,12 @@ export default function CreateJobPage() {
       unloadingMethod,
       vehicleType,
       vehicleTypeOther,
+      reqBodyCategory,
+      reqGvwMin,
+      reqBodyType,
+      reqEquipment,
+      reqLicenceClass,
+      reqEndorsements,
       customerId,
       customerName,
       plannedDate,
@@ -737,7 +834,6 @@ export default function CreateJobPage() {
       assignedTrailer,
       minSize,
       trailersAllowed,
-      trailersForbidden,
       equipmentReq,
       driverQuals,
       heightRestriction,
@@ -1035,27 +1131,17 @@ export default function CreateJobPage() {
             <OptionalToggle open={showBasicsOpts} onToggle={() => setShowBasicsOpts(o => !o)} label="optional job details" />
             {showBasicsOpts && (
               <div className="space-y-4 pt-1 border-t border-border">
-                <div>
-                  <FieldLabel>Job Title / Short Description</FieldLabel>
-                  <input type="text" className="input" placeholder="e.g. Overnight trunking — North to South depot"
-                    value={jobTitle} onChange={e => setJobTitle(e.target.value)} />
-                </div>
+                <TextField
+                  label="Job Title / Short Description"
+                  value={jobTitle}
+                  onChange={setJobTitle}
+                  placeholder="e.g. Overnight trunking — North to South depot"
+                  caseRule="proper_name"
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <FieldLabel>Job Reference No.</FieldLabel>
-                    <input type="text" className="input" placeholder="JB-00123"
-                      value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Customer Reference No.</FieldLabel>
-                    <input type="text" className="input" placeholder="CUST-REF-456"
-                      value={customerRef} onChange={e => setCustomerRef(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Purchase Order No.</FieldLabel>
-                    <input type="text" className="input" placeholder="PO-789"
-                      value={purchaseOrderNumber} onChange={e => setPurchaseOrderNumber(e.target.value)} />
-                  </div>
+                  <TextField label="Job Reference No." value={referenceNumber} onChange={setReferenceNumber} placeholder="JB-00123" />
+                  <TextField label="Customer Reference No." value={customerRef} onChange={setCustomerRef} placeholder="CUST-REF-456" />
+                  <TextField label="Purchase Order No." value={purchaseOrderNumber} onChange={setPurchaseOrderNumber} placeholder="PO-789" />
                 </div>
                 <div className="max-w-xs">
                   <FieldLabel>Priority</FieldLabel>
@@ -1087,11 +1173,7 @@ export default function CreateJobPage() {
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel required>Contact Name</FieldLabel>
-                <input type="text" className="input" placeholder="Jane Smith"
-                  value={contactName} onChange={e => setContactName(e.target.value)} />
-              </div>
+              <TextField label="Contact Name" value={contactName} onChange={setContactName} placeholder="Jane Smith" caseRule="proper_name" required />
               <div>
                 <FieldLabel required>Contact Phone</FieldLabel>
                 <input type="tel" className="input" placeholder="07700 900123"
@@ -1101,16 +1183,8 @@ export default function CreateJobPage() {
             <OptionalToggle open={showCustOpts} onToggle={() => setShowCustOpts(o => !o)} label="customer details" />
             {showCustOpts && (
               <div className="space-y-4 pt-1 border-t border-border">
-                <div>
-                  <FieldLabel>Customer Address</FieldLabel>
-                  <input type="text" className="input" placeholder="1 Example Road, Sampletown, EX1 1AA"
-                    value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
-                </div>
-                <div>
-                  <FieldLabel>Contact Email</FieldLabel>
-                  <input type="email" className="input" placeholder="jane@example.com"
-                    value={contactEmail} onChange={e => setContactEmail(e.target.value)} />
-                </div>
+                <TextField label="Customer Address" value={customerAddress} onChange={setCustomerAddress} placeholder="1 Example Road, Sampletown, EX1 1AA" caseRule="address_line" />
+                <TextField label="Contact Email" type="email" value={contactEmail} onChange={setContactEmail} placeholder="jane@example.com" caseRule="lower" />
                 <div>
                   <FieldLabel>Billing Notes</FieldLabel>
                   <textarea className="input min-h-16 resize-none" placeholder="e.g. Invoice to head office, attn: Accounts Payable…"
@@ -1328,51 +1402,74 @@ export default function CreateJobPage() {
 
         {/* ── Section 05 — Vehicle Requirements ─────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={5} icon="🚛" title="Vehicle Requirements" subtitle="Vehicle class, trailer type and special equipment" active
+          <SectionHeader num={5} icon="🚛" title="Vehicle Requirements" subtitle="Body category, trailer, equipment and licence" active
             collapsed={sec5Collapsed} onToggle={() => setSec5Collapsed(o => !o)}
-            summary={vehicleType ? VEHICLE_TYPES.find(([v]) => v === vehicleType)?.[1] ?? vehicleType : undefined}
+            summary={reqBodyCategory ? [
+              optionLabel(BODY_CATEGORY_OPTS, reqBodyCategory),
+              reqGvwMin,
+              reqBodyType ? optionLabel(BODY_TYPE_OPTS, reqBodyType) : "",
+            ].filter(Boolean).join(" · ") : undefined}
             complete={vehicleComplete} started={sec5Started} />
 
           {!sec5Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
-            {/* Vehicle type */}
             <div>
-              <FieldLabel required>Vehicle Type Required</FieldLabel>
+              <FieldLabel required>Body Category</FieldLabel>
               <div className="flex flex-wrap gap-2">
-                {VEHICLE_TYPES.map(([key, label]) => (
+                {BODY_CATEGORY_OPTS.map(([key, label]) => (
                   <button key={key} type="button" onClick={() => {
+                      const next = key as BodyCategory;
+                      setReqBodyCategory(next);
                       setVehicleType(key);
-                      // Clear trailer type selection when switching away from trailer-requiring types
-                      if (!TRAILER_REQUIRED_TYPES.has(key)) setTrailersAllowed([]);
+                      if (!bodyCategoryNeedsTrailer(next)) setTrailersAllowed([]);
                     }}
                     className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (vehicleType === key
+                      (reqBodyCategory === key
                         ? "bg-slate-700 text-white border-slate-700"
                         : "bg-white text-muted border-border hover:border-gray-400")}>
                     {label}
                   </button>
                 ))}
               </div>
-              {vehicleType === "other" && (
-                <div className="mt-3 max-w-xs">
-                  <FieldLabel required>Vehicle Type Description</FieldLabel>
-                  <input type="text" className="input" placeholder="e.g. Specialist tanker, car transporter…"
-                    value={vehicleTypeOther} onChange={e => setVehicleTypeOther(e.target.value)} />
-                </div>
-              )}
             </div>
 
-            {/* Trailer type picker — shown inline when vehicle requires a trailer */}
-            {TRAILER_REQUIRED_TYPES.has(vehicleType) && (
+            {visibleGvwOptions.length > 0 && (
+              <div>
+                <FieldLabel>Minimum GVW</FieldLabel>
+                <div className="flex flex-wrap gap-2">
+                  {visibleGvwOptions.map(([key, label]) => (
+                    <button key={key} type="button" onClick={() => setReqGvwMin(key as GvwClass)}
+                      className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                        (reqGvwMin === key
+                          ? "bg-slate-700 text-white border-slate-700"
+                          : "bg-white text-muted border-border hover:border-gray-400")}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {bodyTypeRequired && (
+              <div>
+                <FieldLabel required>Body Type</FieldLabel>
+                <select className="input max-w-xl" value={reqBodyType} onChange={e => setReqBodyType(e.target.value as BodyType | "")}>
+                  <option value="">— Select body type —</option>
+                  {visibleBodyTypeOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            )}
+
+            {trailerRequired && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <span className="text-blue-700 text-sm font-bold">Trailer required</span>
-                  <span className="text-blue-500 text-xs">— select the trailer type for this job</span>
+                  <span className="text-blue-500 text-xs">— select acceptable trailer body types</span>
                 </div>
                 <div>
-                  <FieldLabel required>Trailer Type</FieldLabel>
+                  <FieldLabel required>Trailer Body Type</FieldLabel>
                   <div className="flex flex-wrap gap-2 mt-1">
-                    {TRAILER_TYPES.map(([key, label]) => (
+                    {BODY_TYPE_OPTS.map(([key, label]) => (
                       <button key={key} type="button"
                         onClick={() => setTrailersAllowed(prev =>
                           prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]
@@ -1390,6 +1487,13 @@ export default function CreateJobPage() {
                   )}
                 </div>
                 <div className="max-w-xs">
+                  <FieldLabel>Trailer Length</FieldLabel>
+                  <select className="input" value={trailerLength} onChange={e => setTrailerLength(e.target.value)}>
+                    <option value="">— No length preference —</option>
+                    {TRAILER_LENGTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="max-w-xs">
                   <FieldLabel>Trailer Number Plate</FieldLabel>
                   <input
                     type="text"
@@ -1402,22 +1506,21 @@ export default function CreateJobPage() {
               </div>
             )}
 
-            {/* Truck + trailer regs for non-trailer vehicle types */}
-            {!TRAILER_REQUIRED_TYPES.has(vehicleType) && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-xl">
-                <div>
-                  <FieldLabel>Truck / Unit Registration</FieldLabel>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g. AB12 CDE"
-                    value={assignedTruck}
-                    onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
-                  />
-                  <p className="text-xs text-muted mt-1.5">
-                    Optional at creation. Planner assigns from dashboard.
-                  </p>
-                </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-xl">
+              <div>
+                <FieldLabel>Truck / Unit Registration</FieldLabel>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. AB12 CDE"
+                  value={assignedTruck}
+                  onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
+                />
+                <p className="text-xs text-muted mt-1.5">
+                  Optional at creation. Planner assigns from dashboard.
+                </p>
+              </div>
+              {!trailerRequired && (
                 <div>
                   <FieldLabel>Trailer Number Plate</FieldLabel>
                   <input
@@ -1431,71 +1534,39 @@ export default function CreateJobPage() {
                     Use when a trailer is already known or loaded.
                   </p>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Truck reg shown separately when trailer box is inline */}
-            {TRAILER_REQUIRED_TYPES.has(vehicleType) && (
-              <div className="max-w-xs">
-                <FieldLabel>Truck / Unit Registration</FieldLabel>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="e.g. AB12 CDE"
-                  value={assignedTruck}
-                  onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
-                />
-                <p className="text-xs text-muted mt-1.5">
-                  Optional at creation. Planner assigns from dashboard.
-                </p>
-              </div>
-            )}
+            <div>
+              <FieldLabel>Onboard Equipment</FieldLabel>
+              <MultiCheck options={ONBOARD_EQUIPMENT_OPTS} value={reqEquipment} onChange={v => setReqEquipment(v as OnboardEquipment[])} />
+            </div>
+
+            <div>
+              <FieldLabel>Minimum Driver Licence</FieldLabel>
+              <select className="input max-w-xl" value={reqLicenceClass} onChange={e => setReqLicenceClass(e.target.value as DriverLicenceClass | "")}>
+                <option value="">— Select licence —</option>
+                {DRIVER_LICENCE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <FieldLabel>Driver Endorsements</FieldLabel>
+              <MultiCheck options={DRIVER_ENDORSEMENT_OPTS} value={reqEndorsements} onChange={v => setReqEndorsements(v as DriverEndorsement[])} />
+            </div>
 
             <OptionalToggle open={showVehicleOpts} onToggle={() => setShowVehicleOpts(o => !o)} label="vehicle details" />
 
             {showVehicleOpts && (
               <div className="space-y-6 pt-1 border-t border-border">
-
-                {/* Minimum size */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Size</div>
-                  <div className="max-w-xs">
-                    <FieldLabel>Minimum Vehicle Size</FieldLabel>
-                    <select className="input" value={minSize} onChange={e => setMinSize(e.target.value)}>
-                      <option value="">— No minimum —</option>
-                      {MIN_SIZES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Trailer rules */}
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Trailer Rules</div>
-                  <div className="space-y-4">
-                    <div>
-                      <FieldLabel>Trailer Types Allowed</FieldLabel>
-                      <MultiCheck options={TRAILER_TYPES} value={trailersAllowed} onChange={setTrailersAllowed} />
-                    </div>
-                    <div>
-                      <FieldLabel>Trailer Types Forbidden</FieldLabel>
-                      <MultiCheck options={TRAILER_TYPES} value={trailersForbidden} onChange={setTrailersForbidden} />
-                    </div>
+                  <div>
+                    <FieldLabel>Trailer Body Types Allowed</FieldLabel>
+                    <MultiCheck options={BODY_TYPE_OPTS} value={trailersAllowed} onChange={setTrailersAllowed} />
                   </div>
                 </div>
 
-                {/* Equipment */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Equipment Required</div>
-                  <MultiCheck options={EQUIPMENT_OPTS} value={equipmentReq} onChange={setEquipmentReq} />
-                </div>
-
-                {/* Driver qualifications */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Driver Qualifications</div>
-                  <MultiCheck options={DRIVER_QUALS} value={driverQuals} onChange={setDriverQuals} />
-                </div>
-
-                {/* Restrictions */}
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Restrictions</div>
                   <div className="grid grid-cols-3 gap-3">
@@ -1526,7 +1597,6 @@ export default function CreateJobPage() {
                   </div>
                 </div>
 
-                {/* Access notes */}
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Access / Vehicle Notes</div>
                   <textarea className="input min-h-16 resize-none"

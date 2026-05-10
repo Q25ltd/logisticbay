@@ -11,6 +11,7 @@ import {
   stopKey,
   warningDot,
 } from "./dashboardUtils";
+import { BODY_TYPES, ONBOARD_EQUIPMENT } from "../../constants/vehicleTaxonomy";
 
 function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
@@ -28,6 +29,14 @@ function DrawerSection({ title, children }: { title: string; children: React.Rea
       {children}
     </section>
   );
+}
+
+function labelFor(options: readonly { value: string; label: string }[], value: string) {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
+function labelArray(options: readonly { value: string; label: string }[], values?: string[] | null) {
+  return compactArray(values).map((value) => labelFor(options, value)).join(", ");
 }
 
 export default function JobDetailDrawer({
@@ -121,9 +130,8 @@ export default function JobDetailDrawer({
           <DrawerSection title="Vehicle/trailer requirements">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <DetailRow label="Vehicle type" value={context.vehicle} />
-              <DetailRow label="Trailer allowed" value={compactArray(job.trailerTypesAllowed).join(", ")} />
-              <DetailRow label="Trailer forbidden" value={compactArray(job.trailerTypesForbidden).join(", ")} />
-              <DetailRow label="Equipment" value={compactArray(job.equipmentRequired).join(", ")} />
+              <DetailRow label="Trailer allowed" value={labelArray(BODY_TYPES, job.trailerTypesAllowed)} />
+              <DetailRow label="Equipment" value={labelArray(ONBOARD_EQUIPMENT, compactArray(job.reqEquipment).length ? job.reqEquipment : job.equipmentRequired)} />
               <DetailRow label="Height limit" value={job.heightRestriction} />
               <DetailRow label="Weight limit" value={job.weightRestriction} />
               <DetailRow label="Length limit" value={job.lengthRestriction} />

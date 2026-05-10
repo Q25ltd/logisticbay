@@ -1,31 +1,19 @@
-export const VEHICLE_CLASSES = [
-  "van",
-  "class2",
-  "class1",
-  "rigid",
-  "artic",
-  "tipper",
-  "grab",
-  "mixer",
-  "hiab",
-  "refrigerated",
-  "other",
-] as const;
-
-export const TRAILER_TYPES = [
-  "curtain_sider",
-  "box",
-  "fridge",
-  "flatbed",
-  "low_loader",
-  "tanker",
-  "walking_floor",
-  "tipper",
-  "container",
-  "skeletal",
-  "refrigerated_trailer",
-  "other",
-] as const;
+export {
+  BODY_CATEGORIES,
+  BODY_TYPES,
+  GVW_CLASSES,
+  ONBOARD_EQUIPMENT,
+  DRIVER_LICENCE_CLASSES,
+  DRIVER_ENDORSEMENTS,
+  bodyCategoryNeedsTrailer,
+  gvwForCategory,
+  licencesThatCanDrive,
+  isBodyCategory,
+  isBodyType,
+  isGvwClass,
+  isOnboardEquipment,
+  isLicenceClass,
+} from "./vehicleTaxonomy.js";
 
 export const JOB_STOP_TYPES = [
   "pickup",
@@ -49,18 +37,8 @@ export const LOAD_UNITS = [
   "other",
 ] as const;
 
-export type VehicleClass = typeof VEHICLE_CLASSES[number];
-export type TrailerType = typeof TRAILER_TYPES[number];
 export type JobStopType = typeof JOB_STOP_TYPES[number];
 export type LoadUnit = typeof LOAD_UNITS[number];
-
-export function isVehicleClass(value: unknown): value is VehicleClass {
-  return typeof value === "string" && (VEHICLE_CLASSES as readonly string[]).includes(value);
-}
-
-export function isTrailerType(value: unknown): value is TrailerType {
-  return typeof value === "string" && (TRAILER_TYPES as readonly string[]).includes(value);
-}
 
 export function isJobStopType(value: unknown): value is JobStopType {
   return typeof value === "string" && (JOB_STOP_TYPES as readonly string[]).includes(value);

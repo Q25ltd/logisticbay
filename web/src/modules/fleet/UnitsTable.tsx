@@ -1,6 +1,13 @@
 import type { FleetUnit } from "../../types";
 import { Button } from "../../components/Button";
 import { statusBadgeClass, statusLabel } from "./fleetUtils";
+import { BODY_CATEGORIES, BODY_TYPES } from "../../constants/vehicleTaxonomy";
+
+function unitSpec(unit: FleetUnit) {
+  const category = BODY_CATEGORIES.find(c => c.value === unit.bodyCategory)?.label ?? unit.bodyCategory ?? unit.vehicleClass;
+  const bodyType = BODY_TYPES.find(t => t.value === unit.bodyType)?.label ?? unit.bodyType ?? "";
+  return [category, unit.gvwClass, bodyType].filter(Boolean).join(" / ");
+}
 
 export default function UnitsTable({ units, allEmpty, onEdit, onDelete, onAddFirst }: {
   units: FleetUnit[];
@@ -39,7 +46,7 @@ export default function UnitsTable({ units, allEmpty, onEdit, onDelete, onAddFir
             {units.map((unit, i) => (
               <tr key={unit.id} className={"border-b border-border last:border-0 " + (i % 2 === 1 ? "bg-slate-50/50" : "")}>
                 <td className="px-4 py-3 font-bold text-primary">{unit.registration}</td>
-                <td className="px-4 py-3 text-muted">{unit.vehicleClass}</td>
+                <td className="px-4 py-3 text-muted">{unitSpec(unit)}</td>
                 <td className="px-4 py-3">
                   <span className={statusBadgeClass(unit.status)}>{statusLabel(unit.status)}</span>
                 </td>
@@ -65,7 +72,7 @@ export default function UnitsTable({ units, allEmpty, onEdit, onDelete, onAddFir
                   <span className="font-bold text-primary">{unit.registration}</span>
                   <span className={statusBadgeClass(unit.status)}>{statusLabel(unit.status)}</span>
                 </div>
-                <div className="text-sm text-muted">{unit.vehicleClass}</div>
+                <div className="text-sm text-muted">{unitSpec(unit)}</div>
                 {unit.yardLocation && <div className="text-xs text-muted mt-1">Yard: {unit.yardLocation}</div>}
                 {unit.notes && <div className="text-xs text-muted mt-1 line-clamp-2">{unit.notes}</div>}
               </div>

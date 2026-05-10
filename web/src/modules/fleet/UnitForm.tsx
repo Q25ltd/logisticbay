@@ -4,8 +4,18 @@ import type { FleetUnit } from "../../types";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
-import { VEHICLE_CLASSES, UNIT_STATUSES } from "./fleetConstants";
+import { UNIT_STATUSES } from "./fleetConstants";
 import { statusLabel } from "./fleetUtils";
+import {
+  BODY_CATEGORIES,
+  BODY_TYPES,
+  BODY_TYPES_BY_CATEGORY,
+  GVW_CLASSES,
+  ONBOARD_EQUIPMENT,
+  gvwForCategory,
+  type BodyCategory,
+} from "../../constants/vehicleTaxonomy";
+import { MultiCheck } from "../jobs/CreateJobFormComponents";
 
 export default function UnitForm({ initial, onSave, onCancel }: {
   initial?: FleetUnit; onSave: () => void; onCancel: () => void;
@@ -13,6 +23,10 @@ export default function UnitForm({ initial, onSave, onCancel }: {
   const [form, setForm] = useState({
     registration: initial?.registration ?? "",
     vehicleClass:  initial?.vehicleClass  ?? "",
+    bodyCategory:  initial?.bodyCategory   ?? "",
+    gvwClass:      initial?.gvwClass       ?? "",
+    bodyType:      initial?.bodyType       ?? "",
+    onboardEquipment: Array.isArray(initial?.onboardEquipment) ? initial.onboardEquipment : [] as string[],
     status:        initial?.status        ?? "available",
     notes:         initial?.notes         ?? "",
     yardLocation:  initial?.yardLocation  ?? "",
@@ -23,6 +37,15 @@ export default function UnitForm({ initial, onSave, onCancel }: {
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
 
+  const categoryGvwOptions = form.bodyCategory ? gvwForCategory(form.bodyCategory as BodyCategory) : [];
+  const gvwOptions = categoryGvwOptions.length > 0 ? categoryGvwOptions : GVW_CLASSES;
+  const bodyTypeValues = form.bodyCategory
+    ? BODY_TYPES_BY_CATEGORY[form.bodyCategory as BodyCategory] ?? []
+    : [];
+  const bodyTypeOptions = bodyTypeValues.length > 0
+    ? BODY_TYPES.filter(t => bodyTypeValues.includes(t.value))
+    : BODY_TYPES;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -30,7 +53,11 @@ export default function UnitForm({ initial, onSave, onCancel }: {
     try {
       const payload = {
         registration: form.registration.trim(),
-        vehicleClass:  form.vehicleClass,
+        vehicleClass:  form.vehicleClass || form.bodyCategory,
+        bodyCategory:  form.bodyCategory,
+        gvwClass:      form.gvwClass,
+        bodyType:      form.bodyType,
+        onboardEquipment: form.onboardEquipment,
         status:        form.status,
         notes:         form.notes.trim()        || undefined,
         yardLocation:  form.yardLocation.trim() || undefined,
@@ -56,14 +83,18 @@ export default function UnitForm({ initial, onSave, onCancel }: {
         value={form.registration}
         onChange={set("registration")}
         placeholder="e.g. AB12 CDE"
+        caseRule="upper"
         required
       />
       <div className="grid grid-cols-2 gap-3">
         <label className="block text-sm font-semibold">
-          Vehicle Class *
-          <select className="input mt-1 w-full" value={form.vehicleClass} onChange={set("vehicleClass")} required>
-            <option value="">Select class…</option>
-            {VEHICLE_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+          Body Category *
+          <select className="input mt-1 w-full" value={form.bodyCategory} onChange={e => {
+            const next = e.target.value;
+            setForm(p => ({ ...p, bodyCategory: next, vehicleClass: next, gvwClass: "", bodyType: "" }));
+          }} required>
+            <option value="">Select category...</option>
+            {BODY_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </label>
         <label className="block text-sm font-semibold">
@@ -75,11 +106,36 @@ export default function UnitForm({ initial, onSave, onCancel }: {
           </select>
         </label>
       </div>
+      <div className="grid grid-cols-2 gap-3 mt-3">
+        <label className="block text-sm font-semibold">
+          GVW Class *
+          <select className="input mt-1 w-full" value={form.gvwClass} onChange={set("gvwClass")} required>
+            <option value="">Select GVW...</option>
+            {gvwOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold">
+          Body Type
+          <select className="input mt-1 w-full" value={form.bodyType} onChange={set("bodyType")}>
+            <option value="">None / not applicable</option>
+            {bodyTypeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="mt-3">
+        <div className="text-sm font-semibold mb-2">Onboard equipment</div>
+        <MultiCheck
+          options={ONBOARD_EQUIPMENT.map(e => [e.value, e.label] as [string, string])}
+          value={form.onboardEquipment}
+          onChange={list => setForm(p => ({ ...p, onboardEquipment: list }))}
+        />
+      </div>
       <Input
         label="Yard Location"
         value={form.yardLocation}
         onChange={set("yardLocation")}
         placeholder="Bay 3, North yard…"
+        caseRule="proper_name"
       />
       <label className="block text-sm font-semibold mt-3">
         Notes

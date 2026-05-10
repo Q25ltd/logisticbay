@@ -3,7 +3,9 @@ import { z } from "zod";
 const DriverPlanningFields = z.object({
   employmentStartDate:    z.string().nullable().optional(),
   driverType:             z.string().optional(),
-  licenceClass:           z.string().optional(),
+  licenceClass:           z.enum(["B", "C1", "C1E", "C", "CE", ""]).optional(),
+  endorsements:           z.array(z.string()).optional(),
+  canDriveCategories:     z.array(z.string()).optional(),
   canUseTrailer:          z.boolean().optional(),
   trailerTypesAllowed:    z.array(z.string()).optional(),
   adrAllowed:             z.boolean().optional(),

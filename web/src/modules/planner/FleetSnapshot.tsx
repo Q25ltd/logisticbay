@@ -1,5 +1,6 @@
 import type { Driver, FleetTrailer, FleetUnit } from "../../types";
 import type { JobContext } from "./dashboardTypes";
+import { BODY_CATEGORIES, BODY_TYPES, GVW_CLASSES } from "../../constants/vehicleTaxonomy";
 
 function fleetStatusRank(status: string) {
   if (status === "available") return 0;
@@ -11,6 +12,22 @@ function statusDot(status: string) {
   if (status === "available") return <span className="inline-block h-2 w-2 rounded-full bg-green-500" />;
   if (status === "vor")       return <span className="inline-block h-2 w-2 rounded-full bg-red-500" />;
   return                             <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />;
+}
+
+function labelFor(options: readonly { value: string; label: string }[], value?: string | null) {
+  return value ? options.find((option) => option.value === value)?.label ?? value : "";
+}
+
+function unitSpec(unit: FleetUnit) {
+  return [
+    labelFor(BODY_CATEGORIES, unit.bodyCategory || unit.vehicleClass),
+    labelFor(GVW_CLASSES, unit.gvwClass),
+    labelFor(BODY_TYPES, unit.bodyType),
+  ].filter(Boolean).join(" · ");
+}
+
+function trailerSpec(trailer: FleetTrailer) {
+  return labelFor(BODY_TYPES, trailer.bodyType || trailer.trailerType);
 }
 
 export default function FleetSnapshot({
@@ -73,8 +90,8 @@ export default function FleetSnapshot({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-bold text-primary">{unit.registration}</span>
-            {unit.vehicleClass && (
-              <span className="text-[11px] text-slate-400 font-medium">{unit.vehicleClass}</span>
+            {unitSpec(unit) && (
+              <span className="text-[11px] text-slate-400 font-medium">{unitSpec(unit)}</span>
             )}
             {unit.status === "vor" && (
               <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700">VOR</span>
@@ -88,7 +105,7 @@ export default function FleetSnapshot({
             {trailer && (
               <span className="flex items-center gap-1">
                 · 🔗 {trailer.registration}
-                {trailer.trailerType && <span className="text-slate-400">({trailer.trailerType})</span>}
+                {trailerSpec(trailer) && <span className="text-slate-400">({trailerSpec(trailer)})</span>}
                 {statusDot(trailer.status)}
               </span>
             )}
@@ -107,8 +124,8 @@ export default function FleetSnapshot({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-bold text-primary">{trailer.registration}</span>
-            {trailer.trailerType && (
-              <span className="text-[11px] text-slate-400 font-medium">{trailer.trailerType}</span>
+            {trailerSpec(trailer) && (
+              <span className="text-[11px] text-slate-400 font-medium">{trailerSpec(trailer)}</span>
             )}
             {trailer.status === "vor" && (
               <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700">VOR</span>

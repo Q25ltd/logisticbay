@@ -19,6 +19,14 @@ import {
 } from "../schemas/shifts.js";
 import { parseBody } from "../lib/validate.js";
 
+function normalizeShiftVehicleClass(value: unknown) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text === "van") return "van";
+  if (text === "rigid" || /^class\s*2$/.test(text)) return "rigid";
+  if (text === "tractor" || text === "artic" || /^class\s*1$/.test(text)) return "tractor";
+  return "tractor";
+}
+
 export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /shifts ────────────────────────────────────────────────────────────
@@ -97,7 +105,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         companyId,
         shiftId,
         segmentNumber,
-        vehicleClass:      body.vehicleClass      ?? "class1",
+        vehicleClass:      normalizeShiftVehicleClass(body.vehicleClass),
         needsTruckCheck:   body.needsTruckCheck   ?? true,
         needsTrailerCheck: body.needsTrailerCheck ?? true,
         truckReg:          body.truckReg.trim().toUpperCase(),

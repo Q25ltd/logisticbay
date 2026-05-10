@@ -1,22 +1,30 @@
+import {
+  BODY_CATEGORIES,
+  BODY_TYPES,
+  DRIVER_ENDORSEMENTS,
+  DRIVER_LICENCE_CLASSES,
+  GVW_CLASSES,
+  JOB_TYPES as TAXONOMY_JOB_TYPES,
+  ONBOARD_EQUIPMENT,
+  SERVICE_TYPES as TAXONOMY_SERVICE_TYPES,
+  TRAILER_LENGTHS,
+} from "../../constants/vehicleTaxonomy";
+
 // ── Options ───────────────────────────────────────────────────────────────────
 
-export const SERVICE_TYPES: [string, string][] = [
-  ["delivery",            "Delivery"],
-  ["collection",          "Collection"],
-  ["transfer",            "Transfer / Trunking"],
-  ["collection_delivery", "Collection & Delivery"],
-  ["trunking",            "Linehaul / Trunking"],
-];
+export {
+  BODY_CATEGORIES,
+  BODY_TYPES,
+  GVW_CLASSES,
+  ONBOARD_EQUIPMENT,
+  DRIVER_LICENCE_CLASSES,
+  DRIVER_ENDORSEMENTS,
+  TRAILER_LENGTHS,
+};
 
-export const JOB_TYPES: [string, string][] = [
-  ["full_load",   "Full Load (FTL)"],
-  ["part_load",   "Part Load (LTL)"],
-  ["multi_drop",  "Multi-Drop"],
-  ["groupage",    "Groupage"],
-  ["return_load", "Return Load"],
-  ["trunking",    "Trunking / Linehaul"],
-  ["abnormal",    "Abnormal / Specialist"],
-];
+export const SERVICE_TYPES: [string, string][] = TAXONOMY_SERVICE_TYPES.map(x => [x.value, x.label]);
+
+export const JOB_TYPES: [string, string][] = TAXONOMY_JOB_TYPES.map(x => [x.value, x.label]);
 
 export const PRIORITY_OPTS: [string, string][] = [
   ["low",    "Low"],
@@ -35,62 +43,13 @@ export const LOCATION_TYPES: [string, string][] = [
   ["other",       "Other"],
 ];
 
-export const VEHICLE_TYPES: [string, string][] = [
-  ["van",          "Van"],
-  ["rigid",        "Rigid"],
-  ["artic",        "Artic"],
-  ["tipper",       "Tipper"],
-  ["grab",         "Grab"],
-  ["mixer",        "Mixer"],
-  ["hiab",         "HIAB"],
-  ["refrigerated", "Refrigerated"],
-  ["other",        "Other"],
-];
-
-export const MIN_SIZES: [string, string][] = [
-  ["3.5t",  "3.5t"],
-  ["7.5t",  "7.5t"],
-  ["18t",   "18t"],
-  ["26t",   "26t"],
-  ["44t",   "44t"],
-];
-
-// Vehicle types that always pull a separate trailer
-export const TRAILER_REQUIRED_TYPES = new Set(["artic"]);
-
-export const TRAILER_TYPES: [string, string][] = [
-  ["curtain_sider",       "Curtain sider"],
-  ["flatbed",             "Flatbed"],
-  ["box",                 "Box"],
-  ["tipper",              "Tipper"],
-  ["tanker",              "Tanker"],
-  ["low_loader",          "Low loader"],
-  ["skeletal",            "Skeletal"],
-  ["refrigerated_trailer","Refrigerated trailer"],
-  ["other",               "Other"],
-];
-
-export const EQUIPMENT_OPTS: [string, string][] = [
-  ["tail_lift",    "Tail lift"],
-  ["forklift",     "Forklift"],
-  ["crane",        "Crane"],
-  ["pallet_truck", "Pallet truck"],
-  ["straps",       "Straps"],
-  ["chains",       "Chains"],
-  ["sheeting",     "Sheeting"],
-  ["pump",         "Pump"],
-  ["ppe",          "PPE"],
-  ["other",        "Other"],
-];
-
-export const DRIVER_QUALS: [string, string][] = [
-  ["adr",      "ADR"],
-  ["hiab",     "HIAB"],
-  ["moffett",  "Moffett"],
-  ["forklift", "Forklift"],
-  ["tanker",   "Tanker"],
-  ["other",    "Other"],
-];
+export const BODY_CATEGORY_OPTS: [string, string][] = BODY_CATEGORIES.map(x => [x.value, x.label]);
+export const BODY_TYPE_OPTS: [string, string][] = BODY_TYPES.map(x => [x.value, x.label]);
+export const GVW_CLASS_OPTS: [string, string][] = GVW_CLASSES.map(x => [x.value, x.label]);
+export const ONBOARD_EQUIPMENT_OPTS: [string, string][] = ONBOARD_EQUIPMENT.map(x => [x.value, x.label]);
+export const DRIVER_LICENCE_OPTS: [string, string][] = DRIVER_LICENCE_CLASSES.map(x => [x.value, x.label]);
+export const DRIVER_ENDORSEMENT_OPTS: [string, string][] = DRIVER_ENDORSEMENTS.map(x => [x.value, x.label]);
+export const TRAILER_LENGTH_OPTS: [string, string][] = TRAILER_LENGTHS.map(x => [x.value, x.label]);
 
 export const LOAD_UNITS: [string, string][] = [
   ["tonnes",  "Tonnes"],

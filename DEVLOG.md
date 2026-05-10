@@ -805,3 +805,51 @@ This document was rewritten to combine the historical session log with the archi
 - 0.12 CI gates — typecheck, lint, unit tests, tenant-isolation integration test on every PR.
 - Server-side Dashboard API and Jobs cursor pagination.
 - Repository pattern — typed repositories requiring `companyId` as first argument.
+
+---
+
+### 2026-05-10 — Job Form Vocabulary Unification (Phase 0 of JOB_FORM_IMPLEMENTATION_BRIEF.md)
+
+**Goal:** Establish a single canonical vocabulary for vehicles, trailers, driver licences, and equipment across API, web, and mobile. Fixes three separate incompatible vocabularies that blocked allocation matching.
+
+**Created:**
+- `shared/vehicleTaxonomy.ts` — single source of truth: BODY_CATEGORIES, GVW_CLASSES, BODY_TYPES, ONBOARD_EQUIPMENT, DRIVER_LICENCE_CLASSES, DRIVER_ENDORSEMENTS, TRAILER_LENGTHS, revised SERVICE_TYPES, revised JOB_TYPES, helper functions.
+- `api/src/constants/vehicleTaxonomy.ts` — identical copy (JS/TS import boundary).
+- `web/src/constants/vehicleTaxonomy.ts` — identical copy.
+- `mobile/src/constants/vehicleTaxonomy.ts` — identical copy.
+- `web/src/lib/textCase.ts` — `applyCase(value, rule)` helper for proper_name / address_line / sentence / upper / lower / none transforms.
+- `mobile/src/lib/textCase.ts` — identical copy.
+- `scripts/check-vocab-sync.ts` — CI guard: hashes all three taxonomy copies, fails build if they diverge.
+- `api/scripts/backfill_vocab_v1.ts` — one-shot migration script to populate new fields from legacy values.
+
+**DB migration `20260510120000_vocab_unification` (additive — no columns dropped):**
+- `DriverProfile`: added `endorsements Json?`, `canDriveCategories Json?`
+- `PlannedJob`: added `reqBodyCategory`, `reqGvwMin`, `reqBodyType`, `reqEquipment`, `reqLicenceClass`
+- `FleetUnit`: added `vehicleClassLegacy`, `bodyCategory`, `gvwClass`, `bodyType`, `onboardEquipment`. Legacy `vehicleClass` stays.
+- `FleetTrailer`: added `bodyType`, `trailerLength`, `decks`, `compartments`, `onboardEquipment`. Legacy `trailerType` stays.
+
+**API changes:**
+- `api/src/constants/jobCreation.ts` — replaced VEHICLE_CLASSES / TRAILER_TYPES with re-exports from taxonomy. Kept LOAD_UNITS, JOB_STOP_TYPES.
+- `api/src/schemas/jobs.ts` — added reqBodyCategory, reqGvwMin, reqBodyType, reqEquipment, reqLicenceClass. Removed trailerTypesForbidden.
+- `api/src/schemas/fleet.ts` — replaced vehicleClass with bodyCategory + gvwClass + bodyType + onboardEquipment. Trailer schema: bodyType + trailerLength + decks + compartments.
+- `api/src/schemas/drivers.ts` — narrowed licenceClass to B/C1/C1E/C/CE enum; added endorsements, canDriveCategories.
+- `api/src/services/jobValidation.ts` — validation now uses isBodyCategory, isBodyType, isOnboardEquipment. reqBodyCategory required for ready_to_plan. Tractor without trailer types → warning.
+- `api/src/routes/jobs.ts` — maps new req* fields through; stops writing trailerTypesForbidden.
+- `api/src/routes/fleet.ts` — unit routes write bodyCategory/gvwClass/bodyType/onboardEquipment; trailer routes write bodyType/trailerLength/decks.
+
+**Web changes:**
+- `web/src/modules/jobs/createJobConstants.ts` — imports from taxonomy, removes local VEHICLE_TYPES/MIN_SIZES/TRAILER_TYPES/EQUIPMENT_OPTS/DRIVER_QUALS.
+- `web/src/modules/jobs/CreateJobPage.tsx` — Section 05 rewritten with cascading picker (body category → GVW → body type → trailer type → equipment → licence → endorsements). Auto-suggests licence from body category. Legacy vehicleClass values mapped to new fields in edit/template mode.
+- `web/src/modules/jobs/createJobPayload.ts` — maps reqBodyCategory, reqGvwMin, reqBodyType, reqEquipment, reqLicenceClass, reqEndorsements to API body. Removed trailerTypesForbidden.
+- `web/src/modules/fleet/fleetConstants.ts` — removed VEHICLE_CLASSES / TRAILER_TYPES display strings; kept UNIT_STATUSES / TRAILER_STATUSES.
+- `web/src/modules/fleet/UnitForm.tsx` — cascading body category → GVW → body type → equipment picker.
+- `web/src/modules/fleet/TrailerForm.tsx` — body type → trailer length → decks → compartments (tanker only) → equipment.
+- `web/src/modules/drivers/DriverForm.tsx` — licenceClass is now a `<select>` with 5 canonical options. Endorsements are a MultiCheck.
+- `web/src/modules/planner/JobDetailDrawer.tsx` — removed "Trailer forbidden" row. Shows trailer allowed, equipment from reqEquipment or equipmentRequired.
+
+**trailerTypesForbidden removed:**
+User decision: selecting trailer types ALLOWED implicitly forbids all others. A separate "forbidden" list conflicts with the "allowed" list and adds confusion with no practical benefit. Column left in DB (null on new records) — can be dropped in Phase 0.8 soak.
+
+**Typechecks:** `npx tsc --noEmit` → exit 0 in both `api/` and `web/`.
+
+**Next step:** Run `pnpm --filter api prisma migrate dev` locally then push to deploy. Backfill script `api/scripts/backfill_vocab_v1.ts` must run once after migration deploys.

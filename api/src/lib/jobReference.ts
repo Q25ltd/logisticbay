@@ -8,7 +8,7 @@
  */
 export async function generateJobReference(
   companyId: number,
-  tx: any,
+  tx: { $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T> },
 ): Promise<string> {
   const currentYear = new Date().getFullYear();
   const yy = String(currentYear).slice(-2);

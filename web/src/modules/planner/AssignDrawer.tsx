@@ -18,6 +18,23 @@ import {
   unitByRegistration,
   warningDot,
 } from "./dashboardUtils";
+import { BODY_CATEGORIES, BODY_TYPES, GVW_CLASSES } from "../../constants/vehicleTaxonomy";
+
+function labelFor(options: readonly { value: string; label: string }[], value?: string | null) {
+  return value ? options.find((option) => option.value === value)?.label ?? value : "";
+}
+
+function unitSpec(unit: FleetUnit) {
+  return [
+    labelFor(BODY_CATEGORIES, unit.bodyCategory || unit.vehicleClass),
+    labelFor(GVW_CLASSES, unit.gvwClass),
+    labelFor(BODY_TYPES, unit.bodyType),
+  ].filter(Boolean).join(" · ");
+}
+
+function trailerSpec(trailer: FleetTrailer) {
+  return labelFor(BODY_TYPES, trailer.bodyType || trailer.trailerType);
+}
 
 export default function AssignDrawer({
   context,
@@ -262,7 +279,7 @@ export default function AssignDrawer({
                   <span className="text-sm font-bold text-primary">🚛 {selectedDriver.defaultTruckReg}</span>
                   {driverUnit && (
                     <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${driverUnit.status === "available" ? "bg-green-100 text-green-800" : driverUnit.status === "vor" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
-                      {driverUnit.vehicleClass} — {driverUnit.status}
+                      {unitSpec(driverUnit) || driverUnit.vehicleClass} — {driverUnit.status}
                     </span>
                   )}
                 </div>
@@ -298,13 +315,13 @@ export default function AssignDrawer({
                 <datalist id="trailer-suggestions">
                   {trailers.map((trailer) => (
                     <option key={trailer.id} value={trailer.registration}>
-                      {trailer.registration} — {trailer.trailerType} — {trailer.status}{trailer.yardLocation ? ` @ ${trailer.yardLocation}` : ""}
+                      {trailer.registration} — {trailerSpec(trailer) || trailer.trailerType} — {trailer.status}{trailer.yardLocation ? ` @ ${trailer.yardLocation}` : ""}
                     </option>
                   ))}
                 </datalist>
                 <p className="mt-1 text-xs text-muted">
                   {selectedTrailer
-                    ? `${selectedTrailer.trailerType} | ${selectedTrailer.status}${selectedTrailer.yardLocation ? ` | ${selectedTrailer.yardLocation}` : ""}${selectedTrailer.status === "loaded" ? ` | ${loadedTrailerStandingText(selectedTrailer)}` : ""}`
+                    ? `${trailerSpec(selectedTrailer) || selectedTrailer.trailerType} | ${selectedTrailer.status}${selectedTrailer.yardLocation ? ` | ${selectedTrailer.yardLocation}` : ""}${selectedTrailer.status === "loaded" ? ` | ${loadedTrailerStandingText(selectedTrailer)}` : ""}`
                     : trailerReg.trim() ? "Not in fleet list — saved as entered." : "Leave blank if driver will confirm at job start."}
                 </p>
                 {trailerOnOtherJob && (
