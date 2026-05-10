@@ -11,9 +11,10 @@ export const jobsApi = {
   allocate:       (id: number, b: unknown) => api.patch<PlannedJob>(`/jobs/${id}/allocate`, b),
   updateStatus:   (id: number, status: string, note?: string) => api.patch(`/jobs/${id}/status`, { status, note }),
   addNote:        (id: number, note: string) => api.post(`/jobs/${id}/note`, { note }),
-  templates:      () => api.get<{ data: JobTemplate[] }>("/job-templates"),
+  templates:      (status?: string) => api.get<{ data: JobTemplate[] }>(`/job-templates${status ? "?status=" + status : ""}`),
   createTemplate: (body: unknown) => api.post<JobTemplate>("/job-templates", body),
   updateTemplate: (id: number, b: unknown) => api.patch<JobTemplate>(`/job-templates/${id}`, b),
+  deleteTemplate: (id: number) => api.delete<{ ok: boolean }>(`/job-templates/${id}`),
   locations:      () => api.get<{ data: SavedLocation[] }>("/locations"),
   createLocation: (body: unknown) => api.post<SavedLocation>("/locations", body),
 };

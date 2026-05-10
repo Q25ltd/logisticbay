@@ -121,7 +121,7 @@ export function jobStopToStopState(stop: JobStop): StopState {
     numPallets: stop.numPallets != null ? String(stop.numPallets) : "",
     quantity: "",
     earliestArrival: minsToHHMM(stop.earliestArrivalMinutes),
-    unloadingTime: stop.unloadingAllowanceMinutes != null ? String(stop.unloadingAllowanceMinutes) : "",
+    unloadingTime: minsToHHMM(stop.unloadingAllowanceMinutes),
     internalNotes: stop.internalNotes || "",
   };
 }

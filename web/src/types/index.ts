@@ -203,14 +203,77 @@ export interface FleetTrailer {
 export interface JobEvent {
   id: number; jobId: number; eventType: string; note: string; createdAt: string;
 }
+export interface TemplateJobData {
+  customerId?: number | null;
+  customerName?: string;
+  serviceType?: string;
+  jobType?: string;
+  jobTitle?: string;
+  priority?: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  billingNotes?: string;
+  custInstructions?: string;
+  custRefRequired?: boolean;
+  poRequired?: boolean;
+  materialDesc?: string;
+  totalQty?: string;
+  qtyUnit?: string;
+  qtyUnitOther?: string;
+  totalWeight?: string;
+  volume?: string;
+  dimensions?: string;
+  adrClass?: string;
+  fragile?: boolean;
+  stackable?: boolean;
+  tempControlled?: boolean;
+  tempRange?: string;
+  forkliftReq?: boolean;
+  tailLiftReq?: boolean;
+  craneReq?: boolean;
+  loadingMethod?: string;
+  unloadingMethod?: string;
+  loadNotes?: string;
+  photosRequired?: boolean;
+  weighbridgeReq?: boolean;
+  podRequired?: boolean;
+  vehicleType?: string;
+  vehicleTypeOther?: string;
+  minSize?: string;
+  trailersAllowed?: string[];
+  trailersForbidden?: string[];
+  equipmentReq?: string[];
+  driverQuals?: string[];
+  heightRestriction?: string;
+  weightRestriction?: string;
+  lengthRestriction?: string;
+  accessNotes?: string;
+  assignedTruck?: string;
+  assignedTrailer?: string;
+  failureAction?: string;
+  assistancePhone?: string;
+  assistanceNote?: string;
+  returnDestination?: string;
+  altAddress?: Record<string, unknown> | null;
+}
+
 export interface JobTemplate {
-  id: number; name: string; pickupTextSnapshot: string; dropoffTextSnapshot: string;
-  defaultReference: string; defaultNotes: string; defaultMaterialType: string;
+  id: number;
+  name: string;
+  pickupTextSnapshot: string;
+  dropoffTextSnapshot: string;
+  defaultReference: string;
+  defaultNotes: string;
+  defaultMaterialType: string;
   trailerTypesAllowed?: string[];
-  defaultStops?: JobStop[];
+  defaultStops?: Record<string, unknown>[];
   defaultLoadDetails?: LoadDetails | null;
+  defaultJobData?: TemplateJobData | null;
   qualityScore?: number;
   status: "active" | "archived";
+  createdAt?: string;
+  updatedAt?: string;
 }
 export interface SavedLocation {
   id: number;

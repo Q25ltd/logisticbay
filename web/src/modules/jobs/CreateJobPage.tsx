@@ -30,6 +30,12 @@ export default function CreateJobPage() {
   const editJobId = jobIdParam ? parseInt(jobIdParam, 10) : null;
   const isEditMode = !!editJobId;
 
+  // Template-edit mode: /jobs/template/:templateId
+  const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const editTemplateIdParam = searchParams.get("editTemplateId");
+  const editTemplateId = editTemplateIdParam ? parseInt(editTemplateIdParam, 10) : null;
+  const isTemplateMode = !!editTemplateId;
+
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
   const [loadingJob, setLoadingJob] = useState(isEditMode);
@@ -43,38 +49,178 @@ export default function CreateJobPage() {
   const [templates,  setTemplates]  = useState<JobTemplate[]>([]);
   const [tplQuery,   setTplQuery]   = useState("");
 
+  // templateId in URL = open blank job pre-filled with template (Use → button)
+  const preloadTemplateId = searchParams.get("templateId");
+
   useEffect(() => { jobsApi.locations().then(r => setLocations(r.data)).catch(() => {}); }, []);
-  useEffect(() => { jobsApi.templates().then(r => setTemplates(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    jobsApi.templates().then(r => {
+      setTemplates(r.data);
+      // Auto-apply if ?templateId= in URL
+      if (preloadTemplateId) {
+        const t = r.data.find((t: JobTemplate) => t.id === parseInt(preloadTemplateId, 10));
+        if (t) applyTemplate(t);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function applyTemplate(t: JobTemplate) {
-    if (t.defaultReference)    setReferenceNumber(t.defaultReference);
-    if (t.defaultMaterialType) setMaterialDesc(t.defaultMaterialType);
-    if (t.defaultNotes)        setLoadNotes(t.defaultNotes);
+    const jd = t.defaultJobData;
+
+    // ── Job basics ──────────────────────────────────────────────────────────
+    if (jd?.customerName) { setCustomerName(jd.customerName); setCustomerId(jd.customerId ?? null); }
+    if (jd?.serviceType)  setServiceType(jd.serviceType);
+    if (jd?.jobType)      setJobType(jd.jobType);
+    if (jd?.jobTitle)     setJobTitle(jd.jobTitle);
+    if (jd?.priority)     setPriority(jd.priority);
+
+    // ── Customer details ────────────────────────────────────────────────────
+    if (jd?.contactName)     setContactName(jd.contactName);
+    if (jd?.contactPhone)    setContactPhone(jd.contactPhone);
+    if (jd?.contactEmail)    setContactEmail(jd.contactEmail);
+    if (jd?.billingNotes)    setBillingNotes(jd.billingNotes);
+    if (jd?.custInstructions) setCustInstructions(jd.custInstructions);
+    if (jd?.custRefRequired !== undefined) setCustRefRequired(jd.custRefRequired);
+    if (jd?.poRequired      !== undefined) setPoRequired(jd.poRequired);
+
+    // ── Load details ────────────────────────────────────────────────────────
     const dl = t.defaultLoadDetails;
-    if (dl) {
-      if (dl.quantity    != null) setTotalQty(String(dl.quantity));
-      if (dl.unit)                setQtyUnit(dl.unit);
-      if (dl.materialType)       setMaterialDesc(dl.materialType);
-      if (dl.weight      != null) setTotalWeight(String(dl.weight));
+    const materialType = jd?.materialDesc || dl?.materialType || t.defaultMaterialType || "";
+    if (materialType)        setMaterialDesc(materialType);
+    const qty = jd?.totalQty ?? (dl?.quantity != null ? String(dl.quantity) : "");
+    if (qty)                 setTotalQty(qty);
+    const unit = jd?.qtyUnit ?? dl?.unit ?? "";
+    if (unit)                setQtyUnit(unit);
+    if (jd?.qtyUnitOther)   setQtyUnitOther(jd.qtyUnitOther);
+    const weight = jd?.totalWeight ?? (dl?.weight != null ? String(dl.weight) : "");
+    if (weight)              setTotalWeight(weight);
+    const vol = jd?.volume   ?? (dl?.volume  != null ? String(dl.volume)  : "");
+    if (vol)                 setVolume(vol);
+    if (jd?.dimensions   ?? dl?.dimensions)   setDimensions(jd?.dimensions   ?? dl?.dimensions   ?? "");
+    if (jd?.adrClass     ?? dl?.hazardClass)  setAdrClass(jd?.adrClass     ?? dl?.hazardClass   ?? "");
+    if (jd?.fragile         !== undefined) setFragile(jd.fragile);
+    else if (dl?.fragile    !== undefined) setFragile(dl.fragile);
+    if (jd?.stackable       !== undefined) setStackable(jd.stackable);
+    else if (dl?.stackable  !== undefined) setStackable(dl.stackable);
+    if (jd?.tempControlled  !== undefined) setTempControlled(jd.tempControlled);
+    else if (dl?.tempControlled !== undefined) setTempControlled(dl.tempControlled);
+    if (jd?.tempRange ?? dl?.tempRange) setTempRange(jd?.tempRange ?? dl?.tempRange ?? "");
+    if (jd?.forkliftReq !== undefined) setForkliftReq(jd.forkliftReq);
+    else if (dl?.forkliftRequired !== undefined) setForkliftReq(dl.forkliftRequired);
+    if (jd?.tailLiftReq !== undefined) setTailLiftReq(jd.tailLiftReq);
+    else if (dl?.tailLiftRequired !== undefined) setTailLiftReq(dl.tailLiftRequired);
+    if (jd?.craneReq !== undefined) setCraneReq(jd.craneReq);
+    else if (dl?.craneRequired !== undefined) setCraneReq(dl.craneRequired);
+    if (jd?.loadingMethod   ?? dl?.loadingMethod)   setLoadingMethod(jd?.loadingMethod   ?? dl?.loadingMethod   ?? "");
+    if (jd?.unloadingMethod ?? dl?.unloadingMethod) setUnloadingMethod(jd?.unloadingMethod ?? dl?.unloadingMethod ?? "");
+    if (jd?.loadNotes ?? dl?.notes ?? t.defaultNotes) setLoadNotes(jd?.loadNotes ?? dl?.notes ?? t.defaultNotes ?? "");
+    if (jd?.photosRequired  !== undefined) setPhotosRequired(jd.photosRequired);
+    else if (dl?.photosRequired !== undefined) setPhotosRequired(dl.photosRequired);
+    if (jd?.weighbridgeReq  !== undefined) setWeighbridgeReq(jd.weighbridgeReq);
+    else if (dl?.weighbridgeRequired !== undefined) setWeighbridgeReq(dl.weighbridgeRequired);
+    if (jd?.podRequired     !== undefined) setPodRequired(jd.podRequired);
+
+    // ── Vehicle requirements ────────────────────────────────────────────────
+    const vClass = jd?.vehicleType ?? "";
+    if (vClass) {
+      if (vClass.startsWith("other:")) {
+        setVehicleType("other");
+        setVehicleTypeOther(vClass.replace("other:", "").trim());
+      } else {
+        setVehicleType(vClass);
+      }
     }
+    if (jd?.vehicleTypeOther) setVehicleTypeOther(jd.vehicleTypeOther);
+    if (jd?.minSize)          setMinSize(jd.minSize);
+    if (jd?.trailersAllowed?.length)   setTrailersAllowed(jd.trailersAllowed);
+    else if (t.trailerTypesAllowed?.length) setTrailersAllowed(t.trailerTypesAllowed);
+    if (jd?.trailersForbidden?.length) setTrailersForbidden(jd.trailersForbidden);
+    if (jd?.equipmentReq?.length)      setEquipmentReq(jd.equipmentReq);
+    if (jd?.driverQuals?.length)       setDriverQuals(jd.driverQuals);
+    if (jd?.heightRestriction) setHeightRestriction(jd.heightRestriction);
+    if (jd?.weightRestriction) setWeightRestriction(jd.weightRestriction);
+    if (jd?.lengthRestriction) setLengthRestriction(jd.lengthRestriction);
+    if (jd?.accessNotes)       setAccessNotes(jd.accessNotes);
+    if (jd?.assignedTruck)     setAssignedTruck(jd.assignedTruck);
+    if (jd?.assignedTrailer)   setAssignedTrailer(jd.assignedTrailer);
+
+    // ── Failure / return ────────────────────────────────────────────────────
+    if (jd?.failureAction)     setFailureAction(jd.failureAction);
+    if (jd?.assistancePhone)   setAssistancePhone(jd.assistancePhone);
+    if (jd?.assistanceNote)    setAssistanceNote(jd.assistanceNote);
+    if (jd?.returnDestination) setReturnDestination(jd.returnDestination);
+    const alt = jd?.altAddress as Record<string, unknown> | null | undefined;
+    if (alt) {
+      if (alt.companyName) setAltCompanyName(String(alt.companyName));
+      if (alt.street)      setAltStreet(String(alt.street));
+      if (alt.town)        setAltTown(String(alt.town));
+      if (alt.postcode)    setAltPostcode(String(alt.postcode));
+      if (alt.country)     setAltCountry(String(alt.country));
+      if (alt.lat)         setAltLat(String(alt.lat));
+      if (alt.lng)         setAltLng(String(alt.lng));
+      if (alt.unit)        setAltUnit(String(alt.unit));
+      if (alt.addressLine2) setAltAddressLine2(String(alt.addressLine2));
+      if (alt.county)      setAltCounty(String(alt.county));
+      if (alt.contactName) setAltContactName(String(alt.contactName));
+      if (alt.contactPhone) setAltContactPhone(String(alt.contactPhone));
+      if (alt.contactEmail) setAltContactEmail(String(alt.contactEmail));
+      if (alt.navNotes)    setAltNavNotes(String(alt.navNotes));
+      if (alt.driverNotes) setAltDriverNotes(String(alt.driverNotes));
+      if (alt.savedLocationId) setAltSavedLocationId(Number(alt.savedLocationId));
+    }
+
+    // ── Stops — restore all fields, clear per-run variables ────────────────
     const ds = Array.isArray(t.defaultStops) ? t.defaultStops : [];
     if (ds.length > 0) {
-      setStops(ds.map(s => ({
+      setStops(ds.map((s: Record<string, unknown>) => ({
         ...makeStop(),
-        stopType:       s.type === "pickup" ? "collection" : "delivery",
-        savedLocationId: s.savedLocationId ?? null,
-        siteName:       s.locationTextSnapshot || "",
-        locationQuery:  s.locationTextSnapshot || "",
-        lat:            s.lat != null ? String(s.lat) : "",
-        lng:            s.lng != null ? String(s.lng) : "",
-        contactName:    s.contactName  || "",
-        contactPhone:   s.contactPhone || "",
-        refNumber:      s.referenceNumber || "",
-        driverNotes:    s.instructions || "",
+        id:              Math.random().toString(36).slice(2),
+        collapsed:       true,
+        stopType:        ((s.stopType as string) || (s.type === "pickup" ? "collection" : "delivery")) as "collection" | "delivery",
+        savedLocationId: (s.savedLocationId as number) ?? null,
+        locationQuery:   (s.locationQuery as string) || (s.siteName as string) || "",
+        siteName:        (s.siteName as string) || "",
+        street:          (s.street as string) || "",
+        town:            (s.town as string) || "",
+        postcode:        (s.postcode as string) || "",
+        country:         (s.country as string) || "United Kingdom",
+        lat:             s.lat != null ? String(s.lat) : "",
+        lng:             s.lng != null ? String(s.lng) : "",
+        unitBuilding:    (s.unitBuilding as string) || (s.unitName as string) || "",
+        addressLine2:    (s.addressLine2 as string) || "",
+        countyRegion:    (s.countyRegion as string) || "",
+        contactName:     (s.contactName as string) || "",
+        contactPhone:    (s.contactPhone as string) || "",
+        contactEmail:    (s.contactEmail as string) || "",
+        driverNotes:     (s.driverNotes as string) || (s.instructions as string) || "",
+        navigationInstructions: (s.navigationInstructions as string) || "",
+        openingHours:    (s.openingHours as string) || "",
+        locationType:    (s.locationType as string) || "",
+        internalNotes:   (s.internalNotes as string) || "",
+        numPallets:      s.numPallets != null ? String(s.numPallets) : "",
+        earliestArrival: (s.earliestArrival as string) || "",
+        unloadingTime:   (s.unloadingTime as string) || "",
+        bookingRequired: (s.bookingRequired as boolean) ?? false,
+        // Per-run variables reset to blank
+        date:            today(),
+        timeType:        "anytime" as const,
+        exactTime:       "",
+        windowStart:     "",
+        windowEnd:       "",
+        refNumber:       "",
+        bookingRef:      "",
       })));
     }
+
     setTplQuery(t.name);
+    // Expand all sections so user sees what was loaded
     setSec1Collapsed(false);
+    setSec2Collapsed(false);
+    setSec3Collapsed(false);
+    setSec4Collapsed(false);
+    setSec5Collapsed(false);
+    setSec6Collapsed(false);
   }
 
   // ── Section collapse state ───────────────────────────────────────────────
@@ -318,6 +464,154 @@ export default function CreateJobPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editJobId]);
 
+  // ── Template-edit mode: load template and populate all state ────────────────
+  useEffect(() => {
+    if (!editTemplateId) return;
+    setLoadingJob(true);
+    jobsApi.templates().then(r => {
+      const t = r.data.find((t: JobTemplate) => t.id === editTemplateId);
+      if (!t) { setError("Template not found."); return; }
+      applyTemplate(t);
+      // Restore template name for editing
+      setTemplateName(t.name);
+    }).catch(() => {
+      setError("Could not load template for editing.");
+    }).finally(() => {
+      setLoadingJob(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTemplateId]);
+
+  // ── Save template (template-edit mode) ───────────────────────────────────
+  async function handleSaveTemplate() {
+    if (!templateName.trim()) {
+      setError("Enter a template name");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setSaving("ready");
+    setError("");
+    try {
+      const [params] = makePayloadParams("ready_to_plan");
+      const stopData = params.stops.map(s => ({
+        stopType:        s.stopType,
+        savedLocationId: s.savedLocationId,
+        locationQuery:   s.locationQuery,
+        siteName:        s.siteName,
+        street:          s.street,
+        town:            s.town,
+        postcode:        s.postcode,
+        country:         s.country,
+        lat:             s.lat,
+        lng:             s.lng,
+        unitBuilding:    s.unitBuilding,
+        addressLine2:    s.addressLine2,
+        countyRegion:    s.countyRegion,
+        contactName:     s.contactName,
+        contactPhone:    s.contactPhone,
+        contactEmail:    s.contactEmail,
+        driverNotes:     s.driverNotes,
+        navigationInstructions: s.navigationInstructions,
+        openingHours:    s.openingHours,
+        locationType:    s.locationType,
+        internalNotes:   s.internalNotes,
+        numPallets:      s.numPallets,
+        earliestArrival: s.earliestArrival,
+        unloadingTime:   s.unloadingTime,
+        bookingRequired: s.bookingRequired,
+        // Per-run variables NOT stored
+      }));
+      const defaultJobData = {
+        customerId:       params.customerId,
+        customerName:     params.customerName,
+        serviceType:      params.serviceType,
+        jobType:          params.jobType,
+        jobTitle:         params.jobTitle,
+        priority:         params.priority,
+        contactName:      params.contactName,
+        contactPhone:     params.contactPhone,
+        contactEmail:     params.contactEmail,
+        billingNotes:     params.billingNotes,
+        custInstructions: params.custInstructions,
+        custRefRequired:  params.custRefRequired,
+        poRequired:       params.poRequired,
+        materialDesc:     params.materialDesc,
+        totalQty:         params.totalQty,
+        qtyUnit:          params.qtyUnit,
+        qtyUnitOther:     params.qtyUnitOther,
+        totalWeight:      params.totalWeight,
+        volume:           params.volume,
+        dimensions:       params.dimensions,
+        adrClass:         params.adrClass,
+        fragile:          params.fragile,
+        stackable:        params.stackable,
+        tempControlled:   params.tempControlled,
+        tempRange:        params.tempRange,
+        forkliftReq:      params.forkliftReq,
+        tailLiftReq:      params.tailLiftReq,
+        craneReq:         params.craneReq,
+        loadingMethod:    params.loadingMethod,
+        unloadingMethod:  params.unloadingMethod,
+        loadNotes:        params.loadNotes,
+        photosRequired:   params.photosRequired,
+        weighbridgeReq:   params.weighbridgeReq,
+        podRequired:      params.podRequired,
+        vehicleType:      params.vehicleType,
+        vehicleTypeOther: params.vehicleTypeOther,
+        minSize:          params.minSize,
+        trailersAllowed:  params.trailersAllowed,
+        trailersForbidden: params.trailersForbidden,
+        equipmentReq:     params.equipmentReq,
+        driverQuals:      params.driverQuals,
+        heightRestriction: params.heightRestriction,
+        weightRestriction: params.weightRestriction,
+        lengthRestriction: params.lengthRestriction,
+        accessNotes:      params.accessNotes,
+        assignedTruck:    params.assignedTruck,
+        assignedTrailer:  params.assignedTrailer,
+        failureAction:    params.failureAction,
+        assistancePhone:  params.assistancePhone,
+        assistanceNote:   params.assistanceNote,
+        returnDestination: params.returnDestination,
+        altAddress:       params.needsAltAddress ? {
+          savedLocationId: params.altSavedLocationId,
+          companyName:     params.altCompanyName,
+          street:          params.altStreet,
+          town:            params.altTown,
+          postcode:        params.altPostcode,
+          country:         params.altCountry,
+          lat:             params.altLat,
+          lng:             params.altLng,
+          unit:            params.altUnit,
+          addressLine2:    params.altAddressLine2,
+          county:          params.altCounty,
+          contactName:     params.altContactName,
+          contactPhone:    params.altContactPhone,
+          contactEmail:    params.altContactEmail,
+          navNotes:        params.altNavNotes,
+          driverNotes:     params.altDriverNotes,
+        } : null,
+      };
+      const patchBody = {
+        name:               templateName.trim(),
+        defaultMaterialType: params.materialDesc,
+        defaultStops:       stopData,
+        defaultJobData,
+      };
+      if (editTemplateId) {
+        await jobsApi.updateTemplate(editTemplateId, patchBody);
+      } else {
+        await jobsApi.createTemplate(patchBody);
+      }
+      navigate("/app/templates");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save template");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setSaving(null);
+    }
+  }
+
   // ── Auto-save indicator (localStorage snapshot every 30 s) ────────────────
   useEffect(() => {
     const started = customerName || serviceType || stops[0].siteName || materialDesc;
@@ -534,7 +828,7 @@ export default function CreateJobPage() {
   }
 
   if (loadingJob) {
-    return <div className="flex h-64 items-center justify-center text-muted">Loading job...</div>;
+    return <div className="flex h-64 items-center justify-center text-muted">{isTemplateMode ? "Loading template…" : "Loading job…"}</div>;
   }
 
   return (
@@ -546,9 +840,15 @@ export default function CreateJobPage() {
           <button onClick={() => navigate(-1)}
             className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-muted hover:text-primary hover:border-slate-300 hover:bg-slate-50 transition-all flex-shrink-0" title="Back">←</button>
           <div>
-            <h1 className="text-xl font-black text-primary">{isEditMode ? "Edit Job" : "New Job"}</h1>
+            <h1 className="text-xl font-black text-primary">
+              {isTemplateMode ? "Edit Template" : isEditMode ? "Edit Job" : "New Job"}
+            </h1>
             <p className="text-sm text-muted mt-0.5">
-              {isEditMode ? "Update the fields below — changes won't be lost until you save" : "Fill in the sections below — save as draft any time"}
+              {isTemplateMode
+                ? "Change any details — dates and reference numbers are not stored in templates"
+                : isEditMode
+                ? "Update the fields below — changes won't be lost until you save"
+                : "Fill in the sections below — save as draft any time"}
             </p>
           </div>
         </div>
@@ -558,8 +858,25 @@ export default function CreateJobPage() {
 
       <div className="max-w-3xl mx-auto px-4 pt-6 space-y-4">
 
+        {/* ── Template name input (template-edit mode) ──────────────────────── */}
+        {isTemplateMode && (
+          <div className="card px-5 py-4 border-l-4 border-l-blue-500">
+            <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">Template Name</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g. Tesco Luton Daily Run"
+              value={templateName}
+              onChange={e => setTemplateName(e.target.value)}
+            />
+            <p className="text-xs text-muted mt-1.5">
+              ⚡ Dates, time slots and reference numbers are <strong>not stored</strong> — fill them in when creating a job from this template.
+            </p>
+          </div>
+        )}
+
         {/* ── Template picker ────────────────────────────────────────────────── */}
-        {!isEditMode && templates.length > 0 && (
+        {!isEditMode && !isTemplateMode && templates.length > 0 && (
           <div className="card px-5 py-4">
             <div className="flex items-center gap-3">
               <div className="flex-1">
@@ -1453,52 +1770,63 @@ export default function CreateJobPage() {
               Cancel
             </button>
             <div className="flex-1" />
-            {!isEditMode && (
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 space-y-1.5">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={saveAsTemplate}
-                    onChange={e => setSaveAsTemplate(e.target.checked)}
-                  />
-                  Also save as new template
-                </label>
-                {saveAsTemplate && (
-                  <>
-                    <input
-                      className={"input !py-1.5 !text-xs w-full " + (!templateName.trim() ? "border-red-300 focus:ring-red-200" : "")}
-                      placeholder="Template name (required)"
-                      value={templateName}
-                      onChange={e => setTemplateName(e.target.value)}
-                      autoFocus
-                    />
-                    {!templateName.trim() && (
-                      <p className="text-xs text-red-600">Enter a name to save this job as a template</p>
+
+            {/* Template mode: just one Save Template button */}
+            {isTemplateMode ? (
+              <button onClick={handleSaveTemplate} disabled={saving !== null}
+                className="btn bg-blue-600 hover:bg-blue-700 text-white text-sm px-6 py-2.5 font-bold flex-shrink-0">
+                {saving !== null ? "Saving…" : "Save Template"}
+              </button>
+            ) : (
+              <>
+                {!isEditMode && (
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 space-y-1.5">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveAsTemplate}
+                        onChange={e => setSaveAsTemplate(e.target.checked)}
+                      />
+                      Also save as new template
+                    </label>
+                    {saveAsTemplate && (
+                      <>
+                        <input
+                          className={"input !py-1.5 !text-xs w-full " + (!templateName.trim() ? "border-red-300 focus:ring-red-200" : "")}
+                          placeholder="Template name (required)"
+                          value={templateName}
+                          onChange={e => setTemplateName(e.target.value)}
+                          autoFocus
+                        />
+                        {!templateName.trim() && (
+                          <p className="text-xs text-red-600">Enter a name to save this job as a template</p>
+                        )}
+                      </>
                     )}
-                  </>
+                  </div>
                 )}
-              </div>
+                {/* Quality score — centre-right */}
+                <div className={"hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-shrink-0 " +
+                  (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
+                   totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
+                   "text-slate-400 bg-slate-50 border-slate-200")}>
+                  {hasStarted ? `${totalScore}%` : "—"}
+                </div>
+                {/* Save Draft */}
+                <button onClick={handleSaveDraft} disabled={saving !== null}
+                  className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
+                  {saving === "draft" ? "Saving…" : isEditMode ? "Save as draft" : "Save Draft"}
+                </button>
+                {/* Save Ready */}
+                <button onClick={handleSaveReady} disabled={saving !== null}
+                  className={"btn text-sm px-6 py-2.5 font-bold flex-shrink-0 " +
+                    (MISSING.length === 0
+                      ? "bg-green-600 hover:bg-green-700 text-white"
+                      : "btn-primary")}>
+                  {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Update & mark ready") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
+                </button>
+              </>
             )}
-            {/* Quality score — centre-right */}
-            <div className={"hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-shrink-0 " +
-              (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
-               totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
-               "text-slate-400 bg-slate-50 border-slate-200")}>
-              {hasStarted ? `${totalScore}%` : "—"}
-            </div>
-            {/* Save Draft */}
-            <button onClick={handleSaveDraft} disabled={saving !== null}
-              className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
-              {saving === "draft" ? "Saving…" : isEditMode ? "Save as draft" : "Save Draft"}
-            </button>
-            {/* Save Ready */}
-            <button onClick={handleSaveReady} disabled={saving !== null}
-              className={"btn text-sm px-6 py-2.5 font-bold flex-shrink-0 " +
-                (MISSING.length === 0
-                  ? "bg-green-600 hover:bg-green-700 text-white"
-                  : "btn-primary")}>
-              {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Update & mark ready") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
-            </button>
           </div>
         </div>
       </div>

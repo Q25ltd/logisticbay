@@ -170,6 +170,10 @@ export interface CreateTemplateBody {
   defaultReference?:    string;
   defaultNotes?:        string;
   defaultMaterialType?: string;
+  trailerTypesAllowed?: string[];
+  defaultStops?:        unknown;
+  defaultLoadDetails?:  unknown;
+  defaultJobData?:      unknown;
 }
 
 export interface PatchTemplateBody {
@@ -177,6 +181,10 @@ export interface PatchTemplateBody {
   defaultReference?:    string;
   defaultNotes?:        string;
   defaultMaterialType?: string;
+  trailerTypesAllowed?: string[];
+  defaultStops?:        unknown;
+  defaultLoadDetails?:  unknown;
+  defaultJobData?:      unknown;
   status?:              string;
 }
 

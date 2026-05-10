@@ -213,6 +213,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         defaultReference:    body.defaultReference    ?? "",
         defaultNotes:        body.defaultNotes        ?? "",
         defaultMaterialType: body.defaultMaterialType ?? "",
+        defaultStops:        body.defaultStops        ?? undefined,
+        defaultLoadDetails:  body.defaultLoadDetails  ?? undefined,
+        defaultJobData:      body.defaultJobData      ?? undefined,
+        trailerTypesAllowed: body.trailerTypesAllowed ?? [],
         status:              "active",
       },
     });
@@ -236,11 +240,28 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         defaultReference:    body.defaultReference    ?? template.defaultReference,
         defaultNotes:        body.defaultNotes        ?? template.defaultNotes,
         defaultMaterialType: body.defaultMaterialType ?? template.defaultMaterialType,
+        defaultStops:        (body.defaultStops        !== undefined ? body.defaultStops        : template.defaultStops)        as Prisma.InputJsonValue | undefined,
+        defaultLoadDetails:  (body.defaultLoadDetails  !== undefined ? body.defaultLoadDetails  : template.defaultLoadDetails)  as Prisma.InputJsonValue | undefined,
+        defaultJobData:      (body.defaultJobData      !== undefined ? body.defaultJobData      : template.defaultJobData)      as Prisma.InputJsonValue | undefined,
+        trailerTypesAllowed: (body.trailerTypesAllowed !== undefined ? body.trailerTypesAllowed : template.trailerTypesAllowed) as Prisma.InputJsonValue | undefined,
         status:              body.status              ?? template.status,
       },
     });
 
     return reply.send(updated);
+  });
+
+  // ── DELETE /job-templates/:id ──────────────────────────────────────────────
+  app.delete("/job-templates/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const { companyId } = request.user!;
+
+    const template = await prisma.jobTemplate.findFirst({ where: { id, companyId } });
+    if (!template) return reply.status(404).send({ error: "Template not found" });
+
+    // Soft-delete: archive so existing job history (templateId FK) stays intact
+    await prisma.jobTemplate.update({ where: { id }, data: { status: "archived" } });
+    return reply.send({ ok: true });
   });
 
   // ── GET /jobs — planner / driver view ─────────────────────────────────────
@@ -635,6 +656,73 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
 
       if (body.saveAsTemplate && body.templateName) {
+        // Strip per-run variables from stops before storing as template
+        const templateStops = (stops as unknown as Record<string, unknown>[]).map((s) => ({
+          ...s,
+          // Variables NOT stored in template: dates, times, ref numbers
+          date:        undefined,
+          timeType:    "anytime",
+          bookedTime:  undefined,
+          timeWindowStart: undefined,
+          timeWindowEnd:   undefined,
+          referenceNumber: undefined,
+          bookingRef:      undefined,
+        }));
+
+        // Full non-variable job data
+        const defaultJobData = {
+          customerId:            body.customerId       ?? null,
+          customerName:          body.customerName     ?? "",
+          serviceType:           body.serviceType      ?? "",
+          jobType:               body.jobType          ?? "",
+          jobTitle:              body.jobTitle         ?? "",
+          priority:              body.priority         ?? "normal",
+          contactName:           body.bookingContactName  ?? "",
+          contactPhone:          body.bookingContactPhone ?? "",
+          contactEmail:          body.bookingContactEmail ?? "",
+          billingNotes:          body.billingNotes        ?? "",
+          custInstructions:      body.customerInstructions ?? "",
+          custRefRequired:       body.custRefRequired  ?? false,
+          poRequired:            body.poRequired       ?? false,
+          materialDesc:          loadDetails?.materialType?.toString() ?? "",
+          totalQty:              loadDetails?.quantity   != null ? String(loadDetails.quantity)  : "",
+          qtyUnit:               loadDetails?.unit       ?? "",
+          totalWeight:           loadDetails?.weight     != null ? String(loadDetails.weight)    : "",
+          volume:                loadDetails?.volume     != null ? String(loadDetails.volume)    : "",
+          dimensions:            loadDetails?.dimensions ?? "",
+          adrClass:              loadDetails?.hazardClass ?? "",
+          fragile:               loadDetails?.fragile     ?? false,
+          stackable:             loadDetails?.stackable   ?? false,
+          tempControlled:        loadDetails?.tempControlled ?? false,
+          tempRange:             loadDetails?.tempRange   ?? "",
+          forkliftReq:           loadDetails?.forkliftRequired  ?? false,
+          tailLiftReq:           loadDetails?.tailLiftRequired  ?? false,
+          craneReq:              loadDetails?.craneRequired     ?? false,
+          loadingMethod:         loadDetails?.loadingMethod     ?? "",
+          unloadingMethod:       loadDetails?.unloadingMethod   ?? "",
+          loadNotes:             loadDetails?.notes     ?? "",
+          photosRequired:        loadDetails?.photosRequired    ?? false,
+          weighbridgeReq:        loadDetails?.weighbridgeRequired ?? false,
+          podRequired:           body.requirePOD ?? true,
+          vehicleType:           body.vehicleClassRequired ?? "",
+          minSize:               body.minVehicleSize      ?? "",
+          trailersAllowed:       body.trailerTypesAllowed  ?? [],
+          trailersForbidden:     body.trailerTypesForbidden ?? [],
+          equipmentReq:          body.equipmentRequired    ?? [],
+          driverQuals:           body.driverQualificationsReq ?? [],
+          heightRestriction:     body.heightRestriction  ?? "",
+          weightRestriction:     body.weightRestriction  ?? "",
+          lengthRestriction:     body.lengthRestriction  ?? "",
+          accessNotes:           body.vehicleAccessNotes  ?? "",
+          assignedTruck:         body.assignedTruck       ?? "",
+          assignedTrailer:       body.assignedTrailer     ?? "",
+          failureAction:         body.failureAction       ?? "call_assistance",
+          assistancePhone:       body.assistancePhone     ?? "",
+          assistanceNote:        body.assistanceNote      ?? "",
+          returnDestination:     body.returnDestination   ?? "",
+          altAddress:            body.altAddress          ?? null,
+        };
+
         await tx.jobTemplate.create({
           data: {
             companyId,
@@ -643,12 +731,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
             dropoffLocationId:   lastDropoff?.savedLocationId ?? null,
             pickupTextSnapshot:  pickupText,
             dropoffTextSnapshot: dropoffText,
-            defaultReference:    body.referenceNumber ?? "",
+            defaultReference:    "",  // reference numbers are per-run variables
             defaultNotes:        body.plannerNotes ?? "",
             defaultMaterialType: loadDetails?.materialType?.toString() ?? "",
             trailerTypesAllowed: body.trailerTypesAllowed ?? [],
-            defaultStops:        JSON.parse(JSON.stringify(stops)),
+            defaultStops:        JSON.parse(JSON.stringify(templateStops)),
             defaultLoadDetails:  JSON.parse(JSON.stringify(loadDetails ?? {})),
+            defaultJobData:      JSON.parse(JSON.stringify(defaultJobData)),
             qualityScore:        quality.score,
             status:              "active",
           },

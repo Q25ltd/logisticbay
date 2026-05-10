@@ -167,29 +167,89 @@ export function CoordsHelp() {
   );
 }
 
+// ── Duration input (hours + minutes) ─────────────────────────────────────────
+
+function DurationInput({ value, onChange, label, hint }: {
+  value: string;
+  onChange: (val: string) => void;
+  label: string;
+  hint?: string;
+}) {
+  // Value stored as "HH:MM" duration string (e.g. "01:30" = 1 h 30 min)
+  const parts = value.match(/^(\d+):(\d{2})$/);
+  const hVal = parts ? String(parseInt(parts[1], 10)) : "";
+  const mVal = parts ? String(parseInt(parts[2], 10)) : "";
+
+  function update(newH: string, newM: string) {
+    if (newH === "" && newM === "") { onChange(""); return; }
+    const hNum = newH === "" ? 0 : Math.max(0, parseInt(newH, 10) || 0);
+    const mNum = newM === "" ? 0 : Math.min(59, Math.max(0, parseInt(newM, 10) || 0));
+    onChange(`${String(hNum).padStart(2, "0")}:${String(mNum).padStart(2, "0")}`);
+  }
+
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="flex items-center gap-2">
+        <div className="relative" style={{ width: "5.5rem" }}>
+          <input type="number" min="0" max="99" inputMode="numeric"
+            className="input pr-7 w-full" placeholder="0"
+            value={hVal}
+            onChange={e => update(e.target.value, mVal)} />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">h</span>
+        </div>
+        <div className="relative" style={{ width: "5.5rem" }}>
+          <input type="number" min="0" max="59" inputMode="numeric"
+            className="input pr-10 w-full" placeholder="0"
+            value={mVal}
+            onChange={e => update(hVal, e.target.value)} />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">min</span>
+        </div>
+      </div>
+      {hint && <p className="text-xs text-muted mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function fmtHHMM(totalMins: number): string {
+  const safe = ((totalMins % 1440) + 1440) % 1440; // wrap midnight
+  const h = Math.floor(safe / 60);
+  const m = safe % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 // ── Stop quantities & timing block ───────────────────────────────────────────
 
-export function StopTimingBlock({ stop, onChange, set }: {
+export function StopTimingBlock({ stop, onChange }: {
   stop: StopState;
   onChange: (patch: Partial<StopState>) => void;
   set: (f: keyof StopState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
 }) {
-  const earliest  = toMins(stop.earliestArrival);
-  const unloading = stop.unloadingTime ? parseInt(stop.unloadingTime, 10) : null;
-  const windowEnd = toMins(stop.windowEnd);
-  const exactT    = toMins(stop.exactTime);
-  const deadline  = stop.timeType === "exact" ? exactT : stop.timeType === "window" ? windowEnd : null;
+  // Booked / window anchor in minutes-since-midnight
+  const bookedMins =
+    stop.timeType === "exact"  ? toMins(stop.exactTime) :
+    stop.timeType === "window" ? toMins(stop.windowStart) : null;
+  const windowEndMins = stop.timeType === "window" ? toMins(stop.windowEnd) : null;
+
+  // Durations — stored as "HH:MM" strings
+  const earliestDuration  = toMins(stop.earliestArrival);  // how far before booking driver may arrive
+  const unloadingDuration = toMins(stop.unloadingTime);    // time spent on-site
+
+  // Computed clock times
+  const earliestArrivalTime =
+    bookedMins !== null && earliestDuration !== null ? bookedMins - earliestDuration : null;
+  const releaseTime =
+    bookedMins !== null && unloadingDuration !== null ? bookedMins + unloadingDuration : null;
 
   const warnings: string[] = [];
-  if (earliest !== null && deadline !== null && earliest > deadline) {
-    warnings.push(`Earliest arrival (${stop.earliestArrival}) is after the ${stop.timeType === "exact" ? "booked time" : "window end"} (${stop.timeType === "exact" ? stop.exactTime : stop.windowEnd}).`);
+  if (releaseTime !== null && windowEndMins !== null && releaseTime > windowEndMins) {
+    warnings.push(
+      `Unloading (${fmtMins(unloadingDuration!)}) would finish at ${fmtHHMM(releaseTime)}, ` +
+      `after the window closes at ${stop.windowEnd}.`
+    );
   }
-  if (earliest !== null && unloading !== null && deadline !== null) {
-    const finishAt = earliest + unloading;
-    if (finishAt > deadline) {
-      warnings.push(`Arrival + unloading (${fmtMins(unloading)}) finishes at ${fmtMins(finishAt % 1440).replace("h ", "h").replace("m", "")} — after the ${stop.timeType === "exact" ? "booked time" : "window end"}.`);
-    }
-  }
+
+  const showInfo = bookedMins !== null && (earliestArrivalTime !== null || releaseTime !== null);
 
   return (
     <div>
@@ -201,32 +261,53 @@ export function StopTimingBlock({ stop, onChange, set }: {
           <div>
             <FieldLabel>Number of Pallets</FieldLabel>
             <input type="number" min="0" inputMode="numeric" className="input" placeholder="e.g. 26"
-              value={stop.numPallets} onChange={set("numPallets")} />
+              value={stop.numPallets} onChange={e => onChange({ numPallets: e.target.value })} />
             <p className="text-xs text-muted mt-1">Will total across all stops in Load Details</p>
           </div>
           <div>
             <FieldLabel>Quantity / Weight</FieldLabel>
             <input type="text" className="input" placeholder="e.g. 14.5t / 3 cages"
-              value={stop.quantity} onChange={set("quantity")} />
+              value={stop.quantity} onChange={e => onChange({ quantity: e.target.value })} />
           </div>
         </div>
 
-        {/* Earliest arrival */}
+        {/* Duration inputs */}
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <FieldLabel>Earliest Arrival</FieldLabel>
-            <input type="time" className="input" value={stop.earliestArrival} onChange={set("earliestArrival")} />
-            <p className="text-xs text-muted mt-1">Do not arrive before this time</p>
-          </div>
-          <div>
-            <FieldLabel>Loading / Unloading Time</FieldLabel>
-            <div className="relative">
-              <input type="number" min="0" inputMode="numeric" className="input pr-14" placeholder="45"
-                value={stop.unloadingTime} onChange={set("unloadingTime")} />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">mins</span>
-            </div>
-          </div>
+          <DurationInput
+            label="Earliest Arrival (before booking)"
+            value={stop.earliestArrival}
+            onChange={val => onChange({ earliestArrival: val })}
+            hint={
+              stop.timeType === "exact"  ? `How long before ${stop.exactTime || "booked time"} driver may arrive` :
+              stop.timeType === "window" ? `How long before window start (${stop.windowStart || "—"}) driver may arrive` :
+              "How early before the booking the driver may arrive"
+            }
+          />
+          <DurationInput
+            label="Loading / Unloading Time"
+            value={stop.unloadingTime}
+            onChange={val => onChange({ unloadingTime: val })}
+            hint="How long the driver will be held in the yard"
+          />
         </div>
+
+        {/* Computed arrival / release info */}
+        {showInfo && (
+          <div className="flex flex-wrap gap-3 text-xs">
+            {earliestArrivalTime !== null && (
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-blue-800">
+                <span>🕐</span>
+                <span>Arrive from <strong>{fmtHHMM(earliestArrivalTime)}</strong></span>
+              </div>
+            )}
+            {releaseTime !== null && (
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700">
+                <span>🏁</span>
+                <span>Expected release <strong>{fmtHHMM(releaseTime)}</strong></span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Timing conflict warnings */}
         {warnings.length > 0 && (

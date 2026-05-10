@@ -196,7 +196,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
       numPallets:            stop.numPallets ? parseInt(stop.numPallets, 10) : null,
       internalNotes:         stop.internalNotes,
       earliestArrivalMinutes: toMins(stop.earliestArrival),
-      unloadingAllowanceMinutes: stop.unloadingTime ? parseInt(stop.unloadingTime, 10) : null,
+      unloadingAllowanceMinutes: toMins(stop.unloadingTime),
     };
 
     if (stop.timeType === "exact" && stop.exactTime) {

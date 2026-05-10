@@ -210,6 +210,7 @@ model JobTemplate {
   trailerTypesAllowed Json?
   defaultStops        Json?
   defaultLoadDetails  Json?
+  defaultJobData      Json?
   qualityScore        Int      @default(0)
   status              String   @default("active")
   createdAt           DateTime @default(now())
