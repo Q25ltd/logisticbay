@@ -157,6 +157,9 @@ export const ONBOARD_EQUIPMENT = [
   { value: "side_camera_360", label: "360 / side cameras (FORS)", group: "telematics" },
   { value: "alarm", label: "Alarm / immobiliser", group: "telematics" },
   { value: "panic_button", label: "Panic / driver duress button", group: "telematics" },
+  { value: "hydraulic_wet_kit", label: "Hydraulic wet kit / PTO", group: "power" },
+  { value: "anderson_leads", label: "Anderson leads (24v trailer supply)", group: "power" },
+  { value: "electric_standby", label: "Electric standby socket (shore power)", group: "power" },
   { value: "abnormal_lights", label: "Abnormal-load light bar", group: "other" },
   { value: "escort_signage", label: "Escort / convoy signage", group: "other" },
 ] as const;
@@ -267,31 +270,31 @@ export const isLicenceClass = (v: unknown): v is DriverLicenceClass =>
   typeof v === "string" && DRIVER_LICENCE_CLASSES.some(x => x.value === v);
 
 const EXTRA_EQUIPMENT_BY_BODY_GROUP: Record<string, readonly string[]> = {
-  general:    ["lifting", "secure", "spec"],
-  flat:       ["lifting", "secure"],
-  bulk:       [],
+  general:    ["lifting", "secure", "spec", "power"],
+  flat:       ["lifting", "secure", "power"],
+  bulk:       ["power"],
   tanker:     ["bulk"],
-  temp:       ["lifting", "secure", "temp", "spec"],
-  container:  ["lifting", "secure", "spec"],
-  heavy:      ["lifting", "secure", "spec", "other"],
-  specialist: ["lifting"],
-  other:      ["lifting", "secure", "bulk", "temp", "spec", "other"],
+  temp:       ["lifting", "secure", "temp", "spec", "power"],
+  container:  ["lifting", "secure", "spec", "power"],
+  heavy:      ["lifting", "secure", "spec", "power", "other"],
+  specialist: ["lifting", "power"],
+  other:      ["lifting", "secure", "bulk", "temp", "spec", "power", "other"],
 };
 
 const EXTRA_EQUIPMENT_BY_CATEGORY: Partial<Record<BodyCategory, readonly string[]>> = {
-  drawbar:       ["lifting", "secure", "spec"],
-  heavy_haulage: ["secure", "spec", "other"],
+  drawbar:       ["lifting", "secure", "spec", "power"],
+  heavy_haulage: ["secure", "spec", "power", "other"],
   spmt:          ["other"],
   plant:         [],
-  van:           ["lifting", "secure", "spec"],
-  luton_van:     ["lifting", "secure", "spec"],
+  van:           ["lifting", "secure", "spec", "power"],
+  luton_van:     ["lifting", "secure", "spec", "power"],
   pickup:        ["lifting", "secure"],
-  rigid:         ["lifting", "secure", "spec"],
+  rigid:         ["lifting", "secure", "spec", "power"],
 };
 
 const ITEM_ALLOWLIST_BY_CATEGORY: Partial<Record<BodyCategory, readonly OnboardEquipment[]>> = {
-  tractor:       ["hiab_crane", "hiab_jib", "winch"],
-  heavy_haulage: ["hiab_crane", "hiab_jib", "winch"],
+  tractor:       ["hiab_crane", "hiab_jib", "winch", "hydraulic_wet_kit", "anderson_leads", "electric_standby"],
+  heavy_haulage: ["hiab_crane", "hiab_jib", "winch", "hydraulic_wet_kit"],
 };
 
 export function equipmentForBodyType(
