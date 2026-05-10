@@ -50,7 +50,7 @@ jobs:
         run: npm run check:vocab
 
       - name: Apply migrations
-        run: cd api && npx prisma migrate deploy --schema prisma/schema.prisma
+        run: cd api && npx prisma migrate deploy
 
       - name: Run integration tests
         run: npm test --prefix api
