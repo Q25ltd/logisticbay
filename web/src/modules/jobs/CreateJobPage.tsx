@@ -759,7 +759,7 @@ export default function CreateJobPage() {
     { label: "Volume / dimensions",   pts: 2, ok: !!(volume.trim() || dimensions.trim()) },
     { label: "Equipment required",    pts: 4, ok: reqEquipment.length > 0 },
     { label: "Driver endorsements",   pts: 4, ok: reqEndorsements.length > 0 },
-    { label: "Trailer rules",         pts: 2, ok: trailersAllowed.length > 0 },
+    { label: "Trailer types",          pts: 2, ok: !trailerRequired || trailersAllowed.length > 0 },
     { label: "Vehicle restrictions",  pts: 2, ok: !!(heightRestriction.trim() || weightRestriction.trim() || lengthRestriction.trim()) },
     { label: "Access notes",          pts: 3, ok: !!accessNotes.trim() },
     { label: "Min vehicle size",      pts: 2, ok: !!reqGvwMin },
@@ -1559,15 +1559,6 @@ export default function CreateJobPage() {
 
             {showVehicleOpts && (
               <div className="space-y-6 pt-1 border-t border-border">
-                {!trailerRequired && (
-                  <div>
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Trailer Rules</div>
-                    <div>
-                      <FieldLabel>Trailer Body Types Allowed</FieldLabel>
-                      <MultiCheck options={BODY_TYPE_OPTS} value={trailersAllowed} onChange={setTrailersAllowed} />
-                    </div>
-                  </div>
-                )}
 
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Restrictions</div>

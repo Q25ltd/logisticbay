@@ -2,10 +2,6 @@
 // Touched by: jobs, fleet, drivers, allocation, mobile checks.
 
 export const BODY_CATEGORIES = [
-  { value: "bicycle", label: "Bicycle / cargo bike", needsTrailer: false, group: "courier" },
-  { value: "motorcycle", label: "Motorcycle", needsTrailer: false, group: "courier" },
-  { value: "car", label: "Car (sameday)", needsTrailer: false, group: "courier" },
-  { value: "small_van", label: "Small van (SWB <=2.0t)", needsTrailer: false, group: "van" },
   { value: "van", label: "Van (<=3.5t LCV)", needsTrailer: false, group: "van" },
   { value: "luton_van", label: "Luton van (3.5t)", needsTrailer: false, group: "van" },
   { value: "pickup", label: "Pickup / 4x4", needsTrailer: false, group: "van" },
@@ -91,10 +87,6 @@ export const BODY_TYPES = [
 export type BodyType = typeof BODY_TYPES[number]["value"];
 
 export const BODY_TYPES_BY_CATEGORY: Record<BodyCategory, BodyType[]> = {
-  bicycle: [],
-  motorcycle: [],
-  car: [],
-  small_van: ["panel", "luton"],
   van: ["panel", "luton", "box", "fridge", "insulated", "dropside", "flatbed", "tipper", "other"],
   luton_van: ["luton", "box", "fridge", "other"],
   pickup: ["dropside", "flatbed", "tipper", "other"],
