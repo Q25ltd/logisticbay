@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [main, staging]
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ubuntu-latest
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     services:
       postgres:
@@ -25,18 +31,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    env:
-      DATABASE_URL: postgresql://testuser:testpass@localhost:5432/logisticbay_test
-      JWT_ACCESS_SECRET: ci-access-secret-32-chars-xxxxxxxxx
-      JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-xxxxxxxx
-      NODE_ENV: test
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: api/package-lock.json
 
@@ -51,6 +51,15 @@ jobs:
 
       - name: Apply migrations
         run: cd api && npx prisma migrate deploy --schema prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/logisticbay_test
+          JWT_ACCESS_SECRET: ci-access-secret-32-chars-xxxxxxxxx
+          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-xxxxxxxx
 
       - name: Run integration tests
         run: npm test --prefix api
+        env:
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/logisticbay_test
+          JWT_ACCESS_SECRET: ci-access-secret-32-chars-xxxxxxxxx
+          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-xxxxxxxx
+          NODE_ENV: test
