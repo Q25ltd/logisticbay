@@ -130,10 +130,11 @@ export function jobStopToStopState(stop: JobStop): StopState {
 
 export function stopComplete(s: StopState) {
   const addr = s.siteName.trim() && s.street.trim() && s.town.trim() && s.postcode.trim();
+  const coords = s.lat.trim() && s.lng.trim();
   const time =
     s.timeType === "exact"  ? !!s.exactTime :
     s.timeType === "window" ? !!(s.windowStart && s.windowEnd) : true;
-  return !!(addr && s.date && time);
+  return !!(addr && coords && s.date && time);
 }
 
 // ── Time utilities ────────────────────────────────────────────────────────────

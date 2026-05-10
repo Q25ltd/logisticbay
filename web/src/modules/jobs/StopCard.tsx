@@ -247,13 +247,14 @@ export function StopTimingBlock({ stop, onChange, set }: {
 
 // ── Stop card ─────────────────────────────────────────────────────────────────
 
-export default function StopCard({ stop, index, total, locations, onChange, onRemove }: {
+export default function StopCard({ stop, index, total, locations, onChange, onRemove, triedSave = false }: {
   stop: StopState;
   index: number;
   total: number;
   locations: SavedLocation[];
   onChange: (patch: Partial<StopState>) => void;
   onRemove: () => void;
+  triedSave?: boolean;
 }) {
   const set = (field: keyof StopState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     onChange({ [field]: e.target.value });
@@ -386,17 +387,31 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               value={stop.country} onChange={set("country")} />
           </div>
 
-          {/* Lat / Lng */}
+          {/* Lat / Lng — required */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <FieldLabel>Latitude</FieldLabel>
-              <input type="text" inputMode="decimal" className="input font-mono" placeholder="51.5074"
-                value={stop.lat} onChange={set("lat")} />
+              <FieldLabel required>Latitude</FieldLabel>
+              <input
+                type="text" inputMode="decimal"
+                className={`input font-mono ${triedSave && !stop.lat.trim() ? "border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-200" : ""}`}
+                placeholder="51.5074"
+                value={stop.lat} onChange={set("lat")}
+              />
+              {triedSave && !stop.lat.trim() && (
+                <p className="text-xs text-red-500 mt-1">Latitude is required</p>
+              )}
             </div>
             <div>
-              <FieldLabel>Longitude</FieldLabel>
-              <input type="text" inputMode="decimal" className="input font-mono" placeholder="-0.1278"
-                value={stop.lng} onChange={set("lng")} />
+              <FieldLabel required>Longitude</FieldLabel>
+              <input
+                type="text" inputMode="decimal"
+                className={`input font-mono ${triedSave && !stop.lng.trim() ? "border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-200" : ""}`}
+                placeholder="-0.1278"
+                value={stop.lng} onChange={set("lng")}
+              />
+              {triedSave && !stop.lng.trim() && (
+                <p className="text-xs text-red-500 mt-1">Longitude is required</p>
+              )}
             </div>
           </div>
           <CoordsHelp />

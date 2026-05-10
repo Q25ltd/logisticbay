@@ -837,6 +837,7 @@ export default function CreateJobPage() {
                 locations={locations}
                 onChange={patch => updateStop(stop.id, patch)}
                 onRemove={() => removeStop(stop.id)}
+                triedSave={triedSave}
               />
             ))}
 
