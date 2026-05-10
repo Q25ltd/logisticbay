@@ -9,7 +9,7 @@ import { statusLabel } from "./fleetUtils";
 import {
   BODY_TYPES,
   TRAILER_LENGTHS,
-  equipmentForBodyType,
+  equipmentForTrailerType,
   type BodyType,
 } from "../../constants/vehicleTaxonomy";
 import { MultiCheck } from "../jobs/CreateJobFormComponents";
@@ -35,7 +35,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
 
-  const equipmentOptions = equipmentForBodyType(form.bodyType as BodyType | "");
+  const equipmentOptions = equipmentForTrailerType(form.bodyType as BodyType | "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

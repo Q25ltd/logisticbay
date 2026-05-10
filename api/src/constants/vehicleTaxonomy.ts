@@ -297,6 +297,66 @@ const ITEM_ALLOWLIST_BY_CATEGORY: Partial<Record<BodyCategory, readonly OnboardE
   heavy_haulage: ["hiab_crane", "hiab_jib", "winch", "hydraulic_wet_kit"],
 };
 
+const TRAILER_ITEMS_BY_BODY_GROUP: Partial<Record<string, readonly OnboardEquipment[]>> = {
+  general: [
+    "tail_lift", "tail_lift_column", "moffett_brackets",
+    "pallet_truck", "pallet_truck_pwd", "drum_lifter",
+    "straps", "chains", "load_bars", "dunnage_bags", "cargo_nets", "sheeting",
+    "twin_deck", "air_ride", "side_door", "roller_floor", "tail_doors", "shutter_door",
+    "anderson_leads", "electric_standby",
+  ],
+  flat: [
+    "moffett_brackets", "pallet_truck", "winch",
+    "straps", "chains", "load_bars", "dunnage_bags", "cargo_nets", "sheeting", "twist_locks",
+    "air_ride", "abnormal_lights",
+  ],
+  bulk: [
+    "air_ride",
+  ],
+  tanker: [
+    "pump", "compressor", "hose_set", "metered_discharge", "food_grade_liner",
+    "air_ride",
+  ],
+  temp: [
+    "tail_lift", "tail_lift_column", "moffett_brackets",
+    "pallet_truck", "pallet_truck_pwd",
+    "straps", "load_bars", "dunnage_bags", "cargo_nets",
+    "fridge_unit", "multi_temp_partition", "temp_logger", "pre_cool",
+    "twin_deck", "air_ride", "roller_floor", "tail_doors", "shutter_door",
+    "anderson_leads", "electric_standby",
+  ],
+  container: [
+    "twist_locks",
+    "air_ride",
+    "anderson_leads", "electric_standby",
+  ],
+  heavy: [
+    "straps", "chains", "load_bars", "sheeting",
+    "air_ride",
+    "abnormal_lights", "escort_signage",
+  ],
+  specialist: [
+    "tail_lift", "tail_lift_column", "moffett_brackets",
+    "pallet_truck", "pallet_truck_pwd",
+    "straps", "chains", "load_bars", "horse_partitions", "twist_locks", "coil_well",
+    "twin_deck", "air_ride",
+    "anderson_leads",
+  ],
+};
+
+export function equipmentForTrailerType(
+  bodyType: BodyType | "",
+): typeof ONBOARD_EQUIPMENT[number][] {
+  const alwaysGroups = ["safety", "telematics"];
+  if (!bodyType) return [...ONBOARD_EQUIPMENT];
+  const group = BODY_TYPES.find(b => b.value === bodyType)?.group ?? "other";
+  if (group === "other") return [...ONBOARD_EQUIPMENT];
+  const items = TRAILER_ITEMS_BY_BODY_GROUP[group];
+  if (!items) return ONBOARD_EQUIPMENT.filter(e => alwaysGroups.includes(e.group));
+  const itemSet = new Set(items as readonly string[]);
+  return ONBOARD_EQUIPMENT.filter(e => alwaysGroups.includes(e.group) || itemSet.has(e.value));
+}
+
 export function equipmentForBodyType(
   bodyType: BodyType | "",
   bodyCategory: BodyCategory | "" = "",
