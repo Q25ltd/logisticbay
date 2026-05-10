@@ -6,10 +6,10 @@ CREATE TABLE "RefreshToken" (
     "tokenHash"  TEXT NOT NULL,
     "familyId"   TEXT NOT NULL,
     "userAgent"  TEXT NOT NULL DEFAULT '',
-    "expiresAt"  TIMESTAMP(3) NOT NULL,
-    "revokedAt"  TIMESTAMP(3),
-    "lastUsedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt"  TIMESTAMPTZ NOT NULL,
+    "revokedAt"  TIMESTAMPTZ,
+    "lastUsedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "createdAt"  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
 );
