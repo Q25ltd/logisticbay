@@ -11,9 +11,10 @@ import {
   BODY_TYPES,
   BODY_TYPES_BY_CATEGORY,
   GVW_CLASSES,
-  ONBOARD_EQUIPMENT,
+  equipmentForBodyType,
   gvwForCategory,
   type BodyCategory,
+  type BodyType,
 } from "../../constants/vehicleTaxonomy";
 import { MultiCheck } from "../jobs/CreateJobFormComponents";
 
@@ -45,6 +46,10 @@ export default function UnitForm({ initial, onSave, onCancel }: {
   const bodyTypeOptions = bodyTypeValues.length > 0
     ? BODY_TYPES.filter(t => bodyTypeValues.includes(t.value))
     : BODY_TYPES;
+  const equipmentOptions = equipmentForBodyType(
+    form.bodyType as BodyType | "",
+    form.bodyCategory as BodyCategory | "",
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -91,7 +96,7 @@ export default function UnitForm({ initial, onSave, onCancel }: {
           Body Category *
           <select className="input mt-1 w-full" value={form.bodyCategory} onChange={e => {
             const next = e.target.value;
-            setForm(p => ({ ...p, bodyCategory: next, vehicleClass: next, gvwClass: "", bodyType: "" }));
+            setForm(p => ({ ...p, bodyCategory: next, vehicleClass: next, gvwClass: "", bodyType: "", onboardEquipment: [] }));
           }} required>
             <option value="">Select category...</option>
             {BODY_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -116,7 +121,9 @@ export default function UnitForm({ initial, onSave, onCancel }: {
         </label>
         <label className="block text-sm font-semibold">
           Body Type
-          <select className="input mt-1 w-full" value={form.bodyType} onChange={set("bodyType")}>
+          <select className="input mt-1 w-full" value={form.bodyType} onChange={e => {
+            setForm(p => ({ ...p, bodyType: e.target.value, onboardEquipment: [] }));
+          }}>
             <option value="">None / not applicable</option>
             {bodyTypeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
@@ -125,7 +132,7 @@ export default function UnitForm({ initial, onSave, onCancel }: {
       <div className="mt-3">
         <div className="text-sm font-semibold mb-2">Onboard equipment</div>
         <MultiCheck
-          options={ONBOARD_EQUIPMENT.map(e => [e.value, e.label] as [string, string])}
+          options={equipmentOptions.map(e => [e.value, e.label] as [string, string])}
           value={form.onboardEquipment}
           onChange={list => setForm(p => ({ ...p, onboardEquipment: list }))}
         />

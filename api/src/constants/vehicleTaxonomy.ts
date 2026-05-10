@@ -265,3 +265,47 @@ export const isOnboardEquipment = (v: unknown): v is OnboardEquipment =>
   typeof v === "string" && ONBOARD_EQUIPMENT.some(x => x.value === v);
 export const isLicenceClass = (v: unknown): v is DriverLicenceClass =>
   typeof v === "string" && DRIVER_LICENCE_CLASSES.some(x => x.value === v);
+
+const EXTRA_EQUIPMENT_BY_BODY_GROUP: Record<string, readonly string[]> = {
+  general:    ["lifting", "secure", "spec"],
+  flat:       ["lifting", "secure"],
+  bulk:       [],
+  tanker:     ["bulk"],
+  temp:       ["lifting", "secure", "temp", "spec"],
+  container:  ["lifting", "secure", "spec"],
+  heavy:      ["lifting", "secure", "spec", "other"],
+  specialist: ["lifting"],
+  other:      ["lifting", "secure", "bulk", "temp", "spec", "other"],
+};
+
+const EXTRA_EQUIPMENT_BY_CATEGORY: Partial<Record<BodyCategory, readonly string[]>> = {
+  tractor:       ["lifting"],
+  drawbar:       ["lifting", "secure", "spec"],
+  heavy_haulage: ["lifting", "secure", "spec", "other"],
+  spmt:          ["other"],
+  plant:         [],
+  van:           ["lifting", "secure", "spec"],
+  luton_van:     ["lifting", "secure", "spec"],
+  pickup:        ["lifting", "secure"],
+  rigid:         ["lifting", "secure", "spec"],
+};
+
+export function equipmentForBodyType(
+  bodyType: BodyType | "",
+  bodyCategory: BodyCategory | "" = "",
+): typeof ONBOARD_EQUIPMENT[number][] {
+  const always = ["safety", "telematics"];
+  let extra: readonly string[];
+
+  if (bodyType) {
+    const bt = BODY_TYPES.find(b => b.value === bodyType);
+    extra = EXTRA_EQUIPMENT_BY_BODY_GROUP[bt?.group ?? "other"] ?? [];
+  } else if (bodyCategory) {
+    extra = EXTRA_EQUIPMENT_BY_CATEGORY[bodyCategory as BodyCategory] ?? [];
+  } else {
+    return [...ONBOARD_EQUIPMENT];
+  }
+
+  const allowed = new Set([...always, ...extra]);
+  return ONBOARD_EQUIPMENT.filter(e => allowed.has(e.group));
+}

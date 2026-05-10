@@ -6,7 +6,12 @@ import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { TRAILER_STATUSES } from "./fleetConstants";
 import { statusLabel } from "./fleetUtils";
-import { BODY_TYPES, ONBOARD_EQUIPMENT, TRAILER_LENGTHS } from "../../constants/vehicleTaxonomy";
+import {
+  BODY_TYPES,
+  TRAILER_LENGTHS,
+  equipmentForBodyType,
+  type BodyType,
+} from "../../constants/vehicleTaxonomy";
 import { MultiCheck } from "../jobs/CreateJobFormComponents";
 
 export default function TrailerForm({ initial, onSave, onCancel }: {
@@ -29,6 +34,8 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
 
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
+
+  const equipmentOptions = equipmentForBodyType(form.bodyType as BodyType | "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -76,7 +83,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
           Trailer Body Type *
           <select className="input mt-1 w-full" value={form.bodyType} onChange={e => {
             const next = e.target.value;
-            setForm(p => ({ ...p, bodyType: next, trailerType: next }));
+            setForm(p => ({ ...p, bodyType: next, trailerType: next, onboardEquipment: [] }));
           }} required>
             <option value="">Select body type...</option>
             {BODY_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -119,7 +126,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
       <div className="mt-3">
         <div className="text-sm font-semibold mb-2">Onboard equipment</div>
         <MultiCheck
-          options={ONBOARD_EQUIPMENT.map(e => [e.value, e.label] as [string, string])}
+          options={equipmentOptions.map(e => [e.value, e.label] as [string, string])}
           value={form.onboardEquipment}
           onChange={list => setForm(p => ({ ...p, onboardEquipment: list }))}
         />
