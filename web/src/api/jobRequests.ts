@@ -11,6 +11,7 @@ export interface PublicLinkInfo {
 }
 
 export interface PickupDataInput {
+  referenceNumber?: string;   // per-stop reference (warehouse release, booking ref, etc.)
   siteName:       string;
   unitName?:      string;
   addressLine1:   string;
@@ -36,6 +37,7 @@ export interface PickupDataInput {
 }
 
 export interface DeliveryDataInput {
+  referenceNumber?: string;   // per-stop reference (goods-in booking, PO, etc.)
   siteName:       string;
   unitName?:      string;
   addressLine1:   string;
@@ -94,8 +96,8 @@ export interface SubmitRequestBody {
   billingReference?:   string;
   declaredGoodsValue?: number;
   currency?:           string;
-  pickupData:          PickupDataInput;
-  deliveryData:        DeliveryDataInput;
+  pickupData:          PickupDataInput[];   // one or more collection stops
+  deliveryData:        DeliveryDataInput[]; // one or more delivery stops
   loadData:            LoadDataInput;
   reqBodyCategory?:    string;
   reqBodyType?:        string;

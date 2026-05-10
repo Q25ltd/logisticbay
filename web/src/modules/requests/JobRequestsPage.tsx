@@ -126,9 +126,12 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const p = r.pickupData   as any;
-  const d = r.deliveryData as any;
-  const l = r.loadData     as any;
+  // Normalise to arrays — handles old single-object records and new array records
+  const pickupArr   = Array.isArray(r.pickupData)   ? r.pickupData   as any[] : [r.pickupData   as any];
+  const deliveryArr = Array.isArray(r.deliveryData) ? r.deliveryData as any[] : [r.deliveryData as any];
+  const p = pickupArr[0];
+  const d = deliveryArr[deliveryArr.length - 1];
+  const l = r.loadData as any;
 
   async function accept() {
     setBusy(true); setErr("");
@@ -147,9 +150,9 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
     } catch (e: any) { setErr(e.message); setBusy(false); }
   }
 
-  const pickupWarn = p?.entranceWarningLevel;
-  const delivWarn  = d?.entranceWarningLevel;
-  const hasWarn    = pickupWarn === "warn" || pickupWarn === "danger" || delivWarn === "warn" || delivWarn === "danger";
+  const hasWarn = [...pickupArr, ...deliveryArr].some(
+    (s: any) => s?.entranceWarningLevel === "warn" || s?.entranceWarningLevel === "danger"
+  );
 
   return (
     <div className={"card border " + (r.status === "pending_review" ? "border-amber-200" : "border-border")}>
@@ -183,12 +186,18 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
           <div className="text-xs mt-1 space-x-2" style={{ color: "#6b7280" }}>
             <span>{r.contactName} · {r.contactPhone}</span>
             <span>·</span>
-            <span>{p?.siteName ?? "?"} → {d?.siteName ?? "?"}</span>
+            <span>
+              {p?.siteName ?? "?"}
+              {pickupArr.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{pickupArr.length - 1}</span>}
+              {" → "}
+              {d?.siteName ?? "?"}
+              {deliveryArr.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveryArr.length - 1}</span>}
+            </span>
           </div>
           <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-            <span>{p?.pickupDate ?? "?"} collect</span>
+            <span>{pickupArr[0]?.pickupDate ?? "?"} collect</span>
             <span className="mx-1">→</span>
-            <span>{d?.deliveryDate ?? "?"} deliver</span>
+            <span>{deliveryArr[deliveryArr.length - 1]?.deliveryDate ?? "?"} deliver</span>
             <span className="mx-2">·</span>
             <span>{l?.goodsDescription ?? "?"}</span>
             {l?.quantity && <span> · {l.quantity} {l.unit}</span>}
@@ -206,20 +215,26 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
         <div className="border-t border-border px-4 pb-4 space-y-4 pt-4">
           {err && <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</div>}
 
-          {/* Two-column: collection + delivery */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <SiteBlock
-              title="Collection"
-              site={p}
-              reference={r.collectionReference}
-              type="pickup"
-            />
-            <SiteBlock
-              title="Delivery"
-              site={d}
-              reference={r.deliveryReference}
-              type="delivery"
-            />
+          {/* Collection stops */}
+          <div className={`grid gap-3 text-sm ${pickupArr.length + deliveryArr.length <= 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+            {pickupArr.map((site: any, i: number) => (
+              <SiteBlock
+                key={i}
+                title={pickupArr.length > 1 ? `Collection stop ${i + 1}` : "Collection"}
+                site={site}
+                reference={site?.referenceNumber ?? (i === 0 ? r.collectionReference : "")}
+                type="pickup"
+              />
+            ))}
+            {deliveryArr.map((site: any, i: number) => (
+              <SiteBlock
+                key={i}
+                title={deliveryArr.length > 1 ? `Delivery stop ${i + 1}` : "Delivery"}
+                site={site}
+                reference={site?.referenceNumber ?? (i === 0 ? r.deliveryReference : "")}
+                type="delivery"
+              />
+            ))}
           </div>
 
           {/* Load */}
