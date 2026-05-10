@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import jwt from "jsonwebtoken";
+import { env } from "./lib/env.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -17,7 +18,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     return reply.status(401).send({ error: "Missing or invalid Authorization header" });
   }
   try {
-    const decoded = jwt.verify(auth.slice(7), process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!) as any;
+    const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as any;
     request.user = {
       userId:    decoded.userId,
       companyId: decoded.companyId,

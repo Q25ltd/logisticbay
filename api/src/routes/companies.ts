@@ -3,6 +3,7 @@ import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authenticate, requireRole } from "../middleware.js";
+import { env } from "../lib/env.js";
 import {
   validateRegisterCompany,
   validateCreateDriver,
@@ -104,15 +105,11 @@ function holidayDates(input: { startDate: string; endDate: string }) {
 }
 
 function generateToken(payload: object): string {
-  return jwt.sign(payload, process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!, { expiresIn: "7d" });
+  return jwt.sign(payload, env.JWT_ACCESS_SECRET, { expiresIn: "7d" });
 }
 
 function generateRefreshToken(payload: object): string {
-  return jwt.sign(
-    payload,
-    process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET!,
-    { expiresIn: "30d" },
-  );
+  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: "30d" });
 }
 
 export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) {

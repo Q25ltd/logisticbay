@@ -8,6 +8,8 @@
  * Run: npm test
  */
 import "dotenv/config";
+import "../lib/env.js";
+import { env } from "../lib/env.js";
 import { test } from "node:test";
 import assert   from "node:assert/strict";
 import jwt      from "jsonwebtoken";
@@ -19,7 +21,7 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma  = new PrismaClient({ adapter });
 
 const PREFIX     = "__ITEST__";
-const JWT_SECRET = process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET!;
+const JWT_SECRET = env.JWT_ACCESS_SECRET;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
