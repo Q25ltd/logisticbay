@@ -44,7 +44,7 @@ jobs:
         run: npm ci --prefix api
 
       - name: Typecheck
-        run: cd api && npx tsc --noEmit
+        run: cd api && ./node_modules/.bin/tsc --noEmit
 
       - name: Check vocab sync
         run: npm run check:vocab
