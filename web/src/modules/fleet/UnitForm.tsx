@@ -43,9 +43,9 @@ export default function UnitForm({ initial, onSave, onCancel }: {
   const bodyTypeValues = form.bodyCategory
     ? BODY_TYPES_BY_CATEGORY[form.bodyCategory as BodyCategory] ?? []
     : [];
-  const bodyTypeOptions = bodyTypeValues.length > 0
-    ? BODY_TYPES.filter(t => bodyTypeValues.includes(t.value))
-    : BODY_TYPES;
+  // bodyTypeValues === [] means this category has no body of its own (tractor, drawbar, heavy_haulage)
+  const categoryHasBodyType = bodyTypeValues.length > 0;
+  const bodyTypeOptions = BODY_TYPES.filter(t => bodyTypeValues.includes(t.value));
   const equipmentOptions = equipmentForBodyType(
     form.bodyType as BodyType | "",
     form.bodyCategory as BodyCategory | "",
@@ -111,7 +111,7 @@ export default function UnitForm({ initial, onSave, onCancel }: {
           </select>
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
+      <div className={`grid gap-3 mt-3 ${categoryHasBodyType ? "grid-cols-2" : "grid-cols-1"}`}>
         <label className="block text-sm font-semibold">
           GVW Class *
           <select className="input mt-1 w-full" value={form.gvwClass} onChange={set("gvwClass")} required>
@@ -119,15 +119,17 @@ export default function UnitForm({ initial, onSave, onCancel }: {
             {gvwOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </label>
-        <label className="block text-sm font-semibold">
-          Body Type
-          <select className="input mt-1 w-full" value={form.bodyType} onChange={e => {
-            setForm(p => ({ ...p, bodyType: e.target.value, onboardEquipment: [] }));
-          }}>
-            <option value="">None / not applicable</option>
-            {bodyTypeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-        </label>
+        {categoryHasBodyType && (
+          <label className="block text-sm font-semibold">
+            Body Type
+            <select className="input mt-1 w-full" value={form.bodyType} onChange={e => {
+              setForm(p => ({ ...p, bodyType: e.target.value, onboardEquipment: [] }));
+            }}>
+              <option value="">None / not applicable</option>
+              {bodyTypeOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       <div className="mt-3">
         <div className="text-sm font-semibold mb-2">Onboard equipment</div>
