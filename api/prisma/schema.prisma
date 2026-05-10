@@ -52,6 +52,8 @@ model Company {
   auditLogs        AuditLog[]
   fleetUnits       FleetUnit[]
   fleetTrailers    FleetTrailer[]
+  requestLinks     ClientRequestLink[]
+  jobRequests      JobRequest[]
 }
 
 model Customer {
@@ -66,8 +68,10 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  company     Company      @relation(fields: [companyId], references: [id])
-  plannedJobs PlannedJob[]
+  company      Company             @relation(fields: [companyId], references: [id])
+  plannedJobs  PlannedJob[]
+  requestLinks ClientRequestLink[]
+  jobRequests  JobRequest[]
 
   @@unique([companyId, name])
   @@index([companyId, status])
@@ -82,14 +86,16 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships    CompanyMembership[]
-  driverProfile  DriverProfile?
-  shifts         Shift[]
-  createdJobs    PlannedJob[]        @relation("JobCreatedBy")
-  jobEvents      JobExecutionEvent[]
-  jobAudits      JobAudit[]
-  auditLogs      AuditLog[]
-  refreshTokens  RefreshToken[]
+  memberships          CompanyMembership[]
+  driverProfile        DriverProfile?
+  shifts               Shift[]
+  createdJobs          PlannedJob[]        @relation("JobCreatedBy")
+  jobEvents            JobExecutionEvent[]
+  jobAudits            JobAudit[]
+  auditLogs            AuditLog[]
+  refreshTokens        RefreshToken[]
+  createdRequestLinks  ClientRequestLink[]
+  reviewedJobRequests  JobRequest[]        @relation("JobRequestReviewedBy")
 }
 
 model RefreshToken {
@@ -327,6 +333,7 @@ model PlannedJob {
   stops           JobStop[]
   loadDetails     LoadDetails?
   audits          JobAudit[]
+  fromRequest     JobRequest?
 
   @@unique([companyId, jobReference])
   @@index([companyId, plannedDate])
@@ -759,4 +766,121 @@ model AuditLog {
   @@index([companyId, actorId])
   @@index([companyId, createdAt])
   @@index([createdAt])
+}
+
+// ── Customer Request Intake ────────────────────────────────────────────────────
+
+model ClientRequestLink {
+  id          Int       @id @default(autoincrement())
+  companyId   Int
+  customerId  Int?
+  name        String                        // human label, e.g. "Acme Haulage standing link"
+  tokenHash   String    @unique             // SHA-256 of the raw token — never store raw
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  usageCount  Int       @default(0)
+  createdBy   Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+  createdByUser User        @relation(fields: [createdBy], references: [id])
+  requests     JobRequest[]
+
+  @@index([companyId])
+  @@index([tokenHash])
+}
+
+model JobRequest {
+  id              Int       @id @default(autoincrement())
+  companyId       Int
+  requestLinkId   Int?
+  customerId      Int?      // matched/linked after review
+
+  // How and where it came from
+  source  String  @default("client_request_link") // internal_manual | client_request_link
+  status  String  @default("pending_review")       // pending_review | accepted | rejected | cancelled
+
+  // Requester identity (customer fills this on the form)
+  customerCompanyName  String
+  contactName          String
+  contactPhone         String
+  contactEmail         String
+
+  // Critical operational references (required)
+  collectionReference  String
+  deliveryReference    String
+
+  // Customer commercial info (customer-supplied, NOT office pricing)
+  purchaseOrderNumber  String?
+  billingReference     String?
+  declaredGoodsValue   Float?
+  currency             String  @default("GBP")
+  pricingType          String  @default("quote_required") // quote_required | agreed_rate | contract_rate
+
+  // All pickup and delivery data as JSON blobs (normalised into JobStops on accept)
+  // pickupData shape: { siteName, addressLine1, addressLine2, townCity, countyRegion,
+  //   postcode, country, entranceLat, entranceLng, entranceInstructions,
+  //   contactName, contactPhone, contactEmail, bookingRequired, bookingReference,
+  //   openingHours, siteRestrictions, earliestTime, latestTime,
+  //   estimatedLoadingMinutes, entranceDistanceFromPostcode, entranceWarningLevel }
+  pickupData   Json
+  deliveryData Json
+
+  // Load details as JSON blob (mapped to LoadDetails on accept)
+  // shape: { goodsDescription, quantity, unit, otherUnitDescription,
+  //   estimatedWeight, palletCount, dimensions, volume, hazardousGoods, adrClass,
+  //   temperatureControlled, temperatureRange, fragile, stackable,
+  //   forkliftRequired, tailLiftRequired, craneRequired,
+  //   loadingMethod, unloadingMethod, loadNotes }
+  loadData  Json
+
+  // Vehicle/service requirements — uses existing taxonomy (no legacy names)
+  reqBodyCategory           String?
+  reqBodyType               String?
+  reqEquipment              Json?   // string[]
+  trailerTypesAllowed       Json?   // string[]
+  trailerTypesForbidden     Json?   // string[]
+  minimumVehicleSize        String?
+  heightRestriction         String?
+  weightRestriction         String?
+  lengthRestriction         String?
+  accessRestrictionNotes    String?
+  driverQualificationRequired String?
+
+  // Proof requirements (documents upload is Phase 2)
+  proofOfDeliveryRequired   Boolean @default(false)
+  photosRequired            Boolean @default(false)
+  weighbridgeTicketRequired Boolean @default(false)
+
+  // Notes (separated by audience)
+  driverVisibleNotes   String?
+  customerNotes        String?
+  specialInstructions  String?
+  safetyInstructions   String?
+  internalOfficeNotes  String?
+
+  // Review outcome
+  reviewedAt      DateTime?
+  reviewedBy      Int?
+  rejectionReason String?   // no_capacity | outside_service_area | incomplete_information | pricing_issue | duplicate_request | other
+  reviewNotes     String?
+
+  // Linked to the PlannedJob created on accept (unique = one-to-one)
+  convertedJobId  Int?  @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company         Company            @relation(fields: [companyId], references: [id])
+  requestLink     ClientRequestLink? @relation(fields: [requestLinkId], references: [id])
+  customer        Customer?          @relation(fields: [customerId], references: [id])
+  reviewedByUser  User?              @relation("JobRequestReviewedBy", fields: [reviewedBy], references: [id])
+  convertedJob    PlannedJob?        @relation(fields: [convertedJobId], references: [id])
+
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([requestLinkId])
 }

@@ -3,17 +3,18 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 
 const NAV = [
-  { to:"/app/dashboard",    icon:"🏠", label:"Dashboard",    active:true  },
-  { to:"/app/jobs",         icon:"📋", label:"Jobs",         active:true  },
-  { to:"/app/templates",    icon:"📄", label:"Templates",    active:true  },
-  { to:"/app/locations",    icon:"📍", label:"Locations",    active:true  },
-  { to:"/app/fleet",        icon:"🚛", label:"Fleet",        active:true  },
-  { to:"/app/drivers",      icon:"👥", label:"Drivers",      active:true  },
-  { to:"/app/shifts",       icon:"⏱",  label:"Shifts",       active:true  },
-  { to:"/app/holidays",     icon:"🌴", label:"Holidays",     active:true  },
-  { to:"/app/marketplace",  icon:"🏗️", label:"Marketplace",  active:false },
-  { to:"/app/intelligence", icon:"🤖", label:"Intelligence", active:false },
-  { to:"/app/settings",     icon:"⚙️", label:"Settings",     active:true  },
+  { to:"/app/dashboard",     icon:"🏠", label:"Dashboard",    active:true  },
+  { to:"/app/jobs",          icon:"📋", label:"Jobs",         active:true  },
+  { to:"/app/job-requests",  icon:"📥", label:"Requests",     active:true  },
+  { to:"/app/templates",     icon:"📄", label:"Templates",    active:true  },
+  { to:"/app/locations",     icon:"📍", label:"Locations",    active:true  },
+  { to:"/app/fleet",         icon:"🚛", label:"Fleet",        active:true  },
+  { to:"/app/drivers",       icon:"👥", label:"Drivers",      active:true  },
+  { to:"/app/shifts",        icon:"⏱",  label:"Shifts",       active:true  },
+  { to:"/app/holidays",      icon:"🌴", label:"Holidays",     active:true  },
+  { to:"/app/marketplace",   icon:"🏗️", label:"Marketplace",  active:false },
+  { to:"/app/intelligence",  icon:"🤖", label:"Intelligence", active:false },
+  { to:"/app/settings",      icon:"⚙️", label:"Settings",     active:true  },
 ];
 
 function NavItems({ onClose }: { onClose?: () => void }) {

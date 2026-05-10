@@ -16,7 +16,10 @@ import ShiftsPage       from "./modules/shifts/ShiftsPage";
 import FleetPage        from "./modules/fleet/FleetPage";
 import MarketplacePage  from "./modules/marketplace/MarketplacePage";
 import IntelligencePage from "./modules/intelligence/IntelligencePage";
-import SettingsPage     from "./modules/settings/SettingsPage";
+import SettingsPage          from "./modules/settings/SettingsPage";
+import PublicRequestForm    from "./modules/requests/PublicRequestForm";
+import JobRequestsPage      from "./modules/requests/JobRequestsPage";
+import RequestLinksPage     from "./modules/requests/RequestLinksPage";
 
 export default function App() {
   const auth = useAuthProvider();
@@ -37,6 +40,8 @@ export default function App() {
           <Route path="/"         element={<LandingPage />} />
           <Route path="/login"    element={auth.user ? <Navigate to="/app/dashboard" replace /> : <LoginPage onLogin={auth.refresh} />} />
           <Route path="/register" element={auth.user ? <Navigate to="/app/dashboard" replace /> : <RegisterPage onLogin={auth.refresh} />} />
+          {/* Public intake form — no auth required */}
+          <Route path="/request/:token" element={<PublicRequestForm />} />
           <Route path="/app" element={auth.user ? <AppShell /> : <Navigate to="/login" replace />}>
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard"    element={<DashboardPage />} />
@@ -52,7 +57,9 @@ export default function App() {
             <Route path="fleet"        element={<FleetPage />} />
             <Route path="marketplace"  element={<MarketplacePage />} />
             <Route path="intelligence" element={<IntelligencePage />} />
-            <Route path="settings"     element={<SettingsPage />} />
+            <Route path="settings"       element={<SettingsPage />} />
+            <Route path="job-requests"   element={<JobRequestsPage />} />
+            <Route path="request-links"  element={<RequestLinksPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -9,6 +9,7 @@ import { syncRoutes }          from "./routes/sync.js";
 import { availabilityRoutes }  from "./routes/availability.js";
 import { fleetRoutes }         from "./routes/fleet.js";
 import { dashboardRoutes }     from "./routes/dashboard.js";
+import { jobRequestRoutes }    from "./routes/jobRequests.js";
 import cors                    from "@fastify/cors";
 
 export async function buildApp(
@@ -18,7 +19,10 @@ export async function buildApp(
   const app = Fastify({ logger: opts.silent ? false : true });
 
   const allowedOrigins = process.env.NODE_ENV === "production"
-    ? ["https://logisticbay.com", "https://www.logisticbay.com", "https://logisticbay.vercel.app"]
+    ? ["https://logisticbay.com", "https://www.logisticbay.com", "https://logisticbay.vercel.app",
+       // Public intake form — no auth required, must be allowed from anywhere a customer might open it
+       /^https:\/\/.*\.logisticbay\.com$/,
+      ]
     : true;
 
   await app.register(cors, {
@@ -92,6 +96,7 @@ export async function buildApp(
   await availabilityRoutes(app, prisma);
   await fleetRoutes(app, prisma);
   await dashboardRoutes(app, prisma);
+  await jobRequestRoutes(app, prisma);
 
   return app;
 }
