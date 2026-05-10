@@ -164,12 +164,12 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
     if (!unit) return reply.status(404).send({ error: "Fleet unit not found" });
-    const bodyCategory = body.bodyCategory?.trim() ?? unit.bodyCategory;
-    const gvwClass = body.gvwClass?.trim() ?? unit.gvwClass;
-    const bodyType = body.bodyType?.trim() ?? unit.bodyType;
-    if (body.bodyCategory !== undefined && !isBodyCategory(bodyCategory)) return reply.status(400).send({ error: "Body category is invalid" });
-    if (body.gvwClass !== undefined && gvwClass && !isGvwClass(gvwClass)) return reply.status(400).send({ error: "GVW class is invalid" });
-    if (body.bodyType !== undefined && bodyType && !isBodyType(bodyType)) return reply.status(400).send({ error: "Body type is invalid" });
+    const bodyCategory = (body.bodyCategory?.trim() || undefined) ?? unit.bodyCategory;
+    const gvwClass = (body.gvwClass?.trim() || undefined) ?? unit.gvwClass;
+    const bodyType = (body.bodyType?.trim() || undefined) ?? unit.bodyType ?? "";
+    if (body.bodyCategory?.trim() && !isBodyCategory(bodyCategory)) return reply.status(400).send({ error: "Body category is invalid" });
+    if (body.gvwClass?.trim() && gvwClass && !isGvwClass(gvwClass)) return reply.status(400).send({ error: "GVW class is invalid" });
+    if (body.bodyType?.trim() && bodyType && !isBodyType(bodyType)) return reply.status(400).send({ error: "Body type is invalid" });
     if (hasInvalidEquipment(body.onboardEquipment)) return reply.status(400).send({ error: "Onboard equipment contains invalid value" });
 
     const updated = await prisma.fleetUnit.update({

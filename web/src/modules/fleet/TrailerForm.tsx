@@ -44,6 +44,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!form.bodyType) { setError("Trailer body type is required"); return; }
     setLoading(true);
     try {
       const payload = {

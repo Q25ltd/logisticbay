@@ -54,6 +54,8 @@ export default function UnitForm({ initial, onSave, onCancel }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!form.bodyCategory) { setError("Body category is required"); return; }
+    if (!form.gvwClass && categoryGvwOptions.length > 0) { setError("GVW class is required"); return; }
     setLoading(true);
     try {
       const payload = {
