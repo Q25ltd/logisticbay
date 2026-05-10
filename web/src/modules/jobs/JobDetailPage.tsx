@@ -43,69 +43,77 @@ const STATUS_LABELS: Record<string, string> = {
 function AssignPanel({ job, drivers, onSaved }: {
   job: PlannedJob; drivers: Driver[]; onSaved: () => void;
 }) {
-  const [driverId, setDriverId] = useState(job.assignedDriverId ? String(job.assignedDriverId) : "");
-  const [truck,    setTruck]    = useState(job.assignedTruck   ?? "");
-  const [trailer,  setTrailer]  = useState(job.assignedTrailer ?? "");
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState("");
+  const [driverId,    setDriverId]    = useState(job.assignedDriverId ? String(job.assignedDriverId) : "");
+  const [trailer,     setTrailer]     = useState(job.assignedTrailer ?? "");
+  const [truck,       setTruck]       = useState(job.assignedTruck   ?? "");
+  const [loadingNote, setLoadingNote] = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState("");
 
   const selectedDriver = drivers.find(d => String(d.id) === driverId);
 
   async function save() {
     if (!driverId) { setError("Select a driver"); return; }
-    setLoading(true); setError("");
+    setSaving(true); setError("");
     try {
       await jobsApi.allocate(job.id, {
         assignedDriverId: parseInt(driverId, 10),
-        assignedTruck:    truck.trim()   || selectedDriver?.defaultTruckReg   || "",
         assignedTrailer:  trailer.trim() || selectedDriver?.defaultTrailerReg || "",
+        assignedTruck:    truck.trim()   || selectedDriver?.defaultTruckReg   || "",
+        overrideReason:   loadingNote.trim() || undefined,
       });
       onSaved();
     } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+    finally { setSaving(false); }
   }
 
   async function unassign() {
     if (!window.confirm("Remove driver from this job?")) return;
-    setLoading(true); setError("");
+    setSaving(true); setError("");
     try {
       await jobsApi.allocate(job.id, { assignedDriverId: null });
       onSaved();
     } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+    finally { setSaving(false); }
   }
 
   return (
     <div className="card p-4">
       <h2 className="font-bold text-primary mb-3">Driver Assignment</h2>
       {error && <Alert type="error" message={error} />}
-      <label className="block text-sm font-semibold mb-1">Driver</label>
-      <select className="input w-full mb-3" value={driverId} onChange={e => {
+
+      {/* 1 — Driver */}
+      <label className="block text-sm font-semibold mb-1">Driver *</label>
+      <select className="input w-full mb-4" value={driverId} onChange={e => {
         const d = drivers.find(dr => String(dr.id) === e.target.value);
         setDriverId(e.target.value);
-        if (d) { setTruck(d.defaultTruckReg ?? ""); setTrailer(d.defaultTrailerReg ?? ""); }
+        if (d) { setTrailer(d.defaultTrailerReg ?? ""); setTruck(d.defaultTruckReg ?? ""); }
       }}>
         <option value="">Select driver...</option>
         {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
       </select>
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div>
-          <label className="block text-sm font-semibold mb-1">Truck</label>
-          <input className="input w-full" value={truck} onChange={e => setTruck(e.target.value)}
-            placeholder={selectedDriver?.defaultTruckReg || "Registration"} />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold mb-1">Trailer</label>
-          <input className="input w-full" value={trailer} onChange={e => setTrailer(e.target.value)}
-            placeholder={selectedDriver?.defaultTrailerReg || "Optional"} />
-        </div>
-      </div>
+
+      {/* 2 — Trailer */}
+      <label className="block text-sm font-semibold mb-1">Trailer</label>
+      <input className="input w-full mb-3" value={trailer} onChange={e => setTrailer(e.target.value)}
+        placeholder={selectedDriver?.defaultTrailerReg || "Registration (optional)"} />
+
+      {/* 3 — Truck */}
+      <label className="block text-sm font-semibold mb-1">Truck</label>
+      <input className="input w-full mb-4" value={truck} onChange={e => setTruck(e.target.value)}
+        placeholder={selectedDriver?.defaultTruckReg || "Registration"} />
+
+      {/* 4 — Loading / unloading note */}
+      <label className="block text-sm font-semibold mb-1">Loading / unloading note</label>
+      <textarea className="input w-full min-h-16 mb-4" value={loadingNote} onChange={e => setLoadingNote(e.target.value)}
+        placeholder="Any special instructions for this run..." />
+
       <div className="flex gap-2">
-        <Button className="flex-1" onClick={save} loading={loading}>
+        <Button className="flex-1" onClick={save} loading={saving}>
           {job.assignedDriverId ? "Reassign" : "Assign Driver"}
         </Button>
         {job.assignedDriverId && (
-          <Button variant="outline" onClick={unassign} loading={loading}
+          <Button variant="outline" onClick={unassign} loading={saving}
             className="text-red-600 border-red-300 hover:bg-red-50">
             Unassign
           </Button>
