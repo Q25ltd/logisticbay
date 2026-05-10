@@ -109,13 +109,18 @@ Files: api/prisma/schema.prisma, api/prisma/migrations/20260510140000_add_refres
 Verified: prisma generate OK, tsc --noEmit exit 0
 Notes: All sessions already logged in will hit 401 on next refresh (their token is not in RefreshToken table). One-time forced re-login on deploy — expected and intentional. api/src/auth.ts dead code left for P1.7. Mobile /auth/logout call left for mobile session (P0.7).
 
-### [ ] P0.6 — Tenant-isolation test on every route + CI gate
+### [x] P0.6 — Tenant-isolation test on every route + CI gate
 - **Why:** today only 2 endpoints are covered; no `.github/` exists, so nothing runs on PR.
 - **Acceptance:**
   - Extend `api/src/tests/tenant-isolation.test.ts` (or split into per-route files) covering at least: `/drivers`, `/drivers/:id`, `/customers`, `/locations`, `/templates`, `/jobs/:id/status` (write), `/jobs/:id/note`, `/shifts`, `/shifts/:id`, `/shifts/:id/segments`, `/shifts/:id/deliveries`, `/availability`, `/holiday-requests`, `/holiday-requests/:id`, `/fleet/units`, `/fleet/units/:id`, `/fleet/trailers`, `/fleet/trailers/:id`, `/dashboard`, `/sync/events`, `/company`.
   - For every endpoint, asserting either 404 or empty data when Company A token hits Company B resource.
   - GitHub Actions workflow `.github/workflows/ci.yml` runs `npm run typecheck`, `npm run check:vocab`, `npm test` on every PR and on push to `main`/`staging`.
   - Required check on PR: cannot merge if red.
+
+Done: worktree pensive-wilbur-0a4d13
+Files: api/src/tests/tenant-isolation.test.ts (rewritten), .github/workflows/ci.yml (new)
+Verified: tsc --noEmit exit 0
+Notes: 26 subtests covering all P0.6 routes in one shared-fixture suite. CI runs typecheck + check:vocab + integration tests against an ephemeral Postgres 16 service. Enable branch protection in GitHub → Settings → Branches to make the CI check required on PRs.
 
 ### [ ] P0.7 — Mobile logout must respect SAFETY §2
 - **Why:** `mobile/src/AuthContext.tsx:69-74` clears tokens unconditionally, leaves the offline queue under the previous user.
