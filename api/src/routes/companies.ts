@@ -199,9 +199,18 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const { companyId } = request.user!;
     const body = request.body as PatchCompanyBody;
 
+    if (body.ticker !== undefined) {
+      const t = body.ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (t) {
+        const conflict = await prisma.company.findFirst({ where: { ticker: t, id: { not: companyId } } });
+        if (conflict) return reply.status(409).send({ error: "That ticker is already taken. Choose another." });
+      }
+    }
+
     const updated = await prisma.company.update({
       where: { id: companyId },
       data: {
+        ...(body.ticker !== undefined ? { ticker: body.ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || null } : {}),
         ...(body.name               !== undefined ? { name: body.name }                           : {}),
         ...(body.reportEmail        !== undefined ? { reportEmail: body.reportEmail }              : {}),
         ...(body.reportEmailEnabled !== undefined ? { reportEmailEnabled: body.reportEmailEnabled } : {}),

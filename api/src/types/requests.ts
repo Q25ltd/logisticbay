@@ -36,6 +36,7 @@ export interface RegisterCompanyBody {
 
 export interface PatchCompanyBody {
   name?:                         string;
+  ticker?:                       string;
   reportEmail?:                  string;
   reportEmailEnabled?:           boolean;
   holidayYearResetMonth?:        number;

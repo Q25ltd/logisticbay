@@ -12,6 +12,7 @@ export default function SettingsPage() {
   const [reportEmail,        setReportEmail]        = useState("");
   const [reportEmailEnabled, setReportEmailEnabled] = useState(true);
   const [companyName,        setCompanyName]        = useState(user?.companyName ?? "");
+  const [ticker,             setTicker]             = useState("");
   const [companySaving,      setCompanySaving]      = useState(false);
   const [companySuccess,     setCompanySuccess]     = useState("");
   const [companyError,       setCompanyError]       = useState("");
@@ -42,6 +43,7 @@ export default function SettingsPage() {
       setReportEmail(data.reportEmail ?? "");
       setReportEmailEnabled(data.reportEmailEnabled ?? true);
       setCompanyName(data.name ?? "");
+      setTicker(data.ticker ?? "");
       setBaseHolidayAllowanceDays(String(data.baseHolidayAllowanceDays ?? 28));
       setHolidayYearResetMonth(String(data.holidayYearResetMonth ?? 1));
       setHolidayYearResetDay(String(data.holidayYearResetDay ?? 1));
@@ -62,6 +64,7 @@ export default function SettingsPage() {
     try {
       await api.patch("/company", {
         name: companyName,
+        ticker: ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || undefined,
         reportEmail,
         reportEmailEnabled,
         baseHolidayAllowanceDays: Number(baseHolidayAllowanceDays),
@@ -124,6 +127,20 @@ export default function SettingsPage() {
             onChange={e => setCompanyName(e.target.value)}
             placeholder="Acme Haulage Ltd"
           />
+
+          <div className="mb-4">
+            <label className="label">Job Reference Ticker</label>
+            <input
+              className="input font-mono uppercase tracking-widest max-w-xs"
+              value={ticker}
+              onChange={e => setTicker(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
+              placeholder="e.g. LGB"
+              maxLength={6}
+            />
+            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+              Used to auto-generate job references, e.g. <span className="font-mono">{ticker || "LGB"}-26-000001</span>. 3–4 letters recommended. Must be unique.
+            </p>
+          </div>
 
           <div className="mb-4">
             <label className="label">Shift Report Email</label>
