@@ -33,6 +33,7 @@ export interface CreateJobPayload {
   reqEquipment: string[];
   reqLicenceClass: string;
   reqEndorsements: string[];
+  assignedDriverId: number | null;
   customerId: number | null;
   customerName: string;
   plannedDate: string;
@@ -120,6 +121,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     reqEquipment,
     reqLicenceClass,
     reqEndorsements,
+    assignedDriverId,
     customerId,
     customerName,
     plannedDate,
@@ -248,6 +250,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
 
   return {
     saveMode,
+    assignedDriverId:       assignedDriverId ?? undefined,
     customerId:             customerId,
     customerName:           customerName,
     plannedDate:            plannedDate || undefined,

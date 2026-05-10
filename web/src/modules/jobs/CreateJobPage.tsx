@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
+import { driversApi } from "../../api/drivers";
 import { api } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
-import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
+import type { Customer, Driver, JobTemplate, PlannedJob, SavedLocation } from "../../types";
 
 import {
   SERVICE_TYPES, JOB_TYPES, PRIORITY_OPTS,
@@ -81,8 +82,10 @@ export default function CreateJobPage() {
   const [locations,     setLocations]     = useState<SavedLocation[]>([]);
   const [templates,     setTemplates]     = useState<JobTemplate[]>([]);
   const [tplQuery,      setTplQuery]      = useState("");
-  const [companyTicker, setCompanyTicker] = useState<string | null>(null);
-  const [jobReference,  setJobReference]  = useState<string | null>(null);
+  const [companyTicker,    setCompanyTicker]    = useState<string | null>(null);
+  const [jobReference,     setJobReference]     = useState<string | null>(null);
+  const [drivers,          setDrivers]          = useState<Driver[]>([]);
+  const [assignedDriverId, setAssignedDriverId] = useState<number | null>(null);
 
   // templateId in URL = open blank job pre-filled with template (Use → button)
   const preloadTemplateId = searchParams.get("templateId");
@@ -90,6 +93,7 @@ export default function CreateJobPage() {
   useEffect(() => {
     jobsApi.locations().then(r => setLocations(r.data)).catch(() => {});
     api.get<{ ticker?: string | null }>("/company").then(c => setCompanyTicker(c.ticker ?? null)).catch(() => {});
+    driversApi.list("active").then(r => setDrivers(r.data)).catch(() => {});
   }, []);
   useEffect(() => {
     jobsApi.templates().then(r => {
@@ -485,6 +489,7 @@ export default function CreateJobPage() {
       setJobType(job.jobType || "");
       setJobTitle(job.jobTitle || "");
       setJobReference(job.jobReference ?? null);
+      setAssignedDriverId(job.assignedDriverId ?? null);
       setReferenceNumber(job.referenceNumber || "");
       setCustomerRef(job.customerRef || "");
       setPurchaseOrderNumber(job.purchaseOrderNumber || "");
@@ -826,6 +831,7 @@ export default function CreateJobPage() {
       reqEquipment,
       reqLicenceClass,
       reqEndorsements,
+      assignedDriverId,
       customerId,
       customerName,
       plannedDate,
@@ -1120,10 +1126,18 @@ export default function CreateJobPage() {
               <FieldLabel required>Customer</FieldLabel>
               <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
             </div>
-            <div>
-              <FieldLabel required>Planned Date</FieldLabel>
-              <input type="date" className="input" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
-              <p className="text-xs text-muted mt-1.5">👉 When this job appears for planning</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FieldLabel required>Planned Date</FieldLabel>
+                <input type="date" className="input" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
+              </div>
+              <div>
+                <FieldLabel>Assign Driver</FieldLabel>
+                <select className="input" value={assignedDriverId ?? ""} onChange={e => setAssignedDriverId(e.target.value ? parseInt(e.target.value, 10) : null)}>
+                  <option value="">Unassigned</option>
+                  {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
