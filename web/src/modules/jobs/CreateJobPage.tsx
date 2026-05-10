@@ -1559,13 +1559,15 @@ export default function CreateJobPage() {
 
             {showVehicleOpts && (
               <div className="space-y-6 pt-1 border-t border-border">
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Trailer Rules</div>
+                {!trailerRequired && (
                   <div>
-                    <FieldLabel>Trailer Body Types Allowed</FieldLabel>
-                    <MultiCheck options={BODY_TYPE_OPTS} value={trailersAllowed} onChange={setTrailersAllowed} />
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Trailer Rules</div>
+                    <div>
+                      <FieldLabel>Trailer Body Types Allowed</FieldLabel>
+                      <MultiCheck options={BODY_TYPE_OPTS} value={trailersAllowed} onChange={setTrailersAllowed} />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Restrictions</div>
