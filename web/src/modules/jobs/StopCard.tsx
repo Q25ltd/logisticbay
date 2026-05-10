@@ -273,7 +273,9 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
       unitBuilding:    loc.unitName  || "",
       contactName:     loc.contactName  || "",
       contactPhone:    loc.contactPhone || "",
-      openingHours:    loc.instructions || "",
+      // instructions = access/delivery notes → driver notes field (not opening hours)
+      driverNotes:     loc.instructions || "",
+      internalNotes:   loc.internalNotes || "",
     });
   }
 
@@ -349,7 +351,13 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               onClear={text => onChange({ locationQuery: text, savedLocationId: null })}
             />
             {stop.savedLocationId && (
-              <button type="button" onClick={() => onChange({ locationQuery: "", savedLocationId: null, siteName: "", street: "", town: "", postcode: "", lat: "", lng: "" })}
+              <button type="button" onClick={() => onChange({
+                locationQuery: "", savedLocationId: null,
+                siteName: "", street: "", town: "", postcode: "", country: "United Kingdom",
+                lat: "", lng: "",
+                unitBuilding: "", contactName: "", contactPhone: "",
+                driverNotes: "", internalNotes: "",
+              })}
                 className="text-xs text-muted hover:text-red-500 mt-1 transition-colors">
                 ✕ Clear saved location
               </button>

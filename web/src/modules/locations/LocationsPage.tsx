@@ -23,16 +23,23 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [triedSave, setTriedSave] = useState(false);
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setError(""); setLoading(true);
+    e.preventDefault();
+    setTriedSave(true);
+    if (!form.latitude.trim() || !form.longitude.trim()) {
+      setError("Latitude and Longitude are required — all job stops need GPS coordinates.");
+      return;
+    }
+    setError(""); setLoading(true);
     try {
       await jobsApi.createLocation({
         ...form,
-        latitude: form.latitude.trim() ? Number(form.latitude) : undefined,
-        longitude: form.longitude.trim() ? Number(form.longitude) : undefined,
+        latitude:  Number(form.latitude),
+        longitude: Number(form.longitude),
       });
       onSave();
     }
@@ -64,9 +71,34 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Input label="Latitude" value={form.latitude} onChange={set("latitude")} placeholder="51.8787" />
-        <Input label="Longitude" value={form.longitude} onChange={set("longitude")} placeholder="-0.4200" />
+        <div>
+          <Input
+            label="Latitude *"
+            value={form.latitude}
+            onChange={set("latitude")}
+            placeholder="51.8787"
+            className={triedSave && !form.latitude.trim() ? "border-red-400 bg-red-50" : ""}
+          />
+          {triedSave && !form.latitude.trim() && (
+            <p className="text-xs text-red-500 mt-1">Required — job stops need GPS coordinates</p>
+          )}
+        </div>
+        <div>
+          <Input
+            label="Longitude *"
+            value={form.longitude}
+            onChange={set("longitude")}
+            placeholder="-0.4200"
+            className={triedSave && !form.longitude.trim() ? "border-red-400 bg-red-50" : ""}
+          />
+          {triedSave && !form.longitude.trim() && (
+            <p className="text-xs text-red-500 mt-1">Required — job stops need GPS coordinates</p>
+          )}
+        </div>
       </div>
+      <p className="text-xs text-muted mb-3">
+        💡 To get coordinates: open Google Maps, right-click the exact location, and copy the numbers shown (e.g. 51.5074, −0.1278).
+      </p>
 
       <div className="mb-4">
         <label className="label">Access / delivery instructions</label>
