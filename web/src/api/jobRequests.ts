@@ -101,7 +101,6 @@ export interface SubmitRequestBody {
   reqBodyType?:        string;
   reqEquipment?:       string[];
   trailerTypesAllowed?: string[];
-  trailerTypesForbidden?: string[];
   minimumVehicleSize?: string;
   heightRestriction?:  string;
   weightRestriction?:  string;
@@ -140,7 +139,6 @@ export interface JobRequest {
   reqBodyType:         string | null;
   reqEquipment:        string[] | null;
   trailerTypesAllowed: string[] | null;
-  trailerTypesForbidden: string[] | null;
   minimumVehicleSize:  string | null;
   heightRestriction:   string | null;
   weightRestriction:   string | null;

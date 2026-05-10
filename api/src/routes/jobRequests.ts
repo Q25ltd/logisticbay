@@ -193,7 +193,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           reqBodyType:          body.reqBodyType || null,
           reqEquipment:         body.reqEquipment ?? undefined,
           trailerTypesAllowed:  body.trailerTypesAllowed ?? undefined,
-          trailerTypesForbidden: body.trailerTypesForbidden ?? undefined,
           minimumVehicleSize:   body.minimumVehicleSize || null,
           heightRestriction:    body.heightRestriction || null,
           weightRestriction:    body.weightRestriction || null,
@@ -384,7 +383,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           reqBodyType:          body.reqBodyType          || null,
           reqEquipment:         body.reqEquipment         ?? undefined,
           trailerTypesAllowed:  body.trailerTypesAllowed  ?? undefined,
-          trailerTypesForbidden: body.trailerTypesForbidden ?? undefined,
           minimumVehicleSize:   body.minimumVehicleSize   || null,
           heightRestriction:    body.heightRestriction    || null,
           weightRestriction:    body.weightRestriction    || null,
@@ -446,7 +444,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             reqBodyType:      jobRequest.reqBodyType ?? "",
             reqEquipment:     jobRequest.reqEquipment ?? undefined,
             trailerTypesAllowed:  jobRequest.trailerTypesAllowed  ?? undefined,
-            trailerTypesForbidden: jobRequest.trailerTypesForbidden ?? undefined,
             minVehicleSize:   jobRequest.minimumVehicleSize ?? "",
             heightRestriction: jobRequest.heightRestriction ?? "",
             weightRestriction: jobRequest.weightRestriction ?? "",
@@ -687,7 +684,7 @@ interface PublicRequestBody {
   deliveryData: DeliveryDataBlob;
   loadData:     LoadDataBlob;
   reqBodyCategory?: string; reqBodyType?: string;
-  reqEquipment?: string[]; trailerTypesAllowed?: string[]; trailerTypesForbidden?: string[];
+  reqEquipment?: string[]; trailerTypesAllowed?: string[];
   minimumVehicleSize?: string;
   heightRestriction?: string; weightRestriction?: string; lengthRestriction?: string;
   accessRestrictionNotes?: string; driverQualificationRequired?: string;

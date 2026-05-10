@@ -842,7 +842,6 @@ model JobRequest {
   reqBodyType               String?
   reqEquipment              Json?   // string[]
   trailerTypesAllowed       Json?   // string[]
-  trailerTypesForbidden     Json?   // string[]
   minimumVehicleSize        String?
   heightRestriction         String?
   weightRestriction         String?
