@@ -1133,7 +1133,15 @@ export default function CreateJobPage() {
               </div>
               <div>
                 <FieldLabel>Assign Driver</FieldLabel>
-                <select className="input" value={assignedDriverId ?? ""} onChange={e => setAssignedDriverId(e.target.value ? parseInt(e.target.value, 10) : null)}>
+                <select className="input" value={assignedDriverId ?? ""} onChange={e => {
+                  const id = e.target.value ? parseInt(e.target.value, 10) : null;
+                  setAssignedDriverId(id);
+                  const d = drivers.find(dr => dr.id === id);
+                  if (d) {
+                    if (d.defaultTruckReg)   setAssignedTruck(d.defaultTruckReg);
+                    if (d.defaultTrailerReg) setAssignedTrailer(d.defaultTrailerReg);
+                  }
+                }}>
                   <option value="">Unassigned</option>
                   {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
                 </select>
