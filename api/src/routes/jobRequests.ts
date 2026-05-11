@@ -455,10 +455,10 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (jobRequest.status !== "pending_review")
         return reply.status(409).send({ error: `Cannot accept a request with status '${jobRequest.status}'` });
 
-      const stopsArr  = jobRequest.stops  as StopBlob[];
-      const loadData  = jobRequest.loadData as LoadDataBlob;
-      const transport = jobRequest.transportRequirementsData as TransportRequirementsBlob;
-      const billing   = jobRequest.billingData as BillingBlob;
+      const stopsArr  = (jobRequest.stops as unknown) as StopBlob[];
+      const loadData  = jobRequest.loadData as unknown as LoadDataBlob;
+      const transport = jobRequest.transportRequirementsData as unknown as TransportRequirementsBlob;
+      const billing   = jobRequest.billingData as unknown as BillingBlob;
 
       const collections  = stopsArr.filter(s => s.type === "collection");
       const deliveries   = stopsArr.filter(s => s.type === "delivery");
