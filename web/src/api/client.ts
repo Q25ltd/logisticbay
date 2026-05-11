@@ -22,10 +22,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers: {
-        "Content-Type": "application/json",
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
     throw new Error("Cannot connect to server. Check your connection.");
