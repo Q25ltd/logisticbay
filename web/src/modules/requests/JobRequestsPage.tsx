@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { jobRequestsApi, type JobRequest } from "../../api/jobRequests";
+import { jobRequestsApi, type JobRequest, type RequestStop } from "../../api/jobRequests";
 
 const STATUS_TABS = [
   { key: "",               label: "All" },
@@ -33,11 +33,25 @@ const SOURCE_LABEL: Record<string, string> = {
   internal_manual:     "Manual entry",
 };
 
+const STOP_TYPE_LABEL: Record<string, string> = {
+  collection: "Collection",
+  delivery:   "Delivery",
+  reload:     "Reload",
+  return:     "Return",
+  waypoint:   "Waypoint",
+  other:      "Stop",
+};
+
 function timeSince(iso: string): string {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (mins < 60)  return `${mins}m ago`;
+  if (mins < 60)   return `${mins}m ago`;
   if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
   return `${Math.floor(mins / 1440)}d ago`;
+}
+
+// Helper: cast blob to RequestStop array
+function toStops(raw: Record<string, unknown>[]): RequestStop[] {
+  return (raw ?? []) as RequestStop[];
 }
 
 export default function JobRequestsPage() {
@@ -116,22 +130,29 @@ export default function JobRequestsPage() {
 // ── Row ───────────────────────────────────────────────────────────────────────
 
 function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh: () => void }) {
-  const navigate   = useNavigate();
-  const [expanded, setExpanded] = useState(false);
+  const navigate    = useNavigate();
+  const [expanded,  setExpanded]  = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("no_capacity");
-  const [rejectNotes, setRejectNotes] = useState("");
-  const [accepting, setAccepting] = useState(false);
+  const [rejectNotes,  setRejectNotes]  = useState("");
+  const [accepting,    setAccepting]    = useState(false);
   const [plannerNotes, setPlannerNotes] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  const [err,  setErr]  = useState("");
 
-  // Normalise to arrays — handles old single-object records and new array records
-  const pickupArr   = Array.isArray(r.pickupData)   ? r.pickupData   as any[] : [r.pickupData   as any];
-  const deliveryArr = Array.isArray(r.deliveryData) ? r.deliveryData as any[] : [r.deliveryData as any];
-  const p = pickupArr[0];
-  const d = deliveryArr[deliveryArr.length - 1];
-  const l = r.loadData as any;
+  const stops   = toStops(r.stops);
+  const billing = r.billingData  as Record<string, unknown>;
+  const notes   = r.notesData    as Record<string, unknown>;
+  const load    = r.loadData     as Record<string, unknown>;
+
+  const collections = stops.filter(s => s.type === "collection");
+  const deliveries  = stops.filter(s => s.type === "delivery");
+  const firstStop   = stops[0];
+  const lastStop    = stops[stops.length - 1];
+
+  const hasWarn = stops.some(
+    s => s.entranceWarningLevel === "warn" || s.entranceWarningLevel === "danger"
+  );
 
   async function accept() {
     setBusy(true); setErr("");
@@ -150,10 +171,6 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
     } catch (e: any) { setErr(e.message); setBusy(false); }
   }
 
-  const hasWarn = [...pickupArr, ...deliveryArr].some(
-    (s: any) => s?.entranceWarningLevel === "warn" || s?.entranceWarningLevel === "danger"
-  );
-
   return (
     <div className={"card border " + (r.status === "pending_review" ? "border-amber-200" : "border-border")}>
       {/* Summary row */}
@@ -164,7 +181,7 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-sm" style={{ color: "#0f172a" }}>
-              {r.customerCompanyName}
+              {r.customerName}
             </span>
             <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (STATUS_BADGE[r.status] ?? "bg-gray-100 text-gray-600")}>
               {STATUS_LABEL[r.status] ?? r.status}
@@ -187,20 +204,24 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
             <span>{r.contactName} · {r.contactPhone}</span>
             <span>·</span>
             <span>
-              {p?.siteName ?? "?"}
-              {pickupArr.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{pickupArr.length - 1}</span>}
+              {collections.length > 0
+                ? <>{collections[0].companySiteName}{collections.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{collections.length - 1}</span>}</>
+                : firstStop?.companySiteName ?? "?"
+              }
               {" → "}
-              {d?.siteName ?? "?"}
-              {deliveryArr.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveryArr.length - 1}</span>}
+              {deliveries.length > 0
+                ? <>{deliveries[deliveries.length - 1].companySiteName}{deliveries.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveries.length - 1}</span>}</>
+                : lastStop?.companySiteName ?? "?"
+              }
             </span>
           </div>
           <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-            <span>{pickupArr[0]?.pickupDate ?? "?"} collect</span>
-            <span className="mx-1">→</span>
-            <span>{deliveryArr[deliveryArr.length - 1]?.deliveryDate ?? "?"} deliver</span>
-            <span className="mx-2">·</span>
-            <span>{l?.goodsDescription ?? "?"}</span>
-            {l?.quantity && <span> · {l.quantity} {l.unit}</span>}
+            {firstStop && <span>{firstStop.date} · {firstStop.earliestArrivalTime}–{firstStop.latestArrivalTime}</span>}
+            {lastStop && firstStop?.date !== lastStop.date && (
+              <><span className="mx-1">→</span><span>{lastStop.date}</span></>
+            )}
+            {load?.goodsDescription && <><span className="mx-2">·</span><span>{load.goodsDescription as string}</span></>}
+            {load?.quantity && <span> · {load.quantity as number} {load.unit as string}</span>}
           </div>
         </div>
         <div className="text-right text-xs shrink-0" style={{ color: "#9ca3af" }}>
@@ -215,24 +236,16 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
         <div className="border-t border-border px-4 pb-4 space-y-4 pt-4">
           {err && <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</div>}
 
-          {/* Collection stops */}
-          <div className={`grid gap-3 text-sm ${pickupArr.length + deliveryArr.length <= 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
-            {pickupArr.map((site: any, i: number) => (
-              <SiteBlock
+          {/* Stops grid */}
+          <div className={`grid gap-3 text-sm ${stops.length <= 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+            {stops.map((stop, i) => (
+              <StopBlock
                 key={i}
-                title={pickupArr.length > 1 ? `Collection stop ${i + 1}` : "Collection"}
-                site={site}
-                reference={site?.referenceNumber ?? (i === 0 ? r.collectionReference : "")}
-                type="pickup"
-              />
-            ))}
-            {deliveryArr.map((site: any, i: number) => (
-              <SiteBlock
-                key={i}
-                title={deliveryArr.length > 1 ? `Delivery stop ${i + 1}` : "Delivery"}
-                site={site}
-                reference={site?.referenceNumber ?? (i === 0 ? r.deliveryReference : "")}
-                type="delivery"
+                title={stops.length > 1
+                  ? `${STOP_TYPE_LABEL[stop.type] ?? "Stop"} ${stops.filter((s, j) => s.type === stop.type && j <= i).length}`
+                  : (STOP_TYPE_LABEL[stop.type] ?? "Stop")
+                }
+                stop={stop}
               />
             ))}
           </div>
@@ -240,38 +253,85 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
           {/* Load */}
           <div className="text-sm p-3 rounded-xl bg-slate-50 border">
             <div className="font-semibold mb-1">Load</div>
-            <div>{l?.goodsDescription}</div>
+            <div>{load?.goodsDescription as string}</div>
             <div className="text-xs mt-1 text-muted">
-              {l?.quantity} {l?.unit}
-              {l?.estimatedWeight && <span> · {l.estimatedWeight}kg est.</span>}
-              {l?.hazardousGoods && <span className="ml-2 font-semibold text-red-600">⚠ ADR {l.adrClass}</span>}
-              {l?.temperatureControlled && <span className="ml-2">❄ {l.temperatureRange}</span>}
+              {load?.quantity as number} {load?.unit as string}
+              {load?.estimatedWeight && <span> · {load.estimatedWeight as number}kg est.</span>}
             </div>
-            {l?.loadNotes && <div className="text-xs mt-1 italic">{l.loadNotes}</div>}
+            {/* Special requirements from specialRequirementsData */}
+            {(() => {
+              const spec = r.specialRequirementsData as Record<string, unknown>;
+              const items = (spec?.items ?? []) as string[];
+              return items.length > 0 ? (
+                <div className="flex gap-1 flex-wrap mt-2">
+                  {items.map((item: string) => (
+                    <span key={item} className="px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 border border-red-200 font-medium">
+                      {item.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                  {spec?.adrClass && <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800 font-bold">ADR {spec.adrClass as string}{spec.unNumber ? ` UN${spec.unNumber}` : ""}</span>}
+                  {spec?.temperatureRange && <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">❄ {spec.temperatureRange as string}</span>}
+                </div>
+              ) : null;
+            })()}
+            {load?.loadNotes && <div className="text-xs mt-1 italic text-muted">{load.loadNotes as string}</div>}
           </div>
 
-          {/* References/commercial */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-            {r.purchaseOrderNumber && <InfoChip label="PO Number" value={r.purchaseOrderNumber} />}
-            {r.billingReference && <InfoChip label="Billing ref" value={r.billingReference} />}
-            {r.declaredGoodsValue != null && <InfoChip label="Goods value" value={`£${r.declaredGoodsValue.toLocaleString()}`} />}
-            <InfoChip label="Pricing" value={r.pricingType.replace(/_/g, " ")} />
-          </div>
-
-          {/* Notes */}
-          {(r.driverVisibleNotes || r.customerNotes || r.specialInstructions || r.safetyInstructions) && (
-            <div className="text-sm space-y-1 p-3 rounded-xl bg-amber-50 border border-amber-100">
-              {r.driverVisibleNotes   && <NoteRow label="Driver" value={r.driverVisibleNotes} />}
-              {r.safetyInstructions   && <NoteRow label="Safety" value={r.safetyInstructions} />}
-              {r.specialInstructions  && <NoteRow label="Special" value={r.specialInstructions} />}
-              {r.customerNotes        && <NoteRow label="Customer note" value={r.customerNotes} />}
+          {/* Billing */}
+          {(billing?.purchaseOrderNumber || billing?.billingReference || billing?.declaredGoodsValue != null || r.pricingType) && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              {billing?.purchaseOrderNumber && <InfoChip label="PO Number"   value={billing.purchaseOrderNumber as string} />}
+              {billing?.billingReference    && <InfoChip label="Billing ref" value={billing.billingReference as string} />}
+              {billing?.declaredGoodsValue != null && <InfoChip label="Goods value" value={`${billing.currency ?? "£"}${(billing.declaredGoodsValue as number).toLocaleString()}`} />}
+              <InfoChip label="Pricing" value={r.pricingType.replace(/_/g, " ")} />
             </div>
           )}
+
+          {/* Notes */}
+          {(notes?.driverVisibleNotes || notes?.customerNotes || notes?.safetyInstructions || (notes?.driverNoteChips as string[] | undefined)?.length) && (
+            <div className="text-sm space-y-1 p-3 rounded-xl bg-amber-50 border border-amber-100">
+              {notes?.driverNoteChips && (notes.driverNoteChips as string[]).length > 0 && (
+                <div className="flex gap-1 flex-wrap mb-1">
+                  {(notes.driverNoteChips as string[]).map((c: string) => (
+                    <span key={c} className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800 font-medium">
+                      {c.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {notes?.driverVisibleNotes  && <NoteRow label="Driver"       value={notes.driverVisibleNotes as string} />}
+              {notes?.safetyInstructions  && <NoteRow label="Safety"       value={notes.safetyInstructions as string} />}
+              {notes?.customerNotes       && <NoteRow label="Customer note" value={notes.customerNotes as string} />}
+            </div>
+          )}
+
+          {/* Internal notes (set by reviewer) */}
+          {r.internalOfficeNotes && (
+            <div className="text-sm p-3 rounded-xl bg-slate-50 border">
+              <NoteRow label="Internal notes" value={r.internalOfficeNotes} />
+            </div>
+          )}
+
+          {/* Transport requirements */}
+          {(() => {
+            const tr = r.transportRequirementsData as Record<string, unknown>;
+            const equip = (tr?.reqEquipment ?? []) as string[];
+            const trailers = (tr?.trailerTypesAllowed ?? []) as string[];
+            if (!tr?.reqBodyCategory && !tr?.reqBodyType && !equip.length && !trailers.length) return null;
+            return (
+              <div className="text-xs p-3 rounded-xl bg-indigo-50 border border-indigo-100">
+                <div className="font-semibold text-indigo-800 mb-1">Transport requirements</div>
+                {tr.reqBodyCategory && <div>Category: <span className="font-medium">{tr.reqBodyCategory as string}</span></div>}
+                {tr.reqBodyType     && <div>Body type: <span className="font-medium">{(tr.reqBodyType as string).replace(/_/g, " ")}</span></div>}
+                {equip.length > 0   && <div>Equipment: <span className="font-medium">{equip.join(", ")}</span></div>}
+                {trailers.length > 0 && <div>Trailers: <span className="font-medium">{trailers.join(", ")}</span></div>}
+              </div>
+            );
+          })()}
 
           {/* Actions — only for pending */}
           {r.status === "pending_review" && (
             <div className="flex flex-col gap-3 pt-2">
-              {/* Accept panel */}
               {accepting ? (
                 <div className="p-3 rounded-xl bg-green-50 border border-green-200 space-y-3">
                   <div className="font-semibold text-sm text-green-800">Accept this request</div>
@@ -349,35 +409,63 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
   );
 }
 
-function SiteBlock({ title, site, reference, type }: {
-  title: string; site: any; reference: string; type: "pickup" | "delivery";
-}) {
-  const warnLevel = site?.entranceWarningLevel;
+// ── Stop detail block ─────────────────────────────────────────────────────────
+
+function StopBlock({ title, stop: s }: { title: string; stop: RequestStop }) {
+  const warnLevel = s.entranceWarningLevel;
   const warnColor = warnLevel === "danger" ? "#ef4444" : warnLevel === "warn" ? "#d97706" : "#22c55e";
-  const dateField = type === "pickup" ? site?.pickupDate : site?.deliveryDate;
-  const loadField = type === "pickup" ? site?.estimatedLoadingMinutes : site?.estimatedUnloadingMinutes;
-  const loadLabel = type === "pickup" ? "loading" : "unloading";
 
   return (
     <div className="p-3 rounded-xl border bg-white">
-      <div className="font-semibold mb-2" style={{ color: "#0f172a" }}>{title}</div>
-      <div className="font-mono text-xs mb-1 px-1 py-0.5 bg-blue-50 text-blue-800 rounded inline-block">
-        Ref: {reference}
-      </div>
+      <div className="font-semibold mb-2 capitalize" style={{ color: "#0f172a" }}>{title}</div>
+      {s.referenceNumber && (
+        <div className="font-mono text-xs mb-1 px-1 py-0.5 bg-blue-50 text-blue-800 rounded inline-block">
+          Ref: {s.referenceNumber}
+        </div>
+      )}
       <div className="text-xs space-y-0.5 mt-1" style={{ color: "#374151" }}>
-        <div className="font-medium">{site?.siteName}</div>
-        <div>{site?.addressLine1}, {site?.townCity} {site?.postcode}</div>
-        {dateField && <div className="mt-1">{dateField} · {site?.earliestTime}–{site?.latestTime}</div>}
-        {loadField && <div>{loadField} min est. {loadLabel}</div>}
-        {site?.entranceLat != null && (
+        <div className="font-medium">{s.companySiteName}</div>
+        <div>{s.addressLine1}{s.addressLine2 ? `, ${s.addressLine2}` : ""}, {s.townCity} {s.postcode}</div>
+        <div className="mt-1">
+          {s.date} · {s.earliestArrivalTime}–{s.latestArrivalTime}
+          {s.exactAppointmentTime && <span className="ml-1 font-medium">({s.exactAppointmentTime} exact)</span>}
+        </div>
+        {s.estimatedServiceTimeMinutes > 0 && (
+          <div>{s.estimatedServiceTimeMinutes} min est. on-site</div>
+        )}
+        {s.bookingRequired && (
+          <div className="text-amber-700 font-medium">
+            Booking required{s.bookingReference ? ` · ${s.bookingReference}` : ""}
+          </div>
+        )}
+        {s.entranceLatitude != null && (
           <div className="mt-1" style={{ color: warnColor }}>
-            ● Entrance: {(site.entranceLat as number).toFixed(5)}, {(site.entranceLng as number).toFixed(5)}
+            ● Entrance: {s.entranceLatitude.toFixed(5)}, {s.entranceLongitude.toFixed(5)}
             {warnLevel === "warn"   && " ⚠ Pin >1mi from postcode"}
             {warnLevel === "danger" && " ⚠⚠ Pin far from postcode — verify"}
           </div>
         )}
-        {site?.entranceInstructions && (
-          <div className="mt-1 italic text-xs" style={{ color: "#6b7280" }}>{site.entranceInstructions}</div>
+        {s.entranceInstructions && (
+          <div className="mt-1 italic text-xs" style={{ color: "#6b7280" }}>{s.entranceInstructions}</div>
+        )}
+        {s.handlingMethods && s.handlingMethods.length > 0 && (
+          <div className="flex gap-1 flex-wrap mt-1">
+            {s.handlingMethods.map((m: string) => (
+              <span key={m} className="px-1.5 py-0.5 rounded bg-slate-100 text-xs">{m.replace(/_/g, " ")}</span>
+            ))}
+          </div>
+        )}
+        {s.siteRestrictions && s.siteRestrictions.length > 0 && (
+          <div className="flex gap-1 flex-wrap mt-1">
+            {s.siteRestrictions.map((r: string) => (
+              <span key={r} className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-xs border border-amber-200">{r.replace(/_/g, " ")}</span>
+            ))}
+          </div>
+        )}
+        {s.contactName && (
+          <div className="mt-1 text-xs text-muted">
+            Contact: {s.contactName}{s.contactPhone ? ` · ${s.contactPhone}` : ""}
+          </div>
         )}
       </div>
     </div>
