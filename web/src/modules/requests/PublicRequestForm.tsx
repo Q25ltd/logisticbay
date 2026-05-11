@@ -44,12 +44,12 @@ const LOAD_TYPES: [string, string][] = [
   ["machinery",          "⚙️ Machinery"],
   ["building_materials", "🧱 Building materials"],
   ["food_refrigerated",  "❄️ Food / refrigerated"],
-  ["bulk_material",      "🪣 Bulk material"],
-  ["steel_long",         "🔩 Steel / long loads"],
-  ["vehicles",           "🚗 Vehicles"],
-  ["containers",         "🔲 Containers"],
+  ["bulk_material",      "⛏️ Bulk material"],
+  ["steel_long",         "🏗️ Steel / long loads"],
+  ["vehicles",           "🚙 Vehicles"],
+  ["containers",         "🚢 Containers"],
   ["general",            "📋 General goods"],
-  ["other",              "❓ Other"],
+  ["other",              "📦 Other"],
 ];
 
 const LOAD_UNITS: [string, string][] = [
@@ -59,13 +59,13 @@ const LOAD_UNITS: [string, string][] = [
 ];
 
 const HANDLING_METHODS: [string, string][] = [
-  ["forklift",          "🔱 Forklift"],
+  ["forklift",          "🏭 Forklift"],
   ["loading_bay",       "🚪 Loading bay"],
   ["crane",             "🏗️ Crane"],
-  ["handball",          "🤲 Handball"],
+  ["handball",          "💪 Handball"],
   ["side_loading",      "↔ Side loading"],
-  ["drive_on",          "🚗 Drive on"],
-  ["drive_off",         "🚗 Drive off"],
+  ["drive_on",          "🚙 Drive on"],
+  ["drive_off",         "🚙 Drive off"],
   ["tail_lift_required","⬆ Tail lift"],
   ["tipper_loading",    "⬆ Tipper load"],
   ["tipper_unloading",  "⬇ Tipper discharge"],
