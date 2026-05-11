@@ -2,19 +2,52 @@
  * Job Request Intake routes
  *
  * Public (no auth):
- *   GET  /public/request/:token        — get company name for form branding
- *   POST /public/request/:token        — submit a transport request
+ *   GET  /public/request/:token   — company branding for form header
+ *   POST /public/request/:token   — submit a transport request
  *
  * Internal (auth required):
- *   GET  /request-links                — list intake links
- *   POST /request-links                — create intake link
- *   PATCH /request-links/:id           — update/deactivate link
+ *   GET  /request-links           — list intake links
+ *   POST /request-links           — create intake link
+ *   PATCH /request-links/:id      — update / deactivate link
  *
- *   GET  /job-requests                 — review queue
- *   GET  /job-requests/:id             — request detail
- *   POST /job-requests                 — create request manually (internal)
- *   POST /job-requests/:id/accept      — accept → convert to PlannedJob + JobStops
- *   POST /job-requests/:id/reject      — reject with reason
+ *   GET  /job-requests            — review queue
+ *   GET  /job-requests/:id        — request detail
+ *   POST /job-requests/:id/accept — convert to PlannedJob + JobStops
+ *   POST /job-requests/:id/reject — reject with reason
+ *
+ * STOP OBJECT SHAPE (stored in stops Json array):
+ * {
+ *   type: "collection" | "delivery" | "reload" | "return" | "waypoint" | "other"
+ *   sequence: number
+ *   companySiteName: string
+ *   addressLine1: string
+ *   addressLine2?: string
+ *   townCity: string
+ *   countyRegion?: string
+ *   postcode: string
+ *   country?: string
+ *   entranceLatitude: number
+ *   entranceLongitude: number
+ *   entranceInstructions: string
+ *   referenceNumber?: string
+ *   contactName?: string
+ *   contactPhone?: string
+ *   contactEmail?: string
+ *   bookingRequired?: boolean
+ *   bookingReference?: string
+ *   openingHours?: string
+ *   siteRestrictions?: string[]
+ *   date: string               // YYYY-MM-DD
+ *   earliestArrivalTime: string  // HH:MM
+ *   latestArrivalTime: string    // HH:MM
+ *   exactAppointmentTime?: string
+ *   estimatedServiceTimeMinutes: number
+ *   handlingMethods?: string[]
+ *   proofRequirements?: string[]
+ *   accessRequirements?: string[]
+ *   entranceDistanceFromPostcode?: number | null  // set server-side
+ *   entranceWarningLevel?: "ok" | "warn" | "danger"  // set server-side
+ * }
  */
 
 import crypto                       from "crypto";
@@ -31,12 +64,11 @@ function hashToken(raw: string): string {
 }
 
 function generateRawToken(): string {
-  return crypto.randomBytes(32).toString("hex"); // 64-char hex, URL-safe
+  return crypto.randomBytes(32).toString("hex");
 }
 
-/** Distance in miles between two lat/lng pairs (Haversine). */
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3958.8; // Earth radius in miles
+  const R = 3958.8;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
   const a =
@@ -45,31 +77,180 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Validate entrance coordinates against postcode. Returns warning level. */
-async function checkEntranceDistance(
-  postcode: string,
-  lat: number,
-  lng: number,
-): Promise<{ distanceMiles: number | null; warningLevel: "ok" | "warn" | "danger" }> {
+async function checkEntranceDistance(postcode: string, lat: number, lng: number) {
   const center = await postcodeToCoords(postcode).catch(() => null);
-  if (!center) return { distanceMiles: null, warningLevel: "ok" };
+  if (!center) return { distanceMiles: null as number | null, warningLevel: "ok" as const };
   const miles = distanceMiles(center.lat, center.lng, lat, lng);
   return {
     distanceMiles: Math.round(miles * 10) / 10,
-    warningLevel:  miles > 3 ? "danger" : miles > 1 ? "warn" : "ok",
+    warningLevel:  (miles > 3 ? "danger" : miles > 1 ? "warn" : "ok") as "ok" | "warn" | "danger",
   };
 }
 
-/** Pull and validate a request link from the token, bumping usage. */
 async function resolveLink(prisma: PrismaClient, rawToken: string) {
   const link = await prisma.clientRequestLink.findUnique({
     where:   { tokenHash: hashToken(rawToken) },
-    include: { company: { select: { id: true, name: true, ticker: true } }, customer: true },
+    include: { company: { select: { id: true, name: true } }, customer: true },
   });
-  if (!link)                                    return null;
-  if (!link.isActive)                           return null;
-  if (link.expiresAt && link.expiresAt < new Date()) return null;
+  if (!link || !link.isActive)                        return null;
+  if (link.expiresAt && link.expiresAt < new Date())  return null;
   return link;
+}
+
+// ── Type helpers ──────────────────────────────────────────────────────────────
+
+interface StopBlob {
+  type: string;
+  sequence?: number;
+  companySiteName?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  townCity?: string;
+  countyRegion?: string;
+  postcode?: string;
+  country?: string;
+  entranceLatitude?: number;
+  entranceLongitude?: number;
+  entranceInstructions?: string;
+  referenceNumber?: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  bookingRequired?: boolean;
+  bookingReference?: string;
+  openingHours?: string;
+  siteRestrictions?: string[];
+  date?: string;
+  earliestArrivalTime?: string;
+  latestArrivalTime?: string;
+  exactAppointmentTime?: string;
+  estimatedServiceTimeMinutes?: number;
+  handlingMethods?: string[];
+  proofRequirements?: string[];
+  accessRequirements?: string[];
+  entranceDistanceFromPostcode?: number | null;
+  entranceWarningLevel?: string;
+}
+
+interface LoadDataBlob {
+  goodsType?: string;
+  goodsDescription?: string;
+  quantity?: number;
+  unit?: string;
+  estimatedWeight?: number;
+  palletCount?: number;
+  palletType?: string;
+  stackable?: boolean;
+  dimensions?: string;
+  craneRequired?: boolean;
+  tippingRequired?: boolean;
+  temperatureRange?: string;
+  chilledFrozenAmbient?: string;
+  vehicleCount?: number;
+  driveable?: boolean;
+  containerSize?: string;
+  loadedOrEmpty?: string;
+  containerNumber?: string;
+  loadNotes?: string;
+}
+
+interface SpecialRequirementsBlob {
+  items?: string[];
+  adrClass?: string;
+  unNumber?: string;
+  temperatureRange?: string;
+}
+
+interface TransportRequirementsBlob {
+  plannerDecides?: boolean;
+  reqBodyCategory?: string;
+  reqBodyType?: string;
+  reqEquipment?: string[];
+  trailerTypesAllowed?: string[];
+}
+
+interface BillingBlob {
+  pricingType?: string;
+  declaredGoodsValue?: number;
+  currency?: string;
+  purchaseOrderNumber?: string;
+  billingReference?: string;
+  vatRegistered?: boolean;
+  vatNumber?: string;
+}
+
+interface NotesBlob {
+  driverNoteChips?: string[];
+  driverVisibleNotes?: string;
+  safetyInstructions?: string;
+  customerNotes?: string;
+}
+
+interface RequesterBlob {
+  customerCompanyName?: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  customerReference?: string;
+}
+
+interface PublicRequestBody {
+  requesterData:             RequesterBlob;
+  stops:                     StopBlob[];
+  loadData:                  LoadDataBlob;
+  specialRequirementsData?:  SpecialRequirementsBlob;
+  transportRequirementsData?: TransportRequirementsBlob;
+  billingData?:              BillingBlob;
+  notesData?:                NotesBlob;
+}
+
+interface InternalRequestBody extends PublicRequestBody {
+  internalOfficeNotes?: string;
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+function validateStop(s: StopBlob, idx: number, total: number): string[] {
+  const e: string[] = [];
+  const suf = total > 1 ? ` (stop ${idx + 1})` : "";
+  if (!s.companySiteName?.trim())       e.push(`Site name is required${suf}`);
+  if (!s.addressLine1?.trim())          e.push(`Address is required${suf}`);
+  if (!s.townCity?.trim())              e.push(`Town/city is required${suf}`);
+  if (!s.postcode?.trim())              e.push(`Postcode is required${suf}`);
+  if (s.entranceLatitude == null || s.entranceLongitude == null)
+                                        e.push(`Exact entrance pin is required${suf}`);
+  if (!s.entranceInstructions?.trim())  e.push(`Entrance instructions are required${suf}`);
+  if (!s.date?.trim())                  e.push(`Date is required${suf}`);
+  if (!s.earliestArrivalTime?.trim())   e.push(`Earliest arrival time is required${suf}`);
+  if (!s.latestArrivalTime?.trim())     e.push(`Latest arrival time is required${suf}`);
+  if (!s.estimatedServiceTimeMinutes)   e.push(`Estimated service time is required${suf}`);
+  if ((s.type === "collection" || s.type === "delivery") && !s.referenceNumber?.trim())
+                                        e.push(`Reference number is required${suf}`);
+  return e;
+}
+
+function validateBody(body: Partial<PublicRequestBody>): string[] {
+  const errors: string[] = [];
+  const r = body.requesterData ?? {};
+  if (!r.customerCompanyName?.trim()) errors.push("Company name is required");
+  if (!r.contactName?.trim())         errors.push("Contact name is required");
+  if (!r.contactPhone?.trim())        errors.push("Contact phone is required");
+  if (!r.contactEmail?.trim())        errors.push("Contact email is required");
+
+  const stops = body.stops ?? [];
+  if (stops.length === 0) { errors.push("At least one stop is required"); return errors; }
+  const collections = stops.filter(s => s.type === "collection");
+  const deliveries  = stops.filter(s => s.type === "delivery");
+  if (collections.length === 0) errors.push("At least one collection stop is required");
+  if (deliveries.length === 0)  errors.push("At least one delivery stop is required");
+  stops.forEach((s, i) => errors.push(...validateStop(s, i, stops.length)));
+
+  const l = body.loadData ?? {};
+  if (!l.goodsDescription?.trim()) errors.push("Goods description is required");
+  if (!l.quantity)                 errors.push("Quantity is required");
+  if (!l.unit?.trim())             errors.push("Unit is required");
+
+  return errors;
 }
 
 // ── Route registration ────────────────────────────────────────────────────────
@@ -77,23 +258,17 @@ async function resolveLink(prisma: PrismaClient, rawToken: string) {
 export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /public/request/:token ─────────────────────────────────────────────
-  // Returns company branding info so the public form can say "Submit a request to Acme Haulage".
-  // No sensitive data — token only reveals company name + optional customer name.
-  app.get<{ Params: { token: string } }>(
-    "/public/request/:token",
-    async (req, reply) => {
-      const link = await resolveLink(prisma, req.params.token);
-      if (!link) return reply.status(404).send({ error: "Request link not found or expired" });
-
-      return reply.send({
-        companyName:   link.company.name,
-        customerName:  link.customer?.name ?? null,
-        contactName:   link.customer?.contactName ?? null,
-        contactEmail:  link.customer?.contactEmail ?? null,
-        contactPhone:  link.customer?.contactPhone ?? null,
-      });
-    },
-  );
+  app.get<{ Params: { token: string } }>("/public/request/:token", async (req, reply) => {
+    const link = await resolveLink(prisma, req.params.token);
+    if (!link) return reply.status(404).send({ error: "Request link not found or expired" });
+    return reply.send({
+      companyName:   link.company.name,
+      customerName:  link.customer?.name       ?? null,
+      contactName:   link.customer?.contactName  ?? null,
+      contactEmail:  link.customer?.contactEmail ?? null,
+      contactPhone:  link.customer?.contactPhone ?? null,
+    });
+  });
 
   // ── POST /public/request/:token ────────────────────────────────────────────
   app.post<{ Params: { token: string }; Body: PublicRequestBody }>(
@@ -103,117 +278,58 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (!link) return reply.status(404).send({ error: "Request link not found or expired" });
 
       const body = req.body as PublicRequestBody;
-      const companyId = link.companyId;
-
-      // ── Validate required fields ──────────────────────────────────────────
-      const errors: string[] = [];
-      if (!body.customerCompanyName?.trim()) errors.push("Customer company name is required");
-      if (!body.contactName?.trim())         errors.push("Contact name is required");
-      if (!body.contactPhone?.trim())        errors.push("Contact phone is required");
-      if (!body.contactEmail?.trim())        errors.push("Contact email is required");
-      if (!body.collectionReference?.trim()) errors.push("Collection reference is required");
-      if (!body.deliveryReference?.trim())   errors.push("Delivery reference is required");
-
-      const pickups   = Array.isArray(body.pickupData)   ? body.pickupData   : (body.pickupData   ? [body.pickupData   as PickupDataBlob]   : []);
-      const deliveries = Array.isArray(body.deliveryData) ? body.deliveryData : (body.deliveryData ? [body.deliveryData as DeliveryDataBlob] : []);
-
-      if (pickups.length === 0)   errors.push("At least one collection stop is required");
-      else pickups.forEach((p, i) => {
-        const suf = pickups.length > 1 ? ` (collection stop ${i + 1})` : "";
-        errors.push(...validatePickupStop(p, suf));
-      });
-
-      if (deliveries.length === 0) errors.push("At least one delivery stop is required");
-      else deliveries.forEach((d, i) => {
-        const suf = deliveries.length > 1 ? ` (delivery stop ${i + 1})` : "";
-        errors.push(...validateDeliveryStop(d, suf));
-      });
-
-      const l = body.loadData ?? {} as LoadDataBlob;
-      if (!l.goodsDescription?.trim())  errors.push("Goods description is required");
-      if (!l.quantity)                  errors.push("Quantity is required");
-      if (!l.unit?.trim())              errors.push("Unit is required");
-
+      const errors = validateBody(body);
       if (errors.length > 0) return reply.status(400).send({ errors });
 
-      // ── Entrance distance validation for every stop ───────────────────────
-      const pickupDists   = await Promise.all(
-        pickups.map(p => checkEntranceDistance(p.postcode!, p.entranceLat!, p.entranceLng!))
-      );
-      const deliveryDists = await Promise.all(
-        deliveries.map(d => checkEntranceDistance(d.postcode!, d.entranceLat!, d.entranceLng!))
+      // Entrance distance check per stop (non-blocking)
+      const stopsWithWarnings = await Promise.all(
+        (body.stops ?? []).map(async (s, i) => {
+          const dist = s.postcode && s.entranceLatitude != null && s.entranceLongitude != null
+            ? await checkEntranceDistance(s.postcode, s.entranceLatitude, s.entranceLongitude)
+            : { distanceMiles: null, warningLevel: "ok" as const };
+          return { ...s, sequence: i + 1, entranceDistanceFromPostcode: dist.distanceMiles, entranceWarningLevel: dist.warningLevel };
+        })
       );
 
-      const pickupDataFinal   = pickups.map((p, i) => ({
-        ...p,
-        entranceDistanceFromPostcode: pickupDists[i].distanceMiles,
-        entranceWarningLevel:         pickupDists[i].warningLevel,
-      }));
-      const deliveryDataFinal = deliveries.map((d, i) => ({
-        ...d,
-        entranceDistanceFromPostcode: deliveryDists[i].distanceMiles,
-        entranceWarningLevel:         deliveryDists[i].warningLevel,
-      }));
+      const r     = body.requesterData;
+      const billing = body.billingData ?? {};
+      const pricingType = billing.pricingType ?? "quote_required";
 
-      // ── Create JobRequest ─────────────────────────────────────────────────
       const request = await prisma.jobRequest.create({
         data: {
-          companyId,
-          requestLinkId:        link.id,
-          customerId:           link.customerId ?? null,
-          source:               "client_request_link",
-          status:               "pending_review",
-          customerCompanyName:  body.customerCompanyName.trim(),
-          contactName:          body.contactName.trim(),
-          contactPhone:         body.contactPhone.trim(),
-          contactEmail:         body.contactEmail.trim(),
-          collectionReference:  body.collectionReference.trim(),
-          deliveryReference:    body.deliveryReference.trim(),
-          purchaseOrderNumber:  body.purchaseOrderNumber?.trim() || null,
-          billingReference:     body.billingReference?.trim() || null,
-          declaredGoodsValue:   body.declaredGoodsValue ?? null,
-          currency:             body.currency || "GBP",
-          pricingType:          "quote_required", // always server-set on public form
-          pickupData:           pickupDataFinal   as unknown as Prisma.InputJsonValue,
-          deliveryData:         deliveryDataFinal as unknown as Prisma.InputJsonValue,
-          loadData:             l as Prisma.InputJsonValue,
-          reqBodyCategory:      body.reqBodyCategory || null,
-          reqBodyType:          body.reqBodyType || null,
-          reqEquipment:         body.reqEquipment ?? undefined,
-          trailerTypesAllowed:  body.trailerTypesAllowed ?? undefined,
-          minimumVehicleSize:   body.minimumVehicleSize || null,
-          heightRestriction:    body.heightRestriction || null,
-          weightRestriction:    body.weightRestriction || null,
-          lengthRestriction:    body.lengthRestriction || null,
-          accessRestrictionNotes: body.accessRestrictionNotes || null,
-          driverQualificationRequired: body.driverQualificationRequired || null,
-          proofOfDeliveryRequired:   body.proofOfDeliveryRequired   ?? false,
-          photosRequired:            body.photosRequired            ?? false,
-          weighbridgeTicketRequired: body.weighbridgeTicketRequired ?? false,
-          driverVisibleNotes:  body.driverVisibleNotes  || null,
-          customerNotes:       body.customerNotes       || null,
-          specialInstructions: body.specialInstructions || null,
-          safetyInstructions:  body.safetyInstructions  || null,
+          companyId:     link.companyId,
+          requestLinkId: link.id,
+          customerId:    link.customerId ?? null,
+          source:        "client_request_link",
+          status:        "pending_review",
+          // Denormalized summaries
+          customerName:  (r.customerCompanyName ?? "").trim(),
+          contactName:   (r.contactName ?? "").trim(),
+          contactPhone:  (r.contactPhone ?? "").trim(),
+          contactEmail:  (r.contactEmail ?? "").trim(),
+          pricingType:   "quote_required", // always server-forced on public form
+          // Blobs
+          requesterData:             body.requesterData   as Prisma.InputJsonValue,
+          stops:                     stopsWithWarnings    as unknown as Prisma.InputJsonValue,
+          loadData:                  body.loadData        as Prisma.InputJsonValue,
+          specialRequirementsData:   (body.specialRequirementsData  ?? {}) as Prisma.InputJsonValue,
+          transportRequirementsData: (body.transportRequirementsData ?? {}) as Prisma.InputJsonValue,
+          billingData:               billing              as Prisma.InputJsonValue,
+          notesData:                 (body.notesData      ?? {}) as Prisma.InputJsonValue,
         },
       });
 
-      // Bump usage count
       await prisma.clientRequestLink.update({
         where: { id: link.id },
         data:  { usageCount: { increment: 1 }, lastUsedAt: new Date() },
       });
 
-      // Warnings to return (non-blocking)
+      // Build non-blocking warnings
       const warnings: string[] = [];
-      pickupDists.forEach((dist, i) => {
-        const suf = pickups.length > 1 ? ` (collection stop ${i + 1})` : "";
-        if (dist.warningLevel === "danger") warnings.push(`Collection entrance pin is far from the postcode — please verify it is the correct gate${suf}.`);
-        else if (dist.warningLevel === "warn") warnings.push(`Collection entrance pin is more than 1 mile from the postcode — please check it is the correct entrance${suf}.`);
-      });
-      deliveryDists.forEach((dist, i) => {
-        const suf = deliveries.length > 1 ? ` (delivery stop ${i + 1})` : "";
-        if (dist.warningLevel === "danger") warnings.push(`Delivery entrance pin is far from the postcode — please verify it is the correct gate${suf}.`);
-        else if (dist.warningLevel === "warn") warnings.push(`Delivery entrance pin is more than 1 mile from the postcode — please check it is the correct entrance${suf}.`);
+      stopsWithWarnings.forEach((s, i) => {
+        const suf = stopsWithWarnings.length > 1 ? ` (stop ${i + 1} — ${s.companySiteName ?? ""})` : "";
+        if (s.entranceWarningLevel === "danger") warnings.push(`Entrance pin is far from the postcode — please verify it is the correct gate${suf}.`);
+        else if (s.entranceWarningLevel === "warn") warnings.push(`Entrance pin is more than 1 mile from the postcode — please check it is the correct entrance${suf}.`);
       });
 
       return reply.status(201).send({ id: request.id, warnings });
@@ -221,13 +337,11 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   );
 
   // ── GET /request-links ─────────────────────────────────────────────────────
-  app.get(
-    "/request-links",
+  app.get("/request-links",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
       const links = await prisma.clientRequestLink.findMany({
-        where:   { companyId },
+        where:   { companyId: req.user!.companyId },
         include: { customer: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -240,12 +354,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/request-links",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
-      const userId    = req.user!.userId;
+      const { companyId, userId } = req.user!;
       const { name, customerId, expiresAt } = req.body;
-
       if (!name?.trim()) return reply.status(400).send({ error: "Link name is required" });
-
       const rawToken = generateRawToken();
       const link = await prisma.clientRequestLink.create({
         data: {
@@ -258,8 +369,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         },
         include: { customer: { select: { id: true, name: true } } },
       });
-
-      // Return the raw token once — never stored, cannot be recovered
       return reply.status(201).send({ ...link, rawToken });
     },
   );
@@ -269,11 +378,10 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/request-links/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
+      const { companyId } = req.user!;
       const id = parseInt(req.params.id, 10);
       const link = await prisma.clientRequestLink.findFirst({ where: { id, companyId } });
       if (!link) return reply.status(404).send({ error: "Link not found" });
-
       const updated = await prisma.clientRequestLink.update({
         where: { id },
         data: {
@@ -293,26 +401,23 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/job-requests",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
-      const status    = req.query.status;
-      const page      = Math.max(1, parseInt(req.query.page ?? "1", 10));
-      const take      = 50;
-
-      const requests = await prisma.jobRequest.findMany({
-        where:   { companyId, ...(status ? { status } : {}) },
-        orderBy: { createdAt: "desc" },
-        skip:    (page - 1) * take,
-        take,
-        include: {
-          requestLink: { select: { id: true, name: true } },
-          convertedJob: { select: { id: true, jobReference: true, status: true } },
-        },
-      });
-
-      const total = await prisma.jobRequest.count({
-        where: { companyId, ...(status ? { status } : {}) },
-      });
-
+      const { companyId } = req.user!;
+      const status = req.query.status;
+      const page   = Math.max(1, parseInt(req.query.page ?? "1", 10));
+      const take   = 50;
+      const [requests, total] = await Promise.all([
+        prisma.jobRequest.findMany({
+          where:   { companyId, ...(status ? { status } : {}) },
+          orderBy: { createdAt: "desc" },
+          skip:    (page - 1) * take,
+          take,
+          include: {
+            requestLink:  { select: { id: true, name: true } },
+            convertedJob: { select: { id: true, jobReference: true, status: true } },
+          },
+        }),
+        prisma.jobRequest.count({ where: { companyId, ...(status ? { status } : {}) } }),
+      ]);
       return reply.send({ data: requests, total, page, pages: Math.ceil(total / take) });
     },
   );
@@ -322,14 +427,13 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/job-requests/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
+      const { companyId } = req.user!;
       const id = parseInt(req.params.id, 10);
-
       const request = await prisma.jobRequest.findFirst({
         where:   { id, companyId },
         include: {
-          requestLink:  { select: { id: true, name: true } },
-          convertedJob: { select: { id: true, jobReference: true, status: true } },
+          requestLink:    { select: { id: true, name: true } },
+          convertedJob:   { select: { id: true, jobReference: true, status: true } },
           reviewedByUser: { select: { id: true, name: true } },
         },
       });
@@ -338,78 +442,12 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     },
   );
 
-  // ── POST /job-requests (internal manual creation) ──────────────────────────
-  app.post<{ Body: InternalRequestBody }>(
-    "/job-requests",
-    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
-    async (req, reply) => {
-      const companyId = req.user!.companyId;
-      const body = req.body as InternalRequestBody;
-
-      const errors = validateRequestBody(body);
-      if (errors.length > 0) return reply.status(400).send({ errors });
-
-      const pickups    = Array.isArray(body.pickupData)   ? body.pickupData   : [body.pickupData   as PickupDataBlob];
-      const deliveries = Array.isArray(body.deliveryData) ? body.deliveryData : [body.deliveryData as DeliveryDataBlob];
-
-      const pickupDists   = await Promise.all(pickups.map(p    => checkEntranceDistance(p.postcode!,    p.entranceLat!,    p.entranceLng!)));
-      const deliveryDists = await Promise.all(deliveries.map(d => checkEntranceDistance(d.postcode!,    d.entranceLat!,    d.entranceLng!)));
-
-      const pickupDataFinal   = pickups.map((p,   i) => ({ ...p,   entranceDistanceFromPostcode: pickupDists[i].distanceMiles,   entranceWarningLevel: pickupDists[i].warningLevel }));
-      const deliveryDataFinal = deliveries.map((d, i) => ({ ...d,   entranceDistanceFromPostcode: deliveryDists[i].distanceMiles, entranceWarningLevel: deliveryDists[i].warningLevel }));
-
-      const request = await prisma.jobRequest.create({
-        data: {
-          companyId,
-          source:               "internal_manual",
-          status:               "pending_review",
-          customerCompanyName:  body.customerCompanyName.trim(),
-          contactName:          body.contactName.trim(),
-          contactPhone:         body.contactPhone.trim(),
-          contactEmail:         body.contactEmail.trim(),
-          collectionReference:  body.collectionReference.trim(),
-          deliveryReference:    body.deliveryReference.trim(),
-          purchaseOrderNumber:  body.purchaseOrderNumber?.trim() || null,
-          billingReference:     body.billingReference?.trim()   || null,
-          declaredGoodsValue:   body.declaredGoodsValue         ?? null,
-          currency:             body.currency                   || "GBP",
-          pricingType:          body.pricingType                || "quote_required",
-          pickupData:           pickupDataFinal   as unknown as Prisma.InputJsonValue,
-          deliveryData:         deliveryDataFinal as unknown as Prisma.InputJsonValue,
-          loadData:             body.loadData as Prisma.InputJsonValue,
-          reqBodyCategory:      body.reqBodyCategory      || null,
-          reqBodyType:          body.reqBodyType          || null,
-          reqEquipment:         body.reqEquipment         ?? undefined,
-          trailerTypesAllowed:  body.trailerTypesAllowed  ?? undefined,
-          minimumVehicleSize:   body.minimumVehicleSize   || null,
-          heightRestriction:    body.heightRestriction    || null,
-          weightRestriction:    body.weightRestriction    || null,
-          lengthRestriction:    body.lengthRestriction    || null,
-          accessRestrictionNotes: body.accessRestrictionNotes || null,
-          driverQualificationRequired: body.driverQualificationRequired || null,
-          proofOfDeliveryRequired:   body.proofOfDeliveryRequired   ?? false,
-          photosRequired:            body.photosRequired            ?? false,
-          weighbridgeTicketRequired: body.weighbridgeTicketRequired ?? false,
-          driverVisibleNotes:  body.driverVisibleNotes  || null,
-          customerNotes:       body.customerNotes       || null,
-          specialInstructions: body.specialInstructions || null,
-          safetyInstructions:  body.safetyInstructions  || null,
-          internalOfficeNotes: body.internalOfficeNotes || null,
-        },
-      });
-
-      return reply.status(201).send(request);
-    },
-  );
-
   // ── POST /job-requests/:id/accept ──────────────────────────────────────────
-  // Converts JobRequest → PlannedJob + two JobStops (pickup + delivery) + LoadDetails
   app.post<{ Params: { id: string }; Body: { plannerNotes?: string } }>(
     "/job-requests/:id/accept",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
-      const userId    = req.user!.userId;
+      const { companyId, userId } = req.user!;
       const id = parseInt(req.params.id, 10);
 
       const jobRequest = await prisma.jobRequest.findFirst({ where: { id, companyId } });
@@ -417,179 +455,130 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (jobRequest.status !== "pending_review")
         return reply.status(409).send({ error: `Cannot accept a request with status '${jobRequest.status}'` });
 
-      // Normalise to arrays — handles both old single-object records and new array records
-      const rawPickups   = jobRequest.pickupData   as (PickupDataBlob[] | PickupDataBlob);
-      const rawDeliveries = jobRequest.deliveryData as (DeliveryDataBlob[] | DeliveryDataBlob);
-      const pickupArr    = Array.isArray(rawPickups)    ? rawPickups    : [rawPickups];
-      const deliveryArr  = Array.isArray(rawDeliveries) ? rawDeliveries : [rawDeliveries];
-      const firstPickup  = pickupArr[0];
-      const lastDelivery = deliveryArr[deliveryArr.length - 1];
-      const l = jobRequest.loadData as LoadDataBlob;
+      const stopsArr  = jobRequest.stops  as StopBlob[];
+      const loadData  = jobRequest.loadData as LoadDataBlob;
+      const transport = jobRequest.transportRequirementsData as TransportRequirementsBlob;
+      const billing   = jobRequest.billingData as BillingBlob;
+
+      const collections  = stopsArr.filter(s => s.type === "collection");
+      const deliveries   = stopsArr.filter(s => s.type === "delivery");
+      const firstCollect = collections[0] ?? stopsArr[0];
+      const lastDeliver  = deliveries[deliveries.length - 1] ?? stopsArr[stopsArr.length - 1];
 
       const job = await prisma.$transaction(async (tx) => {
-        // 1. Create the PlannedJob
         const job = await tx.plannedJob.create({
           data: {
             companyId,
-            createdByUserId:  userId,
-            customerId:       jobRequest.customerId ?? null,
-            customerName:     jobRequest.customerCompanyName,
-            status:           "pending",
-            validationStatus: "ready_for_planner",
-            pickupTextSnapshot:  `${firstPickup.siteName}, ${firstPickup.addressLine1}, ${firstPickup.townCity} ${firstPickup.postcode}`,
-            dropoffTextSnapshot: `${lastDelivery.siteName}, ${lastDelivery.addressLine1}, ${lastDelivery.townCity} ${lastDelivery.postcode}`,
-            serviceType:      "delivery",
-            purchaseOrderNumber: jobRequest.purchaseOrderNumber ?? "",
-            customerRef:      jobRequest.billingReference ?? "",
-            plannerNotes:     req.body.plannerNotes ?? "",
-            internalNotes:    jobRequest.internalOfficeNotes ?? "",
-            reqBodyCategory:  jobRequest.reqBodyCategory ?? "",
-            reqBodyType:      jobRequest.reqBodyType ?? "",
-            reqEquipment:     jobRequest.reqEquipment ?? undefined,
-            trailerTypesAllowed:  jobRequest.trailerTypesAllowed  ?? undefined,
-            minVehicleSize:   jobRequest.minimumVehicleSize ?? "",
-            heightRestriction: jobRequest.heightRestriction ?? "",
-            weightRestriction: jobRequest.weightRestriction ?? "",
-            lengthRestriction: jobRequest.lengthRestriction ?? "",
-            vehicleAccessNotes: jobRequest.accessRestrictionNotes ?? "",
-            requirePOD:        jobRequest.proofOfDeliveryRequired,
-            plannedDate:       firstPickup.pickupDate ? new Date(firstPickup.pickupDate) : null,
+            createdByUserId:   userId,
+            customerId:        jobRequest.customerId ?? null,
+            customerName:      jobRequest.customerName,
+            status:            "pending",
+            validationStatus:  "ready_for_planner",
+            serviceType:       "delivery",
+            pickupTextSnapshot:  `${firstCollect.companySiteName}, ${firstCollect.addressLine1}, ${firstCollect.townCity} ${firstCollect.postcode}`,
+            dropoffTextSnapshot: `${lastDeliver.companySiteName},  ${lastDeliver.addressLine1},  ${lastDeliver.townCity} ${lastDeliver.postcode}`,
+            purchaseOrderNumber: (billing?.purchaseOrderNumber ?? ""),
+            customerRef:         (billing?.billingReference    ?? ""),
+            plannerNotes:        req.body.plannerNotes ?? "",
+            internalNotes:       jobRequest.internalOfficeNotes ?? "",
+            reqBodyCategory:     transport?.reqBodyCategory ?? "",
+            reqBodyType:         transport?.reqBodyType     ?? "",
+            reqEquipment:        transport?.reqEquipment    ?? undefined,
+            trailerTypesAllowed: transport?.trailerTypesAllowed ?? undefined,
+            requirePOD:          false,
+            plannedDate:         firstCollect.date ? new Date(firstCollect.date) : null,
           },
         });
 
-        // 2. Generate job reference
+        // Generate reference
         const jobReference = await generateJobReference(companyId, tx as any);
         if (jobReference) {
           await tx.plannedJob.update({ where: { id: job.id }, data: { jobReference } });
         }
 
-        // 3. Create collection JobStops
-        for (let i = 0; i < pickupArr.length; i++) {
-          const p = pickupArr[i];
+        // Create one JobStop per stop in sequence order
+        const sorted = [...stopsArr].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+        for (let i = 0; i < sorted.length; i++) {
+          const s = sorted[i];
           await tx.jobStop.create({
             data: {
               companyId,
               jobId:          job.id,
               sequenceNumber: i + 1,
-              type:           "collection",
-              siteName:       p.siteName        ?? "",
-              unitName:       p.unitName        ?? "",
-              street:         p.addressLine1    ?? "",
-              addressLine2:   p.addressLine2    ?? "",
-              town:           p.townCity        ?? "",
-              countyRegion:   p.countyRegion    ?? "",
-              postcode:       p.postcode        ?? "",
-              country:        p.country         ?? "United Kingdom",
-              locationTextSnapshot: `${p.siteName}, ${p.addressLine1}, ${p.townCity} ${p.postcode}`,
-              lat:            p.entranceLat     ?? null,
-              lng:            p.entranceLng     ?? null,
-              navigationInstructions: p.entranceInstructions ?? "",
-              contactName:    p.contactName     ?? "",
-              contactPhone:   p.contactPhone    ?? "",
-              contactEmail:   p.contactEmail    ?? "",
-              bookingRequired: p.bookingRequired ?? false,
-              bookingRef:     p.bookingReference ?? "",
-              openingHours:   p.openingHours    ?? "",
-              instructions:   p.siteRestrictions ?? "",
-              referenceNumber: p.referenceNumber ?? jobRequest.collectionReference,
-              internalNotes:  jobRequest.driverVisibleNotes ?? "",
-              timeWindowStart: p.pickupDate && p.earliestTime
-                ? new Date(`${p.pickupDate}T${p.earliestTime}:00`) : null,
-              timeWindowEnd: p.pickupDate && p.latestTime
-                ? new Date(`${p.pickupDate}T${p.latestTime}:00`) : null,
-              unloadingAllowanceMinutes: p.estimatedLoadingMinutes ?? 30,
+              type:           s.type === "collection" ? "collection" : "delivery",
+              siteName:       s.companySiteName       ?? "",
+              street:         s.addressLine1          ?? "",
+              addressLine2:   s.addressLine2          ?? "",
+              town:           s.townCity              ?? "",
+              countyRegion:   s.countyRegion          ?? "",
+              postcode:       s.postcode              ?? "",
+              country:        s.country               ?? "United Kingdom",
+              locationTextSnapshot: `${s.companySiteName}, ${s.addressLine1}, ${s.townCity} ${s.postcode}`,
+              lat:            s.entranceLatitude      ?? null,
+              lng:            s.entranceLongitude     ?? null,
+              navigationInstructions: s.entranceInstructions ?? "",
+              contactName:    s.contactName           ?? "",
+              contactPhone:   s.contactPhone          ?? "",
+              contactEmail:   s.contactEmail          ?? "",
+              bookingRequired: s.bookingRequired      ?? false,
+              bookingRef:     s.bookingReference      ?? "",
+              openingHours:   s.openingHours          ?? "",
+              referenceNumber: s.referenceNumber      ?? "",
+              timeWindowStart: s.date && s.earliestArrivalTime
+                ? new Date(`${s.date}T${s.earliestArrivalTime}:00`) : null,
+              timeWindowEnd: s.date && s.latestArrivalTime
+                ? new Date(`${s.date}T${s.latestArrivalTime}:00`) : null,
+              unloadingAllowanceMinutes: s.estimatedServiceTimeMinutes ?? 30,
             },
           });
         }
 
-        // 4. Create delivery JobStops
-        for (let i = 0; i < deliveryArr.length; i++) {
-          const d = deliveryArr[i];
-          await tx.jobStop.create({
-            data: {
-              companyId,
-              jobId:          job.id,
-              sequenceNumber: pickupArr.length + i + 1,
-              type:           "delivery",
-              siteName:       d.siteName        ?? "",
-              unitName:       d.unitName        ?? "",
-              street:         d.addressLine1    ?? "",
-              addressLine2:   d.addressLine2    ?? "",
-              town:           d.townCity        ?? "",
-              countyRegion:   d.countyRegion    ?? "",
-              postcode:       d.postcode        ?? "",
-              country:        d.country         ?? "United Kingdom",
-              locationTextSnapshot: `${d.siteName}, ${d.addressLine1}, ${d.townCity} ${d.postcode}`,
-              lat:            d.entranceLat     ?? null,
-              lng:            d.entranceLng     ?? null,
-              navigationInstructions: d.entranceInstructions ?? "",
-              contactName:    d.contactName     ?? "",
-              contactPhone:   d.contactPhone    ?? "",
-              contactEmail:   d.contactEmail    ?? "",
-              bookingRequired: d.bookingRequired ?? false,
-              bookingRef:     d.bookingReference ?? "",
-              openingHours:   d.openingHours    ?? "",
-              instructions:   d.siteRestrictions ?? "",
-              referenceNumber: d.referenceNumber ?? jobRequest.deliveryReference,
-              internalNotes:  jobRequest.driverVisibleNotes ?? "",
-              timeWindowStart: d.deliveryDate && d.earliestTime
-                ? new Date(`${d.deliveryDate}T${d.earliestTime}:00`) : null,
-              timeWindowEnd: d.deliveryDate && d.latestTime
-                ? new Date(`${d.deliveryDate}T${d.latestTime}:00`) : null,
-              unloadingAllowanceMinutes: d.estimatedUnloadingMinutes ?? 30,
-            },
-          });
-        }
-
-        // 5. Create LoadDetails
-        if (l) {
+        // Create LoadDetails from loadData blob
+        if (loadData) {
+          const special = jobRequest.specialRequirementsData as SpecialRequirementsBlob;
           await tx.loadDetails.create({
             data: {
               companyId,
-              jobId:         job.id,
-              materialType:  l.goodsDescription ?? "",
-              quantity:      l.quantity         ?? null,
-              unit:          l.unit             ?? "",
-              weight:        l.estimatedWeight  ?? null,
-              volume:        l.volume           ?? null,
-              notes:         l.loadNotes        ?? "",
-              dimensions:    l.dimensions       ?? "",
-              fragile:       l.fragile          ?? false,
-              stackable:     l.stackable        ?? false,
-              tempControlled: l.temperatureControlled ?? false,
-              tempRange:     l.temperatureRange ?? "",
-              hazardClass:   l.adrClass         ?? "",
-              photosRequired:        jobRequest.photosRequired,
-              weighbridgeRequired:   jobRequest.weighbridgeTicketRequired,
-              forkliftRequired:      l.forkliftRequired ?? false,
-              tailLiftRequired:      l.tailLiftRequired ?? false,
-              craneRequired:         l.craneRequired    ?? false,
-              loadingMethod:         l.loadingMethod    ?? "",
-              unloadingMethod:       l.unloadingMethod  ?? "",
+              jobId:        job.id,
+              materialType: loadData.goodsDescription ?? "",
+              quantity:     loadData.quantity         ?? null,
+              unit:         loadData.unit             ?? "",
+              weight:       loadData.estimatedWeight  ?? null,
+              notes:        loadData.loadNotes        ?? "",
+              dimensions:   loadData.dimensions       ?? "",
+              fragile:      (special?.items ?? []).includes("fragile"),
+              stackable:    loadData.stackable        ?? false,
+              tempControlled: (special?.items ?? []).includes("temperature_controlled"),
+              tempRange:    special?.temperatureRange ?? "",
+              hazardClass:  special?.adrClass         ?? "",
+              photosRequired:      false,
+              weighbridgeRequired: false,
+              forkliftRequired:    false,
+              tailLiftRequired:    false,
+              craneRequired:       loadData.craneRequired ?? false,
             },
           });
         }
 
-        // 6. Mark JobRequest as accepted
+        // Mark accepted
         await tx.jobRequest.update({
           where: { id },
           data: {
-            status:        "accepted",
-            reviewedAt:    new Date(),
-            reviewedBy:    userId,
+            status:         "accepted",
+            reviewedAt:     new Date(),
+            reviewedBy:     userId,
             convertedJobId: job.id,
+            reviewData:     { plannerNotes: req.body.plannerNotes ?? "" } as Prisma.InputJsonValue,
           },
         });
 
         return job;
       });
 
-      // Fetch final job with reference
       const final = await prisma.plannedJob.findUnique({
-        where: { id: job.id },
+        where:  { id: job.id },
         select: { id: true, jobReference: true, status: true },
       });
-
       return reply.send({ ok: true, jobId: job.id, jobReference: final?.jobReference ?? null });
     },
   );
@@ -599,11 +588,10 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/job-requests/:id/reject",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
-      const companyId = req.user!.companyId;
-      const userId    = req.user!.userId;
+      const { companyId, userId } = req.user!;
       const id = parseInt(req.params.id, 10);
 
-      const REJECTION_REASONS = [
+      const VALID_REASONS = [
         "no_capacity", "outside_service_area", "incomplete_information",
         "pricing_issue", "duplicate_request", "other",
       ];
@@ -612,11 +600,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (!jobRequest) return reply.status(404).send({ error: "Request not found" });
       if (jobRequest.status !== "pending_review")
         return reply.status(409).send({ error: `Cannot reject a request with status '${jobRequest.status}'` });
-
-      if (!req.body.reason?.trim())
-        return reply.status(400).send({ error: "Rejection reason is required" });
-      if (!REJECTION_REASONS.includes(req.body.reason))
-        return reply.status(400).send({ error: `reason must be one of: ${REJECTION_REASONS.join(", ")}` });
+      if (!req.body.reason?.trim() || !VALID_REASONS.includes(req.body.reason))
+        return reply.status(400).send({ error: `reason must be one of: ${VALID_REASONS.join(", ")}` });
 
       await prisma.jobRequest.update({
         where: { id },
@@ -628,146 +613,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           reviewNotes:     req.body.notes?.trim() || null,
         },
       });
-
       return reply.send({ ok: true });
     },
   );
-}
-
-// ── Type helpers ──────────────────────────────────────────────────────────────
-
-interface PickupDataBlob {
-  referenceNumber?: string;
-  siteName?: string; unitName?: string;
-  addressLine1?: string; addressLine2?: string;
-  townCity?: string; countyRegion?: string;
-  postcode?: string; country?: string;
-  entranceLat?: number; entranceLng?: number;
-  entranceInstructions?: string;
-  contactName?: string; contactPhone?: string; contactEmail?: string;
-  bookingRequired?: boolean; bookingReference?: string;
-  openingHours?: string; siteRestrictions?: string;
-  pickupDate?: string;
-  earliestTime?: string; latestTime?: string;
-  estimatedLoadingMinutes?: number;
-  entranceDistanceFromPostcode?: number | null;
-  entranceWarningLevel?: string;
-}
-
-interface DeliveryDataBlob {
-  referenceNumber?: string;
-  siteName?: string; unitName?: string;
-  addressLine1?: string; addressLine2?: string;
-  townCity?: string; countyRegion?: string;
-  postcode?: string; country?: string;
-  entranceLat?: number; entranceLng?: number;
-  entranceInstructions?: string;
-  contactName?: string; contactPhone?: string; contactEmail?: string;
-  bookingRequired?: boolean; bookingReference?: string;
-  openingHours?: string; siteRestrictions?: string;
-  deliveryDate?: string;
-  earliestTime?: string; latestTime?: string;
-  estimatedUnloadingMinutes?: number;
-  entranceDistanceFromPostcode?: number | null;
-  entranceWarningLevel?: string;
-}
-
-interface LoadDataBlob {
-  goodsDescription?: string;
-  quantity?: number; unit?: string; otherUnitDescription?: string;
-  estimatedWeight?: number; palletCount?: number;
-  dimensions?: string; volume?: number;
-  hazardousGoods?: boolean; adrClass?: string;
-  temperatureControlled?: boolean; temperatureRange?: string;
-  fragile?: boolean; stackable?: boolean;
-  forkliftRequired?: boolean; tailLiftRequired?: boolean; craneRequired?: boolean;
-  loadingMethod?: string; unloadingMethod?: string;
-  loadNotes?: string;
-}
-
-interface PublicRequestBody {
-  customerCompanyName: string; contactName: string;
-  contactPhone: string; contactEmail: string;
-  collectionReference: string; deliveryReference: string;
-  purchaseOrderNumber?: string; billingReference?: string;
-  declaredGoodsValue?: number; currency?: string;
-  pickupData:   PickupDataBlob[];   // one or more collection stops
-  deliveryData: DeliveryDataBlob[]; // one or more delivery stops
-  loadData:     LoadDataBlob;
-  reqBodyCategory?: string; reqBodyType?: string;
-  reqEquipment?: string[]; trailerTypesAllowed?: string[];
-  minimumVehicleSize?: string;
-  heightRestriction?: string; weightRestriction?: string; lengthRestriction?: string;
-  accessRestrictionNotes?: string; driverQualificationRequired?: string;
-  proofOfDeliveryRequired?: boolean; photosRequired?: boolean; weighbridgeTicketRequired?: boolean;
-  driverVisibleNotes?: string; customerNotes?: string;
-  specialInstructions?: string; safetyInstructions?: string;
-}
-
-interface InternalRequestBody extends PublicRequestBody {
-  pricingType?: string;
-  internalOfficeNotes?: string;
-}
-
-function validatePickupStop(p: PickupDataBlob, suffix: string): string[] {
-  const e: string[] = [];
-  if (!p.siteName?.trim())             e.push(`Collection site name is required${suffix}`);
-  if (!p.postcode?.trim())             e.push(`Collection postcode is required${suffix}`);
-  if (!p.addressLine1?.trim())         e.push(`Collection address is required${suffix}`);
-  if (!p.townCity?.trim())             e.push(`Collection town/city is required${suffix}`);
-  if (!p.pickupDate?.trim())           e.push(`Collection date is required${suffix}`);
-  if (!p.earliestTime?.trim())         e.push(`Earliest collection time is required${suffix}`);
-  if (!p.latestTime?.trim())           e.push(`Latest collection time is required${suffix}`);
-  if (!p.estimatedLoadingMinutes)      e.push(`Estimated loading time is required${suffix}`);
-  if (p.entranceLat == null || p.entranceLng == null)
-                                       e.push(`Exact collection entrance pin is required${suffix}`);
-  if (!p.entranceInstructions?.trim()) e.push(`Collection entrance instructions are required${suffix}`);
-  return e;
-}
-
-function validateDeliveryStop(d: DeliveryDataBlob, suffix: string): string[] {
-  const e: string[] = [];
-  if (!d.siteName?.trim())             e.push(`Delivery site name is required${suffix}`);
-  if (!d.postcode?.trim())             e.push(`Delivery postcode is required${suffix}`);
-  if (!d.addressLine1?.trim())         e.push(`Delivery address is required${suffix}`);
-  if (!d.townCity?.trim())             e.push(`Delivery town/city is required${suffix}`);
-  if (!d.deliveryDate?.trim())         e.push(`Delivery date is required${suffix}`);
-  if (!d.earliestTime?.trim())         e.push(`Earliest delivery time is required${suffix}`);
-  if (!d.latestTime?.trim())           e.push(`Latest delivery time is required${suffix}`);
-  if (!d.estimatedUnloadingMinutes)    e.push(`Estimated unloading time is required${suffix}`);
-  if (d.entranceLat == null || d.entranceLng == null)
-                                       e.push(`Exact delivery entrance pin is required${suffix}`);
-  if (!d.entranceInstructions?.trim()) e.push(`Delivery entrance instructions are required${suffix}`);
-  return e;
-}
-
-function validateRequestBody(body: Partial<PublicRequestBody>): string[] {
-  const errors: string[] = [];
-  if (!body.customerCompanyName?.trim()) errors.push("Customer company name is required");
-  if (!body.contactName?.trim())         errors.push("Contact name is required");
-  if (!body.contactPhone?.trim())        errors.push("Contact phone is required");
-  if (!body.contactEmail?.trim())        errors.push("Contact email is required");
-  if (!body.collectionReference?.trim()) errors.push("Collection reference is required");
-  if (!body.deliveryReference?.trim())   errors.push("Delivery reference is required");
-
-  const pickups = Array.isArray(body.pickupData) ? body.pickupData : (body.pickupData ? [body.pickupData as PickupDataBlob] : []);
-  if (pickups.length === 0) { errors.push("At least one collection stop is required"); }
-  else pickups.forEach((p, i) => {
-    const suf = pickups.length > 1 ? ` (collection stop ${i + 1})` : "";
-    errors.push(...validatePickupStop(p, suf));
-  });
-
-  const deliveries = Array.isArray(body.deliveryData) ? body.deliveryData : (body.deliveryData ? [body.deliveryData as DeliveryDataBlob] : []);
-  if (deliveries.length === 0) { errors.push("At least one delivery stop is required"); }
-  else deliveries.forEach((d, i) => {
-    const suf = deliveries.length > 1 ? ` (delivery stop ${i + 1})` : "";
-    errors.push(...validateDeliveryStop(d, suf));
-  });
-
-  const l = body.loadData;
-  if (!l) { errors.push("Load data is required"); return errors; }
-  if (!l.goodsDescription?.trim()) errors.push("Goods description is required");
-  if (!l.quantity)                 errors.push("Quantity is required");
-  if (!l.unit?.trim())             errors.push("Unit is required");
-  return errors;
 }

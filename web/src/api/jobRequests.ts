@@ -3,164 +3,152 @@ import { api } from "./client";
 // ── Public (no auth) ──────────────────────────────────────────────────────────
 
 export interface PublicLinkInfo {
-  companyName:  string;
-  customerName: string | null;
-  contactName:  string | null;
-  contactEmail: string | null;
-  contactPhone: string | null;
+  companyName:   string;
+  customerName:  string | null;
+  contactName:   string | null;
+  contactEmail:  string | null;
+  contactPhone:  string | null;
 }
 
-export interface PickupDataInput {
-  referenceNumber?: string;   // per-stop reference (warehouse release, booking ref, etc.)
-  siteName:       string;
-  unitName?:      string;
-  addressLine1:   string;
-  addressLine2?:  string;
-  townCity:       string;
-  countyRegion?:  string;
-  postcode:       string;
-  country?:       string;
-  entranceLat:    number;
-  entranceLng:    number;
+// Stop object — one per collection/delivery/reload/etc.
+export interface RequestStop {
+  type: "collection" | "delivery" | "reload" | "return" | "waypoint" | "other";
+  sequence?: number;
+  companySiteName:     string;
+  addressLine1:        string;
+  addressLine2?:       string;
+  townCity:            string;
+  countyRegion?:       string;
+  postcode:            string;
+  country?:            string;
+  entranceLatitude:    number;
+  entranceLongitude:   number;
   entranceInstructions: string;
-  contactName?:   string;
-  contactPhone?:  string;
-  contactEmail?:  string;
-  bookingRequired?: boolean;
-  bookingReference?: string;
-  openingHours?:  string;
-  siteRestrictions?: string;
-  pickupDate:     string;       // YYYY-MM-DD
-  earliestTime:   string;       // HH:MM
-  latestTime:     string;       // HH:MM
-  estimatedLoadingMinutes: number;
+  referenceNumber?:    string;
+  contactName?:        string;
+  contactPhone?:       string;
+  contactEmail?:       string;
+  bookingRequired?:    boolean;
+  bookingReference?:   string;
+  openingHours?:       string;
+  siteRestrictions?:   string[];
+  date:                string;   // YYYY-MM-DD
+  earliestArrivalTime: string;   // HH:MM
+  latestArrivalTime:   string;   // HH:MM
+  exactAppointmentTime?: string;
+  estimatedServiceTimeMinutes: number;
+  handlingMethods?:    string[];
+  proofRequirements?:  string[];
+  accessRequirements?: string[];
+  // Set server-side after postcode validation:
+  entranceDistanceFromPostcode?: number | null;
+  entranceWarningLevel?: "ok" | "warn" | "danger";
 }
 
-export interface DeliveryDataInput {
-  referenceNumber?: string;   // per-stop reference (goods-in booking, PO, etc.)
-  siteName:       string;
-  unitName?:      string;
-  addressLine1:   string;
-  addressLine2?:  string;
-  townCity:       string;
-  countyRegion?:  string;
-  postcode:       string;
-  country?:       string;
-  entranceLat:    number;
-  entranceLng:    number;
-  entranceInstructions: string;
-  contactName?:   string;
-  contactPhone?:  string;
-  contactEmail?:  string;
-  bookingRequired?: boolean;
-  bookingReference?: string;
-  openingHours?:  string;
-  siteRestrictions?: string;
-  deliveryDate:   string;       // YYYY-MM-DD
-  earliestTime:   string;       // HH:MM
-  latestTime:     string;       // HH:MM
-  estimatedUnloadingMinutes: number;
+export interface RequesterData {
+  customerCompanyName: string;
+  contactName:         string;
+  contactPhone:        string;
+  contactEmail:        string;
+  customerReference?:  string;
 }
 
-export interface LoadDataInput {
-  goodsDescription: string;
-  quantity:         number;
-  unit:             string;
-  otherUnitDescription?: string;
-  estimatedWeight?: number;
-  palletCount?:     number;
-  dimensions?:      string;
-  volume?:          number;
-  hazardousGoods?:  boolean;
-  adrClass?:        string;
-  temperatureControlled?: boolean;
+export interface LoadData {
+  goodsType:           string; // pallets | machinery | building_materials | food_refrigerated | bulk_material | steel_long | vehicles | containers | general | other
+  goodsDescription:    string;
+  quantity:            number;
+  unit:                string;
+  estimatedWeight?:    number;
+  palletCount?:        number;
+  palletType?:         string;
+  stackable?:          boolean;
+  dimensions?:         string;
+  craneRequired?:      boolean;
+  tippingRequired?:    boolean;
+  temperatureRange?:   string;
+  chilledFrozenAmbient?: string;
+  vehicleCount?:       number;
+  driveable?:          boolean;
+  containerSize?:      string;
+  loadedOrEmpty?:      string;
+  containerNumber?:    string;
+  loadNotes?:          string;
+}
+
+export interface SpecialRequirementsData {
+  items?:          string[]; // dangerous_goods | temperature_controlled | fragile | high_value | oversized | secure_transport_required | escort_required | temperature_monitored
+  adrClass?:       string;
+  unNumber?:       string;
   temperatureRange?: string;
-  fragile?:         boolean;
-  stackable?:       boolean;
-  forkliftRequired?: boolean;
-  tailLiftRequired?: boolean;
-  craneRequired?:    boolean;
-  loadingMethod?:   string;
-  unloadingMethod?: string;
-  loadNotes?:       string;
+}
+
+export interface TransportRequirementsData {
+  plannerDecides?:      boolean;
+  reqBodyCategory?:     string;
+  reqBodyType?:         string;
+  reqEquipment?:        string[];
+  trailerTypesAllowed?: string[];
+}
+
+export interface BillingData {
+  pricingType?:        string; // quote_required | agreed_rate_exists | contract_rate_exists | to_be_confirmed
+  declaredGoodsValue?: number;
+  currency?:           string;
+  purchaseOrderNumber?: string;
+  billingReference?:   string;
+  vatRegistered?:      boolean;
+  vatNumber?:          string;
+}
+
+export interface NotesData {
+  driverNoteChips?:    string[];
+  driverVisibleNotes?: string;
+  safetyInstructions?: string;
+  customerNotes?:      string;
 }
 
 export interface SubmitRequestBody {
-  customerCompanyName: string;
-  contactName:         string;
-  contactPhone:        string;
-  contactEmail:        string;
-  collectionReference: string;
-  deliveryReference:   string;
-  purchaseOrderNumber?: string;
-  billingReference?:   string;
-  declaredGoodsValue?: number;
-  currency?:           string;
-  pickupData:          PickupDataInput[];   // one or more collection stops
-  deliveryData:        DeliveryDataInput[]; // one or more delivery stops
-  loadData:            LoadDataInput;
-  reqBodyCategory?:    string;
-  reqBodyType?:        string;
-  reqEquipment?:       string[];
-  trailerTypesAllowed?: string[];
-  minimumVehicleSize?: string;
-  heightRestriction?:  string;
-  weightRestriction?:  string;
-  lengthRestriction?:  string;
-  accessRestrictionNotes?: string;
-  driverQualificationRequired?: string;
-  proofOfDeliveryRequired?:   boolean;
-  photosRequired?:            boolean;
-  weighbridgeTicketRequired?: boolean;
-  driverVisibleNotes?:  string;
-  customerNotes?:       string;
-  specialInstructions?: string;
-  safetyInstructions?:  string;
+  requesterData:             RequesterData;
+  stops:                     RequestStop[];
+  loadData:                  LoadData;
+  specialRequirementsData?:  SpecialRequirementsData;
+  transportRequirementsData?: TransportRequirementsData;
+  billingData?:              BillingData;
+  notesData?:                NotesData;
 }
 
 export interface JobRequest {
-  id:                  number;
-  companyId:           number;
-  source:              string;
-  status:              string;
-  customerCompanyName: string;
-  contactName:         string;
-  contactPhone:        string;
-  contactEmail:        string;
-  collectionReference: string;
-  deliveryReference:   string;
-  purchaseOrderNumber: string | null;
-  billingReference:    string | null;
-  declaredGoodsValue:  number | null;
-  currency:            string;
-  pricingType:         string;
-  pickupData:          Record<string, unknown>;
-  deliveryData:        Record<string, unknown>;
-  loadData:            Record<string, unknown>;
-  reqBodyCategory:     string | null;
-  reqBodyType:         string | null;
-  reqEquipment:        string[] | null;
-  trailerTypesAllowed: string[] | null;
-  minimumVehicleSize:  string | null;
-  heightRestriction:   string | null;
-  weightRestriction:   string | null;
-  lengthRestriction:   string | null;
-  proofOfDeliveryRequired:   boolean;
-  photosRequired:            boolean;
-  weighbridgeTicketRequired: boolean;
-  driverVisibleNotes:  string | null;
-  customerNotes:       string | null;
-  specialInstructions: string | null;
-  safetyInstructions:  string | null;
+  id:            number;
+  companyId:     number;
+  requestLinkId: number | null;
+  customerId:    number | null;
+  source:        string;
+  status:        string;
+  customerName:  string;
+  contactName:   string;
+  contactPhone:  string;
+  contactEmail:  string;
+  pricingType:   string;
+  // JSON blobs
+  requesterData:             Record<string, unknown>;
+  stops:                     Record<string, unknown>[];
+  loadData:                  Record<string, unknown>;
+  specialRequirementsData:   Record<string, unknown>;
+  transportRequirementsData: Record<string, unknown>;
+  billingData:               Record<string, unknown>;
+  notesData:                 Record<string, unknown>;
+  reviewData:                Record<string, unknown> | null;
+  // Review
   internalOfficeNotes: string | null;
   reviewedAt:          string | null;
   rejectionReason:     string | null;
   reviewNotes:         string | null;
-  convertedJobId:      number | null;
-  convertedJob:        { id: number; jobReference: string | null; status: string } | null;
-  requestLink:         { id: number; name: string } | null;
-  createdAt:           string;
-  updatedAt:           string;
+  // Conversion
+  convertedJobId: number | null;
+  convertedJob:   { id: number; jobReference: string | null; status: string } | null;
+  requestLink:    { id: number; name: string } | null;
+  createdAt:      string;
+  updatedAt:      string;
 }
 
 export interface RequestLink {
@@ -178,7 +166,8 @@ export interface RequestLink {
   rawToken?:   string; // only returned on create
 }
 
-// Public (no-auth) calls — same base URL as the authenticated client
+// ── Public (no-auth) helpers ──────────────────────────────────────────────────
+
 const API_BASE = import.meta.env.VITE_API_URL || "http://192.168.0.45:3000";
 
 async function publicGet<T>(path: string): Promise<T> {
@@ -205,23 +194,22 @@ export const jobRequestsPublicApi = {
     publicPost<{ id: number; warnings: string[] }>(`/public/request/${token}`, body),
 };
 
-// Internal (auth required) calls — use the normal api client
+// ── Internal (auth required) ──────────────────────────────────────────────────
+
 export const jobRequestsApi = {
-  // Request links
-  listLinks:   ()                      => api.get<{ data: RequestLink[] }>("/request-links"),
+  listLinks:   ()  => api.get<{ data: RequestLink[] }>("/request-links"),
   createLink:  (body: { name: string; customerId?: number; expiresAt?: string }) =>
     api.post<RequestLink>("/request-links", body),
   updateLink:  (id: number, body: { name?: string; isActive?: boolean; expiresAt?: string | null }) =>
     api.patch<RequestLink>(`/request-links/${id}`, body),
 
-  // Job requests
-  list:        (status?: string, page?: number) =>
+  list:    (status?: string, page?: number) =>
     api.get<{ data: JobRequest[]; total: number; page: number; pages: number }>(
-      `/job-requests?${new URLSearchParams({ ...(status ? { status } : {}), ...(page ? { page: String(page) } : {}) }).toString()}`,
+      `/job-requests?${new URLSearchParams({ ...(status ? { status } : {}), ...(page ? { page: String(page) } : {}) })}`,
     ),
-  get:         (id: number) => api.get<JobRequest>(`/job-requests/${id}`),
-  accept:      (id: number, plannerNotes?: string) =>
+  get:     (id: number) => api.get<JobRequest>(`/job-requests/${id}`),
+  accept:  (id: number, plannerNotes?: string) =>
     api.post<{ ok: boolean; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, { plannerNotes }),
-  reject:      (id: number, reason: string, notes?: string) =>
+  reject:  (id: number, reason: string, notes?: string) =>
     api.post<{ ok: true }>(`/job-requests/${id}/reject`, { reason, notes }),
 };
