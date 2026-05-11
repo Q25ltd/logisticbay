@@ -37,9 +37,14 @@ export interface RequestStop {
   latestArrivalTime:   string;   // HH:MM
   exactAppointmentTime?: string;
   estimatedServiceTimeMinutes: number;
-  handlingMethods?:    string[];
-  proofRequirements?:  string[];
-  accessRequirements?: string[];
+  handlingMethods?:        string[];
+  proofRequirements?:      string[];
+  accessRequirements?:     string[];
+  loadReadiness?:          string;
+  typicalWaitingTime?:     string;
+  heightRestrictionValue?: string;
+  weightRestrictionValue?: string;
+  lengthRestrictionValue?: string;
   // Set server-side after postcode validation:
   entranceDistanceFromPostcode?: number | null;
   entranceWarningLevel?: "ok" | "warn" | "danger";
@@ -54,32 +59,36 @@ export interface RequesterData {
 }
 
 export interface LoadData {
-  goodsType:           string; // pallets | machinery | building_materials | food_refrigerated | bulk_material | steel_long | vehicles | containers | general | other
-  goodsDescription:    string;
-  quantity:            number;
-  unit:                string;
-  estimatedWeight?:    number;
-  palletCount?:        number;
-  palletType?:         string;
-  stackable?:          boolean;
-  dimensions?:         string;
-  craneRequired?:      boolean;
-  tippingRequired?:    boolean;
-  temperatureRange?:   string;
-  chilledFrozenAmbient?: string;
-  vehicleCount?:       number;
-  driveable?:          boolean;
-  containerSize?:      string;
-  loadedOrEmpty?:      string;
-  containerNumber?:    string;
-  loadNotes?:          string;
+  goodsType:              string; // pallets | machinery | building_materials | food_refrigerated | bulk_material | steel_long | vehicles | containers | general | other
+  goodsDescription:       string;
+  quantity:               number;
+  unit:                   string;
+  estimatedWeight?:       number;
+  palletCount?:           number;
+  palletType?:            string;
+  stackable?:             boolean;
+  dimensions?:            string;
+  craneRequired?:         boolean;
+  tippingRequired?:       boolean;
+  temperatureRange?:      string;
+  chilledFrozenAmbient?:  string;
+  vehicleCount?:          number;
+  driveable?:             boolean;
+  containerSize?:         string;
+  loadedOrEmpty?:         string;
+  containerNumber?:       string;
+  loadNotes?:             string;
+  canSplitShipment?:      string;
+  securingRequirements?:  string[];
 }
 
 export interface SpecialRequirementsData {
-  items?:          string[]; // dangerous_goods | temperature_controlled | fragile | high_value | oversized | secure_transport_required | escort_required | temperature_monitored
-  adrClass?:       string;
-  unNumber?:       string;
-  temperatureRange?: string;
+  items?:                       string[]; // dangerous_goods | temperature_controlled | fragile | high_value | oversized | secure_transport_required | escort_required | temperature_monitored
+  adrClass?:                    string;
+  unNumber?:                    string;
+  packingGroup?:                string;
+  hazardousPaperworkAvailable?: boolean;
+  temperatureRange?:            string;
 }
 
 export interface TransportRequirementsData {
@@ -107,6 +116,19 @@ export interface NotesData {
   customerNotes?:      string;
 }
 
+export interface ExceptionPolicyData {
+  rejectionAction?:               string;
+  alternativeReturnAddress?:      string;
+  alternativeReturnPostcode?:     string;
+  alternativeReturnContactName?:  string;
+  alternativeReturnContactPhone?: string;
+  approvalContactName?:           string;
+  approvalContactPhone?:          string;
+  photosRequiredOnRejection?:     boolean;
+  rejectionSignatureRequired?:    boolean;
+  rejectionNotes?:                string;
+}
+
 export interface SubmitRequestBody {
   requesterData:             RequesterData;
   stops:                     RequestStop[];
@@ -115,6 +137,7 @@ export interface SubmitRequestBody {
   transportRequirementsData?: TransportRequirementsData;
   billingData?:              BillingData;
   notesData?:                NotesData;
+  exceptionPolicyData?:      ExceptionPolicyData;
 }
 
 export interface JobRequest {

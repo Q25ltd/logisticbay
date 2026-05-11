@@ -76,12 +76,12 @@ const ACCESS_REQUIREMENTS: [string, string][] = [
   ["narrow_road",          "🛣️ Narrow road"],
   ["height_restriction",   "📏 Height restriction"],
   ["weight_restriction",   "⚖️ Weight restriction"],
+  ["length_restriction",   "📐 Length restriction"],
   ["no_artic_access",      "🚛 No artic access"],
   ["no_trailer_access",    "🚚 No trailer access"],
   ["residential_area",     "🏘️ Residential area"],
   ["security_checkin",     "🔐 Security check-in"],
   ["ppe_required",         "🦺 PPE required"],
-  ["booking_required",     "📅 Booking required"],
   ["driver_id_required",   "🪪 Driver ID required"],
   ["do_not_arrive_early",  "⏰ Do not arrive early"],
   ["holding_area_required","🅿️ Holding area required"],
@@ -117,6 +117,54 @@ const DRIVER_CHIPS: [string, string][] = [
   ["do_not_arrive_early",  "⏰ Do not arrive early"],
 ];
 
+const PROOF_REQUIREMENTS: [string, string][] = [
+  ["signature_required",         "Signature required"],
+  ["photos_required",            "Photos required"],
+  ["pod_required",               "POD document"],
+  ["weighbridge_ticket_required", "Weighbridge ticket"],
+  ["seal_number_required",       "Seal number"],
+  ["name_required",              "Printed name"],
+];
+
+const LOAD_READINESS: [string, string][] = [
+  ["ready_now",            "Ready now"],
+  ["ready_at_booked_time", "Ready at booked time"],
+  ["still_being_prepared", "Still being prepared"],
+  ["unsure",               "Unsure"],
+];
+
+const WAITING_TIME_OPTIONS: [string, string][] = [
+  ["usually_fast",     "Usually fast (under 30 min)"],
+  ["30_60_min_common", "30–60 min typical"],
+  ["over_1h_common",   "Over 1 hour common"],
+  ["unknown",          "Unknown"],
+];
+
+const SPLIT_OPTIONS: [string, string][] = [
+  ["must_stay_together",  "Must stay together"],
+  ["can_split_partially", "Can split partially"],
+  ["can_split_freely",    "Can split freely"],
+];
+
+const SECURING_REQUIREMENTS: [string, string][] = [
+  ["straps_required",                "Straps required"],
+  ["chains_required",                "Chains required"],
+  ["edge_protection_required",       "Edge protection"],
+  ["sheets_required",                "Sheets"],
+  ["curtains_must_not_touch_load",   "Curtains must not touch load"],
+  ["uprights_required",              "Uprights required"],
+  ["temperature_monitoring_required","Temperature monitoring"],
+];
+
+const REJECTION_ACTIONS: [string, string][] = [
+  ["call_office_before_leaving",      "Call office before leaving"],
+  ["return_to_collection_point",      "Return to collection point"],
+  ["deliver_to_alternative_address",  "Deliver to alternative address"],
+  ["wait_for_further_instruction",    "Wait for further instruction"],
+  ["do_not_return_without_approval",  "Do not return without approval"],
+  ["other",                           "Other"],
+];
+
 // ── Stop state ────────────────────────────────────────────────────────────────
 
 interface StopState {
@@ -129,6 +177,7 @@ interface StopState {
   addressLine1: string;
   townCity: string;
   postcode: string;
+  country: string;
   entranceLatitude: string;
   entranceLongitude: string;
   entranceInstructions: string;
@@ -140,11 +189,14 @@ interface StopState {
   serviceTimeCustom: string;
   handlingMethods: string[];
   accessRequirements: string[];
+  // Restriction values
+  heightRestrictionValue: string;
+  weightRestrictionValue: string;
+  lengthRestrictionValue: string;
   // Optional
   unitName: string;
   addressLine2: string;
   countyRegion: string;
-  country: string;
   contactName: string;
   contactPhone: string;
   contactEmail: string;
@@ -152,6 +204,9 @@ interface StopState {
   bookingReference: string;
   openingHours: string;
   exactAppointmentTime: string;
+  proofRequirements: string[];
+  loadReadiness: string;
+  typicalWaitingTime: string;
 }
 
 let _uid = 0;
@@ -161,15 +216,20 @@ function blankStop(type: string): StopState {
   return {
     id: uid(), type, collapsed: false, showOptional: false,
     companySiteName: "", addressLine1: "", townCity: "", postcode: "",
+    country: "UK",
     entranceLatitude: "", entranceLongitude: "", entranceInstructions: "",
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "",
     handlingMethods: [], accessRequirements: [],
-    unitName: "", addressLine2: "", countyRegion: "", country: "",
+    heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
+    unitName: "", addressLine2: "", countyRegion: "",
     contactName: "", contactPhone: "", contactEmail: "",
     bookingRequired: false, bookingReference: "", openingHours: "",
     exactAppointmentTime: "",
+    proofRequirements: [],
+    loadReadiness: "",
+    typicalWaitingTime: "",
   };
 }
 
@@ -177,7 +237,7 @@ function stopComplete(s: StopState): boolean {
   const needsRef = s.type === "collection" || s.type === "delivery";
   return !!(
     s.companySiteName.trim() && s.addressLine1.trim() &&
-    s.townCity.trim() && s.postcode.trim() &&
+    s.townCity.trim() && s.postcode.trim() && s.country.trim() &&
     s.entranceLatitude && s.entranceLongitude &&
     s.entranceInstructions.trim() &&
     s.date && s.earliestArrivalTime && s.latestArrivalTime &&
@@ -219,6 +279,12 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     estimatedServiceTimeMinutes: svcMin,
     handlingMethods:     s.handlingMethods.length ? s.handlingMethods : undefined,
     accessRequirements:  s.accessRequirements.length ? s.accessRequirements : undefined,
+    proofRequirements:   s.proofRequirements.length ? s.proofRequirements : undefined,
+    loadReadiness:       s.loadReadiness || undefined,
+    typicalWaitingTime:  s.typicalWaitingTime || undefined,
+    heightRestrictionValue: s.heightRestrictionValue || undefined,
+    weightRestrictionValue: s.weightRestrictionValue || undefined,
+    lengthRestrictionValue: s.lengthRestrictionValue || undefined,
   };
 }
 
@@ -374,6 +440,11 @@ function StopCard({
               placeholder="B1 1AA" />
           </div>
 
+          {/* Country — required */}
+          <TextField label="Country" required
+            value={stop.country} onChange={v => onChange({ country: v })}
+            placeholder="UK" />
+
           {/* Date + time window */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <TextField label={stop.type === "collection" ? "Collection date" : "Delivery date"} required
@@ -448,24 +519,38 @@ function StopCard({
               <MultiCheck options={ACCESS_REQUIREMENTS} value={stop.accessRequirements}
                 onChange={v => onChange({ accessRequirements: v })} />
             </div>
-            {/* Conditional: height restriction value */}
             {stop.accessRequirements.includes("height_restriction") && (
-              <input className="input mt-2 max-w-xs" type="text" placeholder="Max height (e.g. 4.0m)"
-                value={""} onChange={() => {}} />
+              <input className="input mt-2 max-w-xs" type="text" placeholder="Height restriction (e.g. 4.2m)"
+                value={stop.heightRestrictionValue}
+                onChange={e => onChange({ heightRestrictionValue: e.target.value })} />
             )}
-            {/* Conditional: booking required → show reference field */}
-            {stop.accessRequirements.includes("booking_required") && !stop.bookingRequired && (
-              <div className="mt-3">
-                <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
-                  label="I have a booking reference for this site" />
-              </div>
+            {stop.accessRequirements.includes("weight_restriction") && (
+              <input className="input mt-2 max-w-xs" type="text" placeholder="Weight restriction (e.g. 7.5t)"
+                value={stop.weightRestrictionValue}
+                onChange={e => onChange({ weightRestrictionValue: e.target.value })} />
+            )}
+            {stop.accessRequirements.includes("length_restriction") && (
+              <input className="input mt-2 max-w-xs" type="text" placeholder="Length restriction (e.g. 18m)"
+                value={stop.lengthRestrictionValue}
+                onChange={e => onChange({ lengthRestrictionValue: e.target.value })} />
             )}
           </div>
+
+          {/* Load readiness — collection stops only */}
+          {stop.type === "collection" && (
+            <div>
+              <FieldLabel>Will the load be ready?</FieldLabel>
+              <div className="mt-1">
+                <Chips options={LOAD_READINESS} value={stop.loadReadiness}
+                  onChange={v => onChange({ loadReadiness: v })} />
+              </div>
+            </div>
+          )}
 
           {/* Optional fields */}
           <OptionalToggle open={stop.showOptional}
             onToggle={() => onChange({ showOptional: !stop.showOptional })}
-            label="site contact, opening hours & booking" />
+            label="site contact, opening hours, booking, proof & waiting time" />
 
           {stop.showOptional && (
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">
@@ -491,9 +576,32 @@ function StopCard({
               )}
               <TextField label="Opening hours" value={stop.openingHours}
                 onChange={v => onChange({ openingHours: v })} placeholder="Mon–Fri 06:00–18:00" />
-              <TextField label="Exact appointment time (if any)" type="time"
-                value={stop.exactAppointmentTime}
-                onChange={v => onChange({ exactAppointmentTime: v })} />
+              <div>
+                <TextField label="Exact appointment time (if any)" type="time"
+                  value={stop.exactAppointmentTime}
+                  onChange={v => onChange({ exactAppointmentTime: v })} />
+                <div className="text-xs text-muted mt-1">
+                  Only if the site gave a fixed appointment. Earliest/latest times are still required.
+                </div>
+              </div>
+
+              {/* Proof requirements */}
+              <div>
+                <FieldLabel>Proof required at this stop</FieldLabel>
+                <div className="mt-1">
+                  <MultiCheck options={PROOF_REQUIREMENTS} value={stop.proofRequirements}
+                    onChange={v => onChange({ proofRequirements: v })} />
+                </div>
+              </div>
+
+              {/* Typical waiting time */}
+              <div>
+                <FieldLabel>Typical waiting time at this site</FieldLabel>
+                <div className="mt-1">
+                  <Chips options={WAITING_TIME_OPTIONS} value={stop.typicalWaitingTime}
+                    onChange={v => onChange({ typicalWaitingTime: v })} />
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -541,36 +649,39 @@ export default function PublicRequestForm() {
     setStops(prev => prev.filter(s => s.id !== id));
 
   // ── Sec 3: Load ───────────────────────────────────────────────────────────
-  const [goodsType,    setGoodsType]    = useState("");
-  const [goodsDesc,    setGoodsDesc]    = useState("");
-  const [quantity,     setQuantity]     = useState("");
-  const [unit,         setUnit]         = useState("pallets");
-  const [otherUnit,    setOtherUnit]    = useState("");
-  const [estWeight,    setEstWeight]    = useState("");
-  const [palletCount,  setPalletCount]  = useState("");
-  const [palletType,   setPalletType]   = useState("");
-  const [stackable,    setStackable]    = useState(false);
-  const [dimensions,   setDimensions]   = useState("");
-  const [craneReq,     setCraneReq]     = useState(false);
-  const [tippingReq,   setTippingReq]   = useState(false);
-  const [tempRange,    setTempRange]    = useState("");
-  const [tempType,     setTempType]     = useState("");
-  const [vehicleCount, setVehicleCount] = useState("");
-  const [driveable,    setDriveable]    = useState(false);
-  const [containerSize, setContainerSize] = useState("");
-  const [loadedOrEmpty, setLoadedOrEmpty] = useState("");
-  const [containerNum,  setContainerNum]  = useState("");
-  const [loadNotes,     setLoadNotes]     = useState("");
+  const [goodsType,            setGoodsType]            = useState("");
+  const [goodsDesc,            setGoodsDesc]            = useState("");
+  const [quantity,             setQuantity]             = useState("");
+  const [unit,                 setUnit]                 = useState("pallets");
+  const [otherUnit,            setOtherUnit]            = useState("");
+  const [estWeight,            setEstWeight]            = useState("");
+  const [palletCount,          setPalletCount]          = useState("");
+  const [palletType,           setPalletType]           = useState("");
+  const [stackable,            setStackable]            = useState(false);
+  const [dimensions,           setDimensions]           = useState("");
+  const [craneReq,             setCraneReq]             = useState(false);
+  const [tippingReq,           setTippingReq]           = useState(false);
+  const [tempRange,            setTempRange]            = useState("");
+  const [tempType,             setTempType]             = useState("");
+  const [vehicleCount,         setVehicleCount]         = useState("");
+  const [driveable,            setDriveable]            = useState(false);
+  const [containerSize,        setContainerSize]        = useState("");
+  const [loadedOrEmpty,        setLoadedOrEmpty]        = useState("");
+  const [containerNum,         setContainerNum]         = useState("");
+  const [loadNotes,            setLoadNotes]            = useState("");
+  const [canSplitShipment,     setCanSplitShipment]     = useState("must_stay_together");
+  const [securingRequirements, setSecuringRequirements] = useState<string[]>([]);
 
   // ── Sec 4: Special requirements ───────────────────────────────────────────
-  const [specialItems, setSpecialItems] = useState<string[]>([]);
-  const [adrClass,     setAdrClass]     = useState("");
-  const [unNumber,     setUnNumber]     = useState("");
-  const [specTempRange, setSpecTempRange] = useState("");
+  const [specialItems,                 setSpecialItems]                 = useState<string[]>([]);
+  const [adrClass,                     setAdrClass]                     = useState("");
+  const [unNumber,                     setUnNumber]                     = useState("");
+  const [packingGroup,                 setPackingGroup]                 = useState("");
+  const [hazardousPaperworkAvailable,  setHazardousPaperworkAvailable]  = useState(false);
+  const [specTempRange,                setSpecTempRange]                = useState("");
 
   // ── Sec 5: Transport ──────────────────────────────────────────────────────
   const [plannerDecides,  setPlannerDecides]  = useState(true);
-  const [showTransOpts,   setShowTransOpts]   = useState(false);
   // Advanced transport (only when plannerDecides=false)
   const [reqBodyCategory,     setReqBodyCategory]     = useState("");
   const [reqBodyType,         setReqBodyType]         = useState("");
@@ -586,20 +697,33 @@ export default function PublicRequestForm() {
   const [vatNumber,       setVatNumber]       = useState("");
 
   // ── Sec 7: Notes ─────────────────────────────────────────────────────────
-  const [driverChips,       setDriverChips]       = useState<string[]>([]);
-  const [driverNotes,       setDriverNotes]       = useState("");
-  const [showNotesOpts,     setShowNotesOpts]     = useState(false);
-  const [safetyNotes,       setSafetyNotes]       = useState("");
-  const [customerNotes,     setCustomerNotes]     = useState("");
+  const [driverChips,         setDriverChips]         = useState<string[]>([]);
+  const [driverNotes,         setDriverNotes]         = useState("");
+  const [showNotesOpts,       setShowNotesOpts]       = useState(false);
+  const [safetyNotes,         setSafetyNotes]         = useState("");
+  const [customerNotes,       setCustomerNotes]       = useState("");
+  const [showExceptionPolicy, setShowExceptionPolicy] = useState(false);
+
+  // Exception policy state
+  const [rejectionAction,                setRejectionAction]                = useState("");
+  const [alternativeReturnAddress,       setAlternativeReturnAddress]       = useState("");
+  const [alternativeReturnPostcode,      setAlternativeReturnPostcode]      = useState("");
+  const [alternativeReturnContactName,   setAlternativeReturnContactName]   = useState("");
+  const [alternativeReturnContactPhone,  setAlternativeReturnContactPhone]  = useState("");
+  const [approvalContactName,            setApprovalContactName]            = useState("");
+  const [approvalContactPhone,           setApprovalContactPhone]           = useState("");
+  const [photosRequiredOnRejection,      setPhotosRequiredOnRejection]      = useState(false);
+  const [rejectionSignatureRequired,     setRejectionSignatureRequired]     = useState(false);
+  const [rejectionNotes,                 setRejectionNotes]                 = useState("");
 
   // ── Completeness ──────────────────────────────────────────────────────────
   const sec1Complete = !!(customerCompanyName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
   const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
-  const sec3Complete = !!(goodsType && goodsDesc.trim() && quantity && unit);
+  const sec3Complete = !!(goodsType && goodsDesc.trim() && quantity && unit && parseFloat(estWeight) > 0);
   const sec4Complete = true; // optional section
   const sec5Complete = true; // optional
-  const sec6Complete = true; // optional
+  const sec6Complete = !!(parseFloat(declaredValue) > 0);
   const sec7Complete = true; // optional
 
   const sec1Started = !!(customerCompanyName || contactName);
@@ -612,6 +736,9 @@ export default function PublicRequestForm() {
     collectionCount > 0 && `${collectionCount} collection${collectionCount > 1 ? "s" : ""}`,
     deliveryCount   > 0 && `${deliveryCount} deliver${deliveryCount > 1 ? "ies" : "y"}`,
   ].filter(Boolean).join(", ");
+
+  const requiredSectionsComplete = [sec1Complete, sec2Complete, sec3Complete, sec6Complete].filter(Boolean).length;
+  const allRequiredComplete = requiredSectionsComplete === 4;
 
   // ── Link load ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -631,6 +758,12 @@ export default function PublicRequestForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrors([]);
+
+    // Build exception policy data if section is open or has any values
+    const hasExceptionPolicy = !!(
+      rejectionAction || alternativeReturnAddress || approvalContactName ||
+      photosRequiredOnRejection || rejectionSignatureRequired || rejectionNotes
+    );
 
     const body: SubmitRequestBody = {
       requesterData: {
@@ -661,12 +794,16 @@ export default function PublicRequestForm() {
         loadedOrEmpty:    loadedOrEmpty || undefined,
         containerNumber:  containerNum.trim() || undefined,
         loadNotes:        loadNotes.trim()    || undefined,
+        canSplitShipment: canSplitShipment    || undefined,
+        securingRequirements: securingRequirements.length ? securingRequirements : undefined,
       },
       specialRequirementsData: specialItems.length ? {
-        items:            specialItems,
-        adrClass:         adrClass.trim()       || undefined,
-        unNumber:         unNumber.trim()        || undefined,
-        temperatureRange: specTempRange.trim()   || undefined,
+        items:                      specialItems,
+        adrClass:                   adrClass.trim()       || undefined,
+        unNumber:                   unNumber.trim()        || undefined,
+        packingGroup:               packingGroup.trim()    || undefined,
+        hazardousPaperworkAvailable: hazardousPaperworkAvailable || undefined,
+        temperatureRange:           specTempRange.trim()   || undefined,
       } : undefined,
       transportRequirementsData: {
         plannerDecides,
@@ -688,6 +825,18 @@ export default function PublicRequestForm() {
         driverVisibleNotes: driverNotes.trim()   || undefined,
         safetyInstructions: safetyNotes.trim()   || undefined,
         customerNotes:      customerNotes.trim() || undefined,
+      } : undefined,
+      exceptionPolicyData: hasExceptionPolicy ? {
+        rejectionAction:               rejectionAction               || undefined,
+        alternativeReturnAddress:      alternativeReturnAddress.trim()      || undefined,
+        alternativeReturnPostcode:     alternativeReturnPostcode.trim()     || undefined,
+        alternativeReturnContactName:  alternativeReturnContactName.trim()  || undefined,
+        alternativeReturnContactPhone: alternativeReturnContactPhone.trim() || undefined,
+        approvalContactName:           approvalContactName.trim()           || undefined,
+        approvalContactPhone:          approvalContactPhone.trim()          || undefined,
+        photosRequiredOnRejection:     photosRequiredOnRejection            || undefined,
+        rejectionSignatureRequired:    rejectionSignatureRequired           || undefined,
+        rejectionNotes:                rejectionNotes.trim()                || undefined,
       } : undefined,
     };
 
@@ -893,10 +1042,10 @@ export default function PublicRequestForm() {
                 <TextField label="Describe unit" value={otherUnit} onChange={setOtherUnit} placeholder="e.g. rolls" />
               )}
 
-              {/* Estimated weight */}
-              <TextField label="Estimated total weight (kg)" type="number"
+              {/* Estimated weight — required */}
+              <TextField label="Estimated total weight (kg)" required type="number"
                 value={estWeight} onChange={setEstWeight} placeholder="14000"
-                hint="Approximate — helps the planner choose the right vehicle." />
+                hint="Approximate is fine, but do not leave blank." />
 
               {/* ── Conditional: Pallets ── */}
               {goodsType === "pallets" && (
@@ -1017,6 +1166,23 @@ export default function PublicRequestForm() {
                 </div>
               )}
 
+              {/* Can shipment be split */}
+              <div>
+                <FieldLabel>Can this shipment be split between vehicles?</FieldLabel>
+                <div className="mt-1">
+                  <Chips options={SPLIT_OPTIONS} value={canSplitShipment} onChange={setCanSplitShipment} />
+                </div>
+              </div>
+
+              {/* Load securing requirements */}
+              <div>
+                <FieldLabel>Load securing requirements</FieldLabel>
+                <div className="mt-1">
+                  <MultiCheck options={SECURING_REQUIREMENTS} value={securingRequirements}
+                    onChange={setSecuringRequirements} />
+                </div>
+              </div>
+
               {/* Load notes */}
               <div>
                 <FieldLabel>Additional load notes</FieldLabel>
@@ -1049,6 +1215,10 @@ export default function PublicRequestForm() {
                     placeholder="Class 3 — Flammable liquids" />
                   <TextField label="UN number" value={unNumber} onChange={setUnNumber}
                     placeholder="UN 1993" />
+                  <TextField label="Packing group (I, II, or III)" value={packingGroup}
+                    onChange={setPackingGroup} placeholder="II" />
+                  <Toggle value={hazardousPaperworkAvailable} onChange={setHazardousPaperworkAvailable}
+                    label="Hazardous paperwork available / will be provided" />
                 </div>
               )}
 
@@ -1105,7 +1275,7 @@ export default function PublicRequestForm() {
         <div className="card overflow-hidden">
           <SectionHeader num={6} icon="📄" title="Billing & insurance" subtitle="Pricing, PO number, declared value"
             active collapsed={s6} onToggle={() => setS6(o => !o)}
-            complete optional
+            complete={sec6Complete} started={!!declaredValue}
             summary={PRICING_TYPES.find(([v]) => v === pricingType)?.[1] ?? pricingType} />
           {!s6 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
@@ -1122,15 +1292,15 @@ export default function PublicRequestForm() {
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
-              <TextField label="Declared value of goods (£)" type="number"
+              <TextField label="Declared value of goods (£)" required type="number"
                 value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
-                hint="For insurance purposes only — not the transport charge." />
+                hint="For insurance/risk purposes only — not the transport price." />
               <Toggle value={vatRegistered} onChange={setVatRegistered} label="We are VAT registered" />
               {vatRegistered && (
                 <TextField label="VAT number" value={vatNumber} onChange={setVatNumber}
                   placeholder="GB 123 4567 89" />
               )}
-              <SectionFooter complete label="Billing" onCollapse={() => setS6(true)} />
+              <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} />
             </div>
           )}
         </div>
@@ -1175,6 +1345,64 @@ export default function PublicRequestForm() {
                   </div>
                 </div>
               )}
+
+              {/* Rejection / return policy */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExceptionPolicy(o => !o)}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">
+                  {showExceptionPolicy ? "− Hide rejection / return instructions" : "+ Add rejection / return instructions"}
+                </button>
+              </div>
+
+              {showExceptionPolicy && (
+                <div className="space-y-4 border-l-2 border-orange-200 pl-4">
+                  <div>
+                    <FieldLabel>If delivery is rejected at the door, what should the driver do?</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={REJECTION_ACTIONS} value={rejectionAction} onChange={setRejectionAction} />
+                    </div>
+                  </div>
+
+                  {rejectionAction === "deliver_to_alternative_address" && (
+                    <div className="space-y-3">
+                      <TextField label="Alternative return address" value={alternativeReturnAddress}
+                        onChange={setAlternativeReturnAddress} placeholder="12 Warehouse Lane, Manchester" />
+                      <TextField label="Alternative return postcode" value={alternativeReturnPostcode}
+                        onChange={setAlternativeReturnPostcode} placeholder="M1 1AA" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <TextField label="Contact name at alternative address" value={alternativeReturnContactName}
+                          onChange={setAlternativeReturnContactName} placeholder="Jane Smith" />
+                        <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
+                          onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
+                      </div>
+                    </div>
+                  )}
+
+                  {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval") && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <TextField label="Approval contact name" value={approvalContactName}
+                        onChange={setApprovalContactName} placeholder="Jane Smith" />
+                      <TextField label="Approval contact phone" type="tel" value={approvalContactPhone}
+                        onChange={setApprovalContactPhone} placeholder="+44 7700 900123" />
+                    </div>
+                  )}
+
+                  <Toggle value={photosRequiredOnRejection} onChange={setPhotosRequiredOnRejection}
+                    label="Photos required on rejection" />
+                  <Toggle value={rejectionSignatureRequired} onChange={setRejectionSignatureRequired}
+                    label="Rejection signature required" />
+
+                  <div>
+                    <FieldLabel>Additional rejection / return notes</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2}
+                      value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)}
+                      placeholder="Do not leave goods unattended. Call depot before returning." />
+                  </div>
+                </div>
+              )}
+
               <SectionFooter complete label="Notes" onCollapse={() => setS7(true)} />
             </div>
           )}
@@ -1183,9 +1411,9 @@ export default function PublicRequestForm() {
         {/* ── Submit bar ──────────────────────────────────────────────────── */}
         <div className="card px-5 py-4 flex items-center justify-between gap-4">
           <div className="text-sm text-muted">
-            {[sec1Complete, sec2Complete, sec3Complete].filter(Boolean).length} / 3 required sections complete
+            {requiredSectionsComplete} / 4 required sections complete
           </div>
-          <button type="submit" disabled={submitting} className="btn btn-primary px-8">
+          <button type="submit" disabled={submitting || !allRequiredComplete} className="btn btn-primary px-8 disabled:opacity-50 disabled:cursor-not-allowed">
             {submitting ? "Submitting…" : "Submit transport request →"}
           </button>
         </div>

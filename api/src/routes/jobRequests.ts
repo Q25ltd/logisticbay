@@ -128,6 +128,11 @@ interface StopBlob {
   handlingMethods?: string[];
   proofRequirements?: string[];
   accessRequirements?: string[];
+  loadReadiness?: string;
+  typicalWaitingTime?: string;
+  heightRestrictionValue?: string;
+  weightRestrictionValue?: string;
+  lengthRestrictionValue?: string;
   entranceDistanceFromPostcode?: number | null;
   entranceWarningLevel?: string;
 }
@@ -152,12 +157,16 @@ interface LoadDataBlob {
   loadedOrEmpty?: string;
   containerNumber?: string;
   loadNotes?: string;
+  canSplitShipment?: string;
+  securingRequirements?: string[];
 }
 
 interface SpecialRequirementsBlob {
   items?: string[];
   adrClass?: string;
   unNumber?: string;
+  packingGroup?: string;
+  hazardousPaperworkAvailable?: boolean;
   temperatureRange?: string;
 }
 
@@ -186,6 +195,19 @@ interface NotesBlob {
   customerNotes?: string;
 }
 
+interface ExceptionPolicyBlob {
+  rejectionAction?: string;
+  alternativeReturnAddress?: string;
+  alternativeReturnPostcode?: string;
+  alternativeReturnContactName?: string;
+  alternativeReturnContactPhone?: string;
+  approvalContactName?: string;
+  approvalContactPhone?: string;
+  photosRequiredOnRejection?: boolean;
+  rejectionSignatureRequired?: boolean;
+  rejectionNotes?: string;
+}
+
 interface RequesterBlob {
   customerCompanyName?: string;
   contactName?: string;
@@ -202,6 +224,7 @@ interface PublicRequestBody {
   transportRequirementsData?: TransportRequirementsBlob;
   billingData?:              BillingBlob;
   notesData?:                NotesBlob;
+  exceptionPolicyData?:      ExceptionPolicyBlob;
 }
 
 interface InternalRequestBody extends PublicRequestBody {
@@ -246,9 +269,13 @@ function validateBody(body: Partial<PublicRequestBody>): string[] {
   stops.forEach((s, i) => errors.push(...validateStop(s, i, stops.length)));
 
   const l = body.loadData ?? {};
-  if (!l.goodsDescription?.trim()) errors.push("Goods description is required");
-  if (!l.quantity)                 errors.push("Quantity is required");
-  if (!l.unit?.trim())             errors.push("Unit is required");
+  if (!l.goodsDescription?.trim())                          errors.push("Goods description is required");
+  if (!l.quantity)                                          errors.push("Quantity is required");
+  if (!l.unit?.trim())                                      errors.push("Unit is required");
+  if (!l.estimatedWeight || !(l.estimatedWeight > 0))       errors.push("Estimated weight is required and must be a positive number");
+
+  const b = body.billingData ?? {};
+  if (!b.declaredGoodsValue || !(b.declaredGoodsValue > 0)) errors.push("Declared goods value is required and must be a positive number");
 
   return errors;
 }
@@ -314,8 +341,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           loadData:                  body.loadData        as Prisma.InputJsonValue,
           specialRequirementsData:   (body.specialRequirementsData  ?? {}) as Prisma.InputJsonValue,
           transportRequirementsData: (body.transportRequirementsData ?? {}) as Prisma.InputJsonValue,
-          billingData:               billing              as Prisma.InputJsonValue,
-          notesData:                 (body.notesData      ?? {}) as Prisma.InputJsonValue,
+          billingData:               billing                          as Prisma.InputJsonValue,
+          notesData:                 (body.notesData           ?? {}) as Prisma.InputJsonValue,
+          exceptionPolicyData:       (body.exceptionPolicyData ?? {}) as Prisma.InputJsonValue,
         },
       });
 

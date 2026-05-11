@@ -817,6 +817,7 @@ model JobRequest {
   transportRequirementsData Json @default("{}") // plannerDecides, reqBodyCategory, reqBodyType, reqEquipment, trailerTypesAllowed
   billingData               Json @default("{}") // pricingType, declaredGoodsValue, currency, purchaseOrderNumber, billingReference, vatRegistered, vatNumber
   notesData                 Json @default("{}") // driverNoteChips[], driverVisibleNotes, safetyInstructions, customerNotes
+  exceptionPolicyData       Json @default("{}") // rejectionAction, alternativeReturnAddress, approvalContactName, etc.
   reviewData                Json? // populated when reviewed: notes, plannerNotes
 
   // Internal use only (never on public form)
