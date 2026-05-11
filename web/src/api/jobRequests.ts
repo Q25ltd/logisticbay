@@ -130,13 +130,13 @@ export interface JobRequest {
   contactEmail:  string;
   pricingType:   string;
   // JSON blobs
-  requesterData:             Record<string, unknown>;
-  stops:                     Record<string, unknown>[];
-  loadData:                  Record<string, unknown>;
-  specialRequirementsData:   Record<string, unknown>;
-  transportRequirementsData: Record<string, unknown>;
-  billingData:               Record<string, unknown>;
-  notesData:                 Record<string, unknown>;
+  requesterData:             RequesterData;
+  stops:                     RequestStop[];
+  loadData:                  LoadData;
+  specialRequirementsData:   SpecialRequirementsData;
+  transportRequirementsData: TransportRequirementsData;
+  billingData:               BillingData;
+  notesData:                 NotesData;
   reviewData:                Record<string, unknown> | null;
   // Review
   internalOfficeNotes: string | null;

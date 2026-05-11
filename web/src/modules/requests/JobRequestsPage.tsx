@@ -49,9 +49,9 @@ function timeSince(iso: string): string {
   return `${Math.floor(mins / 1440)}d ago`;
 }
 
-// Helper: cast blob to RequestStop array
-function toStops(raw: Record<string, unknown>[]): RequestStop[] {
-  return (raw ?? []) as RequestStop[];
+// Guard API blobs from older rows or malformed responses.
+function toStops(raw: unknown): RequestStop[] {
+  return Array.isArray(raw) ? raw as unknown as RequestStop[] : [];
 }
 
 export default function JobRequestsPage() {
@@ -141,9 +141,9 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
   const [err,  setErr]  = useState("");
 
   const stops   = toStops(r.stops);
-  const billing = r.billingData  as Record<string, unknown>;
-  const notes   = r.notesData    as Record<string, unknown>;
-  const load    = r.loadData     as Record<string, unknown>;
+  const billing = r.billingData;
+  const notes   = r.notesData;
+  const load    = r.loadData;
 
   const collections = stops.filter(s => s.type === "collection");
   const deliveries  = stops.filter(s => s.type === "delivery");
@@ -220,8 +220,8 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
             {lastStop && firstStop?.date !== lastStop.date && (
               <><span className="mx-1">→</span><span>{lastStop.date}</span></>
             )}
-            {load?.goodsDescription && <><span className="mx-2">·</span><span>{load.goodsDescription as string}</span></>}
-            {load?.quantity && <span> · {load.quantity as number} {load.unit as string}</span>}
+            {load?.goodsDescription && <><span className="mx-2">·</span><span>{load.goodsDescription}</span></>}
+            {load?.quantity && <span> · {load.quantity} {load.unit}</span>}
           </div>
         </div>
         <div className="text-right text-xs shrink-0" style={{ color: "#9ca3af" }}>
@@ -253,15 +253,15 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
           {/* Load */}
           <div className="text-sm p-3 rounded-xl bg-slate-50 border">
             <div className="font-semibold mb-1">Load</div>
-            <div>{load?.goodsDescription as string}</div>
+            <div>{load?.goodsDescription}</div>
             <div className="text-xs mt-1 text-muted">
-              {load?.quantity as number} {load?.unit as string}
-              {load?.estimatedWeight && <span> · {load.estimatedWeight as number}kg est.</span>}
+              {load?.quantity} {load?.unit}
+              {load?.estimatedWeight && <span> · {load.estimatedWeight}kg est.</span>}
             </div>
             {/* Special requirements from specialRequirementsData */}
             {(() => {
-              const spec = r.specialRequirementsData as Record<string, unknown>;
-              const items = (spec?.items ?? []) as string[];
+              const spec = r.specialRequirementsData;
+              const items = spec?.items ?? [];
               return items.length > 0 ? (
                 <div className="flex gap-1 flex-wrap mt-2">
                   {items.map((item: string) => (
@@ -269,39 +269,39 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
                       {item.replace(/_/g, " ")}
                     </span>
                   ))}
-                  {spec?.adrClass && <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800 font-bold">ADR {spec.adrClass as string}{spec.unNumber ? ` UN${spec.unNumber}` : ""}</span>}
-                  {spec?.temperatureRange && <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">❄ {spec.temperatureRange as string}</span>}
+                  {spec?.adrClass && <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800 font-bold">ADR {spec.adrClass}{spec.unNumber ? ` UN${spec.unNumber}` : ""}</span>}
+                  {spec?.temperatureRange && <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">❄ {spec.temperatureRange}</span>}
                 </div>
               ) : null;
             })()}
-            {load?.loadNotes && <div className="text-xs mt-1 italic text-muted">{load.loadNotes as string}</div>}
+            {load?.loadNotes && <div className="text-xs mt-1 italic text-muted">{load.loadNotes}</div>}
           </div>
 
           {/* Billing */}
           {(billing?.purchaseOrderNumber || billing?.billingReference || billing?.declaredGoodsValue != null || r.pricingType) && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              {billing?.purchaseOrderNumber && <InfoChip label="PO Number"   value={billing.purchaseOrderNumber as string} />}
-              {billing?.billingReference    && <InfoChip label="Billing ref" value={billing.billingReference as string} />}
-              {billing?.declaredGoodsValue != null && <InfoChip label="Goods value" value={`${billing.currency ?? "£"}${(billing.declaredGoodsValue as number).toLocaleString()}`} />}
+              {billing?.purchaseOrderNumber && <InfoChip label="PO Number"   value={billing.purchaseOrderNumber} />}
+              {billing?.billingReference    && <InfoChip label="Billing ref" value={billing.billingReference} />}
+              {billing?.declaredGoodsValue != null && <InfoChip label="Goods value" value={`${billing.currency ?? "£"}${billing.declaredGoodsValue.toLocaleString()}`} />}
               <InfoChip label="Pricing" value={r.pricingType.replace(/_/g, " ")} />
             </div>
           )}
 
           {/* Notes */}
-          {(notes?.driverVisibleNotes || notes?.customerNotes || notes?.safetyInstructions || (notes?.driverNoteChips as string[] | undefined)?.length) && (
+          {(notes?.driverVisibleNotes || notes?.customerNotes || notes?.safetyInstructions || notes?.driverNoteChips?.length) && (
             <div className="text-sm space-y-1 p-3 rounded-xl bg-amber-50 border border-amber-100">
-              {notes?.driverNoteChips && (notes.driverNoteChips as string[]).length > 0 && (
+              {notes?.driverNoteChips && notes.driverNoteChips.length > 0 && (
                 <div className="flex gap-1 flex-wrap mb-1">
-                  {(notes.driverNoteChips as string[]).map((c: string) => (
+                  {notes.driverNoteChips.map((c: string) => (
                     <span key={c} className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800 font-medium">
                       {c.replace(/_/g, " ")}
                     </span>
                   ))}
                 </div>
               )}
-              {notes?.driverVisibleNotes  && <NoteRow label="Driver"       value={notes.driverVisibleNotes as string} />}
-              {notes?.safetyInstructions  && <NoteRow label="Safety"       value={notes.safetyInstructions as string} />}
-              {notes?.customerNotes       && <NoteRow label="Customer note" value={notes.customerNotes as string} />}
+              {notes?.driverVisibleNotes  && <NoteRow label="Driver"       value={notes.driverVisibleNotes} />}
+              {notes?.safetyInstructions  && <NoteRow label="Safety"       value={notes.safetyInstructions} />}
+              {notes?.customerNotes       && <NoteRow label="Customer note" value={notes.customerNotes} />}
             </div>
           )}
 
@@ -314,15 +314,15 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
 
           {/* Transport requirements */}
           {(() => {
-            const tr = r.transportRequirementsData as Record<string, unknown>;
-            const equip = (tr?.reqEquipment ?? []) as string[];
-            const trailers = (tr?.trailerTypesAllowed ?? []) as string[];
+            const tr = r.transportRequirementsData;
+            const equip = tr?.reqEquipment ?? [];
+            const trailers = tr?.trailerTypesAllowed ?? [];
             if (!tr?.reqBodyCategory && !tr?.reqBodyType && !equip.length && !trailers.length) return null;
             return (
               <div className="text-xs p-3 rounded-xl bg-indigo-50 border border-indigo-100">
                 <div className="font-semibold text-indigo-800 mb-1">Transport requirements</div>
-                {tr.reqBodyCategory && <div>Category: <span className="font-medium">{tr.reqBodyCategory as string}</span></div>}
-                {tr.reqBodyType     && <div>Body type: <span className="font-medium">{(tr.reqBodyType as string).replace(/_/g, " ")}</span></div>}
+                {tr.reqBodyCategory && <div>Category: <span className="font-medium">{tr.reqBodyCategory}</span></div>}
+                {tr.reqBodyType     && <div>Body type: <span className="font-medium">{tr.reqBodyType.replace(/_/g, " ")}</span></div>}
                 {equip.length > 0   && <div>Equipment: <span className="font-medium">{equip.join(", ")}</span></div>}
                 {trailers.length > 0 && <div>Trailers: <span className="font-medium">{trailers.join(", ")}</span></div>}
               </div>

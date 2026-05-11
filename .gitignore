@@ -22,6 +22,9 @@ build/
 # Generated files
 api/src/generated/
 
+# Mobile app — has its own git repo, not tracked here
+mobile/
+
 # Misc
 *.pdf
 api/shift-report.pdf

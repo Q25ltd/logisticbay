@@ -14,7 +14,7 @@ CREATE TABLE "ClientRequestLink" (
   "usageCount"  INTEGER NOT NULL DEFAULT 0,
   "createdBy"   INTEGER NOT NULL,
   "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt"   TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "ClientRequestLink_tokenHash_key" UNIQUE ("tokenHash"),
   CONSTRAINT "ClientRequestLink_companyId_fkey"  FOREIGN KEY ("companyId")  REFERENCES "Company"("id")  ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -57,7 +57,7 @@ CREATE TABLE "JobRequest" (
   "deliveryData"                JSONB NOT NULL,
 
   -- Load details as JSON blob
-  "loadData"                    JSONB NOT NULL,
+  "loadData"                    JSONB NOT NULL DEFAULT '{}',
 
   -- Vehicle requirements (existing taxonomy)
   "reqBodyCategory"             TEXT,
@@ -94,7 +94,7 @@ CREATE TABLE "JobRequest" (
   "convertedJobId"              INTEGER,
 
   "createdAt"                   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt"                   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt"                   TIMESTAMP(3) NOT NULL,
 
   CONSTRAINT "JobRequest_convertedJobId_key"      UNIQUE ("convertedJobId"),
   CONSTRAINT "JobRequest_companyId_fkey"          FOREIGN KEY ("companyId")       REFERENCES "Company"("id")           ON DELETE RESTRICT ON UPDATE CASCADE,
