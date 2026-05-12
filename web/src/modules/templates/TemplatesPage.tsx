@@ -14,8 +14,8 @@ function fmtDate(iso: string | undefined): string {
 function stopSummary(t: JobTemplate): string {
   const stops = Array.isArray(t.defaultStops) ? t.defaultStops : [];
   if (!stops.length) return "";
-  const collections = stops.filter((s: Record<string, unknown>) => s.stopType === "collection" || s.type === "pickup").length;
-  const deliveries  = stops.filter((s: Record<string, unknown>) => s.stopType === "delivery"   || s.type === "dropoff").length;
+  const collections = stops.filter((s: Record<string, unknown>) => s.type === "collection" || s.stopType === "collection" || s.type === "pickup").length;
+  const deliveries  = stops.filter((s: Record<string, unknown>) => s.type === "delivery"   || s.stopType === "delivery"   || s.type === "dropoff").length;
   const parts = [];
   if (collections) parts.push(`${collections} collection${collections > 1 ? "s" : ""}`);
   if (deliveries)  parts.push(`${deliveries} deliver${deliveries > 1 ? "ies" : "y"}`);

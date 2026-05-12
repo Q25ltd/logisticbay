@@ -171,21 +171,21 @@ export default function CreateJobPage() {
     if (jd?.contactPhone)    setContactPhone(jd.contactPhone);
     if (jd?.contactEmail)    setContactEmail(jd.contactEmail);
     if (jd?.billingNotes)    setBillingNotes(jd.billingNotes);
-    if (jd?.custInstructions) setCustInstructions(jd.custInstructions);
+    if (jd?.customerInstructions) setCustomerInstructions(jd.customerInstructions);
     if (jd?.custRefRequired !== undefined) setCustRefRequired(jd.custRefRequired);
     if (jd?.poRequired      !== undefined) setPoRequired(jd.poRequired);
 
     // ── Load details ────────────────────────────────────────────────────────
     const dl = t.defaultLoadDetails;
-    const materialType = jd?.materialDesc || dl?.materialType || t.defaultMaterialType || "";
-    if (materialType)        setMaterialDesc(materialType);
-    const qty = jd?.totalQty ?? (dl?.quantity != null ? String(dl.quantity) : "");
-    if (qty)                 setTotalQty(qty);
-    const unit = jd?.qtyUnit ?? dl?.unit ?? "";
-    if (unit)                setQtyUnit(unit);
-    if (jd?.qtyUnitOther)   setQtyUnitOther(jd.qtyUnitOther);
-    const weight = jd?.totalWeight ?? (dl?.weight != null ? String(dl.weight) : "");
-    if (weight)              setTotalWeight(weight);
+    const materialTypeVal = jd?.materialDesc || jd?.materialType || dl?.materialType || t.defaultMaterialType || "";
+    if (materialTypeVal)     setMaterialType(materialTypeVal);
+    const qty = jd?.totalQty ?? jd?.quantity ?? (dl?.quantity != null ? String(dl.quantity) : "");
+    if (qty)                 setQuantity(qty);
+    const unitVal = jd?.qtyUnit ?? jd?.unit ?? dl?.unit ?? "";
+    if (unitVal)             setUnit(unitVal);
+    if (jd?.unitOther ?? jd?.qtyUnitOther) setUnitOther(jd?.unitOther ?? jd?.qtyUnitOther ?? "");
+    const weightVal = jd?.totalWeight ?? jd?.weight ?? (dl?.weight != null ? String(dl.weight) : "");
+    if (weightVal)           setWeight(weightVal);
     const vol = jd?.volume   ?? (dl?.volume  != null ? String(dl.volume)  : "");
     if (vol)                 setVolume(vol);
     if (jd?.dimensions   ?? dl?.dimensions)   setDimensions(jd?.dimensions   ?? dl?.dimensions   ?? "");
@@ -197,20 +197,20 @@ export default function CreateJobPage() {
     if (jd?.tempControlled  !== undefined) setTempControlled(jd.tempControlled);
     else if (dl?.tempControlled !== undefined) setTempControlled(dl.tempControlled);
     if (jd?.tempRange ?? dl?.tempRange) setTempRange(jd?.tempRange ?? dl?.tempRange ?? "");
-    if (jd?.forkliftReq !== undefined) setForkliftReq(jd.forkliftReq);
-    else if (dl?.forkliftRequired !== undefined) setForkliftReq(dl.forkliftRequired);
-    if (jd?.tailLiftReq !== undefined) setTailLiftReq(jd.tailLiftReq);
-    else if (dl?.tailLiftRequired !== undefined) setTailLiftReq(dl.tailLiftRequired);
-    if (jd?.craneReq !== undefined) setCraneReq(jd.craneReq);
-    else if (dl?.craneRequired !== undefined) setCraneReq(dl.craneRequired);
+    if (jd?.forkliftRequired !== undefined) setForkliftRequired(jd.forkliftRequired);
+    else if (dl?.forkliftRequired !== undefined) setForkliftRequired(dl.forkliftRequired);
+    if (jd?.tailLiftRequired !== undefined) setTailLiftRequired(jd.tailLiftRequired);
+    else if (dl?.tailLiftRequired !== undefined) setTailLiftRequired(dl.tailLiftRequired);
+    if (jd?.craneRequired !== undefined) setCraneRequired(jd.craneRequired);
+    else if (dl?.craneRequired !== undefined) setCraneRequired(dl.craneRequired);
     if (jd?.loadingMethod   ?? dl?.loadingMethod)   setLoadingMethod(jd?.loadingMethod   ?? dl?.loadingMethod   ?? "");
     if (jd?.unloadingMethod ?? dl?.unloadingMethod) setUnloadingMethod(jd?.unloadingMethod ?? dl?.unloadingMethod ?? "");
     if (jd?.loadNotes ?? dl?.notes ?? t.defaultNotes) setLoadNotes(jd?.loadNotes ?? dl?.notes ?? t.defaultNotes ?? "");
     if (jd?.photosRequired  !== undefined) setPhotosRequired(jd.photosRequired);
     else if (dl?.photosRequired !== undefined) setPhotosRequired(dl.photosRequired);
-    if (jd?.weighbridgeReq  !== undefined) setWeighbridgeReq(jd.weighbridgeReq);
-    else if (dl?.weighbridgeRequired !== undefined) setWeighbridgeReq(dl.weighbridgeRequired);
-    if (jd?.podRequired     !== undefined) setPodRequired(jd.podRequired);
+    if (jd?.weighbridgeRequired  !== undefined) setWeighbridgeRequired(jd.weighbridgeRequired);
+    else if (dl?.weighbridgeRequired !== undefined) setWeighbridgeRequired(dl.weighbridgeRequired);
+    if (jd?.requirePOD     !== undefined) setRequirePOD(jd.requirePOD);
 
     // ── Vehicle requirements ────────────────────────────────────────────────
     const vClass = jd?.vehicleType ?? "";
@@ -231,22 +231,19 @@ export default function CreateJobPage() {
     if (jd?.trailerLength) setTrailerLength(jd.trailerLength);
     if (vClass) {
       if (vClass.startsWith("other:")) {
-        setVehicleType("other");
-        setVehicleTypeOther(vClass.replace("other:", "").trim());
+        setVehicleClass("other");
+        setVehicleClassOther(vClass.replace("other:", "").trim());
       } else {
-        setVehicleType(vClass);
+        setVehicleClass(vClass);
       }
     }
-    if (jd?.vehicleTypeOther) setVehicleTypeOther(jd.vehicleTypeOther);
-    if (jd?.minSize)          setMinSize(jd.minSize);
-    if (jd?.trailersAllowed?.length)   setTrailersAllowed(jd.trailersAllowed);
-    else if (t.trailerTypesAllowed?.length) setTrailersAllowed(t.trailerTypesAllowed);
-    if (jd?.equipmentReq?.length)      setEquipmentReq(jd.equipmentReq);
-    if (jd?.driverQuals?.length)       setDriverQuals(jd.driverQuals);
+    if (jd?.vehicleTypeOther) setVehicleClassOther(jd.vehicleTypeOther);
+    if (jd?.trailerTypesAllowed?.length ?? jd?.trailersAllowed?.length) setTrailerTypesAllowed(jd?.trailerTypesAllowed ?? jd?.trailersAllowed ?? []);
+    else if (t.trailerTypesAllowed?.length) setTrailerTypesAllowed(t.trailerTypesAllowed);
     if (jd?.heightRestriction) setHeightRestriction(jd.heightRestriction);
     if (jd?.weightRestriction) setWeightRestriction(jd.weightRestriction);
     if (jd?.lengthRestriction) setLengthRestriction(jd.lengthRestriction);
-    if (jd?.accessNotes)       setAccessNotes(jd.accessNotes);
+    if (jd?.vehicleAccessNotes)       setVehicleAccessNotes(jd.vehicleAccessNotes);
     if (jd?.assignedTruck)     setAssignedTruck(jd.assignedTruck);
     if (jd?.assignedTrailer)   setAssignedTrailer(jd.assignedTrailer);
 
@@ -257,22 +254,22 @@ export default function CreateJobPage() {
     if (jd?.returnDestination) setReturnDestination(jd.returnDestination);
     const alt = jd?.altAddress as Record<string, unknown> | null | undefined;
     if (alt) {
-      if (alt.companyName) setAltCompanyName(String(alt.companyName));
-      if (alt.street)      setAltStreet(String(alt.street));
-      if (alt.town)        setAltTown(String(alt.town));
-      if (alt.postcode)    setAltPostcode(String(alt.postcode));
-      if (alt.country)     setAltCountry(String(alt.country));
-      if (alt.lat)         setAltLat(String(alt.lat));
-      if (alt.lng)         setAltLng(String(alt.lng));
-      if (alt.unit)        setAltUnit(String(alt.unit));
-      if (alt.addressLine2) setAltAddressLine2(String(alt.addressLine2));
-      if (alt.county)      setAltCounty(String(alt.county));
-      if (alt.contactName) setAltContactName(String(alt.contactName));
-      if (alt.contactPhone) setAltContactPhone(String(alt.contactPhone));
-      if (alt.contactEmail) setAltContactEmail(String(alt.contactEmail));
-      if (alt.navNotes)    setAltNavNotes(String(alt.navNotes));
-      if (alt.driverNotes) setAltDriverNotes(String(alt.driverNotes));
-      if (alt.savedLocationId) setAltSavedLocationId(Number(alt.savedLocationId));
+      if (alt.siteName ?? alt.companyName)    setAltSiteName(String(alt.siteName ?? alt.companyName));
+      if (alt.street)                          setAltStreet(String(alt.street));
+      if (alt.town)                            setAltTown(String(alt.town));
+      if (alt.postcode)                        setAltPostcode(String(alt.postcode));
+      if (alt.country)                         setAltCountry(String(alt.country));
+      if (alt.lat)                             setAltLat(String(alt.lat));
+      if (alt.lng)                             setAltLng(String(alt.lng));
+      if (alt.unitName ?? alt.unit)            setAltUnitName(String(alt.unitName ?? alt.unit));
+      if (alt.addressLine2)                    setAltAddressLine2(String(alt.addressLine2));
+      if (alt.countyRegion ?? alt.county)      setAltCountyRegion(String(alt.countyRegion ?? alt.county));
+      if (alt.contactName)                     setAltContactName(String(alt.contactName));
+      if (alt.contactPhone)                    setAltContactPhone(String(alt.contactPhone));
+      if (alt.contactEmail)                    setAltContactEmail(String(alt.contactEmail));
+      if (alt.navigationInstructions ?? alt.navNotes) setAltNavigationInstructions(String(alt.navigationInstructions ?? alt.navNotes));
+      if (alt.instructions ?? alt.driverNotes) setAltInstructions(String(alt.instructions ?? alt.driverNotes));
+      if (alt.savedLocationId)                 setAltSavedLocationId(Number(alt.savedLocationId));
     }
 
     // ── Stops — restore all fields, clear per-run variables ────────────────
@@ -282,7 +279,7 @@ export default function CreateJobPage() {
         ...makeStop(),
         id:              Math.random().toString(36).slice(2),
         collapsed:       true,
-        stopType:        ((s.stopType as string) || (s.type === "pickup" ? "collection" : "delivery")) as "collection" | "delivery",
+        type:            (() => { const v = (s.type as string) || (s.stopType as string) || ""; return (v === "pickup" || v === "collection") ? "collection" : "delivery"; })() as "collection" | "delivery",
         savedLocationId: (s.savedLocationId as number) ?? null,
         locationQuery:   (s.locationQuery as string) || (s.siteName as string) || "",
         siteName:        (s.siteName as string) || "",
@@ -292,13 +289,13 @@ export default function CreateJobPage() {
         country:         (s.country as string) || "United Kingdom",
         lat:             s.lat != null ? String(s.lat) : "",
         lng:             s.lng != null ? String(s.lng) : "",
-        unitBuilding:    (s.unitBuilding as string) || (s.unitName as string) || "",
+        unitName:        (s.unitName as string) || (s.unitBuilding as string) || "",
         addressLine2:    (s.addressLine2 as string) || "",
         countyRegion:    (s.countyRegion as string) || "",
         contactName:     (s.contactName as string) || "",
         contactPhone:    (s.contactPhone as string) || "",
         contactEmail:    (s.contactEmail as string) || "",
-        driverNotes:     (s.driverNotes as string) || (s.instructions as string) || "",
+        instructions:    (s.instructions as string) || (s.driverNotes as string) || "",
         navigationInstructions: (s.navigationInstructions as string) || "",
         openingHours:    (s.openingHours as string) || "",
         locationType:    (s.locationType as string) || "",
@@ -313,7 +310,7 @@ export default function CreateJobPage() {
         exactTime:       "",
         windowStart:     "",
         windowEnd:       "",
-        refNumber:       "",
+        referenceNumber: "",
         bookingRef:      "",
       })));
     }
@@ -354,7 +351,7 @@ export default function CreateJobPage() {
   const [contactEmail,    setContactEmail]    = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [billingNotes,    setBillingNotes]    = useState("");
-  const [custInstructions,  setCustInstructions]  = useState("");
+  const [customerInstructions,  setCustomerInstructions]  = useState("");
   const [custRefRequired,   setCustRefRequired]   = useState(false);
   const [poRequired,        setPoRequired]        = useState(false);
 
@@ -379,12 +376,12 @@ export default function CreateJobPage() {
 
   // ── Section 04 — Load Details ────────────────────────────────────────────
   const [showLoadOpts,     setShowLoadOpts]     = useState(false);
-  const [materialDesc,     setMaterialDesc]     = useState("");
-  const [totalQty,         setTotalQty]         = useState("");
-  const [qtyUnit,          setQtyUnit]          = useState("");
-  const [qtyUnitOther,     setQtyUnitOther]     = useState("");
-  const [totalWeight,      setTotalWeight]      = useState("");
-  const [podRequired,      setPodRequired]      = useState(true);
+  const [materialType,     setMaterialType]     = useState("");
+  const [quantity,         setQuantity]         = useState("");
+  const [unit,             setUnit]             = useState("");
+  const [unitOther,     setUnitOther]     = useState("");
+  const [weight,           setWeight]           = useState("");
+  const [requirePOD,      setRequirePOD]      = useState(true);
   // Optional — physical
   const [volume,           setVolume]           = useState("");
   const [dimensions,       setDimensions]       = useState("");
@@ -396,16 +393,16 @@ export default function CreateJobPage() {
   const [fragile,          setFragile]          = useState(false);
   const [stackable,        setStackable]        = useState(false);
   // Optional — equipment
-  const [forkliftReq,      setForkliftReq]      = useState(false);
-  const [tailLiftReq,      setTailLiftReq]      = useState(false);
-  const [craneReq,         setCraneReq]         = useState(false);
+  const [forkliftRequired,      setForkliftRequired]      = useState(false);
+  const [tailLiftRequired,      setTailLiftRequired]      = useState(false);
+  const [craneRequired,         setCraneRequired]         = useState(false);
   // Optional — handling methods
   const [loadingMethod,    setLoadingMethod]    = useState("");
   const [unloadingMethod,  setUnloadingMethod]  = useState("");
   // Optional — extra
   const [loadNotes,        setLoadNotes]        = useState("");
   const [photosRequired,   setPhotosRequired]   = useState(false);
-  const [weighbridgeReq,   setWeighbridgeReq]   = useState(false);
+  const [weighbridgeRequired,   setWeighbridgeRequired]   = useState(false);
 
   // ── Section 05 — Vehicle Requirements ───────────────────────────────────
   const [sec5Collapsed,    setSec5Collapsed]    = useState(true);
@@ -416,20 +413,17 @@ export default function CreateJobPage() {
   const [reqLicenceClass,  setReqLicenceClass]  = useState<DriverLicenceClass | "">("");
   const [reqEndorsements,  setReqEndorsements]  = useState<DriverEndorsement[]>([]);
   const [trailerLength,    setTrailerLength]    = useState("");
-  const [vehicleType,      setVehicleType]      = useState("");
-  const [vehicleTypeOther, setVehicleTypeOther] = useState("");
+  const [vehicleClass,      setVehicleClass]      = useState("");
+  const [vehicleClassOther, setVehicleClassOther] = useState("");
   const [assignedTruck,    setAssignedTruck]    = useState("");
   const [assignedTrailer,  setAssignedTrailer]  = useState("");
   // Optional
   const [showVehicleOpts,  setShowVehicleOpts]  = useState(false);
-  const [minSize,          setMinSize]          = useState("");
-  const [trailersAllowed,  setTrailersAllowed]  = useState<string[]>([]);
-  const [equipmentReq,     setEquipmentReq]     = useState<string[]>([]);
-  const [driverQuals,      setDriverQuals]      = useState<string[]>([]);
+  const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
   const [heightRestriction,setHeightRestriction]= useState("");
   const [weightRestriction,setWeightRestriction]= useState("");
   const [lengthRestriction,setLengthRestriction]= useState("");
-  const [accessNotes,      setAccessNotes]      = useState("");
+  const [vehicleAccessNotes,      setVehicleAccessNotes]      = useState("");
 
   // ── Section 06 — Return Instructions ────────────────────────────────────
   const [sec6Collapsed,      setSec6Collapsed]      = useState(true);
@@ -442,21 +436,21 @@ export default function CreateJobPage() {
   // alternative address (shared by deliver_alternative and finish_then_return→alternative)
   const [altSavedLocationId, setAltSavedLocationId] = useState<number | null>(null);
   const [altLocationQuery,   setAltLocationQuery]   = useState("");
-  const [altCompanyName,     setAltCompanyName]     = useState("");
+  const [altSiteName,     setAltSiteName]     = useState("");
   const [altStreet,          setAltStreet]          = useState("");
   const [altTown,            setAltTown]            = useState("");
   const [altPostcode,        setAltPostcode]        = useState("");
   const [altCountry,         setAltCountry]         = useState("United Kingdom");
   const [altLat,             setAltLat]             = useState("");
   const [altLng,             setAltLng]             = useState("");
-  const [altUnit,            setAltUnit]            = useState("");
+  const [altUnitName,            setAltUnitName]            = useState("");
   const [altAddressLine2,    setAltAddressLine2]    = useState("");
-  const [altCounty,          setAltCounty]          = useState("");
+  const [altCountyRegion,          setAltCountyRegion]          = useState("");
   const [altContactName,     setAltContactName]     = useState("");
   const [altContactPhone,    setAltContactPhone]    = useState("");
   const [altContactEmail,    setAltContactEmail]    = useState("");
-  const [altNavNotes,        setAltNavNotes]        = useState("");
-  const [altDriverNotes,     setAltDriverNotes]     = useState("");
+  const [altNavigationInstructions,        setAltNavigationInstructions]        = useState("");
+  const [altInstructions,     setAltInstructions]     = useState("");
   const [showAltOpts,        setShowAltOpts]        = useState(false);
 
   const needsAltAddress =
@@ -483,7 +477,7 @@ export default function CreateJobPage() {
   const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
   const customerComplete = !!(contactName.trim() && contactPhone.trim());
   const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
-  const loadComplete     = !!(materialDesc.trim() && totalQty.trim() && qtyUnit && totalWeight.trim());
+  const loadComplete     = !!(materialType.trim() && quantity.trim() && unit && weight.trim());
   const selectedBodyTypes = reqBodyCategory ? (BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []) : [];
   const visibleBodyTypeOptions = selectedBodyTypes.length > 0
     ? BODY_TYPE_OPTS.filter(([value]) => selectedBodyTypes.includes(value as BodyType))
@@ -500,11 +494,11 @@ export default function CreateJobPage() {
     .map(e => [e.value, e.label] as [string, string]);
   const vehicleComplete  =
     !!reqBodyCategory &&
-    (!trailerRequired || trailersAllowed.length > 0) &&
+    (!trailerRequired || trailerTypesAllowed.length > 0) &&
     (!bodyTypeRequired || !!reqBodyType);
 
   const altAddressComplete = !needsAltAddress || !!(
-    altCompanyName.trim() && altStreet.trim() && altTown.trim() && altPostcode.trim() && altCountry.trim()
+    altSiteName.trim() && altStreet.trim() && altTown.trim() && altPostcode.trim() && altCountry.trim()
   );
   const returnComplete =
     failureAction !== "finish_then_return" || (
@@ -518,8 +512,8 @@ export default function CreateJobPage() {
   const sec1Started = !!(customerName || (serviceType || jobType));
   const sec2Started = !!(contactName || contactPhone);
   const sec3Started = stops.some(s => s.siteName || s.street);
-  const sec4Started = !!(materialDesc || totalQty || totalWeight);
-  const sec5Started = !!(reqBodyCategory || reqGvwMin || reqBodyType || reqEquipment.length || reqLicenceClass || trailersAllowed.length);
+  const sec4Started = !!(materialType || quantity || weight);
+  const sec5Started = !!(reqBodyCategory || reqGvwMin || reqBodyType || reqEquipment.length || reqLicenceClass || trailerTypesAllowed.length);
   const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
   const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started;
 
@@ -546,15 +540,15 @@ export default function CreateJobPage() {
       setContactName(job.bookingContactName || "");
       setContactPhone(job.bookingContactPhone || "");
       setContactEmail(job.bookingContactEmail || "");
-      setCustInstructions(job.customerInstructions || "");
+      setCustomerInstructions(job.customerInstructions || "");
       if (job.stops && job.stops.length > 0) {
         setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobStopToStopState));
       }
       const ld = job.loadDetails;
-      setMaterialDesc(ld?.materialType || job.materialType || "");
-      setTotalQty(ld?.quantity != null ? String(ld.quantity) : job.quantityExpected || "");
-      setQtyUnit(ld?.unit || job.quantityUnit || "");
-      setTotalWeight(ld?.weight != null ? String(ld.weight) : "");
+      setMaterialType(ld?.materialType || job.materialType || "");
+      setQuantity(ld?.quantity != null ? String(ld.quantity) : job.quantityExpected || "");
+      setUnit(ld?.unit || job.quantityUnit || "");
+      setWeight(ld?.weight != null ? String(ld.weight) : "");
       setVolume(ld?.volume != null ? String(ld.volume) : "");
       setDimensions(ld?.dimensions || "");
       setAdrClass(ld?.hazardClass || "");
@@ -562,15 +556,15 @@ export default function CreateJobPage() {
       setTempRange(ld?.tempRange || "");
       setFragile(ld?.fragile ?? false);
       setStackable(ld?.stackable ?? false);
-      setForkliftReq(ld?.forkliftRequired ?? false);
-      setTailLiftReq(ld?.tailLiftRequired ?? false);
-      setCraneReq(ld?.craneRequired ?? false);
+      setForkliftRequired(ld?.forkliftRequired ?? false);
+      setTailLiftRequired(ld?.tailLiftRequired ?? false);
+      setCraneRequired(ld?.craneRequired ?? false);
       setLoadingMethod(ld?.loadingMethod || "");
       setUnloadingMethod(ld?.unloadingMethod || "");
       setLoadNotes(ld?.notes || "");
       setPhotosRequired(ld?.photosRequired ?? false);
-      setWeighbridgeReq(ld?.weighbridgeRequired ?? false);
-      setPodRequired(job.requirePOD ?? true);
+      setWeighbridgeRequired(ld?.weighbridgeRequired ?? false);
+      setRequirePOD(job.requirePOD ?? true);
       const vClass = job.vehicleClassRequired || job.vehicleClass || "";
       const legacyReq = legacyVehicleToRequirement(vClass);
       setReqBodyCategory((job.reqBodyCategory || legacyReq.bodyCategory || "") as BodyCategory | "");
@@ -582,21 +576,18 @@ export default function CreateJobPage() {
       setReqLicenceClass((job.reqLicenceClass || legacyReq.licenceClass || "") as DriverLicenceClass | "");
       setReqEndorsements(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq as DriverEndorsement[] : []);
       if (vClass.startsWith("other:")) {
-        setVehicleType("other");
-        setVehicleTypeOther(vClass.replace("other:", "").trim());
+        setVehicleClass("other");
+        setVehicleClassOther(vClass.replace("other:", "").trim());
       } else {
-        setVehicleType(vClass);
+        setVehicleClass(vClass);
       }
-      setMinSize(job.minVehicleSize || "");
-      setTrailersAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
+      setTrailerTypesAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
       setAssignedTruck(job.assignedTruck || "");
       setAssignedTrailer(job.assignedTrailer || "");
-      setEquipmentReq(Array.isArray(job.equipmentRequired) ? job.equipmentRequired : []);
-      setDriverQuals(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq : []);
       setHeightRestriction(job.heightRestriction || "");
       setWeightRestriction(job.weightRestriction || "");
       setLengthRestriction(job.lengthRestriction || "");
-      setAccessNotes(job.vehicleAccessNotes || "");
+      setVehicleAccessNotes(job.vehicleAccessNotes || "");
       setFailureAction(job.failureAction || "call_assistance");
       setAssistancePhone(job.assistancePhone || "");
       setAssistanceNote(job.assistanceNote || "");
@@ -657,7 +648,7 @@ export default function CreateJobPage() {
     try {
       const [params] = makePayloadParams("ready_to_plan");
       const stopData = params.stops.map(s => ({
-        stopType:        s.stopType,
+        type:            s.type,
         savedLocationId: s.savedLocationId,
         locationQuery:   s.locationQuery,
         siteName:        s.siteName,
@@ -667,13 +658,13 @@ export default function CreateJobPage() {
         country:         s.country,
         lat:             s.lat,
         lng:             s.lng,
-        unitBuilding:    s.unitBuilding,
+        unitName:        s.unitName,
         addressLine2:    s.addressLine2,
         countyRegion:    s.countyRegion,
         contactName:     s.contactName,
         contactPhone:    s.contactPhone,
         contactEmail:    s.contactEmail,
-        driverNotes:     s.driverNotes,
+        instructions:    s.instructions,
         navigationInstructions: s.navigationInstructions,
         openingHours:    s.openingHours,
         locationType:    s.locationType,
@@ -695,14 +686,14 @@ export default function CreateJobPage() {
         contactPhone:     params.contactPhone,
         contactEmail:     params.contactEmail,
         billingNotes:     params.billingNotes,
-        custInstructions: params.custInstructions,
+        customerInstructions: params.customerInstructions,
         custRefRequired:  params.custRefRequired,
         poRequired:       params.poRequired,
-        materialDesc:     params.materialDesc,
-        totalQty:         params.totalQty,
-        qtyUnit:          params.qtyUnit,
-        qtyUnitOther:     params.qtyUnitOther,
-        totalWeight:      params.totalWeight,
+        materialType:     params.materialType,
+        quantity:         params.quantity,
+        unit:             params.unit,
+        unitOther:        params.unitOther,
+        weight:           params.weight,
         volume:           params.volume,
         dimensions:       params.dimensions,
         adrClass:         params.adrClass,
@@ -710,17 +701,17 @@ export default function CreateJobPage() {
         stackable:        params.stackable,
         tempControlled:   params.tempControlled,
         tempRange:        params.tempRange,
-        forkliftReq:      params.forkliftReq,
-        tailLiftReq:      params.tailLiftReq,
-        craneReq:         params.craneReq,
+        forkliftRequired:      params.forkliftRequired,
+        tailLiftRequired:      params.tailLiftRequired,
+        craneRequired:         params.craneRequired,
         loadingMethod:    params.loadingMethod,
         unloadingMethod:  params.unloadingMethod,
         loadNotes:        params.loadNotes,
         photosRequired:   params.photosRequired,
-        weighbridgeReq:   params.weighbridgeReq,
-        podRequired:      params.podRequired,
-        vehicleType:      params.vehicleType,
-        vehicleTypeOther: params.vehicleTypeOther,
+        weighbridgeRequired:   params.weighbridgeRequired,
+        requirePOD:      params.requirePOD,
+        vehicleClass:      params.vehicleClass,
+        vehicleClassOther: params.vehicleClassOther,
         reqBodyCategory:  params.reqBodyCategory,
         reqGvwMin:        params.reqGvwMin,
         reqBodyType:      params.reqBodyType,
@@ -728,14 +719,11 @@ export default function CreateJobPage() {
         reqLicenceClass:  params.reqLicenceClass,
         reqEndorsements:  params.reqEndorsements,
         trailerLength:    trailerLength,
-        minSize:          params.minSize,
-        trailersAllowed:  params.trailersAllowed,
-        equipmentReq:     params.equipmentReq,
-        driverQuals:      params.driverQuals,
+        trailerTypesAllowed: params.trailerTypesAllowed,
         heightRestriction: params.heightRestriction,
         weightRestriction: params.weightRestriction,
         lengthRestriction: params.lengthRestriction,
-        accessNotes:      params.accessNotes,
+        vehicleAccessNotes:      params.vehicleAccessNotes,
         assignedTruck:    params.assignedTruck,
         assignedTrailer:  params.assignedTrailer,
         failureAction:    params.failureAction,
@@ -743,27 +731,27 @@ export default function CreateJobPage() {
         assistanceNote:   params.assistanceNote,
         returnDestination: params.returnDestination,
         altAddress:       params.needsAltAddress ? {
-          savedLocationId: params.altSavedLocationId,
-          companyName:     params.altCompanyName,
-          street:          params.altStreet,
-          town:            params.altTown,
-          postcode:        params.altPostcode,
-          country:         params.altCountry,
-          lat:             params.altLat,
-          lng:             params.altLng,
-          unit:            params.altUnit,
-          addressLine2:    params.altAddressLine2,
-          county:          params.altCounty,
-          contactName:     params.altContactName,
-          contactPhone:    params.altContactPhone,
-          contactEmail:    params.altContactEmail,
-          navNotes:        params.altNavNotes,
-          driverNotes:     params.altDriverNotes,
+          savedLocationId:      params.altSavedLocationId,
+          siteName:             params.altSiteName,
+          street:               params.altStreet,
+          town:                 params.altTown,
+          postcode:             params.altPostcode,
+          country:              params.altCountry,
+          lat:                  params.altLat,
+          lng:                  params.altLng,
+          unitName:             params.altUnitName,
+          addressLine2:         params.altAddressLine2,
+          countyRegion:         params.altCountyRegion,
+          contactName:          params.altContactName,
+          contactPhone:         params.altContactPhone,
+          contactEmail:         params.altContactEmail,
+          navigationInstructions: params.altNavigationInstructions,
+          instructions:         params.altInstructions,
         } : null,
       };
       const patchBody = {
         name:               templateName.trim(),
-        defaultMaterialType: params.materialDesc,
+        defaultMaterialType: params.materialType,
         defaultStops:       stopData,
         defaultJobData,
       };
@@ -783,7 +771,7 @@ export default function CreateJobPage() {
 
   // ── Auto-save indicator (localStorage snapshot every 30 s) ────────────────
   useEffect(() => {
-    const started = customerName || serviceType || stops[0].siteName || materialDesc;
+    const started = customerName || serviceType || stops[0].siteName || materialType;
     if (!started) return;
     const t = setTimeout(() => {
       try {
@@ -802,10 +790,10 @@ export default function CreateJobPage() {
     !contactName.trim()    && "Contact name",
     !contactPhone.trim()   && "Contact phone",
     !stopsComplete         && "Stop addresses / timing",
-    !materialDesc.trim()   && "Goods description",
-    !totalQty.trim()       && "Total quantity",
-    !qtyUnit               && "Unit",
-    !totalWeight.trim()    && "Total weight",
+    !materialType.trim()   && "Goods description",
+    !quantity.trim()       && "Total quantity",
+    !unit                  && "Unit",
+    !weight.trim()         && "Total weight",
     !vehicleComplete       && "Vehicle requirements",
     !sec6Complete          && "Return / failure instruction",
   ].filter(Boolean) as string[];
@@ -821,9 +809,9 @@ export default function CreateJobPage() {
     { pts: 6,  ok: !!contactName.trim() },
     { pts: 6,  ok: !!contactPhone.trim() },
     { pts: 12, ok: stopsComplete },
-    { pts: 6,  ok: !!materialDesc.trim() },
-    { pts: 4,  ok: !!(totalQty.trim() && qtyUnit) },
-    { pts: 4,  ok: !!totalWeight.trim() },
+    { pts: 6,  ok: !!materialType.trim() },
+    { pts: 4,  ok: !!(quantity.trim() && unit) },
+    { pts: 4,  ok: !!weight.trim() },
     { pts: 7,  ok: vehicleComplete },
     { pts: 5,  ok: sec6Complete },
   ];
@@ -833,13 +821,13 @@ export default function CreateJobPage() {
     { label: "Contact email",         pts: 2, ok: !!contactEmail.trim() },
     { label: "Stop contacts",         pts: 4, ok: stops.every(s => !!s.contactName.trim()) },
     { label: "Booking references",    pts: 2, ok: stops.some(s => s.bookingRequired && !!s.bookingRef.trim()) },
-    { label: "Driver stop notes",     pts: 2, ok: stops.some(s => !!s.driverNotes.trim()) },
+    { label: "Driver stop notes",     pts: 2, ok: stops.some(s => !!s.instructions.trim()) },
     { label: "Volume / dimensions",   pts: 2, ok: !!(volume.trim() || dimensions.trim()) },
     { label: "Equipment required",    pts: 4, ok: reqEquipment.length > 0 },
     { label: "Driver endorsements",   pts: 4, ok: reqEndorsements.length > 0 },
-    { label: "Trailer types",          pts: 2, ok: !trailerRequired || trailersAllowed.length > 0 },
+    { label: "Trailer types",          pts: 2, ok: !trailerRequired || trailerTypesAllowed.length > 0 },
     { label: "Vehicle restrictions",  pts: 2, ok: !!(heightRestriction.trim() || weightRestriction.trim() || lengthRestriction.trim()) },
-    { label: "Access notes",          pts: 3, ok: !!accessNotes.trim() },
+    { label: "Access notes",          pts: 3, ok: !!vehicleAccessNotes.trim() },
     { label: "Min vehicle size",      pts: 2, ok: !!reqGvwMin },
     { label: "Load notes",            pts: 1, ok: !!loadNotes.trim() },
   ];
@@ -863,11 +851,11 @@ export default function CreateJobPage() {
   function makePayloadParams(saveMode: "draft" | "ready_to_plan"): [CreateJobPayload, "draft" | "ready_to_plan"] {
     const params: CreateJobPayload = {
       stops,
-      qtyUnit,
-      qtyUnitOther,
-      materialDesc,
-      totalQty,
-      totalWeight,
+      unit,
+      unitOther,
+      materialType,
+      quantity,
+      weight,
       volume,
       adrClass,
       loadNotes,
@@ -877,14 +865,14 @@ export default function CreateJobPage() {
       tempControlled,
       tempRange,
       photosRequired,
-      weighbridgeReq,
-      forkliftReq,
-      tailLiftReq,
-      craneReq,
+      weighbridgeRequired,
+      forkliftRequired,
+      tailLiftRequired,
+      craneRequired,
       loadingMethod,
       unloadingMethod,
-      vehicleType,
-      vehicleTypeOther,
+      vehicleClass,
+      vehicleClassOther,
       reqBodyCategory,
       reqGvwMin,
       reqBodyType,
@@ -906,41 +894,38 @@ export default function CreateJobPage() {
       contactPhone,
       contactEmail,
       billingNotes,
-      custInstructions,
+      customerInstructions,
       custRefRequired,
       poRequired,
       assignedTruck,
       assignedTrailer,
-      minSize,
-      trailersAllowed,
-      equipmentReq,
-      driverQuals,
+      trailerTypesAllowed,
       heightRestriction,
       weightRestriction,
       lengthRestriction,
-      accessNotes,
-      podRequired,
+      vehicleAccessNotes,
+      requirePOD,
       failureAction,
       assistancePhone,
       assistanceNote,
       returnDestination,
       needsAltAddress,
       altSavedLocationId,
-      altCompanyName,
+      altSiteName,
       altStreet,
       altTown,
       altPostcode,
       altCountry,
       altLat,
       altLng,
-      altUnit,
+      altUnitName,
       altAddressLine2,
-      altCounty,
+      altCountyRegion,
       altContactName,
       altContactPhone,
       altContactEmail,
-      altNavNotes,
-      altDriverNotes,
+      altNavigationInstructions,
+      altInstructions,
       isEditMode,
       saveAsTemplate,
       templateName,
@@ -1314,7 +1299,7 @@ export default function CreateJobPage() {
                 <div>
                   <FieldLabel>Customer-Specific Instructions</FieldLabel>
                   <textarea className="input min-h-16 resize-none" placeholder="e.g. Always call 30 min before arrival, do not use rear entrance…"
-                    value={custInstructions} onChange={e => setCustInstructions(e.target.value)} />
+                    value={customerInstructions} onChange={e => setCustomerInstructions(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
@@ -1366,7 +1351,7 @@ export default function CreateJobPage() {
         <div className="card overflow-hidden">
           <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active
             collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
-            summary={[materialDesc, totalWeight ? totalWeight + "t" : ""].filter(Boolean).join(" · ")}
+            summary={[materialType, weight ? weight + "t" : ""].filter(Boolean).join(" · ")}
             complete={loadComplete} started={sec4Started} />
           {!sec4Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
 
@@ -1374,7 +1359,7 @@ export default function CreateJobPage() {
             <div>
               <FieldLabel required>Goods / Material Description</FieldLabel>
               <input type="text" className="input" placeholder="e.g. Construction aggregate, frozen poultry, retail fixtures"
-                value={materialDesc} onChange={e => setMaterialDesc(e.target.value)} />
+                value={materialType} onChange={e => setMaterialType(e.target.value)} />
             </div>
 
             {/* Qty + unit */}
@@ -1382,21 +1367,21 @@ export default function CreateJobPage() {
               <div>
                 <FieldLabel required>Total Quantity</FieldLabel>
                 <input type="text" inputMode="decimal" className="input" placeholder="e.g. 24"
-                  value={totalQty} onChange={e => setTotalQty(e.target.value)} />
+                  value={quantity} onChange={e => setQuantity(e.target.value)} />
               </div>
               <div>
                 <FieldLabel required>Unit</FieldLabel>
-                <select className="input" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)}>
+                <select className="input" value={unit} onChange={e => setUnit(e.target.value)}>
                   <option value="">— Select unit —</option>
                   {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
             </div>
-            {qtyUnit === "other" && (
+            {unit === "other" && (
               <div>
                 <FieldLabel required>Unit Description</FieldLabel>
                 <input type="text" className="input" placeholder="e.g. Rolls, coils, drums…"
-                  value={qtyUnitOther} onChange={e => setQtyUnitOther(e.target.value)} />
+                  value={unitOther} onChange={e => setUnitOther(e.target.value)} />
               </div>
             )}
 
@@ -1405,14 +1390,14 @@ export default function CreateJobPage() {
               <FieldLabel required>Total Weight / Estimated Weight</FieldLabel>
               <div className="relative">
                 <input type="text" inputMode="decimal" className="input pr-12" placeholder="e.g. 24.0"
-                  value={totalWeight} onChange={e => setTotalWeight(e.target.value)} />
+                  value={weight} onChange={e => setWeight(e.target.value)} />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">tonnes</span>
               </div>
             </div>
 
             {/* POD required */}
             <div>
-              <Toggle value={podRequired} onChange={setPodRequired} label="Proof of delivery required" />
+              <Toggle value={requirePOD} onChange={setRequirePOD} label="Proof of delivery required" />
               <p className="text-xs text-muted mt-1.5">Driver must confirm delivery and capture POD before completing the job</p>
             </div>
 
@@ -1474,9 +1459,9 @@ export default function CreateJobPage() {
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling Equipment Required</div>
                   <div className="space-y-3">
-                    <Toggle value={forkliftReq} onChange={setForkliftReq} label="Forklift required" />
-                    <Toggle value={tailLiftReq} onChange={setTailLiftReq} label="Tail lift required" />
-                    <Toggle value={craneReq}    onChange={setCraneReq}    label="Crane required" />
+                    <Toggle value={forkliftRequired} onChange={setForkliftRequired} label="Forklift required" />
+                    <Toggle value={tailLiftRequired} onChange={setTailLiftRequired} label="Tail lift required" />
+                    <Toggle value={craneRequired}    onChange={setCraneRequired}    label="Crane required" />
                   </div>
                 </div>
 
@@ -1511,7 +1496,7 @@ export default function CreateJobPage() {
                         value={loadNotes} onChange={e => setLoadNotes(e.target.value)} />
                     </div>
                     <Toggle value={photosRequired}  onChange={setPhotosRequired}  label="Photos / documents required" />
-                    <Toggle value={weighbridgeReq}  onChange={setWeighbridgeReq}  label="Weighbridge ticket required" />
+                    <Toggle value={weighbridgeRequired}  onChange={setWeighbridgeRequired}  label="Weighbridge ticket required" />
                   </div>
                 </div>
 
@@ -1541,8 +1526,8 @@ export default function CreateJobPage() {
                   <button key={key} type="button" onClick={() => {
                       const next = key as BodyCategory;
                       setReqBodyCategory(next);
-                      setVehicleType(key);
-                      if (!bodyCategoryNeedsTrailer(next)) setTrailersAllowed([]);
+                      setVehicleClass(key);
+                      if (!bodyCategoryNeedsTrailer(next)) setTrailerTypesAllowed([]);
                     }}
                     className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
                       (reqBodyCategory === key
@@ -1592,18 +1577,18 @@ export default function CreateJobPage() {
                   <div className="flex flex-wrap gap-2 mt-1">
                     {trailerBodyTypeOpts.map(([key, label]) => (
                       <button key={key} type="button"
-                        onClick={() => setTrailersAllowed(prev =>
+                        onClick={() => setTrailerTypesAllowed(prev =>
                           prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]
                         )}
                         className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                          (trailersAllowed.includes(key)
+                          (trailerTypesAllowed.includes(key)
                             ? "bg-blue-700 text-white border-blue-700"
                             : "bg-white text-muted border-border hover:border-blue-400")}>
                         {label}
                       </button>
                     ))}
                   </div>
-                  {trailersAllowed.length === 0 && (
+                  {trailerTypesAllowed.length === 0 && (
                     <p className="mt-1.5 text-xs text-red-500">Select at least one trailer type</p>
                   )}
                 </div>
@@ -1715,7 +1700,7 @@ export default function CreateJobPage() {
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Access / Vehicle Notes</div>
                   <textarea className="input min-h-16 resize-none"
                     placeholder="e.g. Tight access — no artic. Residential road. Low bridge at 3.8m on approach."
-                    value={accessNotes} onChange={e => setAccessNotes(e.target.value)} />
+                    value={vehicleAccessNotes} onChange={e => setVehicleAccessNotes(e.target.value)} />
                 </div>
 
               </div>
@@ -1812,12 +1797,12 @@ export default function CreateJobPage() {
                     onSelect={loc => {
                       setAltSavedLocationId(loc.id);
                       setAltLocationQuery(loc.name);
-                      setAltCompanyName(loc.siteName || loc.name);
+                      setAltSiteName(loc.siteName || loc.name);
                       setAltStreet(loc.street);
                       setAltTown(loc.town);
                       setAltPostcode(loc.postcode);
-                      setAltLat(loc.latitude != null ? String(loc.latitude) : "");
-                      setAltLng(loc.longitude != null ? String(loc.longitude) : "");
+                      setAltLat(loc.lat != null ? String(loc.lat) : "");
+                      setAltLng(loc.lng != null ? String(loc.lng) : "");
                       setAltContactName(loc.contactName || "");
                       setAltContactPhone(loc.contactPhone || "");
                     }}
@@ -1832,7 +1817,7 @@ export default function CreateJobPage() {
                   <div className="col-span-2">
                     <FieldLabel required>Company / Site Name</FieldLabel>
                     <input type="text" className="input" placeholder="e.g. Acme Logistics Ltd"
-                      value={altCompanyName} onChange={e => setAltCompanyName(e.target.value)} />
+                      value={altSiteName} onChange={e => setAltSiteName(e.target.value)} />
                   </div>
                   <div className="col-span-2">
                     <FieldLabel required>Street / Address Line 1</FieldLabel>
@@ -1875,7 +1860,7 @@ export default function CreateJobPage() {
                   <div>
                     <FieldLabel>Unit / Building</FieldLabel>
                     <input type="text" className="input" placeholder="e.g. Unit 4B"
-                      value={altUnit} onChange={e => setAltUnit(e.target.value)} />
+                      value={altUnitName} onChange={e => setAltUnitName(e.target.value)} />
                   </div>
                   <div>
                     <FieldLabel>Address Line 2</FieldLabel>
@@ -1885,7 +1870,7 @@ export default function CreateJobPage() {
                   <div>
                     <FieldLabel>County / Region</FieldLabel>
                     <input type="text" className="input" placeholder="e.g. Exampleshire"
-                      value={altCounty} onChange={e => setAltCounty(e.target.value)} />
+                      value={altCountyRegion} onChange={e => setAltCountyRegion(e.target.value)} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1908,13 +1893,13 @@ export default function CreateJobPage() {
                     <FieldLabel>Navigation Instructions</FieldLabel>
                     <textarea className="input min-h-16 resize-none"
                       placeholder="e.g. Enter via rear gate on Example Lane"
-                      value={altNavNotes} onChange={e => setAltNavNotes(e.target.value)} />
+                      value={altNavigationInstructions} onChange={e => setAltNavigationInstructions(e.target.value)} />
                   </div>
                   <div>
                     <FieldLabel>Driver Notes</FieldLabel>
                     <textarea className="input min-h-16 resize-none"
                       placeholder="e.g. Call ahead 30 mins before arrival"
-                      value={altDriverNotes} onChange={e => setAltDriverNotes(e.target.value)} />
+                      value={altInstructions} onChange={e => setAltInstructions(e.target.value)} />
                   </div>
                 </div>}
               </div>

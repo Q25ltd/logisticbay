@@ -615,7 +615,7 @@ Stored in `JobRequest.requesterData` (Json column, default `{}`).
 | contactName | String | Yes | Free text | Full name of the person submitting the request |
 | contactPhone | String | Yes | Phone string | Phone number for the submitting contact |
 | contactEmail | String | Yes | Email string | Email address for the submitting contact |
-| customerReference | String? | No | Free text | Customer's own internal reference / order number for the job |
+| customerRef | String? | No | Free text | Customer's own internal reference / order number for the job |
 
 ---
 
@@ -627,29 +627,29 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 |---|---|---|---|---|
 | type | String | Yes | `collection` \| `delivery` \| `reload` \| `return` \| `waypoint` \| `other` | Category of this stop |
 | sequence | Number | Yes | Positive integer | 1-based position of the stop in the route |
-| companySiteName | String | Yes | Free text | Name of the company or site at this address |
-| addressLine1 | String | Yes | Free text | First line of the street address |
+| siteName | String | Yes | Free text | Name of the company or site at this address |
+| street | String | Yes | Free text | First line of the street address |
 | addressLine2 | String? | No | Free text | Second line of the address (unit, building, etc.) |
-| townCity | String | Yes | Free text | Town or city |
+| town | String | Yes | Free text | Town or city |
 | countyRegion | String? | No | Free text | County or region |
 | postcode | String | Yes | Postcode string | Royal Mail postcode |
 | country | String? | No | Free text, default `UK` | Country |
-| entranceLatitude | Number | Yes | Decimal degrees | Latitude of the exact truck entrance / gate |
-| entranceLongitude | Number | Yes | Decimal degrees | Longitude of the exact truck entrance / gate |
-| entranceInstructions | String | Yes | Free text | Gate codes, barrier procedures, which entrance to use |
+| lat | Number | Yes | Decimal degrees | Latitude of the exact truck entrance / gate |
+| lng | Number | Yes | Decimal degrees | Longitude of the exact truck entrance / gate |
+| navigationInstructions | String | Yes | Free text | Gate codes, barrier procedures, which entrance to use |
 | referenceNumber | String? | Required for `collection` and `delivery` | Free text | Warehouse release number (collection) or goods-in booking number (delivery) |
 | contactName | String? | No | Free text | On-site contact person |
 | contactPhone | String? | No | Phone string | On-site contact phone number |
 | contactEmail | String? | No | Email string | On-site contact email address |
 | bookingRequired | Boolean? | No | `true` \| `false` | Whether advance booking is required before the driver arrives |
-| bookingReference | String? | No | Free text | Pre-arranged booking reference number |
+| bookingRef | String? | No | Free text | Pre-arranged booking reference number |
 | openingHours | String? | No | Free text (e.g. `Mon–Fri 06:00–18:00`) | Site opening hours |
 | siteRestrictions | String[]? | No | Free text array | Legacy field for site restrictions (use accessRequirements in new submissions) |
 | date | String | Yes | `YYYY-MM-DD` | Date of the collection or delivery |
 | earliestArrivalTime | String | Yes | `HH:MM` | Earliest acceptable arrival time |
 | latestArrivalTime | String | Yes | `HH:MM` | Latest acceptable arrival time |
-| exactAppointmentTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
-| estimatedServiceTimeMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
+| bookedTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
+| unloadingAllowanceMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
 | handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `crane` \| `handball` \| `side_loading` \| `drive_on` \| `drive_off` \| `tail_lift_required` \| `tipper_loading` \| `tipper_unloading` \| `other` | Methods used to load or unload the vehicle at this stop |
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
 | accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints the driver needs to know |
@@ -834,21 +834,21 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **1 — Your details** | Contact name | `JobRequest.requesterData.contactName` (also denormalised to `JobRequest.contactName`) |
 | **1 — Your details** | Contact phone | `JobRequest.requesterData.contactPhone` (also denormalised to `JobRequest.contactPhone`) |
 | **1 — Your details** | Contact email | `JobRequest.requesterData.contactEmail` (also denormalised to `JobRequest.contactEmail`) |
-| **1 — Your details** | Your internal reference / order number | `JobRequest.requesterData.customerReference` |
+| **1 — Your details** | Your internal reference / order number | `JobRequest.requesterData.customerRef` |
 | **2 — Stops (per stop)** | Stop type | `JobRequest.stops[n].type` |
 | **2 — Stops (per stop)** | Collection reference / Delivery reference | `JobRequest.stops[n].referenceNumber` |
-| **2 — Stops (per stop)** | Site name | `JobRequest.stops[n].companySiteName` |
-| **2 — Stops (per stop)** | Address line 1 | `JobRequest.stops[n].addressLine1` |
-| **2 — Stops (per stop)** | Town / city | `JobRequest.stops[n].townCity` |
+| **2 — Stops (per stop)** | Site name | `JobRequest.stops[n].siteName` |
+| **2 — Stops (per stop)** | Address line 1 | `JobRequest.stops[n].street` |
+| **2 — Stops (per stop)** | Town / city | `JobRequest.stops[n].town` |
 | **2 — Stops (per stop)** | Postcode | `JobRequest.stops[n].postcode` |
 | **2 — Stops (per stop)** | Country | `JobRequest.stops[n].country` |
 | **2 — Stops (per stop)** | Collection date / Delivery date | `JobRequest.stops[n].date` |
 | **2 — Stops (per stop)** | Earliest arrival | `JobRequest.stops[n].earliestArrivalTime` |
 | **2 — Stops (per stop)** | Latest arrival | `JobRequest.stops[n].latestArrivalTime` |
-| **2 — Stops (per stop)** | Estimated loading / unloading time | `JobRequest.stops[n].estimatedServiceTimeMinutes` |
-| **2 — Stops (per stop)** | Latitude (entrance pin) | `JobRequest.stops[n].entranceLatitude` |
-| **2 — Stops (per stop)** | Longitude (entrance pin) | `JobRequest.stops[n].entranceLongitude` |
-| **2 — Stops (per stop)** | Entrance instructions | `JobRequest.stops[n].entranceInstructions` |
+| **2 — Stops (per stop)** | Estimated loading / unloading time | `JobRequest.stops[n].unloadingAllowanceMinutes` |
+| **2 — Stops (per stop)** | Latitude (entrance pin) | `JobRequest.stops[n].lat` |
+| **2 — Stops (per stop)** | Longitude (entrance pin) | `JobRequest.stops[n].lng` |
+| **2 — Stops (per stop)** | Entrance instructions | `JobRequest.stops[n].navigationInstructions` |
 | **2 — Stops (per stop)** | How will this be loaded? / unloaded? (handling methods) | `JobRequest.stops[n].handlingMethods[]` |
 | **2 — Stops (per stop)** | Site access requirements | `JobRequest.stops[n].accessRequirements[]` |
 | **2 — Stops (per stop)** | Height restriction value | `JobRequest.stops[n].heightRestrictionValue` |
@@ -862,9 +862,9 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop — optional)** | Site contact phone | `JobRequest.stops[n].contactPhone` |
 | **2 — Stops (per stop — optional)** | Site contact email | `JobRequest.stops[n].contactEmail` |
 | **2 — Stops (per stop — optional)** | Booking required before arrival | `JobRequest.stops[n].bookingRequired` |
-| **2 — Stops (per stop — optional)** | Booking reference | `JobRequest.stops[n].bookingReference` |
+| **2 — Stops (per stop — optional)** | Booking reference | `JobRequest.stops[n].bookingRef` |
 | **2 — Stops (per stop — optional)** | Opening hours | `JobRequest.stops[n].openingHours` |
-| **2 — Stops (per stop — optional)** | Exact appointment time (if any) | `JobRequest.stops[n].exactAppointmentTime` |
+| **2 — Stops (per stop — optional)** | Exact appointment time (if any) | `JobRequest.stops[n].bookedTime` |
 | **2 — Stops (per stop — optional)** | Proof required at this stop | `JobRequest.stops[n].proofRequirements[]` |
 | **2 — Stops (per stop — optional)** | Typical waiting time at this site | `JobRequest.stops[n].typicalWaitingTime` |
 | **3 — Load details** | What are you moving? (goods type) | `JobRequest.loadData.goodsType` |
@@ -918,5 +918,5 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **7 — Notes / Exception policy** | Photos required on rejection | `JobRequest.exceptionPolicyData.photosRequiredOnRejection` |
 | **7 — Notes / Exception policy** | Rejection signature required | `JobRequest.exceptionPolicyData.rejectionSignatureRequired` |
 | **7 — Notes / Exception policy** | Additional rejection / return notes | `JobRequest.exceptionPolicyData.rejectionNotes` |
-| **Server-computed (not on form)** | Entrance distance from postcode | `JobRequest.stops[n].entranceDistanceFromPostcode` |
-| **Server-computed (not on form)** | Entrance warning level | `JobRequest.stops[n].entranceWarningLevel` |
+| **Server-computed (not on form)** | Distance from postcode to entrance pin | `JobRequest.stops[n].entranceDistanceFromPostcode` |
+| **Server-computed (not on form)** | Entrance pin warning level | `JobRequest.stops[n].entranceWarningLevel` |

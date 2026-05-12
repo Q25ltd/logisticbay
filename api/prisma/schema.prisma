@@ -193,12 +193,12 @@ model SavedLocation {
   name              String
   siteName          String   @default("")
   unitName          String   @default("")
-  addressText       String   @default("")
+  locationTextSnapshot String  @default("")
   street            String   @default("")
   town              String   @default("")
   postcode          String   @default("")
-  latitude          Float?
-  longitude         Float?
+  lat               Float?
+  lng               Float?
   gateLat           Float?
   gateLng           Float?
   contactName       String   @default("")

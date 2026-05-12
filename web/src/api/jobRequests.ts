@@ -14,29 +14,29 @@ export interface PublicLinkInfo {
 export interface RequestStop {
   type: "collection" | "delivery" | "reload" | "return" | "waypoint" | "other";
   sequence?: number;
-  companySiteName:     string;
-  addressLine1:        string;
+  siteName:            string;
+  street:              string;
   addressLine2?:       string;
-  townCity:            string;
+  town:                string;
   countyRegion?:       string;
   postcode:            string;
   country?:            string;
-  entranceLatitude:    number;
-  entranceLongitude:   number;
-  entranceInstructions: string;
+  lat:                 number;
+  lng:                 number;
+  navigationInstructions: string;
   referenceNumber?:    string;
   contactName?:        string;
   contactPhone?:       string;
   contactEmail?:       string;
   bookingRequired?:    boolean;
-  bookingReference?:   string;
+  bookingRef?:         string;
   openingHours?:       string;
   siteRestrictions?:   string[];
   date:                string;   // YYYY-MM-DD
   earliestArrivalTime: string;   // HH:MM
   latestArrivalTime:   string;   // HH:MM
-  exactAppointmentTime?: string;
-  estimatedServiceTimeMinutes: number;
+  bookedTime?:         string;
+  unloadingAllowanceMinutes: number;
   handlingMethods?:        string[];
   proofRequirements?:      string[];
   accessRequirements?:     string[];
@@ -55,7 +55,7 @@ export interface RequesterData {
   contactName:         string;
   contactPhone:        string;
   contactEmail:        string;
-  customerReference?:  string;
+  customerRef?:        string;
 }
 
 export interface LoadData {

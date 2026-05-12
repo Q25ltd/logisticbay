@@ -19,29 +19,29 @@
  * {
  *   type: "collection" | "delivery" | "reload" | "return" | "waypoint" | "other"
  *   sequence: number
- *   companySiteName: string
- *   addressLine1: string
+ *   siteName: string
+ *   street: string
  *   addressLine2?: string
- *   townCity: string
+ *   town: string
  *   countyRegion?: string
  *   postcode: string
  *   country?: string
- *   entranceLatitude: number
- *   entranceLongitude: number
- *   entranceInstructions: string
+ *   lat: number
+ *   lng: number
+ *   navigationInstructions: string
  *   referenceNumber?: string
  *   contactName?: string
  *   contactPhone?: string
  *   contactEmail?: string
  *   bookingRequired?: boolean
- *   bookingReference?: string
+ *   bookingRef?: string
  *   openingHours?: string
  *   siteRestrictions?: string[]
  *   date: string               // YYYY-MM-DD
  *   earliestArrivalTime: string  // HH:MM
  *   latestArrivalTime: string    // HH:MM
- *   exactAppointmentTime?: string
- *   estimatedServiceTimeMinutes: number
+ *   bookedTime?: string
+ *   unloadingAllowanceMinutes: number
  *   handlingMethods?: string[]
  *   proofRequirements?: string[]
  *   accessRequirements?: string[]
@@ -102,29 +102,29 @@ async function resolveLink(prisma: PrismaClient, rawToken: string) {
 interface StopBlob {
   type: string;
   sequence?: number;
-  companySiteName?: string;
-  addressLine1?: string;
+  siteName?: string;
+  street?: string;
   addressLine2?: string;
-  townCity?: string;
+  town?: string;
   countyRegion?: string;
   postcode?: string;
   country?: string;
-  entranceLatitude?: number;
-  entranceLongitude?: number;
-  entranceInstructions?: string;
+  lat?: number;
+  lng?: number;
+  navigationInstructions?: string;
   referenceNumber?: string;
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
   bookingRequired?: boolean;
-  bookingReference?: string;
+  bookingRef?: string;
   openingHours?: string;
   siteRestrictions?: string[];
   date?: string;
   earliestArrivalTime?: string;
   latestArrivalTime?: string;
-  exactAppointmentTime?: string;
-  estimatedServiceTimeMinutes?: number;
+  bookedTime?: string;
+  unloadingAllowanceMinutes?: number;
   handlingMethods?: string[];
   proofRequirements?: string[];
   accessRequirements?: string[];
@@ -213,7 +213,7 @@ interface RequesterBlob {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
-  customerReference?: string;
+  customerRef?: string;
 }
 
 interface PublicRequestBody {
@@ -236,19 +236,18 @@ interface InternalRequestBody extends PublicRequestBody {
 function validateStop(s: StopBlob, idx: number, total: number): string[] {
   const e: string[] = [];
   const suf = total > 1 ? ` (stop ${idx + 1})` : "";
-  if (!s.companySiteName?.trim())       e.push(`Site name is required${suf}`);
-  if (!s.addressLine1?.trim())          e.push(`Address is required${suf}`);
-  if (!s.townCity?.trim())              e.push(`Town/city is required${suf}`);
-  if (!s.postcode?.trim())              e.push(`Postcode is required${suf}`);
-  if (s.entranceLatitude == null || s.entranceLongitude == null)
-                                        e.push(`Exact entrance pin is required${suf}`);
-  if (!s.entranceInstructions?.trim())  e.push(`Entrance instructions are required${suf}`);
-  if (!s.date?.trim())                  e.push(`Date is required${suf}`);
-  if (!s.earliestArrivalTime?.trim())   e.push(`Earliest arrival time is required${suf}`);
-  if (!s.latestArrivalTime?.trim())     e.push(`Latest arrival time is required${suf}`);
-  if (!s.estimatedServiceTimeMinutes)   e.push(`Estimated service time is required${suf}`);
+  if (!s.siteName?.trim())                e.push(`Site name is required${suf}`);
+  if (!s.street?.trim())                  e.push(`Address is required${suf}`);
+  if (!s.town?.trim())                    e.push(`Town/city is required${suf}`);
+  if (!s.postcode?.trim())                e.push(`Postcode is required${suf}`);
+  if (s.lat == null || s.lng == null)     e.push(`Exact entrance pin is required${suf}`);
+  if (!s.navigationInstructions?.trim())  e.push(`Entrance instructions are required${suf}`);
+  if (!s.date?.trim())                    e.push(`Date is required${suf}`);
+  if (!s.earliestArrivalTime?.trim())     e.push(`Earliest arrival time is required${suf}`);
+  if (!s.latestArrivalTime?.trim())       e.push(`Latest arrival time is required${suf}`);
+  if (!s.unloadingAllowanceMinutes)       e.push(`Estimated service time is required${suf}`);
   if ((s.type === "collection" || s.type === "delivery") && !s.referenceNumber?.trim())
-                                        e.push(`Reference number is required${suf}`);
+                                          e.push(`Reference number is required${suf}`);
   return e;
 }
 
@@ -311,8 +310,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       // Entrance distance check per stop (non-blocking)
       const stopsWithWarnings = await Promise.all(
         (body.stops ?? []).map(async (s, i) => {
-          const dist = s.postcode && s.entranceLatitude != null && s.entranceLongitude != null
-            ? await checkEntranceDistance(s.postcode, s.entranceLatitude, s.entranceLongitude)
+          const dist = s.postcode && s.lat != null && s.lng != null
+            ? await checkEntranceDistance(s.postcode, s.lat, s.lng)
             : { distanceMiles: null, warningLevel: "ok" as const };
           return { ...s, sequence: i + 1, entranceDistanceFromPostcode: dist.distanceMiles, entranceWarningLevel: dist.warningLevel };
         })
@@ -355,7 +354,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       // Build non-blocking warnings
       const warnings: string[] = [];
       stopsWithWarnings.forEach((s, i) => {
-        const suf = stopsWithWarnings.length > 1 ? ` (stop ${i + 1} — ${s.companySiteName ?? ""})` : "";
+        const suf = stopsWithWarnings.length > 1 ? ` (stop ${i + 1} — ${s.siteName ?? ""})` : "";
         if (s.entranceWarningLevel === "danger") warnings.push(`Entrance pin is far from the postcode — please verify it is the correct gate${suf}.`);
         else if (s.entranceWarningLevel === "warn") warnings.push(`Entrance pin is more than 1 mile from the postcode — please check it is the correct entrance${suf}.`);
       });
@@ -503,8 +502,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             status:            "pending",
             validationStatus:  "ready_for_planner",
             serviceType:       "delivery",
-            pickupTextSnapshot:  `${firstCollect.companySiteName}, ${firstCollect.addressLine1}, ${firstCollect.townCity} ${firstCollect.postcode}`,
-            dropoffTextSnapshot: `${lastDeliver.companySiteName},  ${lastDeliver.addressLine1},  ${lastDeliver.townCity} ${lastDeliver.postcode}`,
+            pickupTextSnapshot:  `${firstCollect.siteName}, ${firstCollect.street}, ${firstCollect.town} ${firstCollect.postcode}`,
+            dropoffTextSnapshot: `${lastDeliver.siteName}, ${lastDeliver.street}, ${lastDeliver.town} ${lastDeliver.postcode}`,
             purchaseOrderNumber: (billing?.purchaseOrderNumber ?? ""),
             customerRef:         (billing?.billingReference    ?? ""),
             plannerNotes:        req.body.plannerNotes ?? "",
@@ -534,29 +533,29 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
               jobId:          job.id,
               sequenceNumber: i + 1,
               type:           s.type === "collection" ? "collection" : "delivery",
-              siteName:       s.companySiteName       ?? "",
-              street:         s.addressLine1          ?? "",
+              siteName:       s.siteName              ?? "",
+              street:         s.street                ?? "",
               addressLine2:   s.addressLine2          ?? "",
-              town:           s.townCity              ?? "",
+              town:           s.town                  ?? "",
               countyRegion:   s.countyRegion          ?? "",
               postcode:       s.postcode              ?? "",
               country:        s.country               ?? "United Kingdom",
-              locationTextSnapshot: `${s.companySiteName}, ${s.addressLine1}, ${s.townCity} ${s.postcode}`,
-              lat:            s.entranceLatitude      ?? null,
-              lng:            s.entranceLongitude     ?? null,
-              navigationInstructions: s.entranceInstructions ?? "",
+              locationTextSnapshot: `${s.siteName}, ${s.street}, ${s.town} ${s.postcode}`,
+              lat:            s.lat                   ?? null,
+              lng:            s.lng                   ?? null,
+              navigationInstructions: s.navigationInstructions ?? "",
               contactName:    s.contactName           ?? "",
               contactPhone:   s.contactPhone          ?? "",
               contactEmail:   s.contactEmail          ?? "",
               bookingRequired: s.bookingRequired      ?? false,
-              bookingRef:     s.bookingReference      ?? "",
+              bookingRef:     s.bookingRef            ?? "",
               openingHours:   s.openingHours          ?? "",
               referenceNumber: s.referenceNumber      ?? "",
               timeWindowStart: s.date && s.earliestArrivalTime
                 ? new Date(`${s.date}T${s.earliestArrivalTime}:00`) : null,
               timeWindowEnd: s.date && s.latestArrivalTime
                 ? new Date(`${s.date}T${s.latestArrivalTime}:00`) : null,
-              unloadingAllowanceMinutes: s.estimatedServiceTimeMinutes ?? 30,
+              unloadingAllowanceMinutes: s.unloadingAllowanceMinutes ?? 30,
             },
           });
         }

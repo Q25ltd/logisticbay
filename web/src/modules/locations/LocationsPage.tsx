@@ -10,7 +10,7 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
     name: "",
     siteName: "",
     unitName: "",
-    addressText: "",
+    locationTextSnapshot: "",
     street: "",
     town: "",
     postcode: "",
@@ -18,8 +18,8 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
     contactPhone: "",
     instructions: "",
     notes: "",
-    latitude: "",
-    longitude: "",
+    lat: "",
+    lng: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setTriedSave(true);
-    if (!form.latitude.trim() || !form.longitude.trim()) {
+    if (!form.lat.trim() || !form.lng.trim()) {
       setError("Latitude and Longitude are required — all job stops need GPS coordinates.");
       return;
     }
@@ -38,8 +38,8 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
     try {
       await jobsApi.createLocation({
         ...form,
-        latitude:  Number(form.latitude),
-        longitude: Number(form.longitude),
+        lat: Number(form.lat),
+        lng: Number(form.lng),
       });
       onSave();
     }
@@ -57,7 +57,7 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
         <Input label="Unit / building" value={form.unitName} onChange={set("unitName")} placeholder="Unit 4 / Gatehouse" />
       </div>
 
-      <Input label="Address / saved location *" value={form.addressText} onChange={set("addressText")} placeholder="15 Arden Place, Luton" required />
+      <Input label="Address / saved location *" value={form.locationTextSnapshot} onChange={set("locationTextSnapshot")} placeholder="15 Arden Place, Luton" required />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Input label="Street / address line 1" value={form.street} onChange={set("street")} placeholder="15 Arden Place" />
@@ -74,24 +74,24 @@ function LocationForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =
         <div>
           <Input
             label="Latitude *"
-            value={form.latitude}
-            onChange={set("latitude")}
+            value={form.lat}
+            onChange={set("lat")}
             placeholder="51.8787"
-            className={triedSave && !form.latitude.trim() ? "border-red-400 bg-red-50" : ""}
+            className={triedSave && !form.lat.trim() ? "border-red-400 bg-red-50" : ""}
           />
-          {triedSave && !form.latitude.trim() && (
+          {triedSave && !form.lat.trim() && (
             <p className="text-xs text-red-500 mt-1">Required — job stops need GPS coordinates</p>
           )}
         </div>
         <div>
           <Input
             label="Longitude *"
-            value={form.longitude}
-            onChange={set("longitude")}
+            value={form.lng}
+            onChange={set("lng")}
             placeholder="-0.4200"
-            className={triedSave && !form.longitude.trim() ? "border-red-400 bg-red-50" : ""}
+            className={triedSave && !form.lng.trim() ? "border-red-400 bg-red-50" : ""}
           />
-          {triedSave && !form.longitude.trim() && (
+          {triedSave && !form.lng.trim() && (
             <p className="text-xs text-red-500 mt-1">Required — job stops need GPS coordinates</p>
           )}
         </div>
@@ -137,7 +137,7 @@ export default function LocationsPage() {
   const filtered = locations.filter(l =>
     !search ||
     l.name.toLowerCase().includes(search.toLowerCase()) ||
-    l.addressText.toLowerCase().includes(search.toLowerCase()) ||
+    l.locationTextSnapshot.toLowerCase().includes(search.toLowerCase()) ||
     l.postcode.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -181,7 +181,7 @@ export default function LocationsPage() {
               <div className="font-bold text-primary mb-1">{loc.name}</div>
               {loc.siteName && <div className="text-sm font-medium text-muted mb-2">{loc.siteName}</div>}
               <div className="text-sm text-muted space-y-1">
-                <div>📍 {loc.addressText}</div>
+                <div>📍 {loc.locationTextSnapshot}</div>
                 {(loc.street || loc.town) && (
                   <div className="text-xs">{[loc.street, loc.town].filter(Boolean).join(", ")}</div>
                 )}

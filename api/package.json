@@ -12,6 +12,8 @@
     "studio:local": "prisma studio",
     "generate": "prisma generate",
     "backfill:vocab": "tsx scripts/backfill_vocab_v1.ts",
+    "backfill:stops-v2": "tsx scripts/backfill_stops_v2.ts",
+    "backfill:job-stop-type": "tsx scripts/backfill_job_stop_type.ts",
     "test": "node --import tsx/esm --test --test-force-exit src/tests/*.test.ts"
   },
   "keywords": [],

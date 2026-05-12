@@ -126,44 +126,44 @@ export interface CreateLocationBody {
   name:                  string;
   siteName?:             string;
   unitName?:             string;
-  addressText?:          string;
-  locationTextSnapshot?: string; // mobile compat alias for addressText
+  locationTextSnapshot?: string;
+  addressText?:          string; // legacy alias
   street?:               string;
   town?:                 string;
   postcode?:             string;
-  latitude?:             number | null;
-  longitude?:            number | null;
-  lat?:                  number | null; // mobile compat alias for latitude
-  lng?:                  number | null; // mobile compat alias for longitude
+  lat?:                  number | null;
+  lng?:                  number | null;
+  latitude?:             number | null; // legacy alias
+  longitude?:            number | null; // legacy alias
   gateLat?:              number | null;
   gateLng?:              number | null;
   contactName?:          string;
   contactPhone?:         string;
   instructions?:         string;
   internalNotes?:        string;
-  notes?:                string; // mobile compat alias for internalNotes
+  notes?:                string; // legacy alias for internalNotes
 }
 
 export interface PatchLocationBody {
   name?:                 string;
   siteName?:             string;
   unitName?:             string;
-  addressText?:          string;
-  locationTextSnapshot?: string; // mobile compat alias for addressText
+  locationTextSnapshot?: string;
+  addressText?:          string; // legacy alias
   street?:               string;
   town?:                 string;
   postcode?:             string;
-  latitude?:             number | null;
-  longitude?:            number | null;
-  lat?:                  number | null; // mobile compat alias for latitude
-  lng?:                  number | null; // mobile compat alias for longitude
+  lat?:                  number | null;
+  lng?:                  number | null;
+  latitude?:             number | null; // legacy alias
+  longitude?:            number | null; // legacy alias
   gateLat?:              number | null;
   gateLng?:              number | null;
   contactName?:          string;
   contactPhone?:         string;
   instructions?:         string;
   internalNotes?:        string;
-  notes?:                string; // mobile compat alias for internalNotes
+  notes?:                string; // legacy alias for internalNotes
 }
 
 // ── Job templates ─────────────────────────────────────────────────────────────

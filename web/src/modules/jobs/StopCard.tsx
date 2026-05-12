@@ -21,7 +21,7 @@ export function LocationSearch({ value, linkedId, locations, onSelect, onClear }
   const q = value.toLowerCase().trim();
   const filtered = !q ? [] : locations.filter(l =>
     l.name.toLowerCase().includes(q) ||
-    l.addressText.toLowerCase().includes(q) ||
+    l.locationTextSnapshot.toLowerCase().includes(q) ||
     l.town.toLowerCase().includes(q) ||
     l.postcode.toLowerCase().includes(q)
   ).slice(0, 8);
@@ -53,7 +53,7 @@ export function LocationSearch({ value, linkedId, locations, onSelect, onClear }
             <button key={l.id} type="button" onMouseDown={() => { onSelect(l); setOpen(false); }}
               className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors border-b border-border last:border-0">
               <div className="font-semibold text-primary">{l.name}</div>
-              <div className="text-xs text-muted">{[l.addressText || l.street, l.town, l.postcode].filter(Boolean).join(", ")}</div>
+              <div className="text-xs text-muted">{[l.locationTextSnapshot || l.street, l.town, l.postcode].filter(Boolean).join(", ")}</div>
             </button>
           ))}
           <div className="px-4 py-2 text-xs text-muted bg-gray-50 border-t border-border">
@@ -350,22 +350,21 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
       locationQuery:   loc.name,
       savedLocationId: loc.id,
       siteName:        loc.siteName  || loc.name,
-      street:          loc.street    || loc.addressText,
+      street:          loc.street    || loc.locationTextSnapshot,
       town:            loc.town,
       postcode:        loc.postcode,
       country:         "United Kingdom",
-      lat:             loc.latitude  != null ? String(loc.latitude)  : "",
-      lng:             loc.longitude != null ? String(loc.longitude) : "",
-      unitBuilding:    loc.unitName  || "",
+      lat:             loc.lat  != null ? String(loc.lat)  : "",
+      lng:             loc.lng  != null ? String(loc.lng)  : "",
+      unitName:        loc.unitName  || "",
       contactName:     loc.contactName  || "",
       contactPhone:    loc.contactPhone || "",
-      // instructions = access/delivery notes → driver notes field (not opening hours)
-      driverNotes:     loc.instructions || "",
+      instructions:    loc.instructions || "",
       internalNotes:   loc.internalNotes || "",
     });
   }
 
-  const dateLabel = stop.stopType === "collection" ? "Collection Date" : "Delivery Date";
+  const dateLabel = stop.type === "collection" ? "Collection Date" : "Delivery Date";
   const complete  = stopComplete(stop);
 
   return (
@@ -376,12 +375,12 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
         onClick={() => onChange({ collapsed: !stop.collapsed })}>
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-sm font-black text-primary flex-shrink-0">Stop {index + 1}</span>
-          {stop.stopType && (
+          {stop.type && (
             <span className={
               "text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 " +
-              (stop.stopType === "collection" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700")
+              (stop.type === "collection" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700")
             }>
-              {stop.stopType === "collection" ? "Collection" : "Delivery"}
+              {stop.type === "collection" ? "Collection" : "Delivery"}
             </span>
           )}
           {complete && <span className="text-xs text-green-600 font-semibold flex-shrink-0">✓</span>}
@@ -408,10 +407,10 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           <div className="flex gap-3">
             {(["collection", "delivery"] as const).map(t => (
               <button key={t} type="button"
-                onClick={() => onChange({ stopType: t })}
+                onClick={() => onChange({ type: t })}
                 className={
                   "flex-1 py-3 min-h-[48px] rounded-lg border text-sm font-semibold transition-colors " +
-                  (stop.stopType === t
+                  (stop.type === t
                     ? t === "collection"
                       ? "bg-blue-600 text-white border-blue-600"
                       : "bg-green-600 text-white border-green-600"
@@ -441,8 +440,8 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 locationQuery: "", savedLocationId: null,
                 siteName: "", street: "", town: "", postcode: "", country: "United Kingdom",
                 lat: "", lng: "",
-                unitBuilding: "", contactName: "", contactPhone: "",
-                driverNotes: "", internalNotes: "",
+                unitName: "", contactName: "", contactPhone: "",
+                instructions: "", internalNotes: "",
               })}
                 className="text-xs text-muted hover:text-red-500 mt-1 transition-colors">
                 ✕ Clear saved location
@@ -572,7 +571,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 <div>
                   <FieldLabel>Unit / Building</FieldLabel>
                   <input type="text" className="input" placeholder="Unit 4 / Gatehouse"
-                    value={stop.unitBuilding} onChange={set("unitBuilding")} onBlur={setCase("unitBuilding", "address_line")} autoCapitalize="words" />
+                    value={stop.unitName} onChange={set("unitName")} onBlur={setCase("unitName", "address_line")} autoCapitalize="words" />
                 </div>
                 <div>
                   <FieldLabel>Address Line 2</FieldLabel>
@@ -621,7 +620,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 <div>
                   <FieldLabel>Reference Number</FieldLabel>
                   <input type="text" className="input" placeholder="REF-00123"
-                    value={stop.refNumber} onChange={set("refNumber")} />
+                    value={stop.referenceNumber} onChange={set("referenceNumber")} />
                 </div>
                 <div>
                   <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })} label="Booking required" />
@@ -662,7 +661,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                 <div>
                   <FieldLabel>Driver Notes / Instructions</FieldLabel>
                   <textarea className="input min-h-16 resize-none" placeholder="Use gate 3, call ahead 30 min before arrival…"
-                    value={stop.driverNotes} onChange={set("driverNotes")} onBlur={setCase("driverNotes", "sentence")} />
+                    value={stop.instructions} onChange={set("instructions")} onBlur={setCase("instructions", "sentence")} />
                 </div>
                 <div>
                   <FieldLabel>Navigation Instructions</FieldLabel>

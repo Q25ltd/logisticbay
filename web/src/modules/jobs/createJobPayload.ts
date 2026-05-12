@@ -5,11 +5,11 @@ import { toMins } from "./createJobUtils";
 
 export interface CreateJobPayload {
   stops: StopState[];
-  qtyUnit: string;
-  qtyUnitOther: string;
-  materialDesc: string;
-  totalQty: string;
-  totalWeight: string;
+  unit: string;
+  unitOther: string;
+  materialType: string;
+  quantity: string;
+  weight: string;
   volume: string;
   adrClass: string;
   loadNotes: string;
@@ -19,14 +19,14 @@ export interface CreateJobPayload {
   tempControlled: boolean;
   tempRange: string;
   photosRequired: boolean;
-  weighbridgeReq: boolean;
-  forkliftReq: boolean;
-  tailLiftReq: boolean;
-  craneReq: boolean;
+  weighbridgeRequired: boolean;
+  forkliftRequired: boolean;
+  tailLiftRequired: boolean;
+  craneRequired: boolean;
   loadingMethod: string;
   unloadingMethod: string;
-  vehicleType: string;
-  vehicleTypeOther: string;
+  vehicleClass: string;
+  vehicleClassOther: string;
   reqBodyCategory: string;
   reqGvwMin: string;
   reqBodyType: string;
@@ -48,41 +48,38 @@ export interface CreateJobPayload {
   contactPhone: string;
   contactEmail: string;
   billingNotes: string;
-  custInstructions: string;
+  customerInstructions: string;
   custRefRequired: boolean;
   poRequired: boolean;
   assignedTruck: string;
   assignedTrailer: string;
-  minSize: string;
-  trailersAllowed: string[];
-  equipmentReq: string[];
-  driverQuals: string[];
+  trailerTypesAllowed: string[];
   heightRestriction: string;
   weightRestriction: string;
   lengthRestriction: string;
-  accessNotes: string;
-  podRequired: boolean;
+  vehicleAccessNotes: string;
+  requirePOD: boolean;
   failureAction: string;
   assistancePhone: string;
   assistanceNote: string;
   returnDestination: string;
   needsAltAddress: boolean;
   altSavedLocationId: number | null;
-  altCompanyName: string;
+  altSiteName: string;
   altStreet: string;
   altTown: string;
   altPostcode: string;
   altCountry: string;
   altLat: string;
   altLng: string;
-  altUnit: string;
+  altUnitName: string;
   altAddressLine2: string;
-  altCounty: string;
+  altCountyRegion: string;
   altContactName: string;
   altContactPhone: string;
   altContactEmail: string;
-  altNavNotes: string;
-  altDriverNotes: string;
+  altNavigationInstructions: string;
+  altInstructions: string;
   isEditMode: boolean;
   saveAsTemplate: boolean;
   templateName: string;
@@ -93,11 +90,11 @@ export interface CreateJobPayload {
 export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_to_plan"): Record<string, unknown> {
   const {
     stops,
-    qtyUnit,
-    qtyUnitOther,
-    materialDesc,
-    totalQty,
-    totalWeight,
+    unit,
+    unitOther,
+    materialType,
+    quantity,
+    weight,
     volume,
     adrClass,
     loadNotes,
@@ -107,14 +104,14 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     tempControlled,
     tempRange,
     photosRequired,
-    weighbridgeReq,
-    forkliftReq,
-    tailLiftReq,
-    craneReq,
+    weighbridgeRequired,
+    forkliftRequired,
+    tailLiftRequired,
+    craneRequired,
     loadingMethod,
     unloadingMethod,
-    vehicleType,
-    vehicleTypeOther,
+    vehicleClass,
+    vehicleClassOther,
     reqBodyCategory,
     reqGvwMin,
     reqBodyType,
@@ -136,56 +133,52 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     contactPhone,
     contactEmail,
     billingNotes,
-    custInstructions,
+    customerInstructions,
     custRefRequired,
     poRequired,
     assignedTruck,
     assignedTrailer,
-    minSize,
-    trailersAllowed,
-    equipmentReq,
-    driverQuals,
+    trailerTypesAllowed,
     heightRestriction,
     weightRestriction,
     lengthRestriction,
-    accessNotes,
-    podRequired,
+    vehicleAccessNotes,
+    requirePOD,
     failureAction,
     assistancePhone,
     assistanceNote,
     returnDestination,
     needsAltAddress,
     altSavedLocationId,
-    altCompanyName,
+    altSiteName,
     altStreet,
     altTown,
     altPostcode,
     altCountry,
     altLat,
     altLng,
-    altUnit,
+    altUnitName,
     altAddressLine2,
-    altCounty,
+    altCountyRegion,
     altContactName,
     altContactPhone,
     altContactEmail,
-    altNavNotes,
-    altDriverNotes,
+    altNavigationInstructions,
+    altInstructions,
     isEditMode,
     saveAsTemplate,
     templateName,
   } = params;
 
   const mappedStops = stops.map((stop, i) => {
-    const type = stop.stopType === "collection" ? "pickup" : "dropoff";
     const locationTextSnapshot = [stop.siteName, stop.street, stop.town, stop.postcode].filter(Boolean).join(", ");
 
     const base: Record<string, unknown> = {
       sequenceNumber:        i + 1,
-      type,
+      type:                  stop.type,
       savedLocationId:       stop.savedLocationId,
       siteName:              stop.siteName,
-      unitName:              stop.unitBuilding,
+      unitName:              stop.unitName,
       street:                stop.street,
       town:                  stop.town,
       postcode:              stop.postcode,
@@ -198,8 +191,8 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
       contactName:           stop.contactName,
       contactPhone:          stop.contactPhone,
       contactEmail:          stop.contactEmail,
-      referenceNumber:       stop.refNumber,
-      instructions:          stop.driverNotes,
+      referenceNumber:       stop.referenceNumber,
+      instructions:          stop.instructions,
       bookingRequired:       stop.bookingRequired,
       bookingRef:            stop.bookingRef,
       openingHours:          stop.openingHours,
@@ -221,12 +214,12 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     return base;
   });
 
-  const effectiveUnit = qtyUnit === "other" ? qtyUnitOther : qtyUnit;
+  const effectiveUnit = unit === "other" ? unitOther : unit;
   const loadDetails = {
-    materialType:       materialDesc,
-    quantity:           totalQty ? parseFloat(totalQty) : null,
+    materialType,
+    quantity:           quantity ? parseFloat(quantity) : null,
     unit:               effectiveUnit,
-    weight:             totalWeight ? parseFloat(totalWeight) : null,
+    weight:             weight ? parseFloat(weight) : null,
     volume:             volume ? parseFloat(volume) : null,
     hazardClass:        adrClass,
     notes:              loadNotes,
@@ -236,23 +229,23 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     tempControlled,
     tempRange,
     photosRequired,
-    weighbridgeRequired: weighbridgeReq,
-    forkliftRequired:   forkliftReq,
-    tailLiftRequired:   tailLiftReq,
-    craneRequired:      craneReq,
+    weighbridgeRequired,
+    forkliftRequired,
+    tailLiftRequired,
+    craneRequired,
     loadingMethod,
     unloadingMethod,
   };
 
-  const vehicleClassRequired = reqBodyCategory || (vehicleType === "other"
-    ? `other: ${vehicleTypeOther}`.trim()
-    : vehicleType);
+  const vehicleClassRequired = reqBodyCategory || (vehicleClass === "other"
+    ? `other: ${vehicleClassOther}`.trim()
+    : vehicleClass);
 
   return {
     saveMode,
     assignedDriverId:       assignedDriverId ?? undefined,
-    customerId:             customerId,
-    customerName:           customerName,
+    customerId,
+    customerName,
     plannedDate:            plannedDate || undefined,
     serviceType,
     jobType,
@@ -265,7 +258,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     bookingContactPhone:    contactPhone,
     bookingContactEmail:    contactEmail,
     billingNotes,
-    customerInstructions:   custInstructions,
+    customerInstructions,
     custRefRequired,
     poRequired,
     vehicleClassRequired,
@@ -276,36 +269,33 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     reqLicenceClass,
     assignedTruck:          assignedTruck.trim(),
     assignedTrailer:        assignedTrailer.trim(),
-    minVehicleSize:         reqGvwMin || minSize,
-    trailerTypesAllowed:    trailersAllowed,
-    equipmentRequired:      reqEquipment.length ? reqEquipment : equipmentReq,
-    driverQualificationsReq: reqEndorsements.length ? reqEndorsements : driverQuals,
+    trailerTypesAllowed,
     heightRestriction,
     weightRestriction,
     lengthRestriction,
-    vehicleAccessNotes:     accessNotes,
-    requirePOD:             podRequired,
+    vehicleAccessNotes,
+    requirePOD,
     failureAction,
     assistancePhone:        failureAction === "call_assistance" ? assistancePhone : "",
     assistanceNote:         failureAction === "call_assistance" ? assistanceNote  : "",
     returnDestination:      failureAction === "finish_then_return" ? returnDestination : "",
     altAddress: needsAltAddress ? {
-      savedLocationId: altSavedLocationId,
-      companyName:     altCompanyName,
-      street:          altStreet,
-      town:            altTown,
-      postcode:        altPostcode,
-      country:         altCountry,
-      lat:             altLat ? parseFloat(altLat) : null,
-      lng:             altLng ? parseFloat(altLng) : null,
-      unit:            altUnit,
-      addressLine2:    altAddressLine2,
-      county:          altCounty,
-      contactName:     altContactName,
-      contactPhone:    altContactPhone,
-      contactEmail:    altContactEmail,
-      navNotes:        altNavNotes,
-      driverNotes:     altDriverNotes,
+      savedLocationId:      altSavedLocationId,
+      siteName:             altSiteName,
+      street:               altStreet,
+      town:                 altTown,
+      postcode:             altPostcode,
+      country:              altCountry,
+      lat:                  altLat ? parseFloat(altLat) : null,
+      lng:                  altLng ? parseFloat(altLng) : null,
+      unitName:             altUnitName,
+      addressLine2:         altAddressLine2,
+      countyRegion:         altCountyRegion,
+      contactName:          altContactName,
+      contactPhone:         altContactPhone,
+      contactEmail:         altContactEmail,
+      navigationInstructions: altNavigationInstructions,
+      instructions:         altInstructions,
     } : null,
     stops:                  mappedStops,
     loadDetails,

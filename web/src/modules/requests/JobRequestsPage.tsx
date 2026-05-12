@@ -205,13 +205,13 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
             <span>·</span>
             <span>
               {collections.length > 0
-                ? <>{collections[0].companySiteName}{collections.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{collections.length - 1}</span>}</>
-                : firstStop?.companySiteName ?? "?"
+                ? <>{collections[0].siteName}{collections.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{collections.length - 1}</span>}</>
+                : firstStop?.siteName ?? "?"
               }
               {" → "}
               {deliveries.length > 0
-                ? <>{deliveries[deliveries.length - 1].companySiteName}{deliveries.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveries.length - 1}</span>}</>
-                : lastStop?.companySiteName ?? "?"
+                ? <>{deliveries[deliveries.length - 1].siteName}{deliveries.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveries.length - 1}</span>}</>
+                : lastStop?.siteName ?? "?"
               }
             </span>
           </div>
@@ -424,29 +424,29 @@ function StopBlock({ title, stop: s }: { title: string; stop: RequestStop }) {
         </div>
       )}
       <div className="text-xs space-y-0.5 mt-1" style={{ color: "#374151" }}>
-        <div className="font-medium">{s.companySiteName}</div>
-        <div>{s.addressLine1}{s.addressLine2 ? `, ${s.addressLine2}` : ""}, {s.townCity} {s.postcode}</div>
+        <div className="font-medium">{s.siteName}</div>
+        <div>{s.street}{s.addressLine2 ? `, ${s.addressLine2}` : ""}, {s.town} {s.postcode}</div>
         <div className="mt-1">
           {s.date} · {s.earliestArrivalTime}–{s.latestArrivalTime}
-          {s.exactAppointmentTime && <span className="ml-1 font-medium">({s.exactAppointmentTime} exact)</span>}
+          {s.bookedTime && <span className="ml-1 font-medium">({s.bookedTime} exact)</span>}
         </div>
-        {s.estimatedServiceTimeMinutes > 0 && (
-          <div>{s.estimatedServiceTimeMinutes} min est. on-site</div>
+        {s.unloadingAllowanceMinutes > 0 && (
+          <div>{s.unloadingAllowanceMinutes} min est. on-site</div>
         )}
         {s.bookingRequired && (
           <div className="text-amber-700 font-medium">
-            Booking required{s.bookingReference ? ` · ${s.bookingReference}` : ""}
+            Booking required{s.bookingRef ? ` · ${s.bookingRef}` : ""}
           </div>
         )}
-        {s.entranceLatitude != null && (
+        {s.lat != null && (
           <div className="mt-1" style={{ color: warnColor }}>
-            ● Entrance: {s.entranceLatitude.toFixed(5)}, {s.entranceLongitude.toFixed(5)}
+            ● Entrance: {s.lat.toFixed(5)}, {s.lng.toFixed(5)}
             {warnLevel === "warn"   && " ⚠ Pin >1mi from postcode"}
             {warnLevel === "danger" && " ⚠⚠ Pin far from postcode — verify"}
           </div>
         )}
-        {s.entranceInstructions && (
-          <div className="mt-1 italic text-xs" style={{ color: "#6b7280" }}>{s.entranceInstructions}</div>
+        {s.navigationInstructions && (
+          <div className="mt-1 italic text-xs" style={{ color: "#6b7280" }}>{s.navigationInstructions}</div>
         )}
         {s.handlingMethods && s.handlingMethods.length > 0 && (
           <div className="flex gap-1 flex-wrap mt-1">

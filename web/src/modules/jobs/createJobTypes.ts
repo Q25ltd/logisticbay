@@ -4,7 +4,7 @@ export interface StopState {
   id: string;
   collapsed: boolean;
   showOptional: boolean;
-  stopType: "collection" | "delivery";
+  type: "collection" | "delivery";
   locationQuery: string;
   savedLocationId: number | null;
   siteName: string;
@@ -14,7 +14,7 @@ export interface StopState {
   country: string;
   lat: string;
   lng: string;
-  unitBuilding: string;
+  unitName: string;
   addressLine2: string;
   countyRegion: string;
   date: string;
@@ -25,12 +25,12 @@ export interface StopState {
   contactName: string;
   contactPhone: string;
   contactEmail: string;
-  refNumber: string;
+  referenceNumber: string;
   bookingRequired: boolean;
   bookingRef: string;
   openingHours: string;
   locationType: string;
-  driverNotes: string;
+  instructions: string;
   navigationInstructions: string;
   numPallets: string;
   quantity: string;

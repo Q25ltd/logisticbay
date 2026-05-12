@@ -173,14 +173,14 @@ interface StopState {
   collapsed: boolean;
   showOptional: boolean;
   // Required
-  companySiteName: string;
-  addressLine1: string;
-  townCity: string;
+  siteName: string;
+  street: string;
+  town: string;
   postcode: string;
   country: string;
-  entranceLatitude: string;
-  entranceLongitude: string;
-  entranceInstructions: string;
+  lat: string;
+  lng: string;
+  navigationInstructions: string;
   referenceNumber: string;
   date: string;
   earliestArrivalTime: string;
@@ -201,9 +201,9 @@ interface StopState {
   contactPhone: string;
   contactEmail: string;
   bookingRequired: boolean;
-  bookingReference: string;
+  bookingRef: string;
   openingHours: string;
-  exactAppointmentTime: string;
+  bookedTime: string;
   proofRequirements: string[];
   loadReadiness: string;
   typicalWaitingTime: string;
@@ -215,9 +215,9 @@ function uid() { return `s${++_uid}`; }
 function blankStop(type: string): StopState {
   return {
     id: uid(), type, collapsed: false, showOptional: false,
-    companySiteName: "", addressLine1: "", townCity: "", postcode: "",
+    siteName: "", street: "", town: "", postcode: "",
     country: "UK",
-    entranceLatitude: "", entranceLongitude: "", entranceInstructions: "",
+    lat: "", lng: "", navigationInstructions: "",
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "",
@@ -225,8 +225,8 @@ function blankStop(type: string): StopState {
     heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
     unitName: "", addressLine2: "", countyRegion: "",
     contactName: "", contactPhone: "", contactEmail: "",
-    bookingRequired: false, bookingReference: "", openingHours: "",
-    exactAppointmentTime: "",
+    bookingRequired: false, bookingRef: "", openingHours: "",
+    bookedTime: "",
     proofRequirements: [],
     loadReadiness: "",
     typicalWaitingTime: "",
@@ -236,10 +236,10 @@ function blankStop(type: string): StopState {
 function stopComplete(s: StopState): boolean {
   const needsRef = s.type === "collection" || s.type === "delivery";
   return !!(
-    s.companySiteName.trim() && s.addressLine1.trim() &&
-    s.townCity.trim() && s.postcode.trim() && s.country.trim() &&
-    s.entranceLatitude && s.entranceLongitude &&
-    s.entranceInstructions.trim() &&
+    s.siteName.trim() && s.street.trim() &&
+    s.town.trim() && s.postcode.trim() && s.country.trim() &&
+    s.lat && s.lng &&
+    s.navigationInstructions.trim() &&
     s.date && s.earliestArrivalTime && s.latestArrivalTime &&
     s.serviceTime &&
     (!needsRef || s.referenceNumber.trim())
@@ -247,7 +247,7 @@ function stopComplete(s: StopState): boolean {
 }
 
 function stopStarted(s: StopState): boolean {
-  return !!(s.companySiteName || s.addressLine1 || s.referenceNumber);
+  return !!(s.siteName || s.street || s.referenceNumber);
 }
 
 function stopToRequestStop(s: StopState, seq: number): RequestStop {
@@ -255,28 +255,28 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
   return {
     type:           s.type as RequestStop["type"],
     sequence:       seq,
-    companySiteName:     s.companySiteName.trim(),
-    addressLine1:        s.addressLine1.trim(),
+    siteName:            s.siteName.trim(),
+    street:              s.street.trim(),
     addressLine2:        s.addressLine2.trim() || undefined,
-    townCity:            s.townCity.trim(),
+    town:                s.town.trim(),
     countyRegion:        s.countyRegion.trim() || undefined,
     postcode:            s.postcode.trim(),
     country:             s.country.trim() || undefined,
-    entranceLatitude:    parseFloat(s.entranceLatitude),
-    entranceLongitude:   parseFloat(s.entranceLongitude),
-    entranceInstructions: s.entranceInstructions.trim(),
+    lat:                 parseFloat(s.lat),
+    lng:                 parseFloat(s.lng),
+    navigationInstructions: s.navigationInstructions.trim(),
     referenceNumber:     s.referenceNumber.trim() || undefined,
     contactName:         s.contactName.trim()  || undefined,
     contactPhone:        s.contactPhone.trim() || undefined,
     contactEmail:        s.contactEmail.trim() || undefined,
     bookingRequired:     s.bookingRequired || undefined,
-    bookingReference:    s.bookingReference.trim() || undefined,
+    bookingRef:          s.bookingRef.trim() || undefined,
     openingHours:        s.openingHours.trim() || undefined,
     date:                s.date,
     earliestArrivalTime: s.earliestArrivalTime,
     latestArrivalTime:   s.latestArrivalTime,
-    exactAppointmentTime: s.exactAppointmentTime || undefined,
-    estimatedServiceTimeMinutes: svcMin,
+    bookedTime:          s.bookedTime || undefined,
+    unloadingAllowanceMinutes: svcMin,
     handlingMethods:     s.handlingMethods.length ? s.handlingMethods : undefined,
     accessRequirements:  s.accessRequirements.length ? s.accessRequirements : undefined,
     proofRequirements:   s.proofRequirements.length ? s.proofRequirements : undefined,
@@ -369,8 +369,8 @@ function StopCard({
               <span className="text-xs text-muted">#{index + 1}</span>
             )}
           </div>
-          {stop.collapsed && stop.companySiteName
-            ? <p className="text-xs text-accent font-semibold truncate">{stop.companySiteName}{stop.date ? ` · ${stop.date}` : ""}</p>
+          {stop.collapsed && stop.siteName
+            ? <p className="text-xs text-accent font-semibold truncate">{stop.siteName}{stop.date ? ` · ${stop.date}` : ""}</p>
             : stop.collapsed
             ? <p className="text-xs text-muted">Fill in stop details</p>
             : null
@@ -422,17 +422,17 @@ function StopCard({
 
           {/* Site name */}
           <TextField label="Site name" required
-            value={stop.companySiteName} onChange={v => onChange({ companySiteName: v })}
+            value={stop.siteName} onChange={v => onChange({ siteName: v })}
             placeholder="Acme Warehouse — Unit 5" caseRule="proper_name" />
 
           {/* Address */}
           <TextField label="Address line 1" required
-            value={stop.addressLine1} onChange={v => onChange({ addressLine1: v })}
+            value={stop.street} onChange={v => onChange({ street: v })}
             placeholder="Industrial Estate Road" caseRule="proper_name" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
               <TextField label="Town / city" required
-                value={stop.townCity} onChange={v => onChange({ townCity: v })}
+                value={stop.town} onChange={v => onChange({ town: v })}
                 placeholder="Birmingham" caseRule="proper_name" />
             </div>
             <TextField label="Postcode" required
@@ -478,15 +478,15 @@ function StopCard({
                 <FieldLabel>Latitude</FieldLabel>
                 <input className="input font-mono" type="number" step="0.000001"
                   placeholder="e.g. 53.483959"
-                  value={stop.entranceLatitude}
-                  onChange={e => onChange({ entranceLatitude: e.target.value })} />
+                  value={stop.lat}
+                  onChange={e => onChange({ lat: e.target.value })} />
               </div>
               <div>
                 <FieldLabel>Longitude</FieldLabel>
                 <input className="input font-mono" type="number" step="0.000001"
                   placeholder="e.g. -2.244644"
-                  value={stop.entranceLongitude}
-                  onChange={e => onChange({ entranceLongitude: e.target.value })} />
+                  value={stop.lng}
+                  onChange={e => onChange({ lng: e.target.value })} />
               </div>
             </div>
           </div>
@@ -498,8 +498,8 @@ function StopCard({
               placeholder={stop.type === "collection"
                 ? "Enter via Gate B on the left. Intercom code 1234. Ask for goods-in."
                 : "Goods-in via roller shutters at rear. Report to warehouse office first."}
-              value={stop.entranceInstructions}
-              onChange={e => onChange({ entranceInstructions: e.target.value })} />
+              value={stop.navigationInstructions}
+              onChange={e => onChange({ navigationInstructions: e.target.value })} />
             <div className="text-xs text-muted mt-1">Gate code, security procedure, which entrance to use.</div>
           </div>
 
@@ -571,15 +571,15 @@ function StopCard({
               <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
                 label="Booking required before arrival" />
               {stop.bookingRequired && (
-                <TextField label="Booking reference" value={stop.bookingReference}
-                  onChange={v => onChange({ bookingReference: v })} placeholder="BKG-2026-5678" />
+                <TextField label="Booking reference" value={stop.bookingRef}
+                  onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
               )}
               <TextField label="Opening hours" value={stop.openingHours}
                 onChange={v => onChange({ openingHours: v })} placeholder="Mon–Fri 06:00–18:00" />
               <div>
                 <TextField label="Exact appointment time (if any)" type="time"
-                  value={stop.exactAppointmentTime}
-                  onChange={v => onChange({ exactAppointmentTime: v })} />
+                  value={stop.bookedTime}
+                  onChange={v => onChange({ bookedTime: v })} />
                 <div className="text-xs text-muted mt-1">
                   Only if the site gave a fixed appointment. Earliest/latest times are still required.
                 </div>
@@ -636,7 +636,7 @@ export default function PublicRequestForm() {
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [showRequesterOpts, setShowRequesterOpts] = useState(false);
-  const [customerReference, setCustomerReference] = useState("");
+  const [customerRef, setCustomerRef] = useState("");
 
   // ── Sec 2: Stops ──────────────────────────────────────────────────────────
   const [stops, setStops] = useState<StopState[]>([
@@ -659,7 +659,7 @@ export default function PublicRequestForm() {
   const [palletType,           setPalletType]           = useState("");
   const [stackable,            setStackable]            = useState(false);
   const [dimensions,           setDimensions]           = useState("");
-  const [craneReq,             setCraneReq]             = useState(false);
+  const [craneRequired,             setCraneRequired]             = useState(false);
   const [tippingReq,           setTippingReq]           = useState(false);
   const [tempRange,            setTempRange]            = useState("");
   const [tempType,             setTempType]             = useState("");
@@ -698,7 +698,7 @@ export default function PublicRequestForm() {
 
   // ── Sec 7: Notes ─────────────────────────────────────────────────────────
   const [driverChips,         setDriverChips]         = useState<string[]>([]);
-  const [driverNotes,         setDriverNotes]         = useState("");
+  const [driverVisibleNotes,         setDriverVisibleNotes]         = useState("");
   const [showNotesOpts,       setShowNotesOpts]       = useState(false);
   const [safetyNotes,         setSafetyNotes]         = useState("");
   const [customerNotes,       setCustomerNotes]       = useState("");
@@ -771,7 +771,7 @@ export default function PublicRequestForm() {
         contactName:         contactName.trim(),
         contactPhone:        contactPhone.trim(),
         contactEmail:        contactEmail.trim(),
-        customerReference:   customerReference.trim() || undefined,
+        customerRef:         customerRef.trim() || undefined,
       },
       stops: stops.map((s, i) => stopToRequestStop(s, i + 1)),
       loadData: {
@@ -784,7 +784,7 @@ export default function PublicRequestForm() {
         palletType:       palletType   || undefined,
         stackable:        stackable    || undefined,
         dimensions:       dimensions.trim()   || undefined,
-        craneRequired:    craneReq     || undefined,
+        craneRequired:    craneRequired     || undefined,
         tippingRequired:  tippingReq   || undefined,
         temperatureRange: tempRange.trim() || undefined,
         chilledFrozenAmbient: tempType || undefined,
@@ -820,9 +820,9 @@ export default function PublicRequestForm() {
         vatRegistered:       vatRegistered     || undefined,
         vatNumber:           vatNumber.trim()  || undefined,
       },
-      notesData: (driverChips.length || driverNotes.trim() || safetyNotes.trim() || customerNotes.trim()) ? {
+      notesData: (driverChips.length || driverVisibleNotes.trim() || safetyNotes.trim() || customerNotes.trim()) ? {
         driverNoteChips:    driverChips.length ? driverChips : undefined,
-        driverVisibleNotes: driverNotes.trim()   || undefined,
+        driverVisibleNotes: driverVisibleNotes.trim()   || undefined,
         safetyInstructions: safetyNotes.trim()   || undefined,
         customerNotes:      customerNotes.trim() || undefined,
       } : undefined,
@@ -940,8 +940,8 @@ export default function PublicRequestForm() {
                 label="customer reference" />
               {showRequesterOpts && (
                 <div className="border-l-2 border-blue-100 pl-4">
-                  <TextField label="Your internal reference / order number" value={customerReference}
-                    onChange={setCustomerReference} placeholder="ORD-2026-1234"
+                  <TextField label="Your internal reference / order number" value={customerRef}
+                    onChange={setCustomerRef} placeholder="ORD-2026-1234"
                     hint="Your own reference number for this job, if you have one." />
                 </div>
               )}
@@ -1074,7 +1074,7 @@ export default function PublicRequestForm() {
                 <div className="space-y-4 pt-1">
                   <TextField label="Dimensions (L × W × H)" value={dimensions}
                     onChange={setDimensions} placeholder="e.g. 4.5m × 2.2m × 3.1m" />
-                  <Toggle value={craneReq} onChange={setCraneReq} label="Crane required on site" />
+                  <Toggle value={craneRequired} onChange={setCraneRequired} label="Crane required on site" />
                 </div>
               )}
 
@@ -1310,7 +1310,7 @@ export default function PublicRequestForm() {
           <SectionHeader num={7} icon="📝" title="Notes for driver" subtitle="Instructions the driver needs to know"
             active collapsed={s7} onToggle={() => setS7(o => !o)}
             complete optional
-            summary={driverNotes ? driverNotes.slice(0, 40) + (driverNotes.length > 40 ? "…" : "") : undefined} />
+            summary={driverVisibleNotes ? driverVisibleNotes.slice(0, 40) + (driverVisibleNotes.length > 40 ? "…" : "") : undefined} />
           {!s7 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               <div>
@@ -1322,7 +1322,7 @@ export default function PublicRequestForm() {
               <div>
                 <FieldLabel>Additional driver notes</FieldLabel>
                 <textarea className="input mt-1 w-full" rows={3}
-                  value={driverNotes} onChange={e => setDriverNotes(e.target.value)}
+                  value={driverVisibleNotes} onChange={e => setDriverVisibleNotes(e.target.value)}
                   placeholder="Ask for John at site office. Registration must be provided at barrier." />
                 <div className="text-xs text-muted mt-1">
                   Anything the driver must know that isn't covered by the stop instructions above.

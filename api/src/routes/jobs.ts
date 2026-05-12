@@ -130,9 +130,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const v = validateCreateLocation(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    const addressText = (body.addressText ?? body.locationTextSnapshot ?? "").trim();
-    const latitude    = body.latitude ?? body.lat ?? null;
-    const longitude   = body.longitude ?? body.lng ?? null;
+    const locationTextSnapshot = (body.locationTextSnapshot ?? body.addressText ?? "").trim();
+    const lat = body.lat ?? body.latitude ?? null;
+    const lng = body.lng ?? body.longitude ?? null;
 
     const loc = await prisma.savedLocation.create({
       data: {
@@ -140,12 +140,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         name:         body.name.trim(),
         siteName:     body.siteName?.trim() ?? "",
         unitName:     body.unitName?.trim() ?? "",
-        addressText,
+        locationTextSnapshot,
         street:       body.street?.trim() ?? "",
         town:         body.town?.trim() ?? "",
         postcode:     body.postcode?.trim() ?? "",
-        latitude,
-        longitude,
+        lat,
+        lng,
         gateLat:      body.gateLat ?? null,
         gateLng:      body.gateLng ?? null,
         contactName:  body.contactName?.trim() ?? "",
@@ -173,12 +173,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         name:         body.name?.trim() ?? loc.name,
         siteName:     body.siteName?.trim() ?? loc.siteName,
         unitName:     body.unitName?.trim() ?? loc.unitName,
-        addressText:  (body.addressText ?? body.locationTextSnapshot)?.trim() ?? loc.addressText,
+        locationTextSnapshot: (body.locationTextSnapshot ?? body.addressText)?.trim() ?? loc.locationTextSnapshot,
         street:       body.street?.trim() ?? loc.street,
         town:         body.town?.trim() ?? loc.town,
         postcode:     body.postcode?.trim() ?? loc.postcode,
-        latitude:     body.latitude ?? body.lat ?? loc.latitude,
-        longitude:    body.longitude ?? body.lng ?? loc.longitude,
+        lat:          body.lat ?? body.latitude ?? loc.lat,
+        lng:          body.lng ?? body.longitude ?? loc.lng,
         gateLat:      body.gateLat ?? loc.gateLat,
         gateLng:      body.gateLng ?? loc.gateLng,
         contactName:  body.contactName?.trim() ?? loc.contactName,
@@ -225,12 +225,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (body.pickupLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.pickupLocationId, companyId } });
       if (!loc) return reply.status(400).send({ error: "Pickup location not found" });
-      pickupText = loc.addressText;
+      pickupText = loc.locationTextSnapshot;
     }
     if (body.dropoffLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.dropoffLocationId, companyId } });
       if (!loc) return reply.status(400).send({ error: "Dropoff location not found" });
-      dropoffText = loc.addressText;
+      dropoffText = loc.locationTextSnapshot;
     }
 
     const template = await prisma.jobTemplate.create({
@@ -457,11 +457,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     if (!legacyPickupText && body.pickupLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.pickupLocationId, companyId } });
-      if (loc) legacyPickupText = loc.addressText;
+      if (loc) legacyPickupText = loc.locationTextSnapshot;
     }
     if (!legacyDropoffText && body.dropoffLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.dropoffLocationId, companyId } });
-      if (loc) legacyDropoffText = loc.addressText;
+      if (loc) legacyDropoffText = loc.locationTextSnapshot;
     }
 
     const stops: StructuredJobStopInput[] = Array.isArray(body.stops) && body.stops.length > 0
