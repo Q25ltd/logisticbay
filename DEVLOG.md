@@ -1,7 +1,7 @@
 # LogisticBay — Developer Log & Architecture Charter
 
 > **Read this at the start of every chat session and before every PR review.**
-> Last updated: 2026-05-07
+> Last updated: 2026-05-12
 
 LogisticBay is being built for extreme, unbounded tenant growth: thousands to millions of tenant companies and records that may grow from millions into billions or trillions over time. Every engineer must internalise the rules in this document before writing code. The rules are not aspirational — they are enforced in code review, in CI, and in production checks.
 
@@ -122,6 +122,144 @@ Tenant isolation is the single most important rule in this codebase. Get it wron
 - Tested at least twice a year against a synthetic tenant
 
 ---
+# Core Rule: Data Quality First
+
+Strict information. Flexible operations.
+
+LogisticBay is an operational system.
+Its value depends on clean, structured, trustworthy information.
+
+We do not compromise data quality for speed, convenience, or flexible free-text entry.
+
+Target operational model:
+- Main Job = commercial/customer container
+- Job Part = executable transport movement
+- Run = planner execution grouping
+- Event = immutable operational truth record
+
+Every field added to the system must have a clear operational purpose.
+
+A field is allowed only if it supports one or more of:
+- planning
+- execution
+- tracking
+- status calculation
+- risk detection
+- recovery suggestions
+- reporting/audit
+- future automation
+
+If a field does not improve operational truth, do not add it.
+
+Core operational logic must never depend on parsing free text.
+
+Free text is only for:
+- notes
+- comments
+- explanations
+- exception details
+- human communication
+
+Core logic must use:
+- structured fields
+- controlled enums
+- relations
+- timestamps
+- IDs
+- system-generated events
+
+If information can be represented as a structured field, enum, relation, timestamp, or event, it must not exist only in notes.
+
+The system must filter and validate information before it enters the database, not collect garbage and attempt cleanup later.
+
+Forms should be strict in information collection while allowing flexible operational execution through:
+- Job Parts
+- Runs
+- reassignment
+- splitting
+- merging
+- event tracking
+
+Operational truth should be preserved through append-only events where possible, not destructive state overwrites.
+
+No duplicate meanings.
+No vague statuses.
+No ambiguous references.
+No optional fields without operational purpose.
+No “notes as logic.”
+
+One operational concept = one canonical internal name.
+
+### Canonical Naming Discipline
+
+UI labels may differ by audience (customer, planner, driver),
+but internal names must stay canonical across:
+- database columns
+- APIs
+- shared schemas
+- events
+- planners
+- mobile
+- marketplace
+- integrations
+
+Example:
+- UI label: "Address line 1"
+- Canonical field: `street`
+
+Example:
+- UI label: "Company / site name"
+- Canonical field: `siteName`
+
+Never create aliases for the same operational meaning.
+
+Bad:
+- addressLine1
+- streetAddress
+- street1
+
+Good:
+- street
+
+The same operational meaning must always use the same internal name.
+
+UI labels may vary by audience, but database fields, APIs, shared schemas, and internal logic must use canonical names consistently across the system.
+
+### Structured Intake Rule
+
+Public forms, planner forms, APIs, imports, and integrations must collect structured operational data at intake time whenever possible.
+
+The system should guide users toward:
+- controlled options
+- structured selections
+- reusable locations
+- reusable templates
+- validated references
+- canonical values
+
+instead of relying on free-text explanations.
+
+The goal is to reduce:
+- planner clarification calls
+- driver confusion
+- operational mistakes
+- manual cleanup
+- impossible automation later
+
+Before adding any new:
+- form field
+- database column
+- enum
+- status
+- event type
+- relationship
+
+the developer must explain:
+1. What operational decision this data supports
+2. Whether it should be a structured field, enum, relation, timestamp, or note
+3. How it affects Main Job, Job Part, Run, or Event logic
+4. What happens if the data is missing, wrong, duplicated, or changed later
+
 
 ## Database & Scale Architecture
 
@@ -310,6 +448,10 @@ Every model that holds operational data carries `companyId`. New models must fol
 ```
 pending → in_progress → arrived_pickup → collected → arrived_dropoff → completed
 ```
+
+> **IMPORTANT — do not confuse job status values with stop type values:**
+> - `arrived_pickup` / `arrived_dropoff` are `PlannedJob.status` enum values (the job's lifecycle state).
+> - `JobStop.type` is a separate field with canonical values `collection` | `delivery`. Never use `pickup` or `dropoff` for `JobStop.type` — those were the old incorrect values that a backfill script corrected.
 
 ## Vehicle Flow
 
@@ -852,4 +994,70 @@ User decision: selecting trailer types ALLOWED implicitly forbids all others. A 
 
 **Typechecks:** `npx tsc --noEmit` → exit 0 in both `api/` and `web/`.
 
-**Next step:** Run `pnpm --filter api prisma migrate dev` locally then push to deploy. Backfill script `api/scripts/backfill_vocab_v1.ts` must run once after migration deploys.
+**Migration status:** `20260510120000_vocab_unification` is deployed to production (confirmed via `prisma migrate deploy` 2026-05-12).
+
+**Backfill status:** `api/scripts/backfill_vocab_v1.ts` — run status **unconfirmed**. If `FleetUnit`, `FleetTrailer`, or `DriverProfile` rows exist in production that pre-date this migration, the backfill must be run once: `DATABASE_URL=$DATABASE_URL_PROD npm run backfill:vocab`.
+
+---
+
+### 2026-05-12 — Public request form, data dictionary, misc fixes
+
+**Commits:** `5f5bc22`, `0e1fe7c`, `eb029f0`, `7eea363`, `a693c68`
+
+**Public request form (`web/src/modules/requests/PublicRequestForm.tsx`):**
+- Added all missing fields matching the `JobRequest` schema: `craneRequired`, `trailerTypesAllowed`, `vehicleAccessNotes`, `requirePOD`, `weighbridgeRequired`
+- All required fields now validated before submit
+- Rejection policy clarified: requests go to `pending` review, not auto-approved
+- `driverNotes` renamed to `driverVisibleNotes` in the payload (maps to the DB column)
+
+**Misc fixes:**
+- API: only sends `Content-Type: application/json` header when the request has a body
+- Removed mobile submodule ghost reference; fixed migration drift; corrected blob typing
+- Replaced non-logistics emojis with appropriate alternatives across all web UI
+
+**Data dictionary (`DATA_DICTIONARY.md`):**
+- Full data dictionary written covering all DB models, JSON blobs, and form fields
+- This is the authoritative field reference — code agents must consult it before naming any new field
+
+---
+
+### 2026-05-12 — Canonical field naming — system-wide Phase 2
+
+**Commit:** `2249e95`
+
+**Goal:** Eliminate all field name aliases so every concept has exactly one name across DB columns, JSON blobs, API types, form state, and UI components.
+
+**StopState interface** (`web/src/modules/jobs/createJobTypes.ts`):
+- `stopType` → `type`
+- `unitBuilding` → `unitName`
+- `refNumber` → `referenceNumber`
+- `driverNotes` → `instructions`
+
+**CreateJobPayload / buildBody** (`web/src/modules/jobs/createJobPayload.ts`):
+- ~20 state variable renames to match canonical names
+- Removed duplicate aliases: `minSize`, `equipmentReq`, `driverQuals` (canonical `reqGvwMin`, `reqEquipment`, `reqEndorsements` are used instead)
+- **Critical bug fixed:** `buildBody()` was converting `stop.type === "collection"` to `"pickup"` before sending to the API — writing wrong values into `JobStop.type`. Fixed: now sends `stop.type` directly (`"collection"` or `"delivery"`).
+
+**SavedLocation DB column renames** (`api/prisma/schema.prisma` + migration `20260512000000_saved_location_canonical_fields`):
+- `addressText` → `locationTextSnapshot`
+- `latitude` → `lat`
+- `longitude` → `lng`
+- Migration applied to production 2026-05-12.
+
+**All dependent code updated:**
+- `web/src/modules/jobs/StopCard.tsx` — `applyLocation()`, `LocationSearch` filter
+- `web/src/modules/locations/LocationsPage.tsx` — form state, submit, filter, display
+- `web/src/modules/jobs/CreateJobPage.tsx` — all state vars, template load/save, alt address
+- `web/src/modules/jobs/createJobUtils.ts` — `makeStop()`, `jobStopToStopState()`
+- `web/src/modules/templates/TemplatesPage.tsx` — `stopSummary()` backward compat
+- `web/src/types/index.ts` — `SavedLocation` interface, `TemplateJobData` interface (canonical + legacy optional fields for reading old stored templates)
+- `api/src/routes/jobs.ts` — SavedLocation create/update/read
+- `api/src/routes/jobRequests.ts` — request field reads
+- `api/src/types/requests.ts` — `CreateLocationBody`, `PatchLocationBody`
+- `web/src/api/jobRequests.ts` — frontend API client types
+
+**New backfill scripts:**
+- `api/scripts/backfill_job_stop_type.ts` — fixes existing `JobStop` rows: `type = 'pickup'` → `'collection'`, `type = 'dropoff'` → `'delivery'`. Run: `DATABASE_URL=$DATABASE_URL_PROD npm run backfill:job-stop-type`. Safe to re-run.
+- `api/scripts/backfill_stops_v2.ts` — fixes `JobRequest.stops[]` blob field names to canonical names (e.g. `companySiteName→siteName`, `addressLine1→street`, `entranceLatitude→lat`, `customerReference→customerRef`). Run: `DATABASE_URL=$DATABASE_URL_PROD npm run backfill:stops-v2`. Safe to re-run.
+
+**Verification:** `tsc --noEmit` → 0 errors in both `web/` and `api/`. Deployed to production via `main` branch push.
