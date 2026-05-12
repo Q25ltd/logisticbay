@@ -225,6 +225,25 @@ The same operational meaning must always use the same internal name.
 
 UI labels may vary by audience, but database fields, APIs, shared schemas, and internal logic must use canonical names consistently across the system.
 
+### The Two Canonical Entry Points
+
+The entire system is data manipulation. All operational value comes from the quality of structured data that flows through it. Quantity of data does not matter — quality does. Garbage in means garbage out at every downstream step: planning, allocation, execution, reporting, automation.
+
+The two primary entry points where data enters the system are:
+
+1. **Public job request form** (`/request`) — customer or broker submits a transport request. This is the first moment operational data is captured. Every field collected here must be structured, canonical, and immediately usable without planner cleanup.
+
+2. **Job creation / edit form** (planner web) — planner creates or refines a job from a request or from scratch. This is where the request becomes a dispatched job with stops, vehicle requirements, and assignments.
+
+These two forms are the most important screens in the system. They are the gates. If data quality is poor at intake, every downstream feature — driver allocation, routing, reporting, AI suggestions — is degraded or impossible.
+
+**Rule for every agent working on these forms:**
+- Every field must be structured (enum, relation, number, date) unless it is explicitly a notes/comments field.
+- Free text is never acceptable for anything that will drive logic, filtering, matching, or reporting.
+- A field that cannot be used programmatically without parsing free text should not exist.
+- Prefer fewer high-quality fields over many vague ones.
+- If a field cannot be explained with: "this field is used to [specific operational decision]", it should not be added.
+
 ### Structured Intake Rule
 
 Public forms, planner forms, APIs, imports, and integrations must collect structured operational data at intake time whenever possible.
