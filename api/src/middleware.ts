@@ -1,14 +1,17 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import jwt from "jsonwebtoken";
+import { z } from "zod";
 import { env } from "./lib/env.js";
+
+const JwtPayload = z.object({
+  userId:    z.number(),
+  companyId: z.number(),
+  role:      z.string(),
+});
 
 declare module "fastify" {
   interface FastifyRequest {
-    user?: {
-      userId:    number;
-      companyId: number;
-      role:      string;
-    };
+    user?: z.infer<typeof JwtPayload>;
   }
 }
 
@@ -18,12 +21,9 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     return reply.status(401).send({ error: "Missing or invalid Authorization header" });
   }
   try {
-    const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as any;
-    request.user = {
-      userId:    decoded.userId,
-      companyId: decoded.companyId,
-      role:      decoded.role,
-    };
+    const raw     = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET);
+    const decoded = JwtPayload.parse(raw);
+    request.user  = decoded;
   } catch {
     return reply.status(401).send({ error: "Token expired or invalid" });
   }
