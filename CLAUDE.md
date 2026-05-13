@@ -38,6 +38,22 @@ There are four distinct reference fields. They are not interchangeable:
 
 Never merge these into a single field or use one in place of another.
 
+## Nullable field rule — fix on contact, not all at once
+
+Many models still have optional string fields declared as `String @default("")` instead of `String?`. This is a known issue — empty string is being used as a null substitute, which breaks `WHERE field IS NULL` queries and makes PATCH semantics ambiguous ("not sent" vs "explicitly cleared to empty").
+
+**Rule: whenever you do feature work on a model, fix its optional string fields in the same PR.**
+
+How to fix a model:
+1. Change each optional field in `schema.prisma` from `String @default("")` to `String?`
+2. Write a migration: `ALTER TABLE "X" ALTER COLUMN "y" DROP NOT NULL;` for each field, then `UPDATE "X" SET "y" = NULL WHERE "y" = '';`
+3. Update the write paths in the route: CREATE uses `body.field?.trim() || null`, PATCH uses `body.field !== undefined ? (body.field.trim() || null) : existing.field`
+4. Run `prisma generate` and `tsc --noEmit` — fix any type errors
+
+Models already fixed: `Customer` (contactName, contactPhone, contactEmail, notes).
+
+Do NOT do a single sweep across all models — migration risk is too high vs benefit. Fix model-by-model as you touch them.
+
 ## Codebase conventions
 
 - API schemas live in `api/src/schemas/`. Always validate with Zod.

@@ -1,7 +1,7 @@
 # LogisticBay — Developer Log & Architecture Charter
 
 > **Read this at the start of every chat session and before every PR review.**
-> Last updated: 2026-05-12
+> Last updated: 2026-05-13
 
 LogisticBay is being built for extreme, unbounded tenant growth: thousands to millions of tenant companies and records that may grow from millions into billions or trillions over time. Every engineer must internalise the rules in this document before writing code. The rules are not aspirational — they are enforced in code review, in CI, and in production checks.
 
@@ -1080,3 +1080,40 @@ User decision: selecting trailer types ALLOWED implicitly forbids all others. A 
 - `api/scripts/backfill_stops_v2.ts` — fixes `JobRequest.stops[]` blob field names to canonical names (e.g. `companySiteName→siteName`, `addressLine1→street`, `entranceLatitude→lat`, `customerReference→customerRef`). Run: `DATABASE_URL=$DATABASE_URL_PROD npm run backfill:stops-v2`. Safe to re-run.
 
 **Verification:** `tsc --noEmit` → 0 errors in both `web/` and `api/`. Deployed to production via `main` branch push.
+
+---
+
+### 2026-05-13 — Code quality: middleware, lib extraction, Customer nullable fields
+
+**Commits:** `8a82672`, `42aac94`, `4bd3d9d`, `724742e`
+
+**JWT middleware fix (`api/src/middleware.ts`):**
+- Replaced `jwt.verify(...) as any` with a Zod-validated payload schema
+- `request.user` is now typed as `{ userId, companyId, role }` — bad tokens are rejected at the boundary, not silently passed through
+
+**Route helper extraction (`api/src/lib/`, `api/src/services/`):**
+- `lib/coerce.ts` — `toNullableNumber`, `toNullableDate`, `optionalString`, `optionalNumber`, `optionalDate`
+- `lib/vehicleCompat.ts` — `legacyVehicleToRequirement`, `normalizeEquipment`, `normalizeShiftVehicleClass`, `canDriveCategoriesForLicence`
+- `lib/jobUtils.ts` — `hasLoadDetailsInput`, `appendPlannerReason`, `buildStopData` (eliminates 40-line duplicated stop shape between POST /jobs and PATCH /jobs)
+- `lib/dateUtils.ts` — `toISODate`, `isWorkingDay`, `getWeekStart`, `checkRestPeriod`, `holidayDates`, UK bank holidays
+- `lib/geo.ts` — `distanceMiles`, `checkEntranceDistance`
+- `lib/driverUtils.ts` — `driverProfileData` (all driver profile fields in one place)
+- `services/jobValidation.ts` — `findInvalidStopLocationId` (DB-querying helper)
+- `sync/sync.constants.ts` — added `EVENT_TYPE_MAP`
+- All route files updated to import from lib/services; inline helpers removed
+
+**Customer nullable fields (`api/prisma/schema.prisma`, migrations `20260513000000`, `20260513100000`):**
+- `contactName`, `contactPhone`, `contactEmail`, `notes` changed from `String @default("")` to `String?`
+- Two migrations required: the first (20260513000000) only dropped DEFAULT — a second migration (20260513100000) was needed to also `DROP NOT NULL` and backfill `'' → NULL`
+- `customers.ts` write paths updated: CREATE uses `|| null`, PATCH distinguishes "not sent" from "explicitly cleared"
+- **Pattern for other models:** see CLAUDE.md — fix optional fields model-by-model when doing feature work, not as a sweep
+
+**Ongoing known issue — `String @default("")` on optional fields:**
+- ~145 fields across `PlannedJob`, `JobStop`, `DriverProfile`, `SavedLocation`, and others still use empty string as null substitute
+- These will be fixed model-by-model as feature work touches each model
+- Do not fix all at once — migration risk outweighs benefit
+- `Customer` is the only model fully fixed as of this date
+
+**Test suite:**
+- All 27 tenant-isolation tests pass on a clean database
+- CI failure was caused by the incomplete first migration (missing `DROP NOT NULL`); fixed by `724742e`
