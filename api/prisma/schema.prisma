@@ -60,10 +60,10 @@ model Customer {
   id           Int      @id @default(autoincrement())
   companyId    Int
   name         String
-  contactName  String   @default("")
-  contactPhone String   @default("")
-  contactEmail String   @default("")
-  notes        String   @default("")
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  notes        String?
   status       String   @default("active")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

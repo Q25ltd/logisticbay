@@ -67,9 +67,9 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
       data: {
         companyId,
         name:         body.name.trim(),
-        contactName:  body.contactName?.trim()  ?? "",
-        contactPhone: body.contactPhone?.trim() ?? "",
-        contactEmail: body.contactEmail?.trim() ?? "",
+        contactName:  body.contactName?.trim()  || null,
+        contactPhone: body.contactPhone?.trim() || null,
+        contactEmail: body.contactEmail?.trim() || null,
         status:       "active",
       },
     });
@@ -89,11 +89,11 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
     const updated = await prisma.customer.update({
       where: { id },
       data: {
-        name:         body.name?.trim()         ?? customer.name,
-        contactName:  body.contactName?.trim()  ?? customer.contactName,
-        contactPhone: body.contactPhone?.trim() ?? customer.contactPhone,
-        contactEmail: body.contactEmail?.trim() ?? customer.contactEmail,
-        status:       body.status               ?? customer.status,
+        name:         body.name?.trim()  ?? customer.name,
+        contactName:  body.contactName  !== undefined ? (body.contactName.trim()  || null) : customer.contactName,
+        contactPhone: body.contactPhone !== undefined ? (body.contactPhone.trim() || null) : customer.contactPhone,
+        contactEmail: body.contactEmail !== undefined ? (body.contactEmail.trim() || null) : customer.contactEmail,
+        status:       body.status ?? customer.status,
       },
     });
 
