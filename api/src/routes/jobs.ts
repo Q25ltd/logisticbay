@@ -20,95 +20,17 @@ import type {
 } from "../types/requests.js";
 import {
   validateStructuredJob,
+  findInvalidStopLocationId,
   type StructuredJobStopInput,
   type StructuredLoadDetailsInput,
 } from "../services/jobValidation.js";
 import { scoreStructuredJob } from "../services/jobQuality.js";
-import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES } from "../sync/sync.constants.js";
+import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES, EVENT_TYPE_MAP } from "../sync/sync.constants.js";
 import { generateJobReference } from "../lib/jobReference.js";
 import { checkDayFeasibility, type ScheduleStop } from "../lib/driverSchedule.js";
-
-const EVENT_TYPE_MAP: Record<string, string> = {
-  in_progress:     "started",
-  arrived_pickup:  "arrived_pickup",
-  collected:       "collected",
-  arrived_dropoff: "arrived_dropoff",
-  completed:       "completed",
-  cancelled:       "cancelled",
-};
-
-function toNullableNumber(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function toNullableDate(value: string | Date | null | undefined): Date | null {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | undefined): boolean {
-  if (!loadDetails) return false;
-  return Object.values(loadDetails).some(v => v !== undefined && v !== null && v !== "");
-}
-
-function appendPlannerReason(existing: string, reason: string): string {
-  const cleanReason = reason.trim();
-  if (!cleanReason) return existing;
-  const stamp = new Date().toISOString();
-  return [existing?.trim(), `[Planner allocation ${stamp}] ${cleanReason}`].filter(Boolean).join("\n");
-}
-
-function legacyVehicleToRequirement(value: unknown) {
-  const source = typeof value === "string" ? value.trim() : "";
-  const v = source.toLowerCase();
-  if (v === "van") return { bodyCategory: "van", bodyType: "panel", equipment: [] as string[], licenceClass: "B" };
-  if (v === "artic" || /^class\s*1$/.test(v)) return { bodyCategory: "tractor", bodyType: "", equipment: [] as string[], licenceClass: "CE" };
-  if (/^class\s*2$/.test(v) || v === "rigid") return { bodyCategory: "rigid", bodyType: "", equipment: [] as string[], licenceClass: "C" };
-  if (v === "tipper") return { bodyCategory: "rigid", bodyType: "tipper", equipment: [] as string[], licenceClass: "C" };
-  if (v === "grab") return { bodyCategory: "rigid", bodyType: "tipper", equipment: ["hiab_crane"], licenceClass: "C" };
-  if (v === "mixer") return { bodyCategory: "rigid", bodyType: "mixer", equipment: [] as string[], licenceClass: "C" };
-  if (v === "hiab") return { bodyCategory: "rigid", bodyType: "flatbed", equipment: ["hiab_crane"], licenceClass: "C" };
-  if (v === "refrigerated") return { bodyCategory: "rigid", bodyType: "fridge", equipment: ["fridge_unit"], licenceClass: "C" };
-  if (v === "other" || v.startsWith("other:")) return { bodyCategory: "rigid", bodyType: "other", equipment: [] as string[], licenceClass: "C" };
-  return { bodyCategory: "", bodyType: "", equipment: [] as string[], licenceClass: "" };
-}
-
-function normalizeEquipment(values: unknown, fallback: string[] = []): string[] {
-  const list = Array.isArray(values) ? values : fallback;
-  const map: Record<string, string> = {
-    crane: "hiab_crane",
-    tail_lift: "tail_lift",
-    forklift: "forklift",
-    pallet_truck: "pallet_truck",
-    straps: "straps",
-    chains: "chains",
-    sheeting: "sheeting",
-    pump: "pump",
-  };
-  return [...new Set(list.map(v => map[String(v)] ?? String(v)).filter(Boolean))];
-}
-
-async function findInvalidStopLocationId(
-  prisma: PrismaClient,
-  companyId: number,
-  stops: StructuredJobStopInput[],
-): Promise<number | null> {
-  const stopLocationIds = [...new Set(stops
-    .map(s => s.savedLocationId)
-    .filter((id): id is number => typeof id === "number"))];
-
-  if (stopLocationIds.length === 0) return null;
-
-  const validLocs = await prisma.savedLocation.findMany({
-    where:  { id: { in: stopLocationIds }, companyId },
-    select: { id: true },
-  });
-  const validIds = new Set(validLocs.map(l => l.id));
-  return stopLocationIds.find(id => !validIds.has(id)) ?? null;
-}
+import { toNullableNumber, toNullableDate } from "../lib/coerce.js";
+import { legacyVehicleToRequirement, normalizeEquipment } from "../lib/vehicleCompat.js";
+import { hasLoadDetailsInput, appendPlannerReason, buildStopData } from "../lib/jobUtils.js";
 
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -616,43 +538,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           requireDeliveryQty:    body.requireDeliveryQty ?? false,
           status:                "pending",
           stops: {
-            create: stops.map((s) => ({
-              companyId,
-              sequenceNumber:            s.sequenceNumber ?? 0,
-              type:                      String(s.type ?? ""),
-              savedLocationId:           s.savedLocationId ?? null,
-              siteName:                  typeof s.siteName === "string" ? s.siteName.trim() : "",
-              unitName:                  typeof s.unitName === "string" ? s.unitName.trim() : "",
-              street:                    typeof s.street === "string" ? s.street.trim() : "",
-              town:                      typeof s.town === "string" ? s.town.trim() : "",
-              postcode:                  typeof s.postcode === "string" ? s.postcode.trim().toUpperCase() : "",
-              locationTextSnapshot:      String(s.locationTextSnapshot ?? "").trim(),
-              lat:                       s.lat ?? null,
-              lng:                       s.lng ?? null,
-              gateLat:                   s.gateLat ?? null,
-              gateLng:                   s.gateLng ?? null,
-              timeWindowStart:           toNullableDate(s.timeWindowStart),
-              timeWindowEnd:             toNullableDate(s.timeWindowEnd),
-              bookedTime:                toNullableDate(s.bookedTime),
-              earliestArrivalMinutes:    s.earliestArrivalMinutes != null ? Math.round(Number(s.earliestArrivalMinutes)) : null,
-              unloadingAllowanceMinutes: s.unloadingAllowanceMinutes != null ? Math.round(Number(s.unloadingAllowanceMinutes)) : null,
-              contactName:               typeof s.contactName === "string" ? s.contactName.trim() : "",
-              contactPhone:              typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
-              referenceNumber:           typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
-              instructions:              typeof s.instructions === "string" ? s.instructions.trim() : "",
-              contactEmail:              typeof s.contactEmail === "string" ? s.contactEmail.trim() : "",
-              bookingRequired:           s.bookingRequired ?? false,
-              bookingRef:                typeof s.bookingRef === "string" ? s.bookingRef.trim() : "",
-              openingHours:              typeof s.openingHours === "string" ? s.openingHours.trim() : "",
-              locationType:              typeof s.locationType === "string" ? s.locationType.trim() : "",
-              navigationInstructions:    typeof s.navigationInstructions === "string" ? s.navigationInstructions.trim() : "",
-              numPallets:                s.numPallets != null ? Math.round(Number(s.numPallets)) : null,
-              internalNotes:             typeof s.internalNotes === "string" ? s.internalNotes.trim() : "",
-              country:                   typeof s.country === "string" ? s.country.trim() : "United Kingdom",
-              addressLine2:              typeof s.addressLine2 === "string" ? s.addressLine2.trim() : "",
-              countyRegion:              typeof s.countyRegion === "string" ? s.countyRegion.trim() : "",
-              status:                    "pending",
-            })),
+            create: stops.map(s => buildStopData(s, companyId)),
           },
           ...(hasLoadDetailsInput(loadDetails) ? {
             loadDetails: {
@@ -979,44 +865,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
       if (stops.length > 0) {
         await tx.jobStop.createMany({
-          data: stops.map(s => ({
-            companyId,
-            jobId:                     id,
-            sequenceNumber:            s.sequenceNumber ?? 0,
-            type:                      String(s.type ?? ""),
-            savedLocationId:           s.savedLocationId ?? null,
-            siteName:                  typeof s.siteName === "string" ? s.siteName.trim() : "",
-            unitName:                  typeof s.unitName === "string" ? s.unitName.trim() : "",
-            street:                    typeof s.street === "string" ? s.street.trim() : "",
-            town:                      typeof s.town === "string" ? s.town.trim() : "",
-            postcode:                  typeof s.postcode === "string" ? s.postcode.trim().toUpperCase() : "",
-            locationTextSnapshot:      String(s.locationTextSnapshot ?? "").trim(),
-            lat:                       s.lat ?? null,
-            lng:                       s.lng ?? null,
-            gateLat:                   s.gateLat ?? null,
-            gateLng:                   s.gateLng ?? null,
-            timeWindowStart:           toNullableDate(s.timeWindowStart),
-            timeWindowEnd:             toNullableDate(s.timeWindowEnd),
-            bookedTime:                toNullableDate(s.bookedTime),
-            earliestArrivalMinutes:    s.earliestArrivalMinutes != null ? Math.round(Number(s.earliestArrivalMinutes)) : null,
-            unloadingAllowanceMinutes: s.unloadingAllowanceMinutes != null ? Math.round(Number(s.unloadingAllowanceMinutes)) : null,
-            contactName:               typeof s.contactName === "string" ? s.contactName.trim() : "",
-            contactPhone:              typeof s.contactPhone === "string" ? s.contactPhone.trim() : "",
-            referenceNumber:           typeof s.referenceNumber === "string" ? s.referenceNumber.trim() : "",
-            instructions:              typeof s.instructions === "string" ? s.instructions.trim() : "",
-            contactEmail:              typeof s.contactEmail === "string" ? s.contactEmail.trim() : "",
-            bookingRequired:           s.bookingRequired ?? false,
-            bookingRef:                typeof s.bookingRef === "string" ? s.bookingRef.trim() : "",
-            openingHours:              typeof s.openingHours === "string" ? s.openingHours.trim() : "",
-            locationType:              typeof s.locationType === "string" ? s.locationType.trim() : "",
-            navigationInstructions:    typeof s.navigationInstructions === "string" ? s.navigationInstructions.trim() : "",
-            numPallets:                s.numPallets != null ? Math.round(Number(s.numPallets)) : null,
-            internalNotes:             typeof s.internalNotes === "string" ? s.internalNotes.trim() : "",
-            country:                   typeof s.country === "string" ? s.country.trim() : "United Kingdom",
-            addressLine2:              typeof s.addressLine2 === "string" ? s.addressLine2.trim() : "",
-            countyRegion:              typeof s.countyRegion === "string" ? s.countyRegion.trim() : "",
-            status:                    "pending",
-          })),
+          data: stops.map(s => ({ jobId: id, ...buildStopData(s, companyId) })),
         });
       }
 

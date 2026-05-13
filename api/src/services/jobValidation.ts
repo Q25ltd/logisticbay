@@ -8,6 +8,7 @@ import {
   isOnboardEquipment,
   isLicenceClass,
 } from "../constants/jobCreation.js";
+import type { PrismaClient } from "../generated/client.js";
 
 export interface StructuredJobStopInput {
   sequenceNumber?: number;
@@ -284,4 +285,23 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
     warnings: [...new Set(warnings)],
     validationStatus,
   };
+}
+
+export async function findInvalidStopLocationId(
+  prisma: PrismaClient,
+  companyId: number,
+  stops: StructuredJobStopInput[],
+): Promise<number | null> {
+  const stopLocationIds = [...new Set(stops
+    .map(s => s.savedLocationId)
+    .filter((id): id is number => typeof id === "number"))];
+
+  if (stopLocationIds.length === 0) return null;
+
+  const validLocs = await prisma.savedLocation.findMany({
+    where:  { id: { in: stopLocationIds }, companyId },
+    select: { id: true },
+  });
+  const validIds = new Set(validLocs.map(l => l.id));
+  return stopLocationIds.find(id => !validIds.has(id)) ?? null;
 }

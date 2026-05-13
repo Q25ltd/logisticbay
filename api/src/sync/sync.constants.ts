@@ -37,6 +37,17 @@ export const STATUS_BY_EVENT_TYPE: Record<SupportedEventType, string> = {
   completed:       'completed',
 };
 
+// Maps PlannedJob.status values to the eventType string stored in JobExecutionEvent.
+// PlannedJob.status (arrived_pickup, arrived_dropoff) differs from JobStop.type (collection, delivery).
+export const EVENT_TYPE_MAP: Record<string, string> = {
+  in_progress:     "started",
+  arrived_pickup:  "arrived_pickup",
+  collected:       "collected",
+  arrived_dropoff: "arrived_dropoff",
+  completed:       "completed",
+  cancelled:       "cancelled",
+};
+
 export const ALLOWED_JOB_TRANSITIONS: Record<string, string[]> = {
   pending:         ['accepted', 'in_progress', 'cancelled'],
   accepted:        ['in_progress', 'cancelled'],

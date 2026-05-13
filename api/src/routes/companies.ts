@@ -23,81 +23,16 @@ import {
 import { RegisterCompanySchema } from "../schemas/auth.js";
 import { parseBody } from "../lib/validate.js";
 import { writeAudit } from "../lib/audit.js";
-import { DRIVER_LICENCE_CLASSES } from "../constants/jobCreation.js";
+import { driverProfileData } from "../lib/driverUtils.js";
+import { optionalNumber } from "../lib/coerce.js";
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" ? value.trim() : undefined;
-}
-
-function optionalNumber(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === "") return undefined;
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function optionalDate(value: unknown): Date | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
-  if (typeof value !== "string") return undefined;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? undefined : d;
-}
-
-function canDriveCategoriesForLicence(licenceClass: unknown): string[] {
-  if (typeof licenceClass !== "string" || !licenceClass) return [];
-  return [...(DRIVER_LICENCE_CLASSES.find(l => l.value === licenceClass)?.drives ?? [])];
-}
-
-function driverProfileData(body: CreateDriverBody | PatchDriverBody) {
-  const licenceClass = body.licenceClass !== undefined ? optionalString(body.licenceClass) ?? "" : undefined;
-  return {
-    ...(body.displayName !== undefined ? { displayName: optionalString(body.displayName) ?? "" } : {}),
-    ...(body.employmentStartDate !== undefined ? { employmentStartDate: optionalDate(body.employmentStartDate) } : {}),
-    ...(body.employeeNumber !== undefined ? { employeeNumber: optionalString(body.employeeNumber) || null } : {}),
-    ...(body.phoneNumber !== undefined ? { phoneNumber: optionalString(body.phoneNumber) || null, contactPhone: optionalString(body.phoneNumber) || null } : {}),
-    ...(body.defaultTruckReg   !== undefined ? { defaultTruckReg:   optionalString(body.defaultTruckReg)   ?? "" } : {}),
-    ...(body.defaultTruckClass    !== undefined ? { defaultTruckClass:    optionalString(body.defaultTruckClass)    ?? "" } : {}),
-    ...(body.defaultTrailerReg    !== undefined ? { defaultTrailerReg:    optionalString(body.defaultTrailerReg)    ?? "" } : {}),
-    ...(body.defaultTrailerClass  !== undefined ? { defaultTrailerClass:  optionalString(body.defaultTrailerClass)  ?? "" } : {}),
-    ...(body.driverType !== undefined ? { driverType: optionalString(body.driverType) || "permanent" } : {}),
-    ...(licenceClass !== undefined ? { licenceClass, canDriveCategories: canDriveCategoriesForLicence(licenceClass) } : {}),
-    ...(body.endorsements !== undefined ? { endorsements: Array.isArray(body.endorsements) ? body.endorsements : [] } : {}),
-    ...(body.canUseTrailer !== undefined ? { canUseTrailer: Boolean(body.canUseTrailer) } : {}),
-    ...(body.trailerTypesAllowed !== undefined ? { trailerTypesAllowed: Array.isArray(body.trailerTypesAllowed) ? body.trailerTypesAllowed : [] } : {}),
-    ...(body.adrAllowed !== undefined ? { adrAllowed: Boolean(body.adrAllowed) } : {}),
-    ...(body.hiabAllowed !== undefined ? { hiabAllowed: Boolean(body.hiabAllowed) } : {}),
-    ...(body.moffettAllowed !== undefined ? { moffettAllowed: Boolean(body.moffettAllowed) } : {}),
-    ...(body.manualHandlingAllowed !== undefined ? { manualHandlingAllowed: Boolean(body.manualHandlingAllowed) } : {}),
-    ...(body.preferredStartTime !== undefined ? { preferredStartTime: optionalString(body.preferredStartTime) ?? "" } : {}),
-    ...(body.earliestStartTime !== undefined ? { earliestStartTime: optionalString(body.earliestStartTime) ?? "" } : {}),
-    ...(body.latestFinishTime !== undefined ? { latestFinishTime: optionalString(body.latestFinishTime) ?? "" } : {}),
-    ...(body.preferredShiftHours !== undefined ? { preferredShiftHours: optionalNumber(body.preferredShiftHours) ?? null } : {}),
-    ...(body.normalWorkingDays !== undefined ? { normalWorkingDays: Array.isArray(body.normalWorkingDays) ? body.normalWorkingDays : [] } : {}),
-    ...(body.weekendAvailable !== undefined ? { weekendAvailable: Boolean(body.weekendAvailable) } : {}),
-    ...(body.nightWorkAllowed !== undefined ? { nightWorkAllowed: Boolean(body.nightWorkAllowed) } : {}),
-    ...(body.nightsOutAllowed !== undefined ? { nightsOutAllowed: Boolean(body.nightsOutAllowed) } : {}),
-    ...(body.overtimeAllowed !== undefined ? { overtimeAllowed: Boolean(body.overtimeAllowed) } : {}),
-    ...(body.baseLocation !== undefined ? { baseLocation: optionalString(body.baseLocation) ?? "" } : {}),
-    ...(body.operatingArea !== undefined ? { operatingArea: optionalString(body.operatingArea) ?? "" } : {}),
-    ...(body.avoidAreas !== undefined ? { avoidAreas: optionalString(body.avoidAreas) ?? "" } : {}),
-    ...(body.plannerNotes !== undefined ? { plannerNotes: optionalString(body.plannerNotes) ?? "" } : {}),
-    ...(body.holidayAllowance !== undefined ? { holidayAllowance: Math.max(0, Math.round(optionalNumber(body.holidayAllowance) ?? 28)) } : {}),
-    ...(
-      body.driverType !== undefined && optionalString(body.driverType) !== "permanent"
-        ? { holidayAllowance: 0, holidayUsed: 0 }
-        : {}
-    ),
-  };
-}
-
 function holidayDates(input: { startDate: string; endDate: string }) {
   const start = new Date(input.startDate);
-  const end = new Date(input.endDate);
+  const end   = new Date(input.endDate);
   start.setHours(12, 0, 0, 0);
   end.setHours(12, 0, 0, 0);
   return { start, end };
