@@ -455,26 +455,6 @@ function StopCard({
               placeholder="UK" />
           </div>
 
-          {/* Date + time window */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <TextField label={stop.type === "collection" ? "Collection date" : "Delivery date"} required
-              type="date" value={stop.date} onChange={v => onChange({ date: v })} />
-            <TextField label="Earliest arrival" required
-              type="time" value={stop.earliestArrivalTime} onChange={v => onChange({ earliestArrivalTime: v })} />
-            <TextField label="Latest arrival" required
-              type="time" value={stop.latestArrivalTime} onChange={v => onChange({ latestArrivalTime: v })} />
-          </div>
-
-          {/* Service time */}
-          <div>
-            <FieldLabel required>Estimated {stop.type === "collection" ? "loading" : "unloading"} time</FieldLabel>
-            <ServiceTimeChips value={stop.serviceTime} onChange={v => onChange({ serviceTime: v })} />
-            {stop.serviceTime === "custom" && (
-              <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
-                value={stop.serviceTimeCustom} onChange={e => onChange({ serviceTimeCustom: e.target.value })} />
-            )}
-          </div>
-
           {/* Entrance pin */}
           <div>
             <FieldLabel required>Exact entrance pin — latitude / longitude</FieldLabel>
@@ -511,6 +491,26 @@ function StopCard({
               value={stop.navigationInstructions}
               onChange={e => onChange({ navigationInstructions: e.target.value })} />
             <div className="text-xs text-muted mt-1">Gate code, security procedure, which entrance to use.</div>
+          </div>
+
+          {/* Date + time window */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <TextField label={stop.type === "collection" ? "Collection date" : "Delivery date"} required
+              type="date" value={stop.date} onChange={v => onChange({ date: v })} />
+            <TextField label="Earliest arrival" required
+              type="time" value={stop.earliestArrivalTime} onChange={v => onChange({ earliestArrivalTime: v })} />
+            <TextField label="Latest arrival" required
+              type="time" value={stop.latestArrivalTime} onChange={v => onChange({ latestArrivalTime: v })} />
+          </div>
+
+          {/* Service time */}
+          <div>
+            <FieldLabel required>Estimated {stop.type === "collection" ? "loading" : "unloading"} time</FieldLabel>
+            <ServiceTimeChips value={stop.serviceTime} onChange={v => onChange({ serviceTime: v })} />
+            {stop.serviceTime === "custom" && (
+              <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
+                value={stop.serviceTimeCustom} onChange={e => onChange({ serviceTimeCustom: e.target.value })} />
+            )}
           </div>
 
           {/* Handling methods — per stop */}
