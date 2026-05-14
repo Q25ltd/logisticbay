@@ -291,7 +291,7 @@ function blankStop(type: string): StopState {
     lat: "", lng: "", navigationInstructions: "",
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
-    serviceTime: "30", serviceTimeCustom: "",
+    serviceTime: "30", serviceTimeCustom: "0",
     handlingMethods: [], accessRequirements: [],
     heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
     unitName: "", addressLine2: "", countyRegion: "",
@@ -322,7 +322,8 @@ function stopStarted(s: StopState): boolean {
 }
 
 function stopToRequestStop(s: StopState, seq: number): RequestStop {
-  const svcMin = s.serviceTime === "custom" ? parseInt(s.serviceTimeCustom, 10) || 30 : parseInt(s.serviceTime, 10);
+  const customMin = Math.max(0, parseInt(s.serviceTimeCustom, 10) || 0);
+  const svcMin = s.serviceTime === "custom" ? (customMin > 0 ? customMin : 30) : parseInt(s.serviceTime, 10);
   return {
     type:           s.type as RequestStop["type"],
     sequence:       seq,
@@ -639,10 +640,41 @@ function StopCard({
           <div>
             <FieldLabel required>Estimated {stop.type === "collection" ? "loading" : "unloading"} time</FieldLabel>
             <ServiceTimeChips value={stop.serviceTime} onChange={v => onChange({ serviceTime: v })} />
-            {stop.serviceTime === "custom" && (
-              <input className="input mt-2 max-w-xs" type="number" placeholder="Minutes"
-                value={stop.serviceTimeCustom} onChange={e => onChange({ serviceTimeCustom: e.target.value })} />
-            )}
+            {stop.serviceTime === "custom" && (() => {
+              const totalMin = Math.max(0, parseInt(stop.serviceTimeCustom, 10) || 0);
+              const hrs = Math.floor(totalMin / 60);
+              const mins = totalMin % 60;
+              return (
+                <div className="flex items-end gap-3 mt-3">
+                  <div>
+                    <FieldLabel>Hours</FieldLabel>
+                    <input
+                      className="input w-24 text-center font-mono"
+                      type="number" min="0" step="1"
+                      value={hrs}
+                      onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                      onChange={e => {
+                        const h = Math.max(0, Math.floor(parseInt(e.target.value, 10) || 0));
+                        onChange({ serviceTimeCustom: String(h * 60 + mins) });
+                      }} />
+                  </div>
+                  <span className="text-sm text-muted pb-2.5 flex-shrink-0">hr</span>
+                  <div>
+                    <FieldLabel>Minutes</FieldLabel>
+                    <input
+                      className="input w-24 text-center font-mono"
+                      type="number" min="0" max="59" step="1"
+                      value={mins}
+                      onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                      onChange={e => {
+                        const m = Math.min(59, Math.max(0, Math.floor(parseInt(e.target.value, 10) || 0)));
+                        onChange({ serviceTimeCustom: String(hrs * 60 + m) });
+                      }} />
+                  </div>
+                  <span className="text-sm text-muted pb-2.5 flex-shrink-0">min</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Handling methods — per stop */}
@@ -1145,7 +1177,7 @@ export default function PublicRequestForm() {
 
               {/* Quantity + unit */}
               <div className="grid grid-cols-2 gap-3">
-                <TextField label="Quantity" required type="number" value={quantity}
+                <TextField label="Quantity" required type="number" min="0" step="1" value={quantity}
                   onChange={setQuantity} placeholder="24" />
                 <div>
                   <FieldLabel required>Unit</FieldLabel>
@@ -1159,7 +1191,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* Estimated weight — required */}
-              <TextField label="Estimated total weight (kg)" required type="number"
+              <TextField label="Estimated total weight (kg)" required type="number" min="0" step="1"
                 value={estWeight} onChange={setEstWeight} placeholder="14000"
                 hint="Approximate is fine, but do not leave blank." />
 
@@ -1167,7 +1199,7 @@ export default function PublicRequestForm() {
               {goodsType === "pallets" && (
                 <div className="space-y-4 pt-1">
                   <div className="grid grid-cols-2 gap-3">
-                    <TextField label="Pallet count" type="number" value={palletCount}
+                    <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
                       onChange={setPalletCount} placeholder="24" />
                     <div>
                       <FieldLabel>Pallet type</FieldLabel>
@@ -1244,7 +1276,7 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Vehicles ── */}
               {goodsType === "vehicles" && (
                 <div className="space-y-4 pt-1">
-                  <TextField label="Number of vehicles" type="number"
+                  <TextField label="Number of vehicles" type="number" min="0" step="1"
                     value={vehicleCount} onChange={setVehicleCount} placeholder="2" />
                   <Toggle value={driveable} onChange={setDriveable} label="Vehicles are driveable (RORO)" />
                 </div>
@@ -1408,7 +1440,7 @@ export default function PublicRequestForm() {
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
-              <TextField label="Declared value of goods (£)" required type="number"
+              <TextField label="Declared value of goods (£)" required type="number" min="0"
                 value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
                 hint="For insurance/risk purposes only — not the transport price." />
               <Toggle value={vatRegistered} onChange={setVatRegistered} label="We are VAT registered" />

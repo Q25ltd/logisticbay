@@ -30,6 +30,8 @@ export function TextField({
   placeholder,
   type = "text",
   className = "",
+  min,
+  step,
 }: {
   label: string;
   value: string;
@@ -40,6 +42,8 @@ export function TextField({
   placeholder?: string;
   type?: "text" | "email" | "tel" | "number" | "date" | "time";
   className?: string;
+  min?: string;
+  step?: string;
 }) {
   return (
     <label className="block">
@@ -49,11 +53,28 @@ export function TextField({
         type={type}
         value={value}
         placeholder={placeholder}
+        min={min}
+        step={step}
         onChange={event => onChange(event.target.value)}
         onBlur={event => {
+          // For number fields with min="0": clamp negatives to 0 on blur
+          if (type === "number" && min === "0") {
+            const n = parseFloat(event.target.value);
+            if (!isNaN(n) && n < 0) { onChange("0"); return; }
+          }
           const next = applyCase(event.target.value, caseRule);
           if (next !== value) onChange(next);
         }}
+        onKeyDown={type === "number" ? event => {
+          // Block minus sign and scientific notation (e/E) for all number inputs
+          if (event.key === "-" || event.key === "e" || event.key === "E") {
+            event.preventDefault();
+          }
+          // Block decimal point when whole numbers are required (step="1")
+          if (step === "1" && event.key === ".") {
+            event.preventDefault();
+          }
+        } : undefined}
         autoCapitalize={autoCapitalizeFor(caseRule)}
       />
       {hint && <div className="text-xs text-muted mt-1">{hint}</div>}
