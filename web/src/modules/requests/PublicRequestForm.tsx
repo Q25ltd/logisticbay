@@ -967,8 +967,8 @@ export default function PublicRequestForm() {
               {/* Add stop — user picks type in the new card */}
               <button type="button"
                 onClick={() => setStops(prev => [...prev, blankStop("collection")])}
-                className="w-full px-4 py-3 text-sm font-medium border-2 border-dashed border-indigo-300 text-indigo-600 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
-                + Add stop
+                className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
+                + Add another stop
               </button>
 
               {!sec2Complete && sec2Started && (
