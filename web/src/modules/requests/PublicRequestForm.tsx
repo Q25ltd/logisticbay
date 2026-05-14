@@ -433,6 +433,9 @@ function StopCard({
           <TextField label="Address line 1" required
             value={stop.street} onChange={v => onChange({ street: v })}
             placeholder="Industrial Estate Road" caseRule="proper_name" />
+          <TextField label="Address line 2"
+            value={stop.addressLine2} onChange={v => onChange({ addressLine2: v })}
+            placeholder="Business Park" caseRule="proper_name" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
               <TextField label="Town / city" required
@@ -443,11 +446,14 @@ function StopCard({
               value={stop.postcode} onChange={v => onChange({ postcode: v.toUpperCase() })}
               placeholder="B1 1AA" />
           </div>
-
-          {/* Country — required */}
-          <TextField label="Country" required
-            value={stop.country} onChange={v => onChange({ country: v })}
-            placeholder="UK" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TextField label="County / region"
+              value={stop.countyRegion} onChange={v => onChange({ countyRegion: v })}
+              placeholder="West Midlands" caseRule="proper_name" />
+            <TextField label="Country" required
+              value={stop.country} onChange={v => onChange({ country: v })}
+              placeholder="UK" />
+          </div>
 
           {/* Date + time window */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -560,10 +566,6 @@ function StopCard({
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">
               <TextField label="Unit / building name" value={stop.unitName}
                 onChange={v => onChange({ unitName: v })} placeholder="Unit 12B" />
-              <TextField label="Address line 2" value={stop.addressLine2}
-                onChange={v => onChange({ addressLine2: v })} placeholder="Business Park" />
-              <TextField label="County / region" value={stop.countyRegion}
-                onChange={v => onChange({ countyRegion: v })} placeholder="West Midlands" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <TextField label="Site contact name"  value={stop.contactName}
                   onChange={v => onChange({ contactName: v })} />
