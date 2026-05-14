@@ -33,8 +33,14 @@ const STOP_TYPES: [string, string][] = [
 ];
 
 const SERVICE_TIMES: [string, string][] = [
-  ["15", "15 min"], ["30", "30 min"], ["45", "45 min"],
-  ["60", "1 hour"], ["90", "1.5 hrs"], ["120", "2 hrs"], ["180", "3 hrs"], ["custom", "Custom"],
+  ["15", "15 min"],
+  ["30", "30 min"],
+  ["45", "45 min"],
+  ["60", "1 hr"],
+  ["90", "1.5 hr"],
+  ["120", "2 hr"],
+  ["180", "3 hr"],
+  ["custom", "Custom"],
 ];
 
 const LOAD_TYPES: [string, string][] = [
@@ -379,10 +385,10 @@ function Chips({ options, value, onChange }: {
 
 function ServiceTimeChips({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="grid grid-cols-8 gap-1.5 mt-1">
       {SERVICE_TIMES.map(([v, l]) => (
         <button key={v} type="button" onClick={() => onChange(v)}
-          className={"px-3 py-2 rounded-xl border text-sm font-medium transition-colors " +
+          className={"py-2 rounded-lg border text-xs font-semibold text-center transition-colors " +
             (value === v ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
           {l}
         </button>
