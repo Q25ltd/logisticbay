@@ -393,12 +393,18 @@ function StopCard({
 
           {/* Stop type selector */}
           <div>
-            <FieldLabel>Stop type</FieldLabel>
-            <div className="flex flex-wrap gap-2 mt-1">
+            <FieldLabel required>Stop type</FieldLabel>
+            <div className="flex gap-3 mt-1">
               {STOP_TYPES.map(([v, l]) => (
                 <button key={v} type="button" onClick={() => onChange({ type: v })}
-                  className={"px-3 py-1.5 rounded-full border text-xs font-medium transition-colors " +
-                    (stop.type === v ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
+                  className={
+                    "flex-1 py-3 min-h-[48px] rounded-lg border text-sm font-semibold transition-colors " +
+                    (stop.type === v
+                      ? v === "collection"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-green-600 text-white border-green-600"
+                      : "bg-white text-muted border-border hover:border-gray-400")
+                  }>
                   {l}
                 </button>
               ))}
