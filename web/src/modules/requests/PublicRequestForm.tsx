@@ -403,6 +403,7 @@ function StopCard({
   onChange: (patch: Partial<StopState>) => void;
   onRemove: () => void;
 }) {
+  const [showCoordHelp, setShowCoordHelp] = useState(false);
   const complete = stopComplete(stop);
   const started  = stopStarted(stop);
   const typeLabel = STOP_TYPES.find(([v]) => v === stop.type)?.[1] ?? stop.type;
@@ -547,12 +548,7 @@ function StopCard({
           {/* Entrance pin */}
           <div>
             <FieldLabel required>Exact entrance pin — latitude / longitude</FieldLabel>
-            <div className="text-xs text-muted mb-2">
-              The exact coordinates where the driver should enter: gate, yard entrance, goods-in door, or security barrier.
-              <br />Google Maps → right-click the exact entrance point → copy the coordinates shown at the top of the menu.
-              <strong className="text-primary"> Must be the truck gate, not the building centre.</strong>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 mt-1">
               <div>
                 <FieldLabel>Latitude</FieldLabel>
                 <input className="input font-mono" type="number" step="0.000001"
@@ -568,6 +564,34 @@ function StopCard({
                   onChange={e => onChange({ lng: e.target.value })} />
               </div>
             </div>
+
+            {/* Always-visible operational warning */}
+            <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+              <span className="text-amber-500 text-base leading-none mt-px flex-shrink-0">⚠</span>
+              <p className="text-xs font-semibold text-amber-800 leading-snug">
+                Must be the truck gate, not the building centre.
+              </p>
+            </div>
+
+            {/* Expandable how-to */}
+            <button
+              type="button"
+              onClick={() => setShowCoordHelp(o => !o)}
+              className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors flex items-center gap-1">
+              <span>{showCoordHelp ? "▾" : "▸"}</span>
+              How to find coordinates
+            </button>
+
+            {showCoordHelp && (
+              <ol className="mt-2 space-y-1 text-xs text-slate-600 border border-slate-200 rounded-lg px-4 py-3 bg-slate-50 list-decimal list-inside leading-relaxed">
+                <li>Open <strong>Google Maps</strong></li>
+                <li>Find the collection or delivery site</li>
+                <li>Zoom in to the <strong>exact truck entrance or gate</strong></li>
+                <li>Right-click the entrance point</li>
+                <li>Click the coordinates shown at the top of the menu — they will be copied automatically</li>
+                <li>Paste them into the fields above</li>
+              </ol>
+            )}
           </div>
 
           {/* Entrance instructions */}
