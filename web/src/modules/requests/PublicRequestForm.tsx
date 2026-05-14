@@ -584,7 +584,12 @@ function StopCard({
 
             {showCoordHelp && (
               <ol className="mt-2 space-y-1 text-xs text-slate-600 border border-slate-200 rounded-lg px-4 py-3 bg-slate-50 list-decimal list-inside leading-relaxed">
-                <li>Open <strong>Google Maps</strong></li>
+                <li>Open{" "}
+                  <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer"
+                    className="text-blue-600 underline hover:text-blue-800 font-semibold">
+                    Google Maps ↗
+                  </a>
+                </li>
                 <li>Find the collection or delivery site</li>
                 <li>Zoom in to the <strong>exact truck entrance or gate</strong></li>
                 <li>Right-click the entrance point</li>
