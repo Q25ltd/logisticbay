@@ -163,6 +163,20 @@ const REJECTION_ACTIONS: [string, string][] = [
   ["other",                           "Other"],
 ];
 
+// ── Country list (ISO 3166-1 alpha-2) ─────────────────────────────────────────
+// MVP: UK only. Commented entries are future-ready.
+const COUNTRIES: [string, string][] = [
+  ["GB", "United Kingdom"],
+  // ["IE", "Ireland"],
+  // ["FR", "France"],
+  // ["DE", "Germany"],
+  // ["NL", "Netherlands"],
+  // ["BE", "Belgium"],
+  // ["ES", "Spain"],
+  // ["IT", "Italy"],
+  // ["PL", "Poland"],
+];
+
 // ── Stop state ────────────────────────────────────────────────────────────────
 
 interface StopState {
@@ -214,7 +228,7 @@ function blankStop(type: string): StopState {
   return {
     id: uid(), type, collapsed: false, showOptional: false,
     siteName: "", street: "", town: "", postcode: "",
-    country: "UK",
+    country: "GB",
     lat: "", lng: "", navigationInstructions: "",
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
@@ -450,9 +464,17 @@ function StopCard({
             <TextField label="County / region"
               value={stop.countyRegion} onChange={v => onChange({ countyRegion: v })}
               placeholder="West Midlands" caseRule="proper_name" />
-            <TextField label="Country" required
-              value={stop.country} onChange={v => onChange({ country: v })}
-              placeholder="UK" />
+            <div>
+              <FieldLabel required>Country</FieldLabel>
+              <select
+                className="input mt-1 w-full"
+                value={stop.country}
+                onChange={e => onChange({ country: e.target.value })}>
+                {COUNTRIES.map(([code, name]) => (
+                  <option key={code} value={code}>{name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Entrance pin */}
