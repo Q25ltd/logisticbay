@@ -25,13 +25,11 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Public form: only Collection and Delivery shown.
+// Reload, Return, Waypoint, Other are planner-only and hidden from the public form.
 const STOP_TYPES: [string, string][] = [
   ["collection", "📦 Collection"],
   ["delivery",   "🏁 Delivery"],
-  ["reload",     "🔄 Reload"],
-  ["return",     "↩ Return"],
-  ["waypoint",   "📍 Waypoint"],
-  ["other",      "➕ Other"],
 ];
 
 const SERVICE_TIMES: [string, string][] = [
@@ -639,9 +637,9 @@ export default function PublicRequestForm() {
   const [customerRef, setCustomerRef] = useState("");
 
   // ── Sec 2: Stops ──────────────────────────────────────────────────────────
+  // Start with one blank collection stop; user adds more via "+ Add stop"
   const [stops, setStops] = useState<StopState[]>([
     blankStop("collection"),
-    blankStop("delivery"),
   ]);
   const updStop = (id: string, patch: Partial<StopState>) =>
     setStops(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
@@ -966,24 +964,12 @@ export default function PublicRequestForm() {
                   onRemove={() => removeStop(stop.id)} />
               ))}
 
-              {/* Add stop buttons */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button"
-                  onClick={() => setStops(prev => [...prev, blankStop("collection")])}
-                  className="px-4 py-2 text-sm font-medium border-2 border-dashed border-blue-300 text-blue-600 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-colors">
-                  + Add collection stop
-                </button>
-                <button type="button"
-                  onClick={() => setStops(prev => [...prev, blankStop("delivery")])}
-                  className="px-4 py-2 text-sm font-medium border-2 border-dashed border-green-300 text-green-700 rounded-xl hover:border-green-500 hover:bg-green-50 transition-colors">
-                  + Add delivery stop
-                </button>
-                <button type="button"
-                  onClick={() => setStops(prev => [...prev, blankStop("other")])}
-                  className="px-4 py-2 text-sm font-medium border-2 border-dashed border-border text-muted rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-colors">
-                  + Add stop
-                </button>
-              </div>
+              {/* Add stop — user picks type in the new card */}
+              <button type="button"
+                onClick={() => setStops(prev => [...prev, blankStop("collection")])}
+                className="w-full px-4 py-3 text-sm font-medium border-2 border-dashed border-indigo-300 text-indigo-600 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
+                + Add stop
+              </button>
 
               {!sec2Complete && sec2Started && (
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
