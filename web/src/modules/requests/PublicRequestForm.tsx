@@ -612,11 +612,19 @@ function StopCard({
           </div>
 
           {/* Date + time window */}
+          <TextField label={stop.type === "collection" ? "Collection date" : "Delivery date"} required
+            type="date" value={stop.date} onChange={v => onChange({ date: v })} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <TextField label={stop.type === "collection" ? "Collection date" : "Delivery date"} required
-              type="date" value={stop.date} onChange={v => onChange({ date: v })} />
             <TextField label="Earliest arrival" required
               type="time" value={stop.earliestArrivalTime} onChange={v => onChange({ earliestArrivalTime: v })} />
+            <div>
+              <TextField
+                label={stop.type === "collection" ? "Collection time" : "Delivery time"}
+                type="time"
+                value={stop.bookedTime}
+                onChange={v => onChange({ bookedTime: v })} />
+              <div className="text-xs text-muted mt-1">Fixed appointment only — leave blank if open window.</div>
+            </div>
             <TextField label="Latest arrival" required
               type="time" value={stop.latestArrivalTime} onChange={v => onChange({ latestArrivalTime: v })} />
           </div>
@@ -682,8 +690,6 @@ function StopCard({
 
           {stop.showOptional && (
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">
-              <TextField label="Unit / building name" value={stop.unitName}
-                onChange={v => onChange({ unitName: v })} placeholder="Unit 12B" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <TextField label="Site contact name"  value={stop.contactName}
                   onChange={v => onChange({ contactName: v })} />
@@ -700,14 +706,6 @@ function StopCard({
               )}
               <TextField label="Opening hours" value={stop.openingHours}
                 onChange={v => onChange({ openingHours: v })} placeholder="Mon–Fri 06:00–18:00" />
-              <div>
-                <TextField label="Exact appointment time (if any)" type="time"
-                  value={stop.bookedTime}
-                  onChange={v => onChange({ bookedTime: v })} />
-                <div className="text-xs text-muted mt-1">
-                  Only if the site gave a fixed appointment. Earliest/latest times are still required.
-                </div>
-              </div>
 
               {/* Proof requirements */}
               <div>
