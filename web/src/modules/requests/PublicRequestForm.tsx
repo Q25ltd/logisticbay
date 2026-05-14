@@ -164,18 +164,71 @@ const REJECTION_ACTIONS: [string, string][] = [
 ];
 
 // ── Country list (ISO 3166-1 alpha-2) ─────────────────────────────────────────
-// MVP: UK only. Commented entries are future-ready.
+// GB first (primary market), then EU-27 alphabetically.
 const COUNTRIES: [string, string][] = [
   ["GB", "United Kingdom"],
-  // ["IE", "Ireland"],
-  // ["FR", "France"],
-  // ["DE", "Germany"],
-  // ["NL", "Netherlands"],
-  // ["BE", "Belgium"],
-  // ["ES", "Spain"],
-  // ["IT", "Italy"],
-  // ["PL", "Poland"],
+  ["AT", "Austria"],
+  ["BE", "Belgium"],
+  ["BG", "Bulgaria"],
+  ["HR", "Croatia"],
+  ["CY", "Cyprus"],
+  ["CZ", "Czech Republic"],
+  ["DK", "Denmark"],
+  ["EE", "Estonia"],
+  ["FI", "Finland"],
+  ["FR", "France"],
+  ["DE", "Germany"],
+  ["GR", "Greece"],
+  ["HU", "Hungary"],
+  ["IE", "Ireland"],
+  ["IT", "Italy"],
+  ["LV", "Latvia"],
+  ["LT", "Lithuania"],
+  ["LU", "Luxembourg"],
+  ["MT", "Malta"],
+  ["NL", "Netherlands"],
+  ["PL", "Poland"],
+  ["PT", "Portugal"],
+  ["RO", "Romania"],
+  ["SK", "Slovakia"],
+  ["SI", "Slovenia"],
+  ["ES", "Spain"],
+  ["SE", "Sweden"],
 ];
+
+// ── Postcode metadata by country ──────────────────────────────────────────────
+// label  = what to show as the field label
+// placeholder = example postcode for that country
+const POSTCODE_META: Record<string, { label: string; placeholder: string }> = {
+  GB: { label: "Postcode",          placeholder: "B1 1AA" },
+  AT: { label: "Postleitzahl",      placeholder: "1010" },
+  BE: { label: "Postcode",          placeholder: "1000" },
+  BG: { label: "Postcode",          placeholder: "1000" },
+  HR: { label: "Poštanski broj",    placeholder: "10000" },
+  CY: { label: "Postcode",          placeholder: "1010" },
+  CZ: { label: "PSČ",               placeholder: "110 00" },
+  DK: { label: "Postnummer",        placeholder: "1050" },
+  EE: { label: "Sihtnumber",        placeholder: "10111" },
+  FI: { label: "Postinumero",       placeholder: "00100" },
+  FR: { label: "Code postal",       placeholder: "75001" },
+  DE: { label: "Postleitzahl",      placeholder: "10115" },
+  GR: { label: "Τ.Κ.",              placeholder: "106 72" },
+  HU: { label: "Irányítószám",      placeholder: "1051" },
+  IE: { label: "Eircode",           placeholder: "D02 XY45" },
+  IT: { label: "CAP",               placeholder: "00100" },
+  LV: { label: "Pasta indekss",     placeholder: "LV-1010" },
+  LT: { label: "Pašto kodas",       placeholder: "LT-01001" },
+  LU: { label: "Code postal",       placeholder: "2800" },
+  MT: { label: "Postcode",          placeholder: "VLT 1116" },
+  NL: { label: "Postcode",          placeholder: "1234 AB" },
+  PL: { label: "Kod pocztowy",      placeholder: "00-001" },
+  PT: { label: "Código postal",     placeholder: "1000-001" },
+  RO: { label: "Cod poștal",        placeholder: "010011" },
+  SK: { label: "PSČ",               placeholder: "811 01" },
+  SI: { label: "Poštna številka",   placeholder: "1000" },
+  ES: { label: "Código postal",     placeholder: "28001" },
+  SE: { label: "Postnummer",        placeholder: "111 20" },
+};
 
 // ── Stop state ────────────────────────────────────────────────────────────────
 
@@ -456,25 +509,39 @@ function StopCard({
                 value={stop.town} onChange={v => onChange({ town: v })}
                 placeholder="Birmingham" caseRule="proper_name" />
             </div>
-            <TextField label="Postcode" required
-              value={stop.postcode} onChange={v => onChange({ postcode: v.toUpperCase() })}
-              placeholder="B1 1AA" />
+            <label className="block">
+              <FieldLabel required>{POSTCODE_META[stop.country]?.label ?? "Postcode"}</FieldLabel>
+              <input
+                className="input mt-1 w-full"
+                type="text"
+                value={stop.postcode}
+                placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
+                onChange={e => onChange({ postcode: e.target.value.toUpperCase() })}
+              />
+            </label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <TextField label="County / region"
               value={stop.countyRegion} onChange={v => onChange({ countyRegion: v })}
               placeholder="West Midlands" caseRule="proper_name" />
-            <div>
+            <label className="block">
               <FieldLabel required>Country</FieldLabel>
-              <select
-                className="input mt-1 w-full"
-                value={stop.country}
-                onChange={e => onChange({ country: e.target.value })}>
-                {COUNTRIES.map(([code, name]) => (
-                  <option key={code} value={code}>{name}</option>
-                ))}
-              </select>
-            </div>
+              <div className="relative mt-1">
+                <select
+                  className="input w-full appearance-none pr-9"
+                  value={stop.country}
+                  onChange={e => onChange({ country: e.target.value })}>
+                  {COUNTRIES.map(([code, name]) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                  <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+            </label>
           </div>
 
           {/* Entrance pin */}
