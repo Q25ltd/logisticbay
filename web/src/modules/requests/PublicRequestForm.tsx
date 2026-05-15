@@ -510,13 +510,13 @@ function StopCard({
             <FieldLabel>Quantity at this stop</FieldLabel>
             <div className="flex gap-2 mt-1">
               <input
-                className="input w-20 font-mono text-center"
+                className="input flex-1 font-mono"
                 type="number" min="0" step="1"
                 placeholder="0"
                 value={stop.stopQuantity}
                 onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
                 onChange={e => onChange({ stopQuantity: e.target.value })} />
-              <div className="relative flex-1">
+              <div className="relative min-w-[11rem]">
                 <select
                   className="input w-full appearance-none pr-8"
                   value={stop.stopQuantityUnit}
