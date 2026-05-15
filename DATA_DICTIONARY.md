@@ -633,7 +633,7 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | town | String | Yes | Free text | Town or city |
 | countyRegion | String? | No | Free text | County or region |
 | postcode | String | Yes | Postcode string | Royal Mail postcode |
-| country | String? | No | Free text, default `UK` | Country |
+| country | String? | No | ISO 3166-1 alpha-2 code, default `GB`. Supported: `GB` (United Kingdom), `AT` `BE` `BG` `HR` `CY` `CZ` `DK` `EE` `FI` `FR` `DE` `GR` `HU` `IE` `IT` `LV` `LT` `LU` `MT` `NL` `PL` `PT` `RO` `SK` `SI` `ES` `SE` | Country — stored as ISO code, displayed as full name in UI |
 | lat | Number | Yes | Decimal degrees | Latitude of the exact truck entrance / gate |
 | lng | Number | Yes | Decimal degrees | Longitude of the exact truck entrance / gate |
 | navigationInstructions | String | Yes | Free text | Gate codes, barrier procedures, which entrance to use |
@@ -650,7 +650,8 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | latestArrivalTime | String | Yes | `HH:MM` | Latest acceptable arrival time |
 | bookedTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
 | unloadingAllowanceMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
-| handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `crane` \| `handball` \| `side_loading` \| `drive_on` \| `drive_off` \| `tail_lift_required` \| `tipper_loading` \| `tipper_unloading` \| `other` | Methods used to load or unload the vehicle at this stop |
+| handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `site_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
+| handlingMethodOther | String? | No | Free text | Description of the handling method when `other` is selected in handlingMethods. Substituted into the array as `other: <value>` on submission |
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
 | accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints the driver needs to know |
 | loadReadiness | String? | No | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure` | Whether the load will be ready when the driver arrives (collection stops only) |
@@ -841,30 +842,30 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop)** | Address line 1 | `JobRequest.stops[n].street` |
 | **2 — Stops (per stop)** | Town / city | `JobRequest.stops[n].town` |
 | **2 — Stops (per stop)** | Postcode | `JobRequest.stops[n].postcode` |
-| **2 — Stops (per stop)** | Country | `JobRequest.stops[n].country` |
+| **2 — Stops (per stop)** | Country (dropdown, ISO alpha-2, default GB) | `JobRequest.stops[n].country` |
 | **2 — Stops (per stop)** | Collection date / Delivery date | `JobRequest.stops[n].date` |
 | **2 — Stops (per stop)** | Earliest arrival | `JobRequest.stops[n].earliestArrivalTime` |
+| **2 — Stops (per stop)** | Collection time / Delivery time (fixed appointment only) | `JobRequest.stops[n].bookedTime` |
 | **2 — Stops (per stop)** | Latest arrival | `JobRequest.stops[n].latestArrivalTime` |
-| **2 — Stops (per stop)** | Estimated loading / unloading time | `JobRequest.stops[n].unloadingAllowanceMinutes` |
+| **2 — Stops (per stop)** | Estimated loading / unloading time (hours + minutes inputs) | `JobRequest.stops[n].unloadingAllowanceMinutes` |
 | **2 — Stops (per stop)** | Latitude (entrance pin) | `JobRequest.stops[n].lat` |
 | **2 — Stops (per stop)** | Longitude (entrance pin) | `JobRequest.stops[n].lng` |
 | **2 — Stops (per stop)** | Entrance instructions | `JobRequest.stops[n].navigationInstructions` |
 | **2 — Stops (per stop)** | How will this be loaded? / unloaded? (handling methods) | `JobRequest.stops[n].handlingMethods[]` |
+| **2 — Stops (per stop)** | Other handling method — describe (shown when "Other" selected) | `JobRequest.stops[n].handlingMethodOther` → serialised into `handlingMethods[]` as `other: <text>` |
 | **2 — Stops (per stop)** | Site access requirements | `JobRequest.stops[n].accessRequirements[]` |
 | **2 — Stops (per stop)** | Height restriction value | `JobRequest.stops[n].heightRestrictionValue` |
 | **2 — Stops (per stop)** | Weight restriction value | `JobRequest.stops[n].weightRestrictionValue` |
 | **2 — Stops (per stop)** | Length restriction value | `JobRequest.stops[n].lengthRestrictionValue` |
 | **2 — Stops (per stop)** | Will the load be ready? (load readiness) | `JobRequest.stops[n].loadReadiness` |
-| **2 — Stops (per stop — optional)** | Unit / building name | `JobRequest.stops[n].addressLine2` (mapped as unitName in form state, stored in addressLine2 in stop blob) |
-| **2 — Stops (per stop — optional)** | Address line 2 | `JobRequest.stops[n].addressLine2` |
-| **2 — Stops (per stop — optional)** | County / region | `JobRequest.stops[n].countyRegion` |
+| **2 — Stops (per stop, always visible)** | Address line 2 | `JobRequest.stops[n].addressLine2` |
+| **2 — Stops (per stop, always visible)** | County / region | `JobRequest.stops[n].countyRegion` |
 | **2 — Stops (per stop — optional)** | Site contact name | `JobRequest.stops[n].contactName` |
 | **2 — Stops (per stop — optional)** | Site contact phone | `JobRequest.stops[n].contactPhone` |
 | **2 — Stops (per stop — optional)** | Site contact email | `JobRequest.stops[n].contactEmail` |
 | **2 — Stops (per stop — optional)** | Booking required before arrival | `JobRequest.stops[n].bookingRequired` |
 | **2 — Stops (per stop — optional)** | Booking reference | `JobRequest.stops[n].bookingRef` |
 | **2 — Stops (per stop — optional)** | Opening hours | `JobRequest.stops[n].openingHours` |
-| **2 — Stops (per stop — optional)** | Exact appointment time (if any) | `JobRequest.stops[n].bookedTime` |
 | **2 — Stops (per stop — optional)** | Proof required at this stop | `JobRequest.stops[n].proofRequirements[]` |
 | **2 — Stops (per stop — optional)** | Typical waiting time at this site | `JobRequest.stops[n].typicalWaitingTime` |
 | **3 — Load details** | What are you moving? (goods type) | `JobRequest.loadData.goodsType` |
