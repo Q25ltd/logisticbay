@@ -508,21 +508,26 @@ function StopCard({
           {/* Quantity at this stop */}
           <div>
             <FieldLabel>Quantity at this stop</FieldLabel>
-            <div className="flex gap-2 mt-1">
-              <input
-                className="input w-28 font-mono"
-                type="number" min="0" step="1"
-                placeholder="e.g. 10"
-                value={stop.stopQuantity}
-                onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
-                onChange={e => onChange({ stopQuantity: e.target.value })} />
-              <select className="input flex-1 appearance-none"
-                value={stop.stopQuantityUnit}
-                onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
-                {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+            <input
+              className="input w-24 font-mono mt-1"
+              type="number" min="0" step="1"
+              placeholder="0"
+              value={stop.stopQuantity}
+              onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+              onChange={e => onChange({ stopQuantity: e.target.value })} />
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {LOAD_UNITS.map(([v, l]) => (
+                <button key={v} type="button"
+                  onClick={() => onChange({ stopQuantityUnit: v })}
+                  className={"px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors " +
+                    (stop.stopQuantityUnit === v
+                      ? "bg-accent text-white border-accent"
+                      : "bg-white text-muted border-border hover:border-gray-400")}>
+                  {l}
+                </button>
+              ))}
             </div>
-            <div className="text-xs text-muted mt-1">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
+            <div className="text-xs text-muted mt-1.5">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
           </div>
 
           {/* Site name */}
