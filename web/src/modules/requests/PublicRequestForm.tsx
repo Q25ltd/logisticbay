@@ -63,17 +63,22 @@ const LOAD_UNITS: [string, string][] = [
 ];
 
 const HANDLING_METHODS: [string, string][] = [
-  ["forklift",          "🏭 Forklift"],
-  ["loading_bay",       "🚪 Loading bay"],
-  ["crane",             "🏗️ Crane"],
-  ["handball",          "💪 Handball"],
-  ["side_loading",      "↔ Side loading"],
-  ["drive_on",          "🚙 Drive on"],
-  ["drive_off",         "🚙 Drive off"],
-  ["tail_lift_required","⬆ Tail lift"],
-  ["tipper_loading",    "⬆ Tipper load"],
-  ["tipper_unloading",  "⬇ Tipper discharge"],
-  ["other",             "➕ Other"],
+  ["forklift",         "Forklift"],
+  ["loading_bay",      "Loading bay"],
+  ["hiab",             "HIAB / truck crane"],
+  ["moffett",          "Moffett / vehicle forklift"],
+  ["tail_lift",        "Tail lift"],
+  ["pump_truck",       "Pump truck / pallet jack"],
+  ["handball",         "Handball (manual)"],
+  ["site_crane",       "Site crane / overhead crane"],
+  ["side_loading",     "Side loading"],
+  ["roro",             "RORO (drive on / drive off)"],
+  ["tipper_discharge", "Tipper discharge"],
+  ["grab",             "Grab (aggregate / scrap)"],
+  ["pump_discharge",   "Pump discharge (tanker)"],
+  ["walking_floor",    "Walking floor"],
+  ["conveyor",         "Conveyor"],
+  ["other",            "Other"],
 ];
 
 const ACCESS_REQUIREMENTS: [string, string][] = [
@@ -259,6 +264,7 @@ interface StopState {
   serviceTime: string;
   serviceTimeCustom: string;
   handlingMethods: string[];
+  handlingMethodOther: string;
   accessRequirements: string[];
   // Restriction values
   heightRestrictionValue: string;
@@ -292,7 +298,7 @@ function blankStop(type: string): StopState {
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "0",
-    handlingMethods: [], accessRequirements: [],
+    handlingMethods: [], handlingMethodOther: "", accessRequirements: [],
     heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
     unitName: "", addressLine2: "", countyRegion: "",
     contactName: "", contactPhone: "", contactEmail: "",
@@ -349,7 +355,9 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     latestArrivalTime:   s.latestArrivalTime,
     bookedTime:          s.bookedTime || undefined,
     unloadingAllowanceMinutes: svcMin,
-    handlingMethods:     s.handlingMethods.length ? s.handlingMethods : undefined,
+    handlingMethods:     s.handlingMethods.length
+      ? s.handlingMethods.map(m => m === "other" && s.handlingMethodOther.trim() ? `other: ${s.handlingMethodOther.trim()}` : m)
+      : undefined,
     accessRequirements:  s.accessRequirements.length ? s.accessRequirements : undefined,
     proofRequirements:   s.proofRequirements.length ? s.proofRequirements : undefined,
     loadReadiness:       s.loadReadiness || undefined,
@@ -684,6 +692,15 @@ function StopCard({
               <MultiCheck options={HANDLING_METHODS} value={stop.handlingMethods}
                 onChange={v => onChange({ handlingMethods: v })} />
             </div>
+            {stop.handlingMethods.includes("other") && (
+              <input
+                className="input mt-2 w-full"
+                type="text"
+                placeholder="Describe the loading / unloading method"
+                value={stop.handlingMethodOther}
+                onChange={e => onChange({ handlingMethodOther: e.target.value })}
+              />
+            )}
           </div>
 
           {/* Access requirements — per stop */}
