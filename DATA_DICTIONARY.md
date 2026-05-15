@@ -655,7 +655,6 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
 | accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints the driver needs to know |
 | loadReadiness | String? | No | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure` | Whether the load will be ready when the driver arrives (collection stops only) |
-| typicalWaitingTime | String? | No | `usually_fast` \| `30_60_min_common` \| `over_1h_common` \| `unknown` | Typical waiting time at this site |
 | heightRestrictionValue | String? | No | Free text (e.g. `4.2m`) | Numeric or descriptive height restriction value (only present when `height_restriction` is in accessRequirements) |
 | weightRestrictionValue | String? | No | Free text (e.g. `7.5t`) | Numeric or descriptive weight restriction value (only present when `weight_restriction` is in accessRequirements) |
 | lengthRestrictionValue | String? | No | Free text (e.g. `18m`) | Numeric or descriptive length restriction value (only present when `length_restriction` is in accessRequirements) |
@@ -867,7 +866,6 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop — optional)** | Booking reference | `JobRequest.stops[n].bookingRef` |
 | **2 — Stops (per stop — optional)** | Opening hours | `JobRequest.stops[n].openingHours` |
 | **2 — Stops (per stop — optional)** | Proof required at this stop | `JobRequest.stops[n].proofRequirements[]` |
-| **2 — Stops (per stop — optional)** | Typical waiting time at this site | `JobRequest.stops[n].typicalWaitingTime` |
 | **3 — Load details** | What are you moving? (goods type) | `JobRequest.loadData.goodsType` |
 | **3 — Load details** | Description of goods | `JobRequest.loadData.goodsDescription` |
 | **3 — Load details** | Quantity | `JobRequest.loadData.quantity` |

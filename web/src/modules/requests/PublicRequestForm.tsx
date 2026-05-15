@@ -142,12 +142,6 @@ const LOAD_READINESS: [string, string][] = [
   ["unsure",               "Unsure"],
 ];
 
-const WAITING_TIME_OPTIONS: [string, string][] = [
-  ["usually_fast",     "Usually fast (under 30 min)"],
-  ["30_60_min_common", "30–60 min typical"],
-  ["over_1h_common",   "Over 1 hour common"],
-  ["unknown",          "Unknown"],
-];
 
 const SPLIT_OPTIONS: [string, string][] = [
   ["must_stay_together",  "Must stay together"],
@@ -283,7 +277,6 @@ interface StopState {
   bookedTime: string;
   proofRequirements: string[];
   loadReadiness: string;
-  typicalWaitingTime: string;
 }
 
 let _uid = 0;
@@ -306,7 +299,6 @@ function blankStop(type: string): StopState {
     bookedTime: "",
     proofRequirements: [],
     loadReadiness: "",
-    typicalWaitingTime: "",
   };
 }
 
@@ -361,7 +353,6 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     accessRequirements:  s.accessRequirements.length ? s.accessRequirements : undefined,
     proofRequirements:   s.proofRequirements.length ? s.proofRequirements : undefined,
     loadReadiness:       s.loadReadiness || undefined,
-    typicalWaitingTime:  s.typicalWaitingTime || undefined,
     heightRestrictionValue: s.heightRestrictionValue || undefined,
     weightRestrictionValue: s.weightRestrictionValue || undefined,
     lengthRestrictionValue: s.lengthRestrictionValue || undefined,
@@ -771,14 +762,6 @@ function StopCard({
                 </div>
               </div>
 
-              {/* Typical waiting time */}
-              <div>
-                <FieldLabel>Typical waiting time at this site</FieldLabel>
-                <div className="mt-1">
-                  <Chips options={WAITING_TIME_OPTIONS} value={stop.typicalWaitingTime}
-                    onChange={v => onChange({ typicalWaitingTime: v })} />
-                </div>
-              </div>
             </div>
           )}
         </div>
