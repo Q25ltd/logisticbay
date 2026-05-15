@@ -40,6 +40,9 @@ export interface RequestStop {
   stopQuantity?:           number;
   stopQuantityUnit?:       string;
   stopNotes?:              string;
+  exchangeDropQty?:        number;
+  exchangeCollectQty?:     number;
+  exchangeUnit?:           string;
   handlingMethods?:        string[];
   proofRequirements?:      string[];
   accessRequirements?:     string[];
@@ -72,6 +75,9 @@ export interface LoadData {
   palletType?:            string;
   palletTypeOther?:       string; // free text when palletType = "other"
   stackable?:             boolean;
+  // Roll cages / yorks
+  cageCount?:             number;
+  cageFolded?:            boolean;
   // Machinery
   dimensions?:            string;
   machineryPieceWeight?:  number; // kg per individual piece

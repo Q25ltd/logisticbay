@@ -653,6 +653,9 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | stopQuantity | Number? | No | Positive integer | Number of items/units being collected or delivered at this specific stop (not the total job quantity) |
 | stopQuantityUnit | String? | No | `pallets` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity |
 | stopNotes | String? | No | Free text | Free-text notes specific to this stop — anything not covered by other fields (e.g. partial loads, bay numbers, wait instructions) |
+| exchangeDropQty | Number? | No | Positive integer | Number of full units (pallets, cages, etc.) to drop at this stop as part of an exchange |
+| exchangeCollectQty | Number? | No | Positive integer | Number of empty units to collect back from this stop as part of an exchange |
+| exchangeUnit | String? | No | `pallets` \| `roll_cages` \| `stillages` \| `ibc_tanks` \| `other` | Type of equipment being exchanged (only present when exchangeDropQty or exchangeCollectQty is set) |
 | handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `site_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
 | handlingMethodOther | String? | No | Free text | Description of the handling method when `other` is selected in handlingMethods. Substituted into the array as `other: <value>` on submission |
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
@@ -672,7 +675,7 @@ Stored in `JobRequest.loadData` (Json column, default `{}`).
 
 | Field | Type | Required | Values / Format | Description |
 |---|---|---|---|---|
-| goodsType | String | Yes | `pallets` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods being transported |
+| goodsType | String | Yes | `pallets` \| `roll_cages` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods being transported |
 | goodsTypeOther | String? | No | Free text | Description of goods when goodsType = `other` |
 | goodsDescription | String | Yes | Free text, min 15 characters | Detailed description of what is being transported |
 | quantity | Number | Yes | Positive number | Quantity of goods |
@@ -682,6 +685,8 @@ Stored in `JobRequest.loadData` (Json column, default `{}`).
 | palletType | String? | No | `euro` \| `uk` \| `half` \| `chep` \| `other` | Type of pallets (only when goodsType = `pallets`) |
 | palletTypeOther | String? | No | Free text | Description of pallet type when palletType = `other` |
 | stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets`) |
+| cageCount | Number? | No | Positive integer | Number of roll cages / yorks (only when goodsType = `roll_cages`; may differ from total quantity if cages are nested/folded) |
+| cageFolded | Boolean? | No | `true` \| `false` | Whether the cages are folded / nested rather than assembled (only when goodsType = `roll_cages`) |
 | dimensions | String? | No | Free text (e.g. `4.5m × 2.2m × 3.1m`) | Physical dimensions — longest item length for `steel_long`; L×W×H for `machinery` |
 | machineryPieceWeight | Number? | No | Positive number (kg) | Weight of one individual piece of machinery — critical for crane and HIAB capacity planning (only when goodsType = `machinery`) |
 | machineryLiftingPoints | Boolean? | No | `true` \| `false` | Whether the machine has lifting points / lifting eyes (only when goodsType = `machinery`) |
@@ -873,6 +878,9 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop)** | Length restriction value | `JobRequest.stops[n].lengthRestrictionValue` |
 | **2 — Stops (per stop)** | Will the load be ready? (load readiness) | `JobRequest.stops[n].loadReadiness` |
 | **2 — Stops (per stop)** | Stop notes | `JobRequest.stops[n].stopNotes` |
+| **2 — Stops (per stop)** | Equipment exchange — Drop (full) | `JobRequest.stops[n].exchangeDropQty` |
+| **2 — Stops (per stop)** | Equipment exchange — Collect empties | `JobRequest.stops[n].exchangeCollectQty` |
+| **2 — Stops (per stop)** | Equipment exchange — Unit | `JobRequest.stops[n].exchangeUnit` |
 | **2 — Stops (per stop, always visible)** | Address line 2 | `JobRequest.stops[n].addressLine2` |
 | **2 — Stops (per stop, always visible)** | County / region | `JobRequest.stops[n].countyRegion` |
 | **2 — Stops (per stop — optional)** | Site contact name | `JobRequest.stops[n].contactName` |
@@ -884,6 +892,8 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop — optional)** | Proof required at this stop | `JobRequest.stops[n].proofRequirements[]` |
 | **3 — Load details** | What are you moving? (goods type) | `JobRequest.loadData.goodsType` |
 | **3 — Load details** | Other goods type — describe (shown when "Other" selected) | `JobRequest.loadData.goodsTypeOther` |
+| **3 — Load details** | Number of cages (roll cages / yorks) | `JobRequest.loadData.cageCount` |
+| **3 — Load details** | Cages are folded / nested | `JobRequest.loadData.cageFolded` |
 | **3 — Load details** | Description of goods (min 15 chars, live counter) | `JobRequest.loadData.goodsDescription` |
 | **3 — Load details** | Quantity | `JobRequest.loadData.quantity` |
 | **3 — Load details** | Unit | `JobRequest.loadData.unit` |

@@ -45,6 +45,7 @@ const SERVICE_TIMES: [string, string][] = [
 
 const LOAD_TYPES: [string, string][] = [
   ["pallets",            "📦 Pallets"],
+  ["roll_cages",         "🛒 Roll cages / yorks"],
   ["machinery",          "⚙️ Machinery"],
   ["building_materials", "🧱 Building materials"],
   ["food_refrigerated",  "❄️ Food / refrigerated"],
@@ -57,9 +58,25 @@ const LOAD_TYPES: [string, string][] = [
 ];
 
 const LOAD_UNITS: [string, string][] = [
-  ["pallets", "Pallets"], ["tonnes", "Tonnes"], ["kg", "Kilograms"],
-  ["bags", "Bags"], ["items", "Items"], ["loads", "Loads"],
-  ["litres", "Litres"], ["cubic_metres", "Cubic metres"], ["other", "Other"],
+  ["pallets",     "Pallets"],
+  ["roll_cages",  "Roll cages"],
+  ["tonnes",      "Tonnes"],
+  ["kg",          "Kilograms"],
+  ["bags",        "Bags"],
+  ["items",       "Items"],
+  ["loads",       "Loads"],
+  ["litres",      "Litres"],
+  ["cubic_metres","Cubic metres"],
+  ["other",       "Other"],
+];
+
+// Units that can be exchanged per stop
+const EXCHANGE_UNITS: [string, string][] = [
+  ["pallets",    "Pallets"],
+  ["roll_cages", "Roll cages / yorks"],
+  ["stillages",  "Stillages"],
+  ["ibc_tanks",  "IBC tanks"],
+  ["other",      "Other"],
 ];
 
 const HANDLING_METHODS: [string, string][] = [
@@ -260,6 +277,10 @@ interface StopState {
   stopQuantity: string;
   stopQuantityUnit: string;
   stopNotes: string;
+  // Equipment exchange
+  exchangeDropQty: string;
+  exchangeCollectQty: string;
+  exchangeUnit: string;
   handlingMethods: string[];
   handlingMethodOther: string;
   accessRequirements: string[];
@@ -295,6 +316,7 @@ function blankStop(type: string): StopState {
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "0",
     stopQuantity: "", stopQuantityUnit: "pallets", stopNotes: "",
+    exchangeDropQty: "", exchangeCollectQty: "", exchangeUnit: "pallets",
     handlingMethods: [], handlingMethodOther: "", accessRequirements: [],
     heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
     unitName: "", addressLine2: "", countyRegion: "",
@@ -354,6 +376,9 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     stopQuantity:        s.stopQuantity ? parseFloat(s.stopQuantity) : undefined,
     stopQuantityUnit:    s.stopQuantity ? s.stopQuantityUnit : undefined,
     stopNotes:           s.stopNotes.trim() || undefined,
+    exchangeDropQty:     s.exchangeDropQty     ? parseFloat(s.exchangeDropQty)     : undefined,
+    exchangeCollectQty:  s.exchangeCollectQty  ? parseFloat(s.exchangeCollectQty)  : undefined,
+    exchangeUnit:        (s.exchangeDropQty || s.exchangeCollectQty) ? s.exchangeUnit : undefined,
     handlingMethods:     s.handlingMethods.length
       ? s.handlingMethods.map(m => m === "other" && s.handlingMethodOther.trim() ? `other: ${s.handlingMethodOther.trim()}` : m)
       : undefined,
@@ -531,6 +556,48 @@ function StopCard({
               </div>
             </div>
             <div className="text-xs text-muted mt-1">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
+          </div>
+
+          {/* Equipment exchange */}
+          <div>
+            <FieldLabel>Equipment exchange at this stop</FieldLabel>
+            <div className="text-xs text-muted mb-2">Drop full units, collect empties — leave blank if no exchange.</div>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <FieldLabel>Drop (full)</FieldLabel>
+                <input
+                  className="input w-full font-mono"
+                  type="number" min="0" step="1"
+                  placeholder="0"
+                  value={stop.exchangeDropQty}
+                  onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                  onChange={e => onChange({ exchangeDropQty: e.target.value })} />
+              </div>
+              <div className="flex-1">
+                <FieldLabel>Collect empties</FieldLabel>
+                <input
+                  className="input w-full font-mono"
+                  type="number" min="0" step="1"
+                  placeholder="0"
+                  value={stop.exchangeCollectQty}
+                  onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                  onChange={e => onChange({ exchangeCollectQty: e.target.value })} />
+              </div>
+              <div className="relative min-w-[10rem]">
+                <FieldLabel>Unit</FieldLabel>
+                <select
+                  className="input w-full appearance-none pr-8"
+                  value={stop.exchangeUnit}
+                  onChange={e => onChange({ exchangeUnit: e.target.value })}>
+                  {EXCHANGE_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <div className="pointer-events-none absolute bottom-0 right-3 flex items-center h-[42px]">
+                  <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Site name */}
@@ -871,6 +938,9 @@ export default function PublicRequestForm() {
   const [palletType,              setPalletType]              = useState("");
   const [palletTypeOther,         setPalletTypeOther]         = useState("");
   const [stackable,               setStackable]               = useState(false);
+  // Roll cages / yorks
+  const [cageCount,               setCageCount]               = useState("");
+  const [cageFolded,              setCageFolded]              = useState(false);
   // Machinery
   const [dimensions,              setDimensions]              = useState("");
   const [machineryPieceWeight,    setMachineryPieceWeight]    = useState("");
@@ -1013,6 +1083,8 @@ export default function PublicRequestForm() {
         palletType:           palletType    || undefined,
         palletTypeOther:      palletType === "other" ? palletTypeOther.trim() || undefined : undefined,
         stackable:            stackable     || undefined,
+        cageCount:            cageCount     ? parseInt(cageCount, 10)  : undefined,
+        cageFolded:           cageFolded    || undefined,
         dimensions:           dimensions.trim()    || undefined,
         machineryPieceWeight: machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
         machineryLiftingPoints: machineryLiftingPoints || undefined,
@@ -1326,6 +1398,17 @@ export default function PublicRequestForm() {
                       value={palletTypeOther} onChange={e => setPalletTypeOther(e.target.value)} />
                   )}
                   <Toggle value={stackable} onChange={setStackable} label="Pallets are stackable" />
+                </div>
+              )}
+
+              {/* ── Conditional: Roll cages / yorks ── */}
+              {goodsType === "roll_cages" && (
+                <div className="space-y-4 pt-1">
+                  <TextField label="Number of cages" type="number" min="0" step="1"
+                    value={cageCount} onChange={setCageCount} placeholder="48"
+                    hint="If different from the total quantity above." />
+                  <Toggle value={cageFolded} onChange={setCageFolded}
+                    label="Cages are folded / nested (not assembled)" />
                 </div>
               )}
 
