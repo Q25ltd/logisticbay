@@ -37,11 +37,13 @@ export interface RequestStop {
   latestArrivalTime:   string;   // HH:MM
   bookedTime?:         string;
   unloadingAllowanceMinutes: number;
+  stopQuantity?:           number;
+  stopQuantityUnit?:       string;
+  stopNotes?:              string;
   handlingMethods?:        string[];
   proofRequirements?:      string[];
   accessRequirements?:     string[];
   loadReadiness?:          string;
-  typicalWaitingTime?:     string;
   heightRestrictionValue?: string;
   weightRestrictionValue?: string;
   lengthRestrictionValue?: string;

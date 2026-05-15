@@ -257,6 +257,9 @@ interface StopState {
   latestArrivalTime: string;
   serviceTime: string;
   serviceTimeCustom: string;
+  stopQuantity: string;
+  stopQuantityUnit: string;
+  stopNotes: string;
   handlingMethods: string[];
   handlingMethodOther: string;
   accessRequirements: string[];
@@ -291,6 +294,7 @@ function blankStop(type: string): StopState {
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "0",
+    stopQuantity: "", stopQuantityUnit: "pallets", stopNotes: "",
     handlingMethods: [], handlingMethodOther: "", accessRequirements: [],
     heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
     unitName: "", addressLine2: "", countyRegion: "",
@@ -347,6 +351,9 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     latestArrivalTime:   s.latestArrivalTime,
     bookedTime:          s.bookedTime || undefined,
     unloadingAllowanceMinutes: svcMin,
+    stopQuantity:        s.stopQuantity ? parseFloat(s.stopQuantity) : undefined,
+    stopQuantityUnit:    s.stopQuantity ? s.stopQuantityUnit : undefined,
+    stopNotes:           s.stopNotes.trim() || undefined,
     handlingMethods:     s.handlingMethods.length
       ? s.handlingMethods.map(m => m === "other" && s.handlingMethodOther.trim() ? `other: ${s.handlingMethodOther.trim()}` : m)
       : undefined,
@@ -497,6 +504,26 @@ function StopCard({
                 ? "Warehouse release number or booking ref. Driver shows this on arrival."
                 : "Goods-in booking number or PO. Driver shows this to unload."} />
           )}
+
+          {/* Quantity at this stop */}
+          <div>
+            <FieldLabel>Quantity at this stop</FieldLabel>
+            <div className="flex gap-2 mt-1">
+              <input
+                className="input w-28 font-mono"
+                type="number" min="0" step="1"
+                placeholder="e.g. 10"
+                value={stop.stopQuantity}
+                onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                onChange={e => onChange({ stopQuantity: e.target.value })} />
+              <select className="input flex-1 appearance-none"
+                value={stop.stopQuantityUnit}
+                onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
+                {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div className="text-xs text-muted mt-1">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
+          </div>
 
           {/* Site name */}
           <TextField label="Site name" required
@@ -729,10 +756,22 @@ function StopCard({
             </div>
           )}
 
+          {/* Stop notes */}
+          <div>
+            <FieldLabel>Stop notes</FieldLabel>
+            <textarea className="input mt-1 w-full" rows={2}
+              placeholder={stop.type === "collection"
+                ? "Only load the first 10 pallets — remaining 3 continue to next stop. Wait in cab until called."
+                : "Offload to bay 4 only. Do not park in front of the red roller door — different tenant."}
+              value={stop.stopNotes}
+              onChange={e => onChange({ stopNotes: e.target.value })} />
+            <div className="text-xs text-muted mt-1">Anything specific to this stop not covered by the fields above.</div>
+          </div>
+
           {/* Optional fields */}
           <OptionalToggle open={stop.showOptional}
             onToggle={() => onChange({ showOptional: !stop.showOptional })}
-            label="site contact, opening hours, booking, proof & waiting time" />
+            label="site contact, opening hours, booking & proof" />
 
           {stop.showOptional && (
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">

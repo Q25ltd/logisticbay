@@ -650,6 +650,9 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | latestArrivalTime | String | Yes | `HH:MM` | Latest acceptable arrival time |
 | bookedTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
 | unloadingAllowanceMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
+| stopQuantity | Number? | No | Positive integer | Number of items/units being collected or delivered at this specific stop (not the total job quantity) |
+| stopQuantityUnit | String? | No | `pallets` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity |
+| stopNotes | String? | No | Free text | Free-text notes specific to this stop — anything not covered by other fields (e.g. partial loads, bay numbers, wait instructions) |
 | handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `site_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
 | handlingMethodOther | String? | No | Free text | Description of the handling method when `other` is selected in handlingMethods. Substituted into the array as `other: <value>` on submission |
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
@@ -837,6 +840,8 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **1 — Your details** | Your internal reference / order number | `JobRequest.requesterData.customerRef` |
 | **2 — Stops (per stop)** | Stop type | `JobRequest.stops[n].type` |
 | **2 — Stops (per stop)** | Collection reference / Delivery reference | `JobRequest.stops[n].referenceNumber` |
+| **2 — Stops (per stop)** | Quantity at this stop | `JobRequest.stops[n].stopQuantity` |
+| **2 — Stops (per stop)** | Unit (per-stop quantity) | `JobRequest.stops[n].stopQuantityUnit` |
 | **2 — Stops (per stop)** | Site name | `JobRequest.stops[n].siteName` |
 | **2 — Stops (per stop)** | Address line 1 | `JobRequest.stops[n].street` |
 | **2 — Stops (per stop)** | Town / city | `JobRequest.stops[n].town` |
@@ -857,6 +862,7 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop)** | Weight restriction value | `JobRequest.stops[n].weightRestrictionValue` |
 | **2 — Stops (per stop)** | Length restriction value | `JobRequest.stops[n].lengthRestrictionValue` |
 | **2 — Stops (per stop)** | Will the load be ready? (load readiness) | `JobRequest.stops[n].loadReadiness` |
+| **2 — Stops (per stop)** | Stop notes | `JobRequest.stops[n].stopNotes` |
 | **2 — Stops (per stop, always visible)** | Address line 2 | `JobRequest.stops[n].addressLine2` |
 | **2 — Stops (per stop, always visible)** | County / region | `JobRequest.stops[n].countyRegion` |
 | **2 — Stops (per stop — optional)** | Site contact name | `JobRequest.stops[n].contactName` |
