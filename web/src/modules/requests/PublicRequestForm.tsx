@@ -558,23 +558,31 @@ function StopCard({
             <div className="text-xs text-muted mt-1">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
           </div>
 
-          {/* Equipment exchange — delivery stops only */}
-          {stop.type === "delivery" && <div>
-            <FieldLabel>Equipment exchange at this stop</FieldLabel>
-            <div className="text-xs text-muted mb-2">Drop full units, collect empties — leave blank if no exchange.</div>
+          {/* Equipment exchange / asset return */}
+          <div>
+            <FieldLabel>
+              {stop.type === "collection" ? "Returning assets / empties at this stop" : "Equipment exchange at this stop"}
+            </FieldLabel>
+            <div className="text-xs text-muted mb-2">
+              {stop.type === "collection"
+                ? "E.g. empty pallets, cages or hired equipment being returned here — leave blank if nothing to return."
+                : "Drop full units, collect empties — leave blank if no exchange."}
+            </div>
             <div className="flex gap-2 items-end">
+              {stop.type === "delivery" && (
+                <div className="flex-1">
+                  <FieldLabel>Drop (full)</FieldLabel>
+                  <input
+                    className="input w-full font-mono"
+                    type="number" min="0" step="1"
+                    placeholder="0"
+                    value={stop.exchangeDropQty}
+                    onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                    onChange={e => onChange({ exchangeDropQty: e.target.value })} />
+                </div>
+              )}
               <div className="flex-1">
-                <FieldLabel>Drop (full)</FieldLabel>
-                <input
-                  className="input w-full font-mono"
-                  type="number" min="0" step="1"
-                  placeholder="0"
-                  value={stop.exchangeDropQty}
-                  onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
-                  onChange={e => onChange({ exchangeDropQty: e.target.value })} />
-              </div>
-              <div className="flex-1">
-                <FieldLabel>Collect empties</FieldLabel>
+                <FieldLabel>{stop.type === "collection" ? "Returning (qty)" : "Collect empties"}</FieldLabel>
                 <input
                   className="input w-full font-mono"
                   type="number" min="0" step="1"
@@ -598,7 +606,7 @@ function StopCard({
                 </div>
               </div>
             </div>
-          </div>}
+          </div>
 
           {/* Site name */}
           <TextField label="Site name" required
