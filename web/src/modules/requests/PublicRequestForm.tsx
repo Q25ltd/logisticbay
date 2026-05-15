@@ -829,13 +829,13 @@ export default function PublicRequestForm() {
   const [errors,     setErrors]     = useState<string[]>([]);
 
   // Section collapse
-  const [s1, setS1] = useState(false);
-  const [s2, setS2] = useState(false);
-  const [s3, setS3] = useState(false);
-  const [s4, setS4] = useState(false);
-  const [s5, setS5] = useState(false);
-  const [s6, setS6] = useState(false);
-  const [s7, setS7] = useState(false);
+  const [s1, setS1] = useState(true);
+  const [s2, setS2] = useState(true);
+  const [s3, setS3] = useState(true);
+  const [s4, setS4] = useState(true);
+  const [s5, setS5] = useState(true);
+  const [s6, setS6] = useState(true);
+  const [s7, setS7] = useState(true);
 
   // ── Sec 1: Requester ──────────────────────────────────────────────────────
   const [customerCompanyName, setCustomerCompanyName] = useState("");
