@@ -508,26 +508,29 @@ function StopCard({
           {/* Quantity at this stop */}
           <div>
             <FieldLabel>Quantity at this stop</FieldLabel>
-            <input
-              className="input w-24 font-mono mt-1"
-              type="number" min="0" step="1"
-              placeholder="0"
-              value={stop.stopQuantity}
-              onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
-              onChange={e => onChange({ stopQuantity: e.target.value })} />
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {LOAD_UNITS.map(([v, l]) => (
-                <button key={v} type="button"
-                  onClick={() => onChange({ stopQuantityUnit: v })}
-                  className={"px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors " +
-                    (stop.stopQuantityUnit === v
-                      ? "bg-accent text-white border-accent"
-                      : "bg-white text-muted border-border hover:border-gray-400")}>
-                  {l}
-                </button>
-              ))}
+            <div className="flex gap-2 mt-1">
+              <input
+                className="input w-20 font-mono text-center"
+                type="number" min="0" step="1"
+                placeholder="0"
+                value={stop.stopQuantity}
+                onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                onChange={e => onChange({ stopQuantity: e.target.value })} />
+              <div className="relative flex-1">
+                <select
+                  className="input w-full appearance-none pr-8"
+                  value={stop.stopQuantityUnit}
+                  onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
+                  {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                  <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
             </div>
-            <div className="text-xs text-muted mt-1.5">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
+            <div className="text-xs text-muted mt-1">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
           </div>
 
           {/* Site name */}
