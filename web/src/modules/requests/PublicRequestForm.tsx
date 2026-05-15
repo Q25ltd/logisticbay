@@ -558,8 +558,8 @@ function StopCard({
             <div className="text-xs text-muted mt-1">How many items are being {stop.type === "collection" ? "collected" : "delivered"} at this stop specifically.</div>
           </div>
 
-          {/* Equipment exchange */}
-          <div>
+          {/* Equipment exchange — delivery stops only */}
+          {stop.type === "delivery" && <div>
             <FieldLabel>Equipment exchange at this stop</FieldLabel>
             <div className="text-xs text-muted mb-2">Drop full units, collect empties — leave blank if no exchange.</div>
             <div className="flex gap-2 items-end">
@@ -598,7 +598,7 @@ function StopCard({
                 </div>
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* Site name */}
           <TextField label="Site name" required
