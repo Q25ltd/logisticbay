@@ -62,23 +62,41 @@ export interface RequesterData {
 
 export interface LoadData {
   goodsType:              string; // pallets | machinery | building_materials | food_refrigerated | bulk_material | steel_long | vehicles | containers | general | other
+  goodsTypeOther?:        string; // free text when goodsType = "other"
   goodsDescription:       string;
   quantity:               number;
   unit:                   string;
   estimatedWeight?:       number;
+  // Pallets
   palletCount?:           number;
   palletType?:            string;
+  palletTypeOther?:       string; // free text when palletType = "other"
   stackable?:             boolean;
+  // Machinery
   dimensions?:            string;
+  machineryPieceWeight?:  number; // kg per individual piece
+  machineryLiftingPoints?: boolean;
+  machinerySkidMounted?:  boolean;
   craneRequired?:         boolean;
+  // Steel / long loads
+  steelPieceCount?:       number;
+  steelWidth?:            string; // metres — abnormal load if > 2.9m
+  // Bulk
   tippingRequired?:       boolean;
+  // Food / refrigerated
   temperatureRange?:      string;
   chilledFrozenAmbient?:  string;
+  // Vehicles
   vehicleCount?:          number;
+  vehicleMakeModel?:      string;
+  vehicleKeysWithVehicle?: boolean;
   driveable?:             boolean;
+  // Containers
   containerSize?:         string;
+  containerSizeOther?:    string; // free text when containerSize = "other"
   loadedOrEmpty?:         string;
   containerNumber?:       string;
+  // General
   loadNotes?:             string;
   canSplitShipment?:      string;
   securingRequirements?:  string[];

@@ -855,29 +855,50 @@ export default function PublicRequestForm() {
   const removeStop = (id: string) =>
     setStops(prev => prev.filter(s => s.id !== id));
 
+  // ── Declaration ───────────────────────────────────────────────────────────
+  const [declarationAccepted, setDeclarationAccepted] = useState(false);
+
   // ── Sec 3: Load ───────────────────────────────────────────────────────────
-  const [goodsType,            setGoodsType]            = useState("");
-  const [goodsDesc,            setGoodsDesc]            = useState("");
-  const [quantity,             setQuantity]             = useState("");
-  const [unit,                 setUnit]                 = useState("pallets");
-  const [otherUnit,            setOtherUnit]            = useState("");
-  const [estWeight,            setEstWeight]            = useState("");
-  const [palletCount,          setPalletCount]          = useState("");
-  const [palletType,           setPalletType]           = useState("");
-  const [stackable,            setStackable]            = useState(false);
-  const [dimensions,           setDimensions]           = useState("");
-  const [craneRequired,             setCraneRequired]             = useState(false);
-  const [tippingReq,           setTippingReq]           = useState(false);
-  const [tempRange,            setTempRange]            = useState("");
-  const [tempType,             setTempType]             = useState("");
-  const [vehicleCount,         setVehicleCount]         = useState("");
-  const [driveable,            setDriveable]            = useState(false);
-  const [containerSize,        setContainerSize]        = useState("");
-  const [loadedOrEmpty,        setLoadedOrEmpty]        = useState("");
-  const [containerNum,         setContainerNum]         = useState("");
-  const [loadNotes,            setLoadNotes]            = useState("");
-  const [canSplitShipment,     setCanSplitShipment]     = useState("must_stay_together");
-  const [securingRequirements, setSecuringRequirements] = useState<string[]>([]);
+  const [goodsType,               setGoodsType]               = useState("");
+  const [goodsTypeOther,          setGoodsTypeOther]          = useState("");
+  const [goodsDesc,               setGoodsDesc]               = useState("");
+  const [quantity,                setQuantity]                = useState("");
+  const [unit,                    setUnit]                    = useState("pallets");
+  const [otherUnit,               setOtherUnit]               = useState("");
+  const [estWeight,               setEstWeight]               = useState("");
+  // Pallets
+  const [palletCount,             setPalletCount]             = useState("");
+  const [palletType,              setPalletType]              = useState("");
+  const [palletTypeOther,         setPalletTypeOther]         = useState("");
+  const [stackable,               setStackable]               = useState(false);
+  // Machinery
+  const [dimensions,              setDimensions]              = useState("");
+  const [machineryPieceWeight,    setMachineryPieceWeight]    = useState("");
+  const [machineryLiftingPoints,  setMachineryLiftingPoints]  = useState(false);
+  const [machinerySkidMounted,    setMachinerySkidMounted]    = useState(false);
+  const [craneRequired,           setCraneRequired]           = useState(false);
+  // Steel
+  const [steelPieceCount,         setSteelPieceCount]         = useState("");
+  const [steelWidth,              setSteelWidth]              = useState("");
+  // Bulk
+  const [tippingReq,              setTippingReq]              = useState(false);
+  const [tempType,                setTempType]                = useState("");
+  // Food
+  const [tempRange,               setTempRange]               = useState("");
+  // Vehicles
+  const [vehicleCount,            setVehicleCount]            = useState("");
+  const [vehicleMakeModel,        setVehicleMakeModel]        = useState("");
+  const [vehicleKeysWithVehicle,  setVehicleKeysWithVehicle]  = useState(false);
+  const [driveable,               setDriveable]               = useState(false);
+  // Containers
+  const [containerSize,           setContainerSize]           = useState("");
+  const [containerSizeOther,      setContainerSizeOther]      = useState("");
+  const [loadedOrEmpty,           setLoadedOrEmpty]           = useState("");
+  const [containerNum,            setContainerNum]            = useState("");
+  // General
+  const [loadNotes,               setLoadNotes]               = useState("");
+  const [canSplitShipment,        setCanSplitShipment]        = useState("must_stay_together");
+  const [securingRequirements,    setSecuringRequirements]    = useState<string[]>([]);
 
   // ── Sec 4: Special requirements ───────────────────────────────────────────
   const [specialItems,                 setSpecialItems]                 = useState<string[]>([]);
@@ -927,7 +948,7 @@ export default function PublicRequestForm() {
   const sec1Complete = !!(customerCompanyName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
   const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
-  const sec3Complete = !!(goodsType && goodsDesc.trim() && quantity && unit && parseFloat(estWeight) > 0);
+  const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
   const sec4Complete = true; // optional section
   const sec5Complete = true; // optional
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
@@ -945,7 +966,7 @@ export default function PublicRequestForm() {
   ].filter(Boolean).join(", ");
 
   const requiredSectionsComplete = [sec1Complete, sec2Complete, sec3Complete, sec6Complete].filter(Boolean).length;
-  const allRequiredComplete = requiredSectionsComplete === 4;
+  const allRequiredComplete = requiredSectionsComplete === 4 && declarationAccepted;
 
   // ── Link load ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -982,26 +1003,36 @@ export default function PublicRequestForm() {
       },
       stops: stops.map((s, i) => stopToRequestStop(s, i + 1)),
       loadData: {
-        goodsType,
-        goodsDescription: goodsDesc.trim(),
-        quantity:         parseFloat(quantity),
-        unit:             unit === "other" ? (otherUnit.trim() || "other") : unit,
-        estimatedWeight:  estWeight    ? parseFloat(estWeight)    : undefined,
-        palletCount:      palletCount  ? parseInt(palletCount, 10): undefined,
-        palletType:       palletType   || undefined,
-        stackable:        stackable    || undefined,
-        dimensions:       dimensions.trim()   || undefined,
-        craneRequired:    craneRequired     || undefined,
-        tippingRequired:  tippingReq   || undefined,
-        temperatureRange: tempRange.trim() || undefined,
-        chilledFrozenAmbient: tempType || undefined,
-        vehicleCount:     vehicleCount ? parseInt(vehicleCount, 10) : undefined,
-        driveable:        driveable    || undefined,
-        containerSize:    containerSize || undefined,
-        loadedOrEmpty:    loadedOrEmpty || undefined,
-        containerNumber:  containerNum.trim() || undefined,
-        loadNotes:        loadNotes.trim()    || undefined,
-        canSplitShipment: canSplitShipment    || undefined,
+        goodsType:            goodsType === "other" ? "other" : goodsType,
+        goodsTypeOther:       goodsType === "other" ? goodsTypeOther.trim() || undefined : undefined,
+        goodsDescription:     goodsDesc.trim(),
+        quantity:             parseFloat(quantity),
+        unit:                 unit === "other" ? (otherUnit.trim() || "other") : unit,
+        estimatedWeight:      estWeight     ? parseFloat(estWeight)     : undefined,
+        palletCount:          palletCount   ? parseInt(palletCount, 10) : undefined,
+        palletType:           palletType    || undefined,
+        palletTypeOther:      palletType === "other" ? palletTypeOther.trim() || undefined : undefined,
+        stackable:            stackable     || undefined,
+        dimensions:           dimensions.trim()    || undefined,
+        machineryPieceWeight: machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
+        machineryLiftingPoints: machineryLiftingPoints || undefined,
+        machinerySkidMounted: machinerySkidMounted  || undefined,
+        craneRequired:        craneRequired  || undefined,
+        steelPieceCount:      steelPieceCount ? parseInt(steelPieceCount, 10) : undefined,
+        steelWidth:           steelWidth.trim()    || undefined,
+        tippingRequired:      tippingReq     || undefined,
+        temperatureRange:     tempRange.trim()     || undefined,
+        chilledFrozenAmbient: tempType        || undefined,
+        vehicleCount:         vehicleCount  ? parseInt(vehicleCount, 10)  : undefined,
+        vehicleMakeModel:     vehicleMakeModel.trim()  || undefined,
+        vehicleKeysWithVehicle: vehicleKeysWithVehicle || undefined,
+        driveable:            driveable      || undefined,
+        containerSize:        containerSize  || undefined,
+        containerSizeOther:   containerSize === "other" ? containerSizeOther.trim() || undefined : undefined,
+        loadedOrEmpty:        loadedOrEmpty  || undefined,
+        containerNumber:      containerNum.trim()   || undefined,
+        loadNotes:            loadNotes.trim()      || undefined,
+        canSplitShipment:     canSplitShipment      || undefined,
         securingRequirements: securingRequirements.length ? securingRequirements : undefined,
       },
       specialRequirementsData: specialItems.length ? {
@@ -1120,6 +1151,25 @@ export default function PublicRequestForm() {
           </div>
         )}
 
+        {/* ── Declaration ─────────────────────────────────────────────────── */}
+        <div className={`card p-5 border-2 transition-colors ${declarationAccepted ? "border-green-400 bg-green-50/30" : "border-amber-300 bg-amber-50/40"}`}>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 w-5 h-5 flex-shrink-0 cursor-pointer accent-blue-600"
+              checked={declarationAccepted}
+              onChange={e => setDeclarationAccepted(e.target.checked)} />
+            <div>
+              <p className="text-sm font-semibold text-primary leading-snug">
+                I confirm the goods description is accurate and complete.
+              </p>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                Providing false or incomplete information may result in the job being refused, vehicle damage, or legal liability.
+              </p>
+            </div>
+          </label>
+        </div>
+
         {/* ── Sec 1: Your details ──────────────────────────────────────────── */}
         <div className="card overflow-hidden">
           <SectionHeader num={1} icon="👤" title="Your details" subtitle="Company and contact information"
@@ -1209,6 +1259,11 @@ export default function PublicRequestForm() {
                 <div className="mt-1">
                   <Chips options={LOAD_TYPES} value={goodsType} onChange={setGoodsType} />
                 </div>
+                {goodsType === "other" && (
+                  <input className="input mt-2 w-full" type="text"
+                    placeholder="Describe what you are moving"
+                    value={goodsTypeOther} onChange={e => setGoodsTypeOther(e.target.value)} />
+                )}
               </div>
 
               {/* Description */}
@@ -1216,10 +1271,15 @@ export default function PublicRequestForm() {
                 <FieldLabel required>Description of goods</FieldLabel>
                 <textarea className="input mt-1 w-full" rows={2}
                   value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
-                  placeholder={goodsType === "pallets"  ? "Engine parts on euro pallets" :
-                                goodsType === "bulk_material" ? "Type 1 MOT, dry" :
-                                goodsType === "steel_long"    ? "25m RSJ beams, galvanised" :
-                                "Describe exactly what is being transported"} />
+                  placeholder={goodsType === "pallets"       ? "Engine parts on euro pallets, double-stacked" :
+                                goodsType === "bulk_material" ? "Type 1 MOT crushed limestone, dry, loose" :
+                                goodsType === "steel_long"    ? "25m galvanised RSJ beams, 6 pieces, 3.8t each" :
+                                goodsType === "machinery"     ? "CNC milling machine, 4.2t, skid-mounted, no lifting points" :
+                                goodsType === "vehicles"      ? "2019 Ford Transit Custom, white, running, keys with vehicle" :
+                                "Describe exactly what is being transported — be specific"} />
+                <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 15 ? "text-muted" : "text-amber-600 font-medium"}`}>
+                  {goodsDesc.trim().length} / 15 characters minimum
+                </div>
               </div>
 
               {/* Quantity + unit */}
@@ -1260,6 +1320,11 @@ export default function PublicRequestForm() {
                       </select>
                     </div>
                   </div>
+                  {palletType === "other" && (
+                    <input className="input w-full" type="text"
+                      placeholder="Describe pallet type"
+                      value={palletTypeOther} onChange={e => setPalletTypeOther(e.target.value)} />
+                  )}
                   <Toggle value={stackable} onChange={setStackable} label="Pallets are stackable" />
                 </div>
               )}
@@ -1268,7 +1333,15 @@ export default function PublicRequestForm() {
               {goodsType === "machinery" && (
                 <div className="space-y-4 pt-1">
                   <TextField label="Dimensions (L × W × H)" value={dimensions}
-                    onChange={setDimensions} placeholder="e.g. 4.5m × 2.2m × 3.1m" />
+                    onChange={setDimensions} placeholder="4.5m × 2.2m × 3.1m" />
+                  <TextField label="Individual piece weight (kg)" type="number" min="0" step="1"
+                    value={machineryPieceWeight} onChange={setMachineryPieceWeight}
+                    placeholder="4200"
+                    hint="Weight of one item — critical for crane and HIAB capacity planning." />
+                  <Toggle value={machineryLiftingPoints} onChange={setMachineryLiftingPoints}
+                    label="Machine has lifting points / lifting eyes" />
+                  <Toggle value={machinerySkidMounted} onChange={setMachinerySkidMounted}
+                    label="Machine is skid-mounted" />
                   <Toggle value={craneRequired} onChange={setCraneRequired} label="Crane required on site" />
                 </div>
               )}
@@ -1295,8 +1368,20 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Steel/long loads ── */}
               {goodsType === "steel_long" && (
                 <div className="space-y-4 pt-1">
-                  <TextField label="Longest item length (m)" type="number"
+                  <TextField label="Longest item length (m)" type="number" min="0"
                     value={dimensions} onChange={setDimensions} placeholder="25" />
+                  <TextField label="Number of pieces" type="number" min="0" step="1"
+                    value={steelPieceCount} onChange={setSteelPieceCount} placeholder="6" />
+                  <div>
+                    <TextField label="Width of widest piece (m)"
+                      value={steelWidth} onChange={setSteelWidth} placeholder="2.4" />
+                    {steelWidth && parseFloat(steelWidth) > 2.9 && (
+                      <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                        <span className="text-amber-500 flex-shrink-0">⚠</span>
+                        <p className="text-xs font-semibold text-amber-800">Over 2.9m — this may require an abnormal load permit. The planner will advise.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1325,7 +1410,12 @@ export default function PublicRequestForm() {
                 <div className="space-y-4 pt-1">
                   <TextField label="Number of vehicles" type="number" min="0" step="1"
                     value={vehicleCount} onChange={setVehicleCount} placeholder="2" />
+                  <TextField label="Make and model" value={vehicleMakeModel}
+                    onChange={setVehicleMakeModel} placeholder="2019 Ford Transit Custom"
+                    hint="Year, make and model helps us select the right transporter." />
                   <Toggle value={driveable} onChange={setDriveable} label="Vehicles are driveable (RORO)" />
+                  <Toggle value={vehicleKeysWithVehicle} onChange={setVehicleKeysWithVehicle}
+                    label="Keys will be with the vehicle" />
                 </div>
               )}
 
@@ -1343,6 +1433,11 @@ export default function PublicRequestForm() {
                         </button>
                       ))}
                     </div>
+                    {containerSize === "other" && (
+                      <input className="input mt-2 w-full" type="text"
+                        placeholder="Describe container size"
+                        value={containerSizeOther} onChange={e => setContainerSizeOther(e.target.value)} />
+                    )}
                   </div>
                   <div>
                     <FieldLabel>Loaded or empty?</FieldLabel>

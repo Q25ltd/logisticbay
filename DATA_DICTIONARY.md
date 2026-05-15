@@ -673,21 +673,31 @@ Stored in `JobRequest.loadData` (Json column, default `{}`).
 | Field | Type | Required | Values / Format | Description |
 |---|---|---|---|---|
 | goodsType | String | Yes | `pallets` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods being transported |
-| goodsDescription | String | Yes | Free text | Detailed description of what is being transported |
+| goodsTypeOther | String? | No | Free text | Description of goods when goodsType = `other` |
+| goodsDescription | String | Yes | Free text, min 15 characters | Detailed description of what is being transported |
 | quantity | Number | Yes | Positive number | Quantity of goods |
 | unit | String | Yes | `pallets` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity |
 | estimatedWeight | Number? | Yes (validated) | Positive number (kg) | Estimated total weight of the load in kilograms |
 | palletCount | Number? | No | Positive integer | Number of pallets (only when goodsType = `pallets`) |
 | palletType | String? | No | `euro` \| `uk` \| `half` \| `chep` \| `other` | Type of pallets (only when goodsType = `pallets`) |
+| palletTypeOther | String? | No | Free text | Description of pallet type when palletType = `other` |
 | stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets`) |
 | dimensions | String? | No | Free text (e.g. `4.5m × 2.2m × 3.1m`) | Physical dimensions — longest item length for `steel_long`; L×W×H for `machinery` |
-| craneRequired | Boolean? | No | `true` \| `false` | Whether a crane is needed (only when goodsType = `machinery`) |
+| machineryPieceWeight | Number? | No | Positive number (kg) | Weight of one individual piece of machinery — critical for crane and HIAB capacity planning (only when goodsType = `machinery`) |
+| machineryLiftingPoints | Boolean? | No | `true` \| `false` | Whether the machine has lifting points / lifting eyes (only when goodsType = `machinery`) |
+| machinerySkidMounted | Boolean? | No | `true` \| `false` | Whether the machine is skid-mounted (only when goodsType = `machinery`) |
+| craneRequired | Boolean? | No | `true` \| `false` | Whether a crane is needed on site (only when goodsType = `machinery`) |
+| steelPieceCount | Number? | No | Positive integer | Number of individual steel pieces (only when goodsType = `steel_long`) |
+| steelWidth | String? | No | Free text in metres (e.g. `2.4`) | Width of the widest piece in metres — values > 2.9 m may require an abnormal load permit (only when goodsType = `steel_long`) |
 | tippingRequired | Boolean? | No | `true` \| `false` | Whether tipping is required at delivery (only when goodsType = `bulk_material`) |
 | temperatureRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range (only when goodsType = `food_refrigerated`) |
 | chilledFrozenAmbient | String? | No | `chilled` \| `frozen` \| `ambient` \| `dry` \| `wet` | Temperature / moisture classification of the load |
 | vehicleCount | Number? | No | Positive integer | Number of vehicles to be transported (only when goodsType = `vehicles`) |
+| vehicleMakeModel | String? | No | Free text (e.g. `2019 Ford Transit Custom`) | Year, make and model of the vehicle(s) being transported — helps select the right transporter (only when goodsType = `vehicles`) |
+| vehicleKeysWithVehicle | Boolean? | No | `true` \| `false` | Whether keys will be with the vehicle (only when goodsType = `vehicles`) |
 | driveable | Boolean? | No | `true` \| `false` | Whether transported vehicles are driveable RORO (only when goodsType = `vehicles`) |
 | containerSize | String? | No | `20ft` \| `40ft` \| `45ft` \| `other` | Container size (only when goodsType = `containers`) |
+| containerSizeOther | String? | No | Free text | Description of container size when containerSize = `other` |
 | loadedOrEmpty | String? | No | `loaded` \| `empty` | Whether the container is loaded or empty (only when goodsType = `containers`) |
 | containerNumber | String? | No | Free text (e.g. `MSCU1234567`) | Container identification number |
 | loadNotes | String? | No | Free text | Additional load-specific notes for the driver and planner |
@@ -873,22 +883,32 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **2 — Stops (per stop — optional)** | Opening hours | `JobRequest.stops[n].openingHours` |
 | **2 — Stops (per stop — optional)** | Proof required at this stop | `JobRequest.stops[n].proofRequirements[]` |
 | **3 — Load details** | What are you moving? (goods type) | `JobRequest.loadData.goodsType` |
-| **3 — Load details** | Description of goods | `JobRequest.loadData.goodsDescription` |
+| **3 — Load details** | Other goods type — describe (shown when "Other" selected) | `JobRequest.loadData.goodsTypeOther` |
+| **3 — Load details** | Description of goods (min 15 chars, live counter) | `JobRequest.loadData.goodsDescription` |
 | **3 — Load details** | Quantity | `JobRequest.loadData.quantity` |
 | **3 — Load details** | Unit | `JobRequest.loadData.unit` |
 | **3 — Load details** | Estimated total weight (kg) | `JobRequest.loadData.estimatedWeight` |
 | **3 — Load details** | Pallet count | `JobRequest.loadData.palletCount` |
 | **3 — Load details** | Pallet type | `JobRequest.loadData.palletType` |
+| **3 — Load details** | Other pallet type — describe (shown when "Other" selected) | `JobRequest.loadData.palletTypeOther` |
 | **3 — Load details** | Pallets are stackable | `JobRequest.loadData.stackable` |
 | **3 — Load details** | Dimensions (L × W × H) / Longest item length | `JobRequest.loadData.dimensions` |
+| **3 — Load details** | Individual piece weight (kg) | `JobRequest.loadData.machineryPieceWeight` |
+| **3 — Load details** | Machine has lifting points / lifting eyes | `JobRequest.loadData.machineryLiftingPoints` |
+| **3 — Load details** | Machine is skid-mounted | `JobRequest.loadData.machinerySkidMounted` |
 | **3 — Load details** | Crane required on site | `JobRequest.loadData.craneRequired` |
+| **3 — Load details** | Number of pieces (steel) | `JobRequest.loadData.steelPieceCount` |
+| **3 — Load details** | Width of widest piece (m) | `JobRequest.loadData.steelWidth` |
 | **3 — Load details** | Tipping required at delivery | `JobRequest.loadData.tippingRequired` |
 | **3 — Load details** | Wet or dry | `JobRequest.loadData.chilledFrozenAmbient` |
 | **3 — Load details** | Chilled, frozen or ambient? | `JobRequest.loadData.chilledFrozenAmbient` |
 | **3 — Load details** | Required temperature range (load section) | `JobRequest.loadData.temperatureRange` |
 | **3 — Load details** | Number of vehicles | `JobRequest.loadData.vehicleCount` |
+| **3 — Load details** | Make and model | `JobRequest.loadData.vehicleMakeModel` |
+| **3 — Load details** | Keys will be with the vehicle | `JobRequest.loadData.vehicleKeysWithVehicle` |
 | **3 — Load details** | Vehicles are driveable (RORO) | `JobRequest.loadData.driveable` |
 | **3 — Load details** | Container size | `JobRequest.loadData.containerSize` |
+| **3 — Load details** | Other container size — describe (shown when "Other" selected) | `JobRequest.loadData.containerSizeOther` |
 | **3 — Load details** | Loaded or empty? | `JobRequest.loadData.loadedOrEmpty` |
 | **3 — Load details** | Container number | `JobRequest.loadData.containerNumber` |
 | **3 — Load details** | Can this shipment be split? | `JobRequest.loadData.canSplitShipment` |
