@@ -1,4 +1,4 @@
-import type { StructuredJobStopInput, StructuredLoadDetailsInput } from "../services/jobValidation.js";
+import type { StructuredJobPartInput, StructuredLoadDetailsInput } from "../services/jobValidation.js";
 import { toNullableDate } from "./coerce.js";
 
 export function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | undefined): boolean {
@@ -13,7 +13,7 @@ export function appendPlannerReason(existing: string, reason: string): string {
   return [existing?.trim(), `[Planner allocation ${stamp}] ${cleanReason}`].filter(Boolean).join("\n");
 }
 
-export function buildStopData(s: StructuredJobStopInput, companyId: number) {
+export function buildStopData(s: StructuredJobPartInput, companyId: number) {
   return {
     companyId,
     sequenceNumber:            s.sequenceNumber ?? 0,

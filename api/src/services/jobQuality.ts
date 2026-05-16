@@ -1,5 +1,5 @@
 import type {
-  StructuredJobStopInput,
+  StructuredJobPartInput,
   StructuredLoadDetailsInput,
 } from "./jobValidation.js";
 
@@ -12,20 +12,20 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function hasGate(stop: StructuredJobStopInput): boolean {
+function hasGate(stop: StructuredJobPartInput): boolean {
   return typeof stop.gateLat === "number" && Number.isFinite(stop.gateLat)
     && typeof stop.gateLng === "number" && Number.isFinite(stop.gateLng);
 }
 
-function hasTimeWindow(stop: StructuredJobStopInput): boolean {
+function hasTimeWindow(stop: StructuredJobPartInput): boolean {
   return !!stop.timeWindowStart && !!stop.timeWindowEnd;
 }
 
-function hasContact(stop: StructuredJobStopInput): boolean {
+function hasContact(stop: StructuredJobPartInput): boolean {
   return hasText(stop.contactName) || hasText(stop.contactPhone);
 }
 
-function hasSavedLocation(stop: StructuredJobStopInput): boolean {
+function hasSavedLocation(stop: StructuredJobPartInput): boolean {
   return typeof stop.savedLocationId === "number" && stop.savedLocationId > 0;
 }
 
@@ -38,7 +38,7 @@ function hasLoadDetails(loadDetails?: StructuredLoadDetailsInput | null): boolea
 }
 
 export function scoreStructuredJob(input: {
-  stops?: StructuredJobStopInput[];
+  stops?: StructuredJobPartInput[];
   loadDetails?: StructuredLoadDetailsInput | null;
 }): JobQualityResult {
   const reasons: string[] = [];

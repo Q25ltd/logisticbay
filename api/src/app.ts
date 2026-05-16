@@ -10,6 +10,7 @@ import { availabilityRoutes }  from "./routes/availability.js";
 import { fleetRoutes }         from "./routes/fleet.js";
 import { dashboardRoutes }     from "./routes/dashboard.js";
 import { jobRequestRoutes }    from "./routes/jobRequests.js";
+import { runRoutes }           from "./routes/runs.js";
 import cors                    from "@fastify/cors";
 
 export async function buildApp(
@@ -97,6 +98,7 @@ export async function buildApp(
   await fleetRoutes(app, prisma);
   await dashboardRoutes(app, prisma);
   await jobRequestRoutes(app, prisma);
+  await runRoutes(app, prisma);
 
   return app;
 }

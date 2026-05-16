@@ -49,29 +49,11 @@ function isSupportedEventType(eventType: string): eventType is SupportedEventTyp
 }
 
 function buildJobUpdate(event: IncomingEvent): Record<string, unknown> {
-  const update: Record<string, unknown> = {
+  // Only update the job status — quantity/pod fields are now captured on
+  // RunAssignment and LoadTrack, not on PlannedJob.
+  return {
     status: STATUS_BY_EVENT_TYPE[event.eventType as SupportedEventType],
   };
-
-  if (event.eventType === 'collected') {
-    update.actualQuantity = event.actualQuantity ?? '';
-    update.actualUnit     = event.actualUnit     ?? '';
-    update.collectionNote = event.collectionNote ?? '';
-  }
-
-  if (event.eventType === 'arrived_dropoff') {
-    update.podNumber    = event.podNumber    ?? '';
-    update.deliveryNote = event.deliveryNote ?? '';
-  }
-
-  if (event.eventType === 'completed') {
-    update.podNumber      = event.podNumber      ?? '';
-    update.deliveryNote   = event.deliveryNote   ?? '';
-    update.actualQuantity = event.actualQuantity ?? '';
-    update.actualUnit     = event.actualUnit     ?? '';
-  }
-
-  return update;
 }
 
 async function updateSyncLog(
@@ -180,7 +162,16 @@ export async function processSyncEvents(
       continue;
     }
 
-    if (job.assignedDriverId !== driverProfile.id) {
+    // Check assignment via Run → RunAssignment (assignedDriverId now lives on Run)
+    const runAssignment = await prisma.runAssignment.findFirst({
+      where: {
+        jobId:     event.jobId,
+        companyId,
+        removedAt: null,
+        run:       { assignedDriverId: driverProfile.id },
+      },
+    });
+    if (!runAssignment) {
       await updateSyncLog(prisma, event.clientEventId, companyId, 'failed', 'job_not_assigned_to_driver');
       results.push({
         clientEventId: event.clientEventId,

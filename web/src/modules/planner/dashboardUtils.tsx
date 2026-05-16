@@ -1,4 +1,4 @@
-import type { Driver, FleetTrailer, FleetUnit, JobStop, PlannedJob } from "../../types";
+import type { Driver, FleetTrailer, FleetUnit, JobPart, PlannedJob } from "../../types";
 import type { AssignmentInput, JobContext, JobWarning, PlannerStatus, WarningLevel } from "./dashboardTypes";
 import { ACTIVE_JOB_STATUSES, CLOSED_JOB_STATUSES, STATUS_LABELS } from "./dashboardConstants";
 import { BODY_CATEGORIES, BODY_TYPES, bodyCategoryNeedsTrailer, isBodyCategory } from "../../constants/vehicleTaxonomy";
@@ -102,24 +102,24 @@ export function sortedStops(job: PlannedJob) {
   return [...(job.stops ?? [])].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 }
 
-export function stopKey(stop: JobStop) {
+export function stopKey(stop: JobPart) {
   return stop.id ? `id:${stop.id}` : `seq:${stop.sequenceNumber}`;
 }
 
-export function isSameStop(stop: JobStop, key?: string) {
+export function isSameStop(stop: JobPart, key?: string) {
   if (!key) return false;
   return stopKey(stop) === key;
 }
 
-export function isPickup(stop: JobStop) {
+export function isPickup(stop: JobPart) {
   return stop.type === "pickup" || stop.type === "collection";
 }
 
-export function isDropoff(stop: JobStop) {
+export function isDropoff(stop: JobPart) {
   return stop.type === "dropoff" || stop.type === "delivery";
 }
 
-export function shortLocation(stop: JobStop | undefined, fallback: string) {
+export function shortLocation(stop: JobPart | undefined, fallback: string) {
   if (!stop) return compact(fallback);
   const site = compact(stop.siteName || stop.unitName || stop.locationTextSnapshot, "");
   const town = compact(stop.town, "");
@@ -192,7 +192,7 @@ export function timeRange(job: PlannedJob) {
   return start === end ? start : `${start}-${end}`;
 }
 
-export function stopTimeLabel(stop: JobStop) {
+export function stopTimeLabel(stop: JobPart) {
   if (stop.bookedTime) return `Booked ${dateInputToTime(stop.bookedTime)}`;
   const start = dateInputToTime(stop.timeWindowStart);
   const end = dateInputToTime(stop.timeWindowEnd);
@@ -200,7 +200,7 @@ export function stopTimeLabel(stop: JobStop) {
   return start || end || "No time set";
 }
 
-export function stopDateTimeLabel(stop: JobStop) {
+export function stopDateTimeLabel(stop: JobPart) {
   if (stop.bookedTime) return dateInputToShortDateTime(stop.bookedTime);
   const date = dayKey(stop.timeWindowStart ?? stop.timeWindowEnd);
   const time = stopTimeLabel(stop);

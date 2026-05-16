@@ -1,4 +1,4 @@
-import type { JobStop } from "../../types";
+import type { JobPart } from "../../types";
 import type { StopState } from "./createJobTypes";
 
 // ── Helper date functions ─────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ export function parseISOToDateAndTime(iso: string | null | undefined): { date: s
   return m ? { date: m[1], time: m[2] } : { date: today(), time: "" };
 }
 
-export function jobStopToStopState(stop: JobStop): StopState {
+export function jobPartToStopState(stop: JobPart): StopState {
   let timeType: StopState["timeType"] = "anytime";
   let date = today();
   let exactTime = "";

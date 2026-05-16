@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const JobStopSchema = z.object({
+const JobPartSchema = z.object({
   sequenceNumber:             z.number().int().min(0),
   type:                       z.string().min(1),
   savedLocationId:            z.number().int().nullable().optional(),
@@ -87,7 +87,7 @@ const JobCommonFields = z.object({
   priority:                 z.enum(["low", "normal", "high"]).optional(),
   serviceType:              z.string().optional(),
   internalNotes:            z.string().optional(),
-  stops:                    z.array(JobStopSchema).optional(),
+  stops:                    z.array(JobPartSchema).optional(),
   loadDetails:              LoadDetailsSchema.nullable().optional(),
   saveMode:                 z.enum(["draft", "ready_to_plan"]).optional(),
   requireCollection:        z.boolean().optional(),

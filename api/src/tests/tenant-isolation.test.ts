@@ -66,7 +66,7 @@ async function cleanup(companyIds: number[], userIds: number[]) {
   await prisma.jobAudit.deleteMany({ where: cWhere });
   await prisma.jobExecutionEvent.deleteMany({ where: cWhere });
   await prisma.syncEventLog.deleteMany({ where: cWhere });
-  await prisma.jobStop.deleteMany({ where: cWhere });
+  await prisma.jobPart.deleteMany({ where: cWhere });
   await prisma.loadDetails.deleteMany({ where: cWhere });
   await prisma.plannedJob.deleteMany({ where: cWhere });
   await prisma.driverProfile.deleteMany({ where: cWhere });
