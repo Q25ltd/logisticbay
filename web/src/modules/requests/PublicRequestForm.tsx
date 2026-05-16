@@ -5,6 +5,12 @@
  */
 
 import { useState, useEffect } from "react";
+import {
+  BODY_CATEGORIES,
+  BODY_TYPES,
+  BODY_TYPES_BY_CATEGORY,
+  TRAILER_BODY_TYPE_VALUES,
+} from "../../constants/vehicleTaxonomy";
 import { useParams } from "react-router-dom";
 import {
   jobRequestsPublicApi,
@@ -22,6 +28,33 @@ import {
   MultiCheck,
   StatusDot,
 } from "../jobs/CreateJobFormComponents";
+
+// ── Vehicle taxonomy helpers ──────────────────────────────────────────────────
+// For tractor / drawbar the body type lives on the trailer, so show all trailer
+// body types. Heavy haulage → only heavy-group types.
+const REQ_BODY_TYPES_BY_CATEGORY: Record<string, readonly string[]> = {
+  van:          BODY_TYPES_BY_CATEGORY.van,
+  luton_van:    BODY_TYPES_BY_CATEGORY.luton_van,
+  pickup:       BODY_TYPES_BY_CATEGORY.pickup,
+  rigid:        BODY_TYPES_BY_CATEGORY.rigid,
+  tractor:      TRAILER_BODY_TYPE_VALUES,
+  drawbar:      TRAILER_BODY_TYPE_VALUES,
+  heavy_haulage:["low_loader", "low_loader_extending", "modular_heavy", "girder_frame", "other"],
+  spmt:         BODY_TYPES_BY_CATEGORY.spmt,
+  plant:        ["other"],
+};
+
+const BODY_TYPE_GROUP_LABELS: Record<string, string> = {
+  general:   "General / enclosed",
+  flat:      "Flat / open",
+  bulk:      "Bulk & tipping",
+  tanker:    "Tanker",
+  temp:      "Temperature controlled",
+  container: "Container / skeletal",
+  heavy:     "Heavy haulage",
+  specialist:"Specialist",
+  other:     "Other",
+};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1707,7 +1740,12 @@ export default function PublicRequestForm() {
           <SectionHeader num={5} icon="🚛" title="Transport requirements" subtitle="Vehicle and trailer preferences"
             active collapsed={s5} onToggle={() => setS5(o => !o)}
             complete optional
-            summary={plannerDecides ? "Planner will decide" : (reqBodyCategory || undefined)} />
+            summary={plannerDecides ? "Planner will decide" : (
+              [
+                BODY_CATEGORIES.find(c => c.value === reqBodyCategory)?.label,
+                BODY_TYPES.find(t => t.value === reqBodyType)?.label,
+              ].filter(Boolean).join(" · ") || undefined
+            )} />
           {!s5 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               <Toggle value={plannerDecides} onChange={setPlannerDecides}
@@ -1719,18 +1757,55 @@ export default function PublicRequestForm() {
                   </div>
                   <div>
                     <FieldLabel>Vehicle body category</FieldLabel>
-                    <Chips
-                      options={[["tractor","Artic / tractor"],["rigid","Rigid"],["van","Van"],["other","Other"]]}
-                      value={reqBodyCategory} onChange={setReqBodyCategory} />
-                  </div>
-                  {reqBodyCategory && (
-                    <div>
-                      <FieldLabel>Body type</FieldLabel>
-                      <Chips
-                        options={[["curtainsider","Curtainsider"],["flatbed","Flatbed"],["box","Box"],["tipper","Tipper"],["fridge","Fridge"],["tanker","Tanker"],["other","Other"]]}
-                        value={reqBodyType} onChange={setReqBodyType} />
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {BODY_CATEGORIES.map(({ value, label }) => (
+                        <button key={value} type="button"
+                          onClick={() => { setReqBodyCategory(value); setReqBodyType(""); }}
+                          className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+                            (reqBodyCategory === value
+                              ? "bg-accent text-white border-accent"
+                              : "bg-white text-muted border-border hover:border-gray-400")}>
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  )}
+                  </div>
+                  {reqBodyCategory && (() => {
+                    const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []);
+                    // Build grouped options: group → [{value, label}]
+                    const grouped: Record<string, { value: string; label: string }[]> = {};
+                    BODY_TYPES.forEach(bt => {
+                      if (!allowed.has(bt.value)) return;
+                      if (!grouped[bt.group]) grouped[bt.group] = [];
+                      grouped[bt.group].push({ value: bt.value, label: bt.label });
+                    });
+                    const groups = Object.keys(grouped);
+                    return (
+                      <div>
+                        <FieldLabel>Body type</FieldLabel>
+                        <div className="relative mt-1">
+                          <select
+                            className="input w-full appearance-none pr-9"
+                            value={reqBodyType}
+                            onChange={e => setReqBodyType(e.target.value)}>
+                            <option value="">— select body type —</option>
+                            {groups.map(g => (
+                              <optgroup key={g} label={BODY_TYPE_GROUP_LABELS[g] ?? g}>
+                                {grouped[g].map(bt => (
+                                  <option key={bt.value} value={bt.value}>{bt.label}</option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                            <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
               <SectionFooter complete label="Transport requirements" onCollapse={() => setS5(true)} />
