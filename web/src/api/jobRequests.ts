@@ -152,15 +152,18 @@ export interface NotesData {
 
 export interface ExceptionPolicyData {
   rejectionAction?:               string;
-  alternativeReturnSiteName?:     string;
-  alternativeReturnAddress?:      string;
-  alternativeReturnAddressLine2?: string;
-  alternativeReturnTown?:         string;
-  alternativeReturnCounty?:       string;
-  alternativeReturnPostcode?:     string;
-  alternativeReturnCountry?:      string;
-  alternativeReturnContactName?:  string;
-  alternativeReturnContactPhone?: string;
+  alternativeReturnSiteName?:              string;
+  alternativeReturnAddress?:               string;
+  alternativeReturnAddressLine2?:          string;
+  alternativeReturnTown?:                  string;
+  alternativeReturnCounty?:               string;
+  alternativeReturnPostcode?:              string;
+  alternativeReturnCountry?:               string;
+  alternativeReturnLat?:                   number;
+  alternativeReturnLng?:                   number;
+  alternativeReturnNavigationInstructions?: string;
+  alternativeReturnContactName?:           string;
+  alternativeReturnContactPhone?:          string;
   approvalContactName?:           string;
   approvalContactPhone?:          string;
   photosRequiredOnRejection?:     boolean;

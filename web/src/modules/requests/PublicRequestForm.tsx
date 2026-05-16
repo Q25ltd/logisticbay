@@ -1061,6 +1061,9 @@ export default function PublicRequestForm() {
   const [alternativeReturnCounty,        setAlternativeReturnCounty]        = useState("");
   const [alternativeReturnPostcode,      setAlternativeReturnPostcode]      = useState("");
   const [alternativeReturnCountry,       setAlternativeReturnCountry]       = useState("GB");
+  const [alternativeReturnLat,           setAlternativeReturnLat]           = useState("");
+  const [alternativeReturnLng,           setAlternativeReturnLng]           = useState("");
+  const [alternativeReturnNavInstructions, setAlternativeReturnNavInstructions] = useState("");
   const [alternativeReturnContactName,   setAlternativeReturnContactName]   = useState("");
   const [alternativeReturnContactPhone,  setAlternativeReturnContactPhone]  = useState("");
   const [approvalContactName,            setApprovalContactName]            = useState("");
@@ -1201,6 +1204,9 @@ export default function PublicRequestForm() {
         alternativeReturnCounty:       alternativeReturnCounty.trim()       || undefined,
         alternativeReturnPostcode:     alternativeReturnPostcode.trim()     || undefined,
         alternativeReturnCountry:      alternativeReturnCountry             || undefined,
+        alternativeReturnLat:          alternativeReturnLat  ? parseFloat(alternativeReturnLat)  : undefined,
+        alternativeReturnLng:          alternativeReturnLng  ? parseFloat(alternativeReturnLng)  : undefined,
+        alternativeReturnNavigationInstructions: alternativeReturnNavInstructions.trim() || undefined,
         alternativeReturnContactName:  alternativeReturnContactName.trim()  || undefined,
         alternativeReturnContactPhone: alternativeReturnContactPhone.trim() || undefined,
         approvalContactName:           approvalContactName.trim()           || undefined,
@@ -1918,6 +1924,41 @@ export default function PublicRequestForm() {
                       </div>
                     </label>
                   </div>
+                  {/* Entrance pin */}
+                  <div>
+                    <FieldLabel>Exact entrance pin — latitude / longitude</FieldLabel>
+                    <div className="grid grid-cols-2 gap-3 mt-1">
+                      <div>
+                        <FieldLabel>Latitude</FieldLabel>
+                        <input className="input font-mono" type="number" step="0.000001"
+                          placeholder="e.g. 53.483959"
+                          value={alternativeReturnLat}
+                          onChange={e => setAlternativeReturnLat(e.target.value)} />
+                      </div>
+                      <div>
+                        <FieldLabel>Longitude</FieldLabel>
+                        <input className="input font-mono" type="number" step="0.000001"
+                          placeholder="e.g. -2.244644"
+                          value={alternativeReturnLng}
+                          onChange={e => setAlternativeReturnLng(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                      <span className="text-amber-500 text-base leading-none mt-px flex-shrink-0">⚠</span>
+                      <p className="text-xs font-semibold text-amber-800 leading-snug">Must be the truck gate, not the building centre.</p>
+                    </div>
+                  </div>
+
+                  {/* Entrance instructions */}
+                  <div>
+                    <FieldLabel>Entrance instructions</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2}
+                      placeholder="Enter via Gate B on the left. Intercom code 1234. Ask for goods-in."
+                      value={alternativeReturnNavInstructions}
+                      onChange={e => setAlternativeReturnNavInstructions(e.target.value)} />
+                    <div className="text-xs text-muted mt-1">Gate code, security procedure, which entrance to use.</div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <TextField label="Contact name" value={alternativeReturnContactName}
                       onChange={setAlternativeReturnContactName} placeholder="Jane Smith" caseRule="proper_name" />
