@@ -178,12 +178,6 @@ const SPECIAL_REQUIREMENTS: [string, string][] = [
   ["escort_required",           "Police escort required"],
 ];
 
-const PRICING_TYPES: [string, string][] = [
-  ["quote_required",        "Request a quote"],
-  ["agreed_rate_exists",    "We have an agreed rate"],
-  ["contract_rate_exists",  "Contract rate applies"],
-  ["to_be_confirmed",       "To be confirmed"],
-];
 
 const DRIVER_CHIPS: [string, string][] = [
   ["call_before_arrival",  "Call before arrival"],
@@ -1058,12 +1052,9 @@ export default function PublicRequestForm() {
   const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
 
   // ── Sec 6: Billing ────────────────────────────────────────────────────────
-  const [pricingType,     setPricingType]     = useState("quote_required");
   const [declaredValue,   setDeclaredValue]   = useState("");
   const [poNumber,        setPoNumber]        = useState("");
   const [billingRef,      setBillingRef]      = useState("");
-  const [vatRegistered,   setVatRegistered]   = useState(false);
-  const [vatNumber,       setVatNumber]       = useState("");
 
   // ── Sec 7: Notes ─────────────────────────────────────────────────────────
   const [driverChips,         setDriverChips]         = useState<string[]>([]);
@@ -1202,12 +1193,9 @@ export default function PublicRequestForm() {
         trailerTypesAllowed: plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
       },
       billingData: {
-        pricingType,
         declaredGoodsValue:  declaredValue ? parseFloat(declaredValue) : undefined,
         purchaseOrderNumber: poNumber.trim()   || undefined,
         billingReference:    billingRef.trim() || undefined,
-        vatRegistered:       vatRegistered     || undefined,
-        vatNumber:           vatNumber.trim()  || undefined,
       },
       notesData: (driverChips.length || driverVisibleNotes.trim() || safetyNotes.trim() || customerNotes.trim()) ? {
         driverNoteChips:    driverChips.length ? driverChips : undefined,
@@ -1818,18 +1806,15 @@ export default function PublicRequestForm() {
 
         {/* ── Sec 6: Billing & insurance ───────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={6} icon="📄" title="Billing & insurance" subtitle="Pricing, PO number, declared value"
+          <SectionHeader num={6} icon="📄" title="Billing" subtitle="Declared goods value and reference numbers"
             active collapsed={s6} onToggle={() => setS6(o => !o)}
-            complete={sec6Complete} started={!!declaredValue}
-            summary={PRICING_TYPES.find(([v]) => v === pricingType)?.[1] ?? pricingType} />
+            complete={sec6Complete} started={!!declaredValue || !!poNumber}
+            summary={declaredValue ? `£${declaredValue}${poNumber ? ` · PO: ${poNumber}` : ""}` : undefined} />
           {!s6 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
-              <div>
-                <FieldLabel>Pricing arrangement</FieldLabel>
-                <div className="mt-1">
-                  <Chips options={PRICING_TYPES} value={pricingType} onChange={setPricingType} />
-                </div>
-              </div>
+              <TextField label="Declared value of goods (£)" required type="number" min="0"
+                value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
+                hint="For insurance and liability purposes — not the transport price." />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Purchase order number" value={poNumber}
                   onChange={setPoNumber} placeholder="PO-2026-12345"
@@ -1837,14 +1822,6 @@ export default function PublicRequestForm() {
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
-              <TextField label="Declared value of goods (£)" required type="number" min="0"
-                value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
-                hint="For insurance/risk purposes only — not the transport price." />
-              <Toggle value={vatRegistered} onChange={setVatRegistered} label="We are VAT registered" />
-              {vatRegistered && (
-                <TextField label="VAT number" value={vatNumber} onChange={setVatNumber}
-                  placeholder="GB 123 4567 89" />
-              )}
               <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} />
             </div>
           )}

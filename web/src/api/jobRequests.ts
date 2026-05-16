@@ -138,13 +138,9 @@ export interface TransportRequirementsData {
 }
 
 export interface BillingData {
-  pricingType?:        string; // quote_required | agreed_rate_exists | contract_rate_exists | to_be_confirmed
-  declaredGoodsValue?: number;
-  currency?:           string;
+  declaredGoodsValue?:  number;
   purchaseOrderNumber?: string;
-  billingReference?:   string;
-  vatRegistered?:      boolean;
-  vatNumber?:          string;
+  billingReference?:    string;
 }
 
 export interface NotesData {

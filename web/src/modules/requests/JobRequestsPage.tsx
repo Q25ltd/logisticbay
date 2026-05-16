@@ -277,12 +277,11 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
           </div>
 
           {/* Billing */}
-          {(billing?.purchaseOrderNumber || billing?.billingReference || billing?.declaredGoodsValue != null || r.pricingType) && (
+          {(billing?.purchaseOrderNumber || billing?.billingReference || billing?.declaredGoodsValue != null) && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               {billing?.purchaseOrderNumber && <InfoChip label="PO Number"   value={billing.purchaseOrderNumber} />}
               {billing?.billingReference    && <InfoChip label="Billing ref" value={billing.billingReference} />}
-              {billing?.declaredGoodsValue != null && <InfoChip label="Goods value" value={`${billing.currency ?? "£"}${billing.declaredGoodsValue.toLocaleString()}`} />}
-              <InfoChip label="Pricing" value={r.pricingType.replace(/_/g, " ")} />
+              {billing?.declaredGoodsValue != null && <InfoChip label="Goods value" value={`£${billing.declaredGoodsValue.toLocaleString()}`} />}
             </div>
           )}
 
