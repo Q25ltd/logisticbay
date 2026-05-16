@@ -213,6 +213,22 @@ const SECURING_REQUIREMENTS: [string, string][] = [
   ["temperature_monitoring_required","Temperature monitoring"],
 ];
 
+const TEMP_TYPE_OPTIONS: [string, string][] = [
+  ["chilled", "Chilled"],
+  ["frozen",  "Frozen"],
+  ["ambient", "Ambient"],
+];
+
+const WET_DRY_OPTIONS: [string, string][] = [
+  ["dry", "Dry"],
+  ["wet", "Wet"],
+];
+
+const LOADED_EMPTY_OPTIONS: [string, string][] = [
+  ["loaded", "Loaded"],
+  ["empty",  "Empty"],
+];
+
 const REJECTION_ACTIONS: [string, string][] = [
   ["call_office_before_leaving",     "Call office before leaving"],
   ["return_to_collection_point",     "Return to collection point"],
@@ -1542,13 +1558,17 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Liquid / tanker ── */}
               {goodsType === "liquid_bulk" && (
                 <div className="space-y-4 pt-1">
-                  <TextField label="Product" value={liquidProductType} onChange={setLiquidProductType}
-                    placeholder="Vegetable oil, diesel, milk, wastewater…"
-                    hint="Be specific — determines tanker certification and any ADR requirements." />
-                  <TextField label="Volume (litres)" type="number" min="0" step="1"
-                    value={liquidVolumeLitres} onChange={setLiquidVolumeLitres}
-                    placeholder="24000"
-                    hint="Needed to match the right tanker size — total litres to be loaded." />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <TextField label="Product" value={liquidProductType} onChange={setLiquidProductType}
+                        placeholder="Vegetable oil, diesel, milk, wastewater…"
+                        hint="Be specific — determines tanker certification and any ADR requirements." />
+                    </div>
+                    <TextField label="Volume (litres)" type="number" min="0" step="1"
+                      value={liquidVolumeLitres} onChange={setLiquidVolumeLitres}
+                      placeholder="24000"
+                      hint="Total litres to load." />
+                  </div>
                   <Toggle value={liquidFoodGrade} onChange={setLiquidFoodGrade}
                     label="Food-grade product (requires food-safe tanker)" />
                   <div className="text-xs text-muted bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
@@ -1560,12 +1580,14 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Machinery ── */}
               {goodsType === "machinery" && (
                 <div className="space-y-4 pt-1">
-                  <TextField label="Dimensions (L × W × H)" value={dimensions}
-                    onChange={setDimensions} placeholder="4.5m × 2.2m × 3.1m" />
-                  <TextField label="Individual piece weight (kg)" type="number" min="0" step="1"
-                    value={machineryPieceWeight} onChange={setMachineryPieceWeight}
-                    placeholder="4200"
-                    hint="Weight of one item — critical for crane and HIAB capacity planning." />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <TextField label="Dimensions (L × W × H)" value={dimensions}
+                      onChange={setDimensions} placeholder="4.5m × 2.2m × 3.1m" />
+                    <TextField label="Piece weight (kg)" type="number" min="0" step="1"
+                      value={machineryPieceWeight} onChange={setMachineryPieceWeight}
+                      placeholder="4200"
+                      hint="Weight of one item — for crane and HIAB planning." />
+                  </div>
                   <Toggle value={machineryLiftingPoints} onChange={setMachineryLiftingPoints}
                     label="Machine has lifting points / lifting eyes" />
                   <Toggle value={machinerySkidMounted} onChange={setMachinerySkidMounted}
@@ -1580,14 +1602,8 @@ export default function PublicRequestForm() {
                   <Toggle value={tippingReq} onChange={setTippingReq} label="Tipping required at delivery" />
                   <div>
                     <FieldLabel>Wet or dry</FieldLabel>
-                    <div className="flex gap-2 mt-1">
-                      {[["dry","Dry"],["wet","Wet"]].map(([v, l]) => (
-                        <button key={v} type="button" onClick={() => setTempType(v)}
-                          className={"px-4 py-2 rounded-full border text-sm font-medium transition-colors " +
-                            (tempType === v ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
-                          {l}
-                        </button>
-                      ))}
+                    <div className="mt-1">
+                      <Chips options={WET_DRY_OPTIONS} value={tempType} onChange={setTempType} />
                     </div>
                   </div>
                 </div>
@@ -1596,10 +1612,12 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Steel/long loads ── */}
               {goodsType === "steel_long" && (
                 <div className="space-y-4 pt-1">
-                  <TextField label="Longest item length (m)" type="number" min="0"
-                    value={dimensions} onChange={setDimensions} placeholder="25" />
-                  <TextField label="Number of pieces" type="number" min="0" step="1"
-                    value={steelPieceCount} onChange={setSteelPieceCount} placeholder="6" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="Longest item (m)" type="number" min="0"
+                      value={dimensions} onChange={setDimensions} placeholder="25" />
+                    <TextField label="Number of pieces" type="number" min="0" step="1"
+                      value={steelPieceCount} onChange={setSteelPieceCount} placeholder="6" />
+                  </div>
                   <div>
                     <TextField label="Width of widest piece (m)"
                       value={steelWidth} onChange={setSteelWidth} placeholder="2.4" />
@@ -1618,14 +1636,8 @@ export default function PublicRequestForm() {
                 <div className="space-y-4 pt-1">
                   <div>
                     <FieldLabel>Chilled, frozen or ambient?</FieldLabel>
-                    <div className="flex gap-2 mt-1">
-                      {[["chilled","❄ Chilled"],["frozen","🧊 Frozen"],["ambient","🌡 Ambient"]].map(([v, l]) => (
-                        <button key={v} type="button" onClick={() => setTempType(v)}
-                          className={"px-3 py-2 rounded-full border text-sm font-medium transition-colors " +
-                            (tempType === v ? "bg-blue-500 text-white border-blue-500" : "bg-white text-muted border-border hover:border-gray-400")}>
-                          {l}
-                        </button>
-                      ))}
+                    <div className="mt-1">
+                      <Chips options={TEMP_TYPE_OPTIONS} value={tempType} onChange={setTempType} />
                     </div>
                   </div>
                   <TextField label="Required temperature range" value={tempRange}
@@ -1643,11 +1655,15 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Vehicles ── */}
               {goodsType === "vehicles" && (
                 <div className="space-y-4 pt-1">
-                  <TextField label="Number of vehicles" type="number" min="0" step="1"
-                    value={vehicleCount} onChange={setVehicleCount} placeholder="2" />
-                  <TextField label="Make and model" value={vehicleMakeModel}
-                    onChange={setVehicleMakeModel} placeholder="2019 Ford Transit Custom"
-                    hint="Year, make and model helps us select the right transporter." />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <TextField label="Number of vehicles" type="number" min="0" step="1"
+                      value={vehicleCount} onChange={setVehicleCount} placeholder="2" />
+                    <div className="sm:col-span-2">
+                      <TextField label="Make and model" value={vehicleMakeModel}
+                        onChange={setVehicleMakeModel} placeholder="2019 Ford Transit Custom"
+                        hint="Year, make and model helps us select the right transporter." />
+                    </div>
+                  </div>
                   <Toggle value={driveable} onChange={setDriveable} label="Vehicles are driveable (RORO)" />
                   <Toggle value={vehicleKeysWithVehicle} onChange={setVehicleKeysWithVehicle}
                     label="Keys will be with the vehicle" />
@@ -1676,14 +1692,8 @@ export default function PublicRequestForm() {
                   </div>
                   <div>
                     <FieldLabel>Loaded or empty?</FieldLabel>
-                    <div className="flex gap-2 mt-1">
-                      {[["loaded","Loaded"],["empty","Empty"]].map(([v, l]) => (
-                        <button key={v} type="button" onClick={() => setLoadedOrEmpty(v)}
-                          className={"px-3 py-2 rounded-full border text-sm font-medium transition-colors " +
-                            (loadedOrEmpty === v ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
-                          {l}
-                        </button>
-                      ))}
+                    <div className="mt-1">
+                      <Chips options={LOADED_EMPTY_OPTIONS} value={loadedOrEmpty} onChange={setLoadedOrEmpty} />
                     </div>
                   </div>
                   <TextField label="Container number (optional)" value={containerNum}
@@ -1754,14 +1764,16 @@ export default function PublicRequestForm() {
                 <div className="space-y-3 border-l-2 border-red-200 pl-4">
                   <TextField label="ADR class" value={adrClass} onChange={setAdrClass}
                     placeholder="Class 3 — Flammable liquids" />
-                  <TextField label="UN number" value={unNumber} onChange={setUnNumber}
-                    placeholder="UN 1993" />
-                  <TextField label="Packing group (I, II, or III)" value={packingGroup}
-                    onChange={setPackingGroup} placeholder="II" />
-                  <TextField label="Total quantity of hazardous goods (kg or litres)" type="number" min="0"
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="UN number" value={unNumber} onChange={setUnNumber}
+                      placeholder="UN 1993" />
+                    <TextField label="Packing group" value={packingGroup}
+                      onChange={setPackingGroup} placeholder="I, II or III" />
+                  </div>
+                  <TextField label="Total hazardous quantity (kg or litres)" type="number" min="0"
                     value={hazardousQuantityKg} onChange={setHazardousQuantityKg}
                     placeholder="500"
-                    hint="Used to determine if the shipment falls within exemption thresholds (LQ / EQ)." />
+                    hint="Used to determine LQ / EQ exemption thresholds." />
                   <Toggle value={hazardousPaperworkAvailable} onChange={setHazardousPaperworkAvailable}
                     label="Hazardous paperwork available / will be provided" />
                 </div>
