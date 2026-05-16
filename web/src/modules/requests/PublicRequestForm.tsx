@@ -735,23 +735,21 @@ function StopCard({
             </div>
             <div className="block">
               <FieldLabel required>{POSTCODE_META[stop.country]?.label ?? "Postcode"}</FieldLabel>
-              <div className="flex gap-2 mt-1">
-                <input
-                  className="input flex-1"
-                  type="text"
-                  value={stop.postcode}
-                  placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
-                  onChange={e => { onChange({ postcode: e.target.value.toUpperCase() }); setShowLookup(false); }}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handlePostcodeLookup(); } }}
-                />
-                <button
-                  type="button"
-                  onClick={handlePostcodeLookup}
-                  disabled={lookupLoading || !stop.postcode.trim()}
-                  className="btn btn-outline px-3 text-xs font-semibold flex-shrink-0">
-                  {lookupLoading ? "Searching…" : "Find address"}
-                </button>
-              </div>
+              <input
+                className="input mt-1"
+                type="text"
+                value={stop.postcode}
+                placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
+                onChange={e => { onChange({ postcode: e.target.value.toUpperCase() }); setShowLookup(false); }}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handlePostcodeLookup(); } }}
+              />
+              <button
+                type="button"
+                onClick={handlePostcodeLookup}
+                disabled={lookupLoading || !stop.postcode.trim()}
+                className="btn btn-outline w-full mt-1.5 text-xs font-semibold">
+                {lookupLoading ? "Searching…" : "Find address"}
+              </button>
               {lookupMessage && (
                 <p className="text-xs text-amber-700 mt-1">{lookupMessage}</p>
               )}
