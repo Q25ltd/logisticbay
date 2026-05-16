@@ -199,7 +199,7 @@ export default function JobDetailPage() {
   const stops       = [...(job.stops ?? [])].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>

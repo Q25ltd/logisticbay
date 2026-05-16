@@ -79,7 +79,7 @@ export default function DriversPage() {
   const inactive = drivers.filter(d => d.status === "inactive").length;
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl">
+    <div className="p-4 sm:p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-black text-primary">Drivers</h1>

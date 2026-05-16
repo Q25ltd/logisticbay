@@ -68,7 +68,7 @@ export default function RequestLinksPage() {
   const requestUrl = (rawToken: string) => `${APP_URL}/request/${rawToken}`;
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black" style={{ color: "#0f172a" }}>Intake Links</h1>

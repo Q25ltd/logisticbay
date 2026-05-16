@@ -72,7 +72,7 @@ export default function JobRequestsPage() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl space-y-4">
+    <div className="p-4 sm:p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

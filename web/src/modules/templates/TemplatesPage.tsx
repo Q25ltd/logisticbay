@@ -170,7 +170,7 @@ export default function TemplatesPage() {
   );
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl">
+    <div className="p-4 sm:p-6">
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-6">
