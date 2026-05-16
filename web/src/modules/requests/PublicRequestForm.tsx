@@ -162,12 +162,19 @@ const ACCESS_REQUIREMENTS: [string, string][] = [
   ["no_trailer_access",    "No trailer access"],
   ["residential_area",     "Residential area"],
   ["security_checkin",     "Security check-in"],
-  ["ppe_required",         "PPE required"],
   ["driver_id_required",   "Driver ID required"],
   ["do_not_arrive_early",  "Do not arrive early"],
   ["holding_area_required","Holding area required"],
   ["port_access",          "Port access"],
   ["airport_access",       "Airport access"],
+];
+
+const PPE_ITEMS: [string, string][] = [
+  ["ppe_safety_boots", "Safety boots"],
+  ["ppe_hi_vis",       "Hi-vis vest"],
+  ["ppe_hard_hat",     "Hard hat"],
+  ["ppe_gloves",       "Gloves"],
+  ["ppe_glasses",      "Safety glasses"],
 ];
 
 const SPECIAL_REQUIREMENTS: [string, string][] = [
@@ -336,6 +343,7 @@ interface StopState {
   handlingMethods: string[];
   handlingMethodOther: string;
   accessRequirements: string[];
+  ppeItems: string[];
   // Restriction values
   heightRestrictionValue: string;
   weightRestrictionValue: string;
@@ -369,7 +377,7 @@ function blankStop(type: string): StopState {
     serviceTime: "30", serviceTimeCustom: "0",
     stopQuantity: "", stopQuantityUnit: "pallets", stopNotes: "",
     exchangeDropQty: "", exchangeCollectQty: "", exchangeUnit: "pallets",
-    handlingMethods: [], handlingMethodOther: "", accessRequirements: [],
+    handlingMethods: [], handlingMethodOther: "", accessRequirements: [], ppeItems: [],
     heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
     unitName: "", addressLine2: "", countyRegion: "",
     contactName: "", contactPhone: "", contactEmail: "",
@@ -434,7 +442,9 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     handlingMethods:     s.handlingMethods.length
       ? s.handlingMethods.map(m => m === "other" && s.handlingMethodOther.trim() ? `other: ${s.handlingMethodOther.trim()}` : m)
       : undefined,
-    accessRequirements:  s.accessRequirements.length ? s.accessRequirements : undefined,
+    accessRequirements:  [...s.accessRequirements, ...s.ppeItems].length
+      ? [...s.accessRequirements, ...s.ppeItems]
+      : undefined,
     proofRequirements:   s.proofRequirements.length ? s.proofRequirements : undefined,
     loadReadiness:       s.loadReadiness || undefined,
     heightRestrictionValue: s.heightRestrictionValue || undefined,
@@ -877,6 +887,14 @@ function StopCard({
                 value={stop.lengthRestrictionValue}
                 onChange={e => onChange({ lengthRestrictionValue: e.target.value })} />
             )}
+          </div>
+
+          {/* PPE requirements — per stop */}
+          <div>
+            <FieldLabel>PPE required at this site</FieldLabel>
+            <div className="text-xs text-muted mb-2">Select everything the driver must wear on site.</div>
+            <MultiCheck options={PPE_ITEMS} value={stop.ppeItems}
+              onChange={v => onChange({ ppeItems: v })} />
           </div>
 
           {/* Load readiness — collection stops only */}
