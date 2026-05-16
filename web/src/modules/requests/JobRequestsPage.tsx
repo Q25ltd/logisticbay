@@ -440,7 +440,7 @@ function RequestDetailModal({ request: r, onClose }: { request: JobRequest; onCl
             {load?.goodsTypeOther && <Field label="Goods type (other)" value={load.goodsTypeOther} />}
             <Field label="Description"       value={load?.goodsDescription ?? ""} />
             <Field label="Quantity"          value={`${load?.quantity ?? ""} ${load?.unit ?? ""}`} />
-            {load?.estimatedWeight != null && <Field label="Est. weight" value={`${load.estimatedWeight} kg`} />}
+            {load?.estimatedWeight != null && <Field label="Estimated weight" value={`${load.estimatedWeight} kg`} />}
 
             {/* Pallets */}
             {load?.palletCount != null && <Field label="Pallet count" value={String(load.palletCount)} />}
@@ -576,18 +576,18 @@ function RequestDetailModal({ request: r, onClose }: { request: JobRequest; onCl
           {hasException && (
             <Section title="Rejection & return policy">
               {ep?.rejectionAction && <Field label="Rejection action" value={ep.rejectionAction} />}
-              {ep?.alternativeReturnSiteName && <Field label="Alt. return site" value={ep.alternativeReturnSiteName} />}
-              {ep?.alternativeReturnAddress && <Field label="Alt. address" value={ep.alternativeReturnAddress} />}
-              {ep?.alternativeReturnAddressLine2 && <Field label="Alt. address line 2" value={ep.alternativeReturnAddressLine2} />}
-              {ep?.alternativeReturnTown && <Field label="Alt. town" value={ep.alternativeReturnTown} />}
-              {ep?.alternativeReturnCounty && <Field label="Alt. county" value={ep.alternativeReturnCounty} />}
-              {ep?.alternativeReturnPostcode && <Field label="Alt. postcode" value={ep.alternativeReturnPostcode} />}
-              {ep?.alternativeReturnCountry && <Field label="Alt. country" value={ep.alternativeReturnCountry} />}
+              {ep?.alternativeReturnSiteName && <Field label="Alternative site name" value={ep.alternativeReturnSiteName} />}
+              {ep?.alternativeReturnAddress && <Field label="Alternative address" value={ep.alternativeReturnAddress} />}
+              {ep?.alternativeReturnAddressLine2 && <Field label="Alternative address line 2" value={ep.alternativeReturnAddressLine2} />}
+              {ep?.alternativeReturnTown && <Field label="Alternative town" value={ep.alternativeReturnTown} />}
+              {ep?.alternativeReturnCounty && <Field label="Alternative county" value={ep.alternativeReturnCounty} />}
+              {ep?.alternativeReturnPostcode && <Field label="Alternative postcode" value={ep.alternativeReturnPostcode} />}
+              {ep?.alternativeReturnCountry && <Field label="Alternative country" value={ep.alternativeReturnCountry} />}
               {ep?.alternativeReturnNavigationInstructions && (
-                <Field label="Alt. nav instructions" value={ep.alternativeReturnNavigationInstructions} />
+                <Field label="Alternative entrance instructions" value={ep.alternativeReturnNavigationInstructions} />
               )}
-              {ep?.alternativeReturnContactName && <Field label="Alt. contact" value={ep.alternativeReturnContactName} />}
-              {ep?.alternativeReturnContactPhone && <Field label="Alt. phone" value={ep.alternativeReturnContactPhone} />}
+              {ep?.alternativeReturnContactName && <Field label="Alternative contact name" value={ep.alternativeReturnContactName} />}
+              {ep?.alternativeReturnContactPhone && <Field label="Alternative contact phone" value={ep.alternativeReturnContactPhone} />}
               {ep?.approvalContactName && <Field label="Approval contact" value={ep.approvalContactName} />}
               {ep?.approvalContactPhone && <Field label="Approval phone" value={ep.approvalContactPhone} />}
               {ep?.photosRequiredOnRejection != null && (
@@ -645,7 +645,7 @@ function DetailedStopBlock({ title, stop: s }: { title: string; stop: RequestSto
         </div>
       )}
 
-      {s.navigationInstructions && <Field label="Nav instructions" value={s.navigationInstructions} />}
+      {s.navigationInstructions && <Field label="Entrance instructions" value={s.navigationInstructions} />}
 
       {/* Schedule */}
       <Field label="Date" value={s.date} />
