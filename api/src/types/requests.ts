@@ -197,7 +197,7 @@ export interface PatchTemplateBody {
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 
-export interface JobStopInput {
+export interface JobPartInput {
   sequenceNumber:        number;
   type:                  string;
   savedLocationId?:      number | null;
@@ -284,7 +284,7 @@ export interface CreateJobBody {
   priority?:             "low" | "normal" | "high";
   serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
-  stops?:                JobStopInput[];
+  stops?:                JobPartInput[];
   loadDetails?:          LoadDetailsInput | null;
   saveMode?:             "draft" | "ready_to_plan";
   requireCollection?:    boolean;
@@ -343,7 +343,7 @@ export interface PatchJobBody {
   priority?:             "low" | "normal" | "high";
   serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
-  stops?:                JobStopInput[];
+  stops?:                JobPartInput[];
   loadDetails?:          LoadDetailsInput | null;
   saveMode?:             "draft" | "ready_to_plan";
   requireCollection?:    boolean;

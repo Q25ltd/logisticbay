@@ -1,5 +1,13 @@
 # LogisticBay — Claude Code instructions
 
+## Read this first — mandatory at the start of every session
+
+**MASTER_BLUEPRINT.md** is the full product vision — what LogisticBay is, all roles, all systems, MVP phases. Read this first.
+
+**SYSTEM_PLAN.md** is the system architecture and build plan — the five core objects, phases, rules for adding features.
+
+**PHASE1_DATA_MODEL.md** is the agreed data model contract for Job, JobPart, Run, RunAssignment, LoadTrack, and Event. No code touches these models without reading this first. Special attention: partial quantities, load possession, custody chain, handover logic.
+
 ## Field naming rule — mandatory before adding any new field
 
 Before naming any new field, state, variable, or JSON blob key, **check DATA_DICTIONARY.md first**.

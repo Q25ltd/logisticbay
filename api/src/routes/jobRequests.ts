@@ -477,11 +477,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             createdByUserId:   userId,
             customerId:        jobRequest.customerId ?? null,
             customerName:      jobRequest.customerName,
-            status:            "pending",
+            status:            "draft",
             validationStatus:  "ready_for_planner",
             serviceType:       "delivery",
-            pickupTextSnapshot:  `${firstCollect.siteName}, ${firstCollect.street}, ${firstCollect.town} ${firstCollect.postcode}`,
-            dropoffTextSnapshot: `${lastDeliver.siteName}, ${lastDeliver.street}, ${lastDeliver.town} ${lastDeliver.postcode}`,
             purchaseOrderNumber: (billing?.purchaseOrderNumber ?? ""),
             customerRef:         (billing?.billingReference    ?? ""),
             plannerNotes:        req.body.plannerNotes ?? "",
@@ -505,7 +503,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         const sorted = [...stopsArr].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
         for (let i = 0; i < sorted.length; i++) {
           const s = sorted[i];
-          await tx.jobStop.create({
+          await tx.jobPart.create({
             data: {
               companyId,
               jobId:          job.id,
@@ -533,7 +531,14 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
                 ? new Date(`${s.date}T${s.earliestArrivalTime}:00`) : null,
               timeWindowEnd: s.date && s.latestArrivalTime
                 ? new Date(`${s.date}T${s.latestArrivalTime}:00`) : null,
+              bookedTime: s.date && s.bookedTime
+                ? new Date(`${s.date}T${s.bookedTime}:00`) : null,
               unloadingAllowanceMinutes: s.unloadingAllowanceMinutes ?? 30,
+              handlingMethods:   s.handlingMethods   ? s.handlingMethods   : undefined,
+              proofRequirements: s.proofRequirements ? s.proofRequirements : undefined,
+              accessRequirements: s.accessRequirements ? s.accessRequirements : undefined,
+              heightRestriction: s.heightRestrictionValue ?? "",
+              weightRestriction: s.weightRestrictionValue ?? "",
             },
           });
         }

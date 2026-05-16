@@ -5,14 +5,11 @@ import { authenticate } from "../middleware.js";
 const CLOSED_STATUSES = new Set(["completed", "cancelled"]);
 
 const JOB_INCLUDE = {
-  customer:        true,
-  assignedDriver:  true,
-  template:        true,
-  pickupLocation:  true,
-  dropoffLocation: true,
-  stops:           { orderBy: { sequenceNumber: "asc" as const } },
-  loadDetails:     true,
-  events:          { orderBy: { createdAt: "asc" as const } },
+  customer:    true,
+  template:    true,
+  stops:       { orderBy: { sequenceNumber: "asc" as const } },
+  loadDetails: true,
+  events:      { orderBy: { createdAt: "asc" as const } },
 } satisfies Prisma.PlannedJobInclude;
 
 export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -47,7 +44,7 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
         },
       },
       include: JOB_INCLUDE,
-      orderBy: [{ plannedDate: "asc" }, { sequence: "asc" }],
+      orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
       take: 500,
     });
 
@@ -64,7 +61,7 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
         ],
       },
       include: JOB_INCLUDE,
-      orderBy: [{ plannedDate: "asc" }, { sequence: "asc" }],
+      orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
       take: 200,
     });
 

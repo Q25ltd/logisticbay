@@ -14,7 +14,7 @@ import {
   TRAILER_BODY_TYPE_VALUES, equipmentForBodyType,
 } from "./createJobConstants";
 import type { StopState } from "./createJobTypes";
-import { today, nowDisplay, makeStop, jobStopToStopState, stopComplete } from "./createJobUtils";
+import { today, nowDisplay, makeStop, jobPartToStopState, stopComplete } from "./createJobUtils";
 import {
   FieldLabel, ReadOnlyField, SectionHeader, SectionFooter,
   OptionalToggle, Toggle, MultiCheck, TextField,
@@ -548,7 +548,7 @@ export default function CreateJobPage() {
       setContactEmail(job.bookingContactEmail || "");
       setCustomerInstructions(job.customerInstructions || "");
       if (job.stops && job.stops.length > 0) {
-        setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobStopToStopState));
+        setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobPartToStopState));
       }
       const ld = job.loadDetails;
       setMaterialType(ld?.materialType || job.materialType || "");

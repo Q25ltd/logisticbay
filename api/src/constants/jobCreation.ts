@@ -37,10 +37,10 @@ export const LOAD_UNITS = [
   "other",
 ] as const;
 
-export type JobStopType = typeof JOB_STOP_TYPES[number];
+export type JobPartType = typeof JOB_STOP_TYPES[number];
 export type LoadUnit = typeof LOAD_UNITS[number];
 
-export function isJobStopType(value: unknown): value is JobStopType {
+export function isJobPartType(value: unknown): value is JobPartType {
   return typeof value === "string" && (JOB_STOP_TYPES as readonly string[]).includes(value);
 }
 

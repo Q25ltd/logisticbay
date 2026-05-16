@@ -1,6 +1,6 @@
 import {
   bodyCategoryNeedsTrailer,
-  isJobStopType,
+  isJobPartType,
   isLoadUnit,
   isBodyCategory,
   isBodyType,
@@ -10,7 +10,7 @@ import {
 } from "../constants/jobCreation.js";
 import type { PrismaClient } from "../generated/client.js";
 
-export interface StructuredJobStopInput {
+export interface StructuredJobPartInput {
   sequenceNumber?: number;
   type?: unknown;
   locationTextSnapshot?: unknown;
@@ -81,7 +81,7 @@ export interface StructuredJobValidationInput {
   reqEquipment?: unknown;
   reqLicenceClass?: unknown;
   trailerTypesAllowed?: unknown;
-  stops?: StructuredJobStopInput[];
+  stops?: StructuredJobPartInput[];
   loadDetails?: StructuredLoadDetailsInput | null;
 }
 
@@ -202,7 +202,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
       seenSequence.add(seq);
     }
 
-    if (stop.type !== undefined && !isJobStopType(stop.type)) {
+    if (stop.type !== undefined && !isJobPartType(stop.type)) {
       errors.push(`Invalid stop type: ${String(stop.type)}`);
     }
 
@@ -290,7 +290,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
 export async function findInvalidStopLocationId(
   prisma: PrismaClient,
   companyId: number,
-  stops: StructuredJobStopInput[],
+  stops: StructuredJobPartInput[],
 ): Promise<number | null> {
   const stopLocationIds = [...new Set(stops
     .map(s => s.savedLocationId)

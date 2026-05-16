@@ -69,7 +69,7 @@ export interface Driver {
   status: "active" | "inactive";
   user?: { id: number; email: string; name: string; status?: string } | null;
 }
-export interface JobStop {
+export interface JobPart {
   id?: number;
   sequenceNumber: number;
   type: "pickup" | "dropoff" | "collection" | "delivery" | "handover" | "yard" | "depot";
@@ -128,57 +128,151 @@ export interface LoadDetails {
 }
 
 export interface PlannedJob {
-  id: number; companyId: number; assignedDriverId: number | null;
+  id:          number;
+  companyId:   number;
   customerId?: number | null;
   customerName?: string;
-  customer?: Customer | null;
+  customer?:   Customer | null;
   jobReference?: string | null;
-  plannedDate: string | null; pickupTextSnapshot: string; dropoffTextSnapshot: string;
-  referenceNumber: string; materialType: string; quantityExpected: string;
-  quantityUnit: string; plannerNotes: string;
-  assignedTruck?: string;
-  assignedTrailer?: string;
-  vehicleClass?: string;
-  vehicleClassRequired?: string;
+  templateId?: number | null;
+  plannedDate: string | null;
+  materialType:    string;
+  quantityExpected: string;
+  quantityUnit:    string;
+  plannerNotes:    string;
   reqBodyCategory?: string;
-  reqGvwMin?: string;
-  reqBodyType?: string;
-  reqEquipment?: string[];
+  reqGvwMin?:       string;
+  reqBodyType?:     string;
+  reqEquipment?:    string[];
   reqLicenceClass?: string;
   trailerTypesAllowed?: string[];
-  equipmentRequired?: string[];
+  equipmentRequired?:   string[];
   driverQualificationsReq?: string[];
-  priority?: "low" | "normal" | "high";
-  serviceType?: string;
-  jobType?: string;
-  jobTitle?: string;
-  customerRef?: string;
+  priority?:           "low" | "normal" | "high";
+  serviceType?:        string;
+  customerRef?:        string;
   purchaseOrderNumber?: string;
-  bookingContactName?: string;
-  bookingContactPhone?: string;
-  bookingContactEmail?: string;
+  billingNotes?:       string;
   customerInstructions?: string;
-  minVehicleSize?: string;
-  heightRestriction?: string;
-  weightRestriction?: string;
+  custRefRequired?: boolean;
+  poRequired?:      boolean;
+  minVehicleSize?:  string;
   lengthRestriction?: string;
   vehicleAccessNotes?: string;
-  failureAction?: string;
+  failureAction?:   string;
   assistancePhone?: string;
-  assistanceNote?: string;
-  returnDestination?: string;
-  altAddress?: unknown;
-  internalNotes?: string;
-  requireCollection?: boolean;
-  requirePOD?: boolean;
-  requireDeliveryQty?: boolean;
-  validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "planned";
-  qualityScore?: number;
-  stops?: JobStop[];
+  assistanceNote?:  string;
+  internalNotes?:   string;
+  requirePOD?:      boolean;
+  validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "ready_for_planner" | "planned";
+  qualityScore?:    number;
+  // Vehicle/trailer requirement sources
+  vehicleRequirementSource?: string;
+  trailerRequirementSource?: string;
+  customerVehicleType?:      string | null;
+  customerTrailerTypes?:     string[] | null;
+  derivedVehicleType?:       string | null;
+  derivedTrailerTypes?:      string[] | null;
+  finalVehicleType?:         string | null;
+  finalTrailerTypes?:        string[] | null;
+  // Override close
+  overrideClosed?:              boolean;
+  overrideReason?:              string | null;
+  overrideQuantityDelivered?:   number | null;
+  closedAt?:                    string | null;
+  stops?:       JobPart[];
   loadDetails?: LoadDetails | null;
-  status: "pending" | "accepted" | "in_progress" | "arrived_pickup" | "collected" | "arrived_dropoff" | "completed" | "cancelled";
-  assignedDriver?: Driver | null; events?: JobEvent[];
-  createdAt: string; updatedAt: string;
+  events?:      JobEvent[];
+  status: "draft" | "accepted" | "in_progress" | "arrived_pickup" | "collected" | "arrived_dropoff" | "completed" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+
+  // ── Fields removed from DB (Phase 1) — kept here so web UI compiles ──────
+  // These are no longer returned by the API. UI components should migrate to
+  // reading assignedDriverId/assignedTruck/assignedTrailer from Run instead.
+  /** @deprecated Use Run.assignedDriverId */       assignedDriverId?: number | null;
+  /** @deprecated Use Run.assignedDriverId */       assignedDriver?:   Driver | null;
+  /** @deprecated Use Run.assignedTruckId */        assignedTruck?:    string;
+  /** @deprecated Use Run.assignedTrailerId */      assignedTrailer?:  string;
+  /** @deprecated Field removed */                  vehicleClass?:     string;
+  /** @deprecated Use reqBodyCategory */            vehicleClassRequired?: string;
+  /** @deprecated Removed — use JobPart.referenceNumber */ referenceNumber?: string;
+  /** @deprecated Removed */                        bookingContactName?:  string;
+  /** @deprecated Removed */                        bookingContactPhone?: string;
+  /** @deprecated Removed */                        bookingContactEmail?: string;
+  /** @deprecated Removed */                        jobType?:            string;
+  /** @deprecated Removed */                        jobTitle?:           string;
+  /** @deprecated Removed */                        heightRestriction?:  string;
+  /** @deprecated Removed */                        weightRestriction?:  string;
+  /** @deprecated Removed */                        returnDestination?:  string;
+  /** @deprecated Removed */                        requireCollection?:  boolean;
+  /** @deprecated Removed */                        requireDeliveryQty?: boolean;
+  /** @deprecated Removed — use first/last JobPart.locationTextSnapshot */ pickupTextSnapshot?:  string;
+  /** @deprecated Removed — use first/last JobPart.locationTextSnapshot */ dropoffTextSnapshot?: string;
+}
+
+// ── Run — execution container (independent of Job) ────────────────────────────
+export interface Run {
+  id:              number;
+  companyId:       number;
+  runReference:    string;
+  status:          "draft" | "assigned" | "in_progress" | "completed" | "cancelled";
+  assignedDriverId?: number | null;
+  assignedTruckId?:  number | null;
+  assignedTrailerId?: number | null;
+  plannedDate?:       string | null;
+  estimatedStartTime?: string | null;
+  estimatedEndTime?:   string | null;
+  actualStartTime?:    string | null;
+  actualEndTime?:      string | null;
+  publishedToDriver:   boolean;
+  plannerNotes?:       string | null;
+  endInstruction?:     string | null;
+  endInstructionNote?: string | null;
+  returnToBase:        boolean;
+  returnToBaseNote?:   string | null;
+  returningAt?:        string | null;
+  arrivedBaseAt?:      string | null;
+  // Derived requirements
+  requiredTrailerType?: string | null;
+  requiredEquipment?:   string[] | null;
+  maxLoadWeight?:       number | null;
+  hasHazardous:         boolean;
+  hasTemperatureLoad:   boolean;
+  hasOversized:         boolean;
+  // Compatibility
+  trailerCompatible:           boolean;
+  vehicleCompatible:           boolean;
+  compatibilityOverridden:     boolean;
+  compatibilityOverrideReason?: string | null;
+  createdBy:  number;
+  createdAt:  string;
+  updatedAt:  string;
+  // Relations (included on detail views)
+  driver?:      Driver | null;
+  assignments?: RunAssignment[];
+}
+
+// ── RunAssignment — bridge between JobPart and Run ───────────────────────────
+export interface RunAssignment {
+  id:               number;
+  companyId:        number;
+  runId:            number;
+  jobPartId:        number;
+  jobId:            number;
+  sequenceNumber:   number;
+  quantityAssigned: number;
+  quantityUnit:     string;
+  status:           "pending" | "completed" | "skipped";
+  addedAt:          string;
+  addedBy:          number;
+  removedAt?:       string | null;
+  removedBy?:       number | null;
+  removalReason?:   string | null;
+  notes?:           string | null;
+  // Relations (included on detail views)
+  jobPart?: JobPart;
+  job?: Pick<PlannedJob, "id" | "jobReference" | "customerName" | "plannedDate" | "status" | "materialType" | "plannerNotes">;
 }
 export interface FleetUnit {
   id: number;

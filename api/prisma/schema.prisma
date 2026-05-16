@@ -14,6 +14,8 @@ model Company {
   ticker                       String?  @unique
   nextJobSequence              Int      @default(1)
   jobSequenceYear              Int      @default(2026)
+  nextRunSequence              Int      @default(1)
+  runSequenceYear              Int      @default(2026)
   status                       String   @default("trial")
   reportEmail                  String?
   reportEmailEnabled           Boolean  @default(true)
@@ -46,7 +48,7 @@ model Company {
   holidayRequests  HolidayRequest[]
   workingSummaries DriverWorkingTimeSummary[]
   syncEventLogs    SyncEventLog[]
-  jobStops         JobStop[]
+  jobParts         JobPart[]
   loadDetails      LoadDetails[]
   jobAudits        JobAudit[]
   auditLogs        AuditLog[]
@@ -54,6 +56,9 @@ model Company {
   fleetTrailers    FleetTrailer[]
   requestLinks     ClientRequestLink[]
   jobRequests      JobRequest[]
+  runs             Run[]
+  runAssignments   RunAssignment[]
+  loadTracks       LoadTrack[]
 }
 
 model Customer {
@@ -177,7 +182,7 @@ model DriverProfile {
 
   company          Company                    @relation(fields: [companyId], references: [id])
   user             User?                      @relation(fields: [userId], references: [id])
-  plannedJobs      PlannedJob[]
+  runs             Run[]
   availability     DriverAvailability[]
   shiftPreferences ShiftPreference[]
   holidayRequests  HolidayRequest[]
@@ -188,36 +193,34 @@ model DriverProfile {
 }
 
 model SavedLocation {
-  id                Int      @id @default(autoincrement())
-  companyId         Int
-  name              String
-  siteName          String   @default("")
-  unitName          String   @default("")
-  locationTextSnapshot String  @default("")
-  street            String   @default("")
-  town              String   @default("")
-  postcode          String   @default("")
-  lat               Float?
-  lng               Float?
-  gateLat           Float?
-  gateLng           Float?
-  contactName       String   @default("")
-  contactPhone      String   @default("")
-  instructions      String   @default("")
-  internalNotes     String   @default("")
-  accessType        String   @default("unknown")
-  accessConfidence  String   @default("low")
-  driverReportCount Int      @default(0)
-  issueFlags        Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                   Int      @id @default(autoincrement())
+  companyId            Int
+  name                 String
+  siteName             String   @default("")
+  unitName             String   @default("")
+  locationTextSnapshot String   @default("")
+  street               String   @default("")
+  town                 String   @default("")
+  postcode             String   @default("")
+  lat                  Float?
+  lng                  Float?
+  gateLat              Float?
+  gateLng              Float?
+  contactName          String   @default("")
+  contactPhone         String   @default("")
+  instructions         String   @default("")
+  internalNotes        String   @default("")
+  accessType           String   @default("unknown")
+  accessConfidence     String   @default("low")
+  driverReportCount    Int      @default(0)
+  issueFlags           Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   company          Company       @relation(fields: [companyId], references: [id])
   pickupTemplates  JobTemplate[] @relation("PickupLocation")
   dropoffTemplates JobTemplate[] @relation("DropoffLocation")
-  pickupJobs       PlannedJob[]  @relation("JobPickupLocation")
-  dropoffJobs      PlannedJob[]  @relation("JobDropoffLocation")
-  jobStops         JobStop[]
+  jobParts         JobPart[]
 
   @@index([companyId, name])
   @@index([companyId, postcode])
@@ -252,29 +255,18 @@ model JobTemplate {
 }
 
 model PlannedJob {
-  id                   Int       @id @default(autoincrement())
-  companyId            Int
-  customerId           Int?
-  customerName         String    @default("")
-  templateId           Int?
-  assignedDriverId     Int?
-  createdByUserId      Int
-  plannedDate          DateTime?
-  sequence             Int       @default(0)
-  pickupLocationId     Int?
-  dropoffLocationId    Int?
-  pickupTextSnapshot   String    @default("")
-  dropoffTextSnapshot  String    @default("")
-  jobReference         String?
-  referenceNumber      String    @default("")
-  materialType         String    @default("")
+  id              Int       @id @default(autoincrement())
+  companyId       Int
+  customerId      Int?
+  customerName    String    @default("")
+  templateId      Int?
+  createdByUserId Int
+  plannedDate     DateTime?
+  jobReference    String?
+  materialType    String    @default("")
   quantityExpected     String    @default("")
   quantityUnit         String    @default("")
   plannerNotes         String    @default("")
-  assignedTruck        String    @default("")
-  assignedTrailer      String    @default("")
-  vehicleClass         String    @default("")
-  vehicleClassRequired String    @default("")
   reqBodyCategory      String    @default("")
   reqGvwMin            String    @default("")
   reqBodyType          String    @default("")
@@ -283,69 +275,72 @@ model PlannedJob {
   trailerTypesAllowed  Json?
   priority             String    @default("normal")
   serviceType          String    @default("")
-  jobType                    String    @default("")
-  jobTitle                   String    @default("")
-  customerRef                String    @default("")
-  purchaseOrderNumber        String    @default("")
-  bookingContactName         String    @default("")
-  bookingContactPhone        String    @default("")
-  bookingContactEmail        String    @default("")
-  billingNotes               String    @default("")
-  customerInstructions       String    @default("")
-  custRefRequired            Boolean   @default(false)
-  poRequired                 Boolean   @default(false)
-  minVehicleSize             String    @default("")
-  trailerTypesForbidden      Json?
-  equipmentRequired          Json?
-  driverQualificationsReq    Json?
-  heightRestriction          String    @default("")
-  weightRestriction          String    @default("")
-  lengthRestriction          String    @default("")
-  vehicleAccessNotes         String    @default("")
+  customerRef          String    @default("")
+  purchaseOrderNumber  String    @default("")
+  billingNotes         String    @default("")
+  customerInstructions String    @default("")
+  custRefRequired      Boolean   @default(false)
+  poRequired           Boolean   @default(false)
+  minVehicleSize          String    @default("")
+  trailerTypesForbidden   Json?
+  equipmentRequired       Json?
+  driverQualificationsReq Json?
+  lengthRestriction       String    @default("")
+  vehicleAccessNotes      String    @default("")
   failureAction        String    @default("call_assistance")
   assistancePhone      String    @default("")
   assistanceNote       String    @default("")
-  returnDestination    String    @default("")
-  altAddress           Json?
   internalNotes        String    @default("")
   validationStatus     String    @default("draft")
   qualityScore         Int       @default(0)
-  status               String    @default("pending")
-  actualQuantity       String    @default("")
-  actualUnit           String    @default("")
-  podNumber            String    @default("")
-  collectionNote       String    @default("")
-  deliveryNote         String    @default("")
-  requireCollection    Boolean   @default(false)
+  status               String    @default("draft")
   requirePOD           Boolean   @default(false)
-  requireDeliveryQty   Boolean   @default(false)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
 
-  company         Company             @relation(fields: [companyId], references: [id])
-  customer        Customer?           @relation(fields: [customerId], references: [id])
-  template        JobTemplate?        @relation(fields: [templateId], references: [id])
-  assignedDriver  DriverProfile?      @relation(fields: [assignedDriverId], references: [id])
-  createdBy       User                @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
-  pickupLocation  SavedLocation?      @relation("JobPickupLocation", fields: [pickupLocationId], references: [id])
-  dropoffLocation SavedLocation?      @relation("JobDropoffLocation", fields: [dropoffLocationId], references: [id])
-  events          JobExecutionEvent[]
-  stops           JobStop[]
-  loadDetails     LoadDetails?
-  audits          JobAudit[]
-  fromRequest     JobRequest?
+  // Override close fields — set only when planner confirms a quantity mismatch
+  overrideClosed            Boolean   @default(false)
+  overrideReason            String?
+  overrideNotes             String?
+  overrideQuantityDelivered Decimal?
+  overrideQuantityShortfall Decimal?
+  closedAt                  DateTime?
+  closedBy                  Int?
+
+  // Vehicle/trailer requirement sources
+  vehicleRequirementSource String    @default("not_specified")
+  trailerRequirementSource String    @default("not_specified")
+  customerVehicleType      String?
+  customerTrailerTypes     Json?
+  derivedVehicleType       String?
+  derivedTrailerTypes      Json?
+  finalVehicleType         String?
+  finalTrailerTypes        Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company        Company             @relation(fields: [companyId], references: [id])
+  customer       Customer?           @relation(fields: [customerId], references: [id])
+  template       JobTemplate?        @relation(fields: [templateId], references: [id])
+  createdBy      User                @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
+  events         JobExecutionEvent[]
+  stops          JobPart[]
+  loadDetails    LoadDetails?
+  audits         JobAudit[]
+  fromRequest    JobRequest?
+  runAssignments RunAssignment[]
+  loadTracks     LoadTrack[]
 
   @@unique([companyId, jobReference])
   @@index([companyId, plannedDate])
   @@index([companyId, status])
-  @@index([companyId, assignedDriverId])
   @@index([companyId, customerId])
   @@index([companyId, updatedAt])
   @@index([companyId, validationStatus])
   @@index([companyId, jobReference])
 }
 
-model JobStop {
+// Renamed from JobStop — represents one physical piece of work (collect, deliver, etc.)
+model JobPart {
   id        Int @id @default(autoincrement())
   companyId Int
   jobId     Int
@@ -366,6 +361,8 @@ model JobStop {
   gateLat Float?
   gateLng Float?
 
+  coordinateVerified Boolean @default(false)
+
   timeWindowStart           DateTime?
   timeWindowEnd             DateTime?
   bookedTime                DateTime?
@@ -375,29 +372,56 @@ model JobStop {
 
   contactName     String @default("")
   contactPhone    String @default("")
+  contactEmail    String @default("")
   referenceNumber String @default("")
-  instructions    String @default("")
-  contactEmail               String    @default("")
-  bookingRequired            Boolean   @default(false)
-  bookingRef                 String    @default("")
-  openingHours               String    @default("")
-  locationType               String    @default("")
-  navigationInstructions     String    @default("")
-  numPallets                 Int?
-  internalNotes              String    @default("")
-  country                    String    @default("United Kingdom")
-  addressLine2               String    @default("")
-  countyRegion               String    @default("")
+  bookingRequired Boolean @default(false)
+  bookingRef      String  @default("")
+  openingHours    String  @default("")
+  instructions    String  @default("")
+  navigationInstructions String @default("")
+  locationType    String  @default("")
+
+  // Quantity tracking
+  numPallets         Int?     // legacy field — kept for mobile compatibility
+  quantityRequired   Decimal?
+  quantityUnit       String   @default("")
+  quantityCollected  Decimal  @default(0)
+  quantityDelivered  Decimal  @default(0)
+
+  // Proof and access requirements
+  proofRequirements  Json?   // ["signature", "photo", "pod_number", "timestamp"]
+  accessRequirements Json?   // ["ppe", "high_vis", "induction"]
+  handlingMethods    Json?   // ["forklift", "tail_lift", "crane", "manual"]
+
+  // Stop-level load specification — drives trailer compatibility checks
+  stopGoodsType        String?
+  stopWeight           Decimal?
+  temperatureControlled Boolean  @default(false)
+  temperatureRange     String?
+  hazardous            Boolean  @default(false)
+  hazardClass          String?
+  oversized            Boolean  @default(false)
+
+  heightRestriction String @default("")
+  weightRestriction String @default("")
+  internalNotes     String @default("")
+  stopNotes         String @default("")
+  addressLine2      String @default("")
+  countyRegion      String @default("")
+  country           String @default("United Kingdom")
 
   status String @default("pending")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company       Company        @relation(fields: [companyId], references: [id])
-  job           PlannedJob     @relation(fields: [jobId], references: [id])
-  savedLocation SavedLocation? @relation(fields: [savedLocationId], references: [id])
+  company         Company         @relation(fields: [companyId], references: [id])
+  job             PlannedJob      @relation(fields: [jobId], references: [id])
+  savedLocation   SavedLocation?  @relation(fields: [savedLocationId], references: [id])
+  runAssignments  RunAssignment[]
+  loadTracks      LoadTrack[]
 
+  @@map("JobPart")
   @@unique([jobId, sequenceNumber])
   @@index([companyId, jobId])
   @@index([companyId, savedLocationId])
@@ -413,21 +437,21 @@ model LoadDetails {
   weight   Float?
   volume   Float?
 
-  materialType String @default("")
-  hazardClass  String @default("")
-  notes        String @default("")
-  dimensions                 String    @default("")
-  fragile                    Boolean   @default(false)
-  stackable                  Boolean   @default(false)
-  tempControlled             Boolean   @default(false)
-  tempRange                  String    @default("")
-  photosRequired             Boolean   @default(false)
-  weighbridgeRequired        Boolean   @default(false)
-  forkliftRequired           Boolean   @default(false)
-  tailLiftRequired           Boolean   @default(false)
-  craneRequired              Boolean   @default(false)
-  loadingMethod              String    @default("")
-  unloadingMethod            String    @default("")
+  materialType String  @default("")
+  hazardClass  String  @default("")
+  notes        String  @default("")
+  dimensions   String  @default("")
+  fragile      Boolean @default(false)
+  stackable    Boolean @default(false)
+  tempControlled       Boolean @default(false)
+  tempRange            String  @default("")
+  photosRequired       Boolean @default(false)
+  weighbridgeRequired  Boolean @default(false)
+  forkliftRequired     Boolean @default(false)
+  tailLiftRequired     Boolean @default(false)
+  craneRequired        Boolean @default(false)
+  loadingMethod        String  @default("")
+  unloadingMethod      String  @default("")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -474,12 +498,142 @@ model JobExecutionEvent {
   reviewReason     String?
   createdAt        DateTime @default(now())
 
-  job     PlannedJob @relation(fields: [jobId], references: [id])
-  company Company    @relation(fields: [companyId], references: [id])
-  driver  User       @relation(fields: [driverId], references: [id])
+  // Phase 1 additions — links to new models (null for historical events)
+  runId             Int?
+  runAssignmentId   Int?
+  jobPartId         Int?
+  quantityConfirmed Decimal?
+  fromCustody       String?
+  toCustody         String?
+
+  job           PlannedJob     @relation(fields: [jobId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id])
+  driver        User           @relation(fields: [driverId], references: [id])
+  run           Run?           @relation(fields: [runId], references: [id])
+  loadTracks    LoadTrack[]
 
   @@unique([companyId, clientEventId])
   @@index([companyId, createdAt])
+  @@index([companyId, runId])
+}
+
+// ── Run — the execution container (independent of Job) ───────────────────────
+model Run {
+  id                          Int       @id @default(autoincrement())
+  companyId                   Int
+  runReference                String
+  status                      String    @default("draft")
+  assignedDriverId            Int?
+  assignedTruckId             Int?
+  assignedTrailerId           Int?
+  plannedDate                 DateTime?
+  estimatedStartTime          String?
+  estimatedEndTime            String?
+  actualStartTime             DateTime?
+  actualEndTime               DateTime?
+  publishedToDriver           Boolean   @default(false)
+  plannerNotes                String?
+  endInstruction              String?   // drop_trailer_at_base | stay_with_trailer | none
+  endInstructionNote          String?
+  returnToBase                Boolean   @default(false)
+  returnToBaseNote            String?
+  returningAt                 DateTime?
+  arrivedBaseAt               DateTime?
+
+  // Derived requirements — recalculated when assignments change
+  requiredTrailerType         String?
+  requiredEquipment           Json?
+  maxLoadWeight               Decimal?
+  hasHazardous                Boolean   @default(false)
+  hasTemperatureLoad          Boolean   @default(false)
+  hasOversized                Boolean   @default(false)
+
+  // Compatibility check results — updated at publish time
+  trailerCompatible           Boolean   @default(true)
+  vehicleCompatible           Boolean   @default(true)
+  compatibilityOverridden     Boolean   @default(false)
+  compatibilityOverrideReason String?
+
+  createdBy Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company     Company           @relation(fields: [companyId], references: [id])
+  driver      DriverProfile?    @relation(fields: [assignedDriverId], references: [id])
+  assignments RunAssignment[]
+  loadTracks  LoadTrack[]
+  events      JobExecutionEvent[]
+
+  @@unique([companyId, runReference])
+  @@index([companyId, plannedDate])
+  @@index([companyId, status])
+  @@index([companyId, assignedDriverId])
+}
+
+// ── RunAssignment — bridge between JobPart and Run ───────────────────────────
+model RunAssignment {
+  id               Int       @id @default(autoincrement())
+  companyId        Int
+  runId            Int
+  jobPartId        Int
+  jobId            Int
+  sequenceNumber   Int
+  quantityAssigned Decimal   @default(0)
+  quantityUnit     String    @default("")
+  status           String    @default("pending")
+  addedAt          DateTime  @default(now())
+  addedBy          Int
+  removedAt        DateTime?
+  removedBy        Int?
+  removalReason    String?
+  notes            String?
+
+  company    Company    @relation(fields: [companyId], references: [id])
+  run        Run        @relation(fields: [runId], references: [id])
+  jobPart    JobPart    @relation(fields: [jobPartId], references: [id])
+  job        PlannedJob @relation(fields: [jobId], references: [id])
+  loadTracks LoadTrack[]
+
+  @@unique([runId, sequenceNumber])
+  @@index([companyId, runId])
+  @@index([companyId, jobPartId])
+  @@index([companyId, jobId])
+}
+
+// ── LoadTrack — immutable custody ledger ─────────────────────────────────────
+// Append-only — NEVER update or delete rows.
+model LoadTrack {
+  id               Int      @id @default(autoincrement())
+  companyId        Int
+  jobId            Int
+  jobPartId        Int
+  runId            Int?
+  runAssignmentId  Int?
+  eventId          Int
+  transactionType  String
+  quantity         Decimal
+  unit             String   @default("")
+  fromCustody      String
+  toCustody        String
+  driverId         Int?
+  trailerId        String   @default("")
+  timestamp        DateTime
+  serverReceivedAt DateTime @default(now())
+  gpsLat           Float?
+  gpsLng           Float?
+  notes            String?
+
+  company       Company           @relation(fields: [companyId], references: [id])
+  job           PlannedJob        @relation(fields: [jobId], references: [id])
+  jobPart       JobPart           @relation(fields: [jobPartId], references: [id])
+  run           Run?              @relation(fields: [runId], references: [id])
+  runAssignment RunAssignment?    @relation(fields: [runAssignmentId], references: [id])
+  event         JobExecutionEvent @relation(fields: [eventId], references: [id])
+
+  @@index([companyId, jobId])
+  @@index([companyId, jobPartId])
+  @@index([companyId, runId])
+  @@index([companyId, timestamp])
 }
 
 model SyncEventLog {
@@ -685,26 +839,26 @@ model DriverWorkingTimeSummary {
 }
 
 model FleetUnit {
-  id            Int      @id @default(autoincrement())
-  companyId     Int
-  company       Company  @relation(fields: [companyId], references: [id])
+  id                 Int      @id @default(autoincrement())
+  companyId          Int
+  company            Company  @relation(fields: [companyId], references: [id])
 
-  registration  String
-  vehicleClass  String
-  vehicleClassLegacy String @default("")
-  bodyCategory       String @default("")
-  gvwClass           String @default("")
-  bodyType           String @default("")
+  registration       String
+  vehicleClass       String
+  vehicleClassLegacy String   @default("")
+  bodyCategory       String   @default("")
+  gvwClass           String   @default("")
+  bodyType           String   @default("")
   onboardEquipment   Json?
-  status        String   @default("available")
-  notes         String?
+  status             String   @default("available")
+  notes              String?
 
-  assignedDriverId  Int?
-  currentTrailerId  Int?
-  yardLocation      String?
+  assignedDriverId   Int?
+  currentTrailerId   Int?
+  yardLocation       String?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([companyId])
   @@index([companyId, status])
@@ -712,26 +866,31 @@ model FleetUnit {
 }
 
 model FleetTrailer {
-  id            Int      @id @default(autoincrement())
-  companyId     Int
-  company       Company  @relation(fields: [companyId], references: [id])
+  id               Int      @id @default(autoincrement())
+  companyId        Int
+  company          Company  @relation(fields: [companyId], references: [id])
 
-  registration  String
-  trailerType   String
-  bodyType      String @default("")
-  trailerLength String @default("")
-  decks         Int    @default(1)
-  compartments  Int?
+  registration     String
+  trailerType      String
+  bodyType         String   @default("")
+  trailerLength    String   @default("")
+  decks            Int      @default(1)
+  compartments     Int?
   onboardEquipment Json?
-  status        String   @default("available")
-  notes         String?
+  status           String   @default("available")
+  notes            String?
 
-  attachedUnitId  Int?
-  linkedJobId     Int?
-  yardLocation    String?
+  attachedUnitId   Int?
+  linkedJobId      Int?
+  yardLocation     String?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // Standing load tracking — updated by Events, never set manually
+  loadStatus       String   @default("empty")  // empty | loaded_standing | loaded_with_driver
+  standingNote     String?
+  standingRunId    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([companyId])
   @@index([companyId, status])
@@ -784,10 +943,10 @@ model ClientRequestLink {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  company      Company      @relation(fields: [companyId], references: [id])
-  customer     Customer?    @relation(fields: [customerId], references: [id])
-  createdByUser User        @relation(fields: [createdBy], references: [id])
-  requests     JobRequest[]
+  company       Company      @relation(fields: [companyId], references: [id])
+  customer      Customer?    @relation(fields: [customerId], references: [id])
+  createdByUser User         @relation(fields: [createdBy], references: [id])
+  requests      JobRequest[]
 
   @@index([companyId])
   @@index([tokenHash])
