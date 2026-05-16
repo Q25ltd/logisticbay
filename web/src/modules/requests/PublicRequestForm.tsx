@@ -511,18 +511,27 @@ function StopCard({
     lat: number; lng: number;
   }>>([]);
   const [showLookup, setShowLookup] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState("");
 
   async function handlePostcodeLookup() {
     const q = stop.postcode.trim();
     if (!q) return;
     setLookupLoading(true);
     setShowLookup(false);
+    setLookupMessage("");
     try {
       const res = await jobRequestsPublicApi.geocode(q, stop.country);
-      setLookupResults(res.features);
-      setShowLookup(res.features.length > 0);
+      if (res.features.length > 0) {
+        setLookupResults(res.features);
+        setShowLookup(true);
+        setLookupMessage("");
+      } else {
+        setLookupResults([]);
+        setLookupMessage("No addresses found — try a different postcode or fill in manually.");
+      }
     } catch {
       setLookupResults([]);
+      setLookupMessage("Lookup unavailable — please fill in the address manually.");
     } finally {
       setLookupLoading(false);
     }
@@ -739,10 +748,13 @@ function StopCard({
                   type="button"
                   onClick={handlePostcodeLookup}
                   disabled={lookupLoading || !stop.postcode.trim()}
-                  className="btn btn-secondary px-3 text-xs font-semibold flex-shrink-0 disabled:opacity-40">
-                  {lookupLoading ? "…" : "Find"}
+                  className="btn btn-outline px-3 text-xs font-semibold flex-shrink-0">
+                  {lookupLoading ? "Searching…" : "Find address"}
                 </button>
               </div>
+              {lookupMessage && (
+                <p className="text-xs text-amber-700 mt-1">{lookupMessage}</p>
+              )}
               {showLookup && lookupResults.length > 0 && (
                 <div className="mt-1 border border-border rounded-xl overflow-hidden shadow-md bg-white z-10 relative">
                   {lookupResults.map((r, i) => (
