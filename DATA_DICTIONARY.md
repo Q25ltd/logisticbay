@@ -675,7 +675,7 @@ Stored in `JobRequest.loadData` (Json column, default `{}`).
 
 | Field | Type | Required | Values / Format | Description |
 |---|---|---|---|---|
-| goodsType | String | Yes | `pallets` \| `roll_cages` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods being transported |
+| goodsType | String | Yes | `pallets` \| `roll_cages` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `liquid_bulk` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods being transported |
 | goodsTypeOther | String? | No | Free text | Description of goods when goodsType = `other` |
 | goodsDescription | String | Yes | Free text, min 15 characters | Detailed description of what is being transported |
 | quantity | Number | Yes | Positive number | Quantity of goods |
@@ -687,6 +687,15 @@ Stored in `JobRequest.loadData` (Json column, default `{}`).
 | stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets`) |
 | cageCount | Number? | No | Positive integer | Number of roll cages / yorks (only when goodsType = `roll_cages`; may differ from total quantity if cages are nested/folded) |
 | cageFolded | Boolean? | No | `true` \| `false` | Whether the cages are folded / nested rather than assembled (only when goodsType = `roll_cages`) |
+| buildingMaterialType | String? | No | `bricks_blocks` \| `timber` \| `aggregates` \| `plasterboard` \| `roofing` \| `glass` \| `insulation` \| `pipes_ducting` \| `other` | Sub-type of building material (only when goodsType = `building_materials`) |
+| buildingMaterialPalletised | Boolean? | No | `true` \| `false` | Whether the building materials are palletised rather than loose (only when goodsType = `building_materials`) |
+| buildingMaterialLongestItem | String? | No | Free text in metres (e.g. `6`) | Length of the longest single item — relevant for overhanging loads such as timber and pipes (only when goodsType = `building_materials`) |
+| buildingMaterialWeatherSensitive | Boolean? | No | `true` \| `false` | Whether the load must be kept dry / covered during transit (only when goodsType = `building_materials`) |
+| liquidProductType | String? | No | Free text (e.g. `Vegetable oil`, `Diesel`, `Milk`) | Description of the liquid product being transported (only when goodsType = `liquid_bulk`) |
+| liquidFoodGrade | Boolean? | No | `true` \| `false` | Whether the product requires a food-grade tanker (only when goodsType = `liquid_bulk`) |
+| generalPackagingType | String? | No | `palletised` \| `boxed` \| `loose` \| `shrink_wrapped` \| `other` | How the general goods are packaged (only when goodsType = `general`) |
+| generalPieceCount | Number? | No | Positive integer | Total number of individual pieces for manifest and driver count verification (only when goodsType = `general`) |
+| loadHeight | String? | No | Free text in metres (e.g. `2.4`) | Overall height of the loaded goods — used to select the correct trailer type (standard vs mega/high-cube) and assess bridge strike risk; applies to all goodsType values |
 | dimensions | String? | No | Free text (e.g. `4.5m × 2.2m × 3.1m`) | Physical dimensions — longest item length for `steel_long`; L×W×H for `machinery` |
 | machineryPieceWeight | Number? | No | Positive number (kg) | Weight of one individual piece of machinery — critical for crane and HIAB capacity planning (only when goodsType = `machinery`) |
 | machineryLiftingPoints | Boolean? | No | `true` \| `false` | Whether the machine has lifting points / lifting eyes (only when goodsType = `machinery`) |
@@ -894,6 +903,15 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **3 — Load details** | Other goods type — describe (shown when "Other" selected) | `JobRequest.loadData.goodsTypeOther` |
 | **3 — Load details** | Number of cages (roll cages / yorks) | `JobRequest.loadData.cageCount` |
 | **3 — Load details** | Cages are folded / nested | `JobRequest.loadData.cageFolded` |
+| **3 — Load details** | Overall load height (m) — all types | `JobRequest.loadData.loadHeight` |
+| **3 — Load details** | Material type (building materials) | `JobRequest.loadData.buildingMaterialType` |
+| **3 — Load details** | Load is palletised (building materials) | `JobRequest.loadData.buildingMaterialPalletised` |
+| **3 — Load details** | Longest single item (m) (building materials) | `JobRequest.loadData.buildingMaterialLongestItem` |
+| **3 — Load details** | Weather sensitive / needs sheeting (building materials) | `JobRequest.loadData.buildingMaterialWeatherSensitive` |
+| **3 — Load details** | Product description (liquid / tanker) | `JobRequest.loadData.liquidProductType` |
+| **3 — Load details** | Food-grade product (liquid / tanker) | `JobRequest.loadData.liquidFoodGrade` |
+| **3 — Load details** | Packaging type (general goods) | `JobRequest.loadData.generalPackagingType` |
+| **3 — Load details** | Total number of pieces (general goods) | `JobRequest.loadData.generalPieceCount` |
 | **3 — Load details** | Description of goods (min 15 chars, live counter) | `JobRequest.loadData.goodsDescription` |
 | **3 — Load details** | Quantity | `JobRequest.loadData.quantity` |
 | **3 — Load details** | Unit | `JobRequest.loadData.unit` |

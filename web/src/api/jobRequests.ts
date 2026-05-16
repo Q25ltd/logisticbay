@@ -78,6 +78,19 @@ export interface LoadData {
   // Roll cages / yorks
   cageCount?:             number;
   cageFolded?:            boolean;
+  // Building materials
+  buildingMaterialType?:             string;
+  buildingMaterialPalletised?:       boolean;
+  buildingMaterialLongestItem?:      string;
+  buildingMaterialWeatherSensitive?: boolean;
+  // Liquid / tanker
+  liquidProductType?:     string;
+  liquidFoodGrade?:       boolean;
+  // General goods
+  generalPackagingType?:  string;
+  generalPieceCount?:     number;
+  // All types
+  loadHeight?:            string;
   // Machinery
   dimensions?:            string;
   machineryPieceWeight?:  number; // kg per individual piece

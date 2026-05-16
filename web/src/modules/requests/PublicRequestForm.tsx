@@ -50,11 +50,32 @@ const LOAD_TYPES: [string, string][] = [
   ["building_materials", "🧱 Building materials"],
   ["food_refrigerated",  "❄️ Food / refrigerated"],
   ["bulk_material",      "⛏️ Bulk material"],
+  ["liquid_bulk",        "🛢️ Liquid / tanker"],
   ["steel_long",         "🏗️ Steel / long loads"],
   ["vehicles",           "🚙 Vehicles"],
   ["containers",         "🚢 Containers"],
   ["general",            "📋 General goods"],
   ["other",              "📦 Other"],
+];
+
+const BUILDING_MATERIAL_TYPES: [string, string][] = [
+  ["bricks_blocks",  "Bricks / blocks"],
+  ["timber",         "Timber"],
+  ["aggregates",     "Aggregates / gravel / sand"],
+  ["plasterboard",   "Plasterboard / drywall"],
+  ["roofing",        "Roofing materials"],
+  ["glass",          "Glass / glazing"],
+  ["insulation",     "Insulation"],
+  ["pipes_ducting",  "Pipes / ducting"],
+  ["other",          "Other"],
+];
+
+const GENERAL_PACKAGING: [string, string][] = [
+  ["palletised",    "Palletised"],
+  ["boxed",         "Boxed / cartons"],
+  ["loose",         "Loose"],
+  ["shrink_wrapped","Shrink-wrapped"],
+  ["other",         "Other"],
 ];
 
 const LOAD_UNITS: [string, string][] = [
@@ -949,6 +970,19 @@ export default function PublicRequestForm() {
   // Roll cages / yorks
   const [cageCount,               setCageCount]               = useState("");
   const [cageFolded,              setCageFolded]              = useState(false);
+  // Building materials
+  const [buildingMaterialType,          setBuildingMaterialType]          = useState("");
+  const [buildingMaterialPalletised,    setBuildingMaterialPalletised]    = useState(false);
+  const [buildingMaterialLongestItem,   setBuildingMaterialLongestItem]   = useState("");
+  const [buildingMaterialWeatherSensitive, setBuildingMaterialWeatherSensitive] = useState(false);
+  // Liquid / tanker
+  const [liquidProductType,       setLiquidProductType]       = useState("");
+  const [liquidFoodGrade,         setLiquidFoodGrade]         = useState(false);
+  // General
+  const [generalPackagingType,    setGeneralPackagingType]    = useState("");
+  const [generalPieceCount,       setGeneralPieceCount]       = useState("");
+  // All types — load height
+  const [loadHeight,              setLoadHeight]              = useState("");
   // Machinery
   const [dimensions,              setDimensions]              = useState("");
   const [machineryPieceWeight,    setMachineryPieceWeight]    = useState("");
@@ -1093,6 +1127,15 @@ export default function PublicRequestForm() {
         stackable:            stackable     || undefined,
         cageCount:            cageCount     ? parseInt(cageCount, 10)  : undefined,
         cageFolded:           cageFolded    || undefined,
+        buildingMaterialType:            buildingMaterialType            || undefined,
+        buildingMaterialPalletised:      buildingMaterialPalletised      || undefined,
+        buildingMaterialLongestItem:     buildingMaterialLongestItem.trim() || undefined,
+        buildingMaterialWeatherSensitive: buildingMaterialWeatherSensitive || undefined,
+        liquidProductType:    liquidProductType.trim() || undefined,
+        liquidFoodGrade:      liquidFoodGrade           || undefined,
+        generalPackagingType: generalPackagingType      || undefined,
+        generalPieceCount:    generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
+        loadHeight:           loadHeight.trim()          || undefined,
         dimensions:           dimensions.trim()    || undefined,
         machineryPieceWeight: machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
         machineryLiftingPoints: machineryLiftingPoints || undefined,
@@ -1382,6 +1425,11 @@ export default function PublicRequestForm() {
                 value={estWeight} onChange={setEstWeight} placeholder="14000"
                 hint="Approximate is fine, but do not leave blank." />
 
+              {/* Overall load height — all types */}
+              <TextField label="Overall load height (m)" type="number" min="0"
+                value={loadHeight} onChange={setLoadHeight} placeholder="2.4"
+                hint="Helps the planner choose the right trailer. Leave blank if unsure." />
+
               {/* ── Conditional: Pallets ── */}
               {goodsType === "pallets" && (
                 <div className="space-y-4 pt-1">
@@ -1417,6 +1465,41 @@ export default function PublicRequestForm() {
                     hint="If different from the total quantity above." />
                   <Toggle value={cageFolded} onChange={setCageFolded}
                     label="Cages are folded / nested (not assembled)" />
+                </div>
+              )}
+
+              {/* ── Conditional: Building materials ── */}
+              {goodsType === "building_materials" && (
+                <div className="space-y-4 pt-1">
+                  <div>
+                    <FieldLabel>Material type</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={BUILDING_MATERIAL_TYPES} value={buildingMaterialType}
+                        onChange={setBuildingMaterialType} />
+                    </div>
+                  </div>
+                  <Toggle value={buildingMaterialPalletised} onChange={setBuildingMaterialPalletised}
+                    label="Load is palletised (not loose)" />
+                  <TextField label="Longest single item (m)" type="number" min="0"
+                    value={buildingMaterialLongestItem} onChange={setBuildingMaterialLongestItem}
+                    placeholder="6"
+                    hint="Timber, pipes and sheet materials may overhang — enter the longest piece." />
+                  <Toggle value={buildingMaterialWeatherSensitive} onChange={setBuildingMaterialWeatherSensitive}
+                    label="Load is weather sensitive (needs sheeting / covered vehicle)" />
+                </div>
+              )}
+
+              {/* ── Conditional: Liquid / tanker ── */}
+              {goodsType === "liquid_bulk" && (
+                <div className="space-y-4 pt-1">
+                  <TextField label="Product" value={liquidProductType} onChange={setLiquidProductType}
+                    placeholder="Vegetable oil, diesel, milk, wastewater…"
+                    hint="Be specific — determines tanker certification and any ADR requirements." />
+                  <Toggle value={liquidFoodGrade} onChange={setLiquidFoodGrade}
+                    label="Food-grade product (requires food-safe tanker)" />
+                  <div className="text-xs text-muted bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                    If the product is hazardous (fuel, chemicals, acids etc.) also complete Section 4 — Special requirements.
+                  </div>
                 </div>
               )}
 
@@ -1544,6 +1627,22 @@ export default function PublicRequestForm() {
                   </div>
                   <TextField label="Container number (optional)" value={containerNum}
                     onChange={setContainerNum} placeholder="MSCU1234567" />
+                </div>
+              )}
+
+              {/* ── Conditional: General goods ── */}
+              {goodsType === "general" && (
+                <div className="space-y-4 pt-1">
+                  <div>
+                    <FieldLabel>Packaging type</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={GENERAL_PACKAGING} value={generalPackagingType}
+                        onChange={setGeneralPackagingType} />
+                    </div>
+                  </div>
+                  <TextField label="Total number of pieces" type="number" min="0" step="1"
+                    value={generalPieceCount} onChange={setGeneralPieceCount} placeholder="48"
+                    hint="Used for manifest and driver count verification on delivery." />
                 </div>
               )}
 
