@@ -4,7 +4,8 @@
  * Structure: requester → stops → load → special requirements → transport → billing → notes
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect }              from "react";
+import { isValidPhoneNumber, type CountryCode } from "libphonenumber-js";
 import {
   BODY_CATEGORIES,
   BODY_TYPES,
@@ -31,6 +32,30 @@ import {
 
 // ── Vehicle taxonomy helpers ──────────────────────────────────────────────────
 // For tractor / drawbar the body type lives on the trailer, so show all trailer
+// ── Validation helpers ────────────────────────────────────────────────────────
+
+function validatePhone(value: string, country = "GB"): string {
+  const v = value.trim();
+  if (!v) return "";
+  try {
+    // International format (starts with +) — validate globally, ignore country
+    if (v.startsWith("+")) {
+      return isValidPhoneNumber(v) ? "" : "Phone number doesn't look valid — check the number and country code";
+    }
+    return isValidPhoneNumber(v, country as CountryCode)
+      ? ""
+      : "Phone number doesn't look valid for this country — include country code (+44…) if calling from abroad";
+  } catch {
+    return "Phone number doesn't look valid";
+  }
+}
+
+function validateEmail(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? "" : "Email address doesn't look valid";
+}
+
 // body types. Heavy haulage → only heavy-group types.
 const REQ_BODY_TYPES_BY_CATEGORY: Record<string, readonly string[]> = {
   van:          BODY_TYPES_BY_CATEGORY.van,
@@ -504,6 +529,8 @@ function StopCard({
   onRemove: () => void;
 }) {
   const [showCoordHelp, setShowCoordHelp] = useState(false);
+  const [stopPhoneError, setStopPhoneError] = useState("");
+  const [stopEmailError, setStopEmailError] = useState("");
   const complete = stopComplete(stop);
   const started  = stopStarted(stop);
   const typeLabel = STOP_TYPES.find(([v]) => v === stop.type)?.[1] ?? stop.type;
@@ -943,9 +970,13 @@ function StopCard({
                 <TextField label="Site contact name"  value={stop.contactName}
                   onChange={v => onChange({ contactName: v })} />
                 <TextField label="Site contact phone" type="tel" value={stop.contactPhone}
-                  onChange={v => onChange({ contactPhone: v })} />
+                  error={stopPhoneError}
+                  onChange={v => { onChange({ contactPhone: v }); setStopPhoneError(""); }}
+                  onBlur={v => setStopPhoneError(validatePhone(v, stop.country))} />
                 <TextField label="Site contact email" type="email" value={stop.contactEmail}
-                  onChange={v => onChange({ contactEmail: v })} />
+                  error={stopEmailError}
+                  onChange={v => { onChange({ contactEmail: v }); setStopEmailError(""); }}
+                  onBlur={v => setStopEmailError(validateEmail(v))} />
               </div>
               {/* Booking for collection stops stays in optional */}
               {stop.type === "collection" && (
@@ -1002,6 +1033,8 @@ export default function PublicRequestForm() {
   const [contactName,  setContactName]  = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [contactPhoneError, setContactPhoneError] = useState("");
+  const [contactEmailError, setContactEmailError] = useState("");
   const [showRequesterOpts, setShowRequesterOpts] = useState(false);
   const [customerRef, setCustomerRef] = useState("");
 
@@ -1122,8 +1155,10 @@ export default function PublicRequestForm() {
   const [alternativeReturnNavInstructions, setAlternativeReturnNavInstructions] = useState("");
   const [alternativeReturnContactName,   setAlternativeReturnContactName]   = useState("");
   const [alternativeReturnContactPhone,  setAlternativeReturnContactPhone]  = useState("");
+  const [alternativeReturnContactPhoneError, setAlternativeReturnContactPhoneError] = useState("");
   const [approvalContactName,            setApprovalContactName]            = useState("");
   const [approvalContactPhone,           setApprovalContactPhone]           = useState("");
+  const [approvalContactPhoneError,      setApprovalContactPhoneError]      = useState("");
   const [photosRequiredOnRejection,      setPhotosRequiredOnRejection]      = useState(false);
   const [rejectionSignatureRequired,     setRejectionSignatureRequired]     = useState(false);
   const [rejectionNotes,                 setRejectionNotes]                 = useState("");
@@ -1169,6 +1204,16 @@ export default function PublicRequestForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrors([]);
+
+    // ── Final validation sweep before submit ──────────────────────────────────
+    const phoneErr = validatePhone(contactPhone, stops[0]?.country ?? "GB");
+    const emailErr = validateEmail(contactEmail);
+    if (phoneErr) setContactPhoneError(phoneErr);
+    if (emailErr) setContactEmailError(emailErr);
+    if (phoneErr || emailErr) {
+      setErrors(["Please fix the highlighted fields before submitting."]);
+      return;
+    }
 
     // Build exception policy data if section is open or has any values
     const hasExceptionPolicy = !!(
@@ -1387,11 +1432,17 @@ export default function PublicRequestForm() {
                   value={contactName} onChange={setContactName}
                   placeholder="Jane Smith" caseRule="proper_name" />
                 <TextField label="Contact phone" required type="tel"
-                  value={contactPhone} onChange={setContactPhone}
+                  value={contactPhone}
+                  error={contactPhoneError}
+                  onChange={v => { setContactPhone(v); setContactPhoneError(""); }}
+                  onBlur={v => setContactPhoneError(validatePhone(v, stops[0]?.country ?? "GB"))}
                   placeholder="+44 7700 900123" />
               </div>
               <TextField label="Contact email" required type="email"
-                value={contactEmail} onChange={setContactEmail}
+                value={contactEmail}
+                error={contactEmailError}
+                onChange={v => { setContactEmail(v); setContactEmailError(""); }}
+                onBlur={v => setContactEmailError(validateEmail(v))}
                 placeholder="jane@acme.com" />
 
               <OptionalToggle open={showRequesterOpts} onToggle={() => setShowRequesterOpts(o => !o)}
@@ -2065,7 +2116,10 @@ export default function PublicRequestForm() {
                     <TextField label="Contact name" value={alternativeReturnContactName}
                       onChange={setAlternativeReturnContactName} placeholder="Jane Smith" caseRule="proper_name" />
                     <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
-                      onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
+                      error={alternativeReturnContactPhoneError}
+                      onChange={v => { setAlternativeReturnContactPhone(v); setAlternativeReturnContactPhoneError(""); }}
+                      onBlur={v => setAlternativeReturnContactPhoneError(validatePhone(v, alternativeReturnCountry))}
+                      placeholder="+44 7700 900123" />
                   </div>
                 </div>
               )}
@@ -2075,7 +2129,10 @@ export default function PublicRequestForm() {
                   <TextField label="Approval contact name" value={approvalContactName}
                     onChange={setApprovalContactName} placeholder="Jane Smith" />
                   <TextField label="Approval contact phone" type="tel" value={approvalContactPhone}
-                    onChange={setApprovalContactPhone} placeholder="+44 7700 900123" />
+                    error={approvalContactPhoneError}
+                    onChange={v => { setApprovalContactPhone(v); setApprovalContactPhoneError(""); }}
+                    onBlur={v => setApprovalContactPhoneError(validatePhone(v, stops[0]?.country ?? "GB"))}
+                    placeholder="+44 7700 900123" />
                 </div>
               )}
 

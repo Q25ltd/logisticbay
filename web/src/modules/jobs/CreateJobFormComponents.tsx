@@ -27,11 +27,13 @@ export function TextField({
   caseRule = "none",
   required,
   hint,
+  error,
   placeholder,
   type = "text",
   className = "",
   min,
   step,
+  onBlur: onBlurProp,
 }: {
   label: string;
   value: string;
@@ -39,17 +41,19 @@ export function TextField({
   caseRule?: CaseRule;
   required?: boolean;
   hint?: string;
+  error?: string;
   placeholder?: string;
   type?: "text" | "email" | "tel" | "number" | "date" | "time";
   className?: string;
   min?: string;
   step?: string;
+  onBlur?: (value: string) => void;
 }) {
   return (
     <label className="block">
       <FieldLabel required={required}>{label}</FieldLabel>
       <input
-        className={`input mt-1 w-full ${className}`}
+        className={`input mt-1 w-full ${error ? "border-red-400 focus:border-red-500" : ""} ${className}`}
         type={type}
         value={value}
         placeholder={placeholder}
@@ -64,6 +68,7 @@ export function TextField({
           }
           const next = applyCase(event.target.value, caseRule);
           if (next !== value) onChange(next);
+          onBlurProp?.(next !== value ? next : event.target.value);
         }}
         onKeyDown={type === "number" ? event => {
           // Block minus sign and scientific notation (e/E) for all number inputs
@@ -77,7 +82,8 @@ export function TextField({
         } : undefined}
         autoCapitalize={autoCapitalizeFor(caseRule)}
       />
-      {hint && <div className="text-xs text-muted mt-1">{hint}</div>}
+      {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
+      {!error && hint && <div className="text-xs text-muted mt-1">{hint}</div>}
     </label>
   );
 }
