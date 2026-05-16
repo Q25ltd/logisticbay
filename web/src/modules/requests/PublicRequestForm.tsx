@@ -28,8 +28,8 @@ import {
 // Public form: only Collection and Delivery shown.
 // Reload, Return, Waypoint, Other are planner-only and hidden from the public form.
 const STOP_TYPES: [string, string][] = [
-  ["collection", "📦 Collection"],
-  ["delivery",   "🏁 Delivery"],
+  ["collection", "Collection"],
+  ["delivery",   "Delivery"],
 ];
 
 const SERVICE_TIMES: [string, string][] = [
@@ -44,18 +44,18 @@ const SERVICE_TIMES: [string, string][] = [
 ];
 
 const LOAD_TYPES: [string, string][] = [
-  ["pallets",            "📦 Pallets"],
-  ["roll_cages",         "🛒 Roll cages / yorks"],
-  ["machinery",          "⚙️ Machinery"],
-  ["building_materials", "🧱 Building materials"],
-  ["food_refrigerated",  "❄️ Food / refrigerated"],
-  ["bulk_material",      "⛏️ Bulk material"],
-  ["liquid_bulk",        "🛢️ Liquid / tanker"],
-  ["steel_long",         "🏗️ Steel / long loads"],
-  ["vehicles",           "🚙 Vehicles"],
-  ["containers",         "🚢 Containers"],
-  ["general",            "📋 General goods"],
-  ["other",              "📦 Other"],
+  ["pallets",            "Pallets"],
+  ["roll_cages",         "Roll cages / yorks"],
+  ["machinery",          "Machinery"],
+  ["building_materials", "Building materials"],
+  ["food_refrigerated",  "Food / refrigerated"],
+  ["bulk_material",      "Bulk material"],
+  ["liquid_bulk",        "Liquid / tanker"],
+  ["steel_long",         "Steel / long loads"],
+  ["vehicles",           "Vehicles"],
+  ["containers",         "Containers"],
+  ["general",            "General goods"],
+  ["other",              "Other"],
 ];
 
 const BUILDING_MATERIAL_TYPES: [string, string][] = [
@@ -120,31 +120,31 @@ const HANDLING_METHODS: [string, string][] = [
 ];
 
 const ACCESS_REQUIREMENTS: [string, string][] = [
-  ["narrow_road",          "🛣️ Narrow road"],
-  ["height_restriction",   "📏 Height restriction"],
-  ["weight_restriction",   "⚖️ Weight restriction"],
-  ["length_restriction",   "📐 Length restriction"],
-  ["no_artic_access",      "🚛 No artic access"],
-  ["no_trailer_access",    "🚚 No trailer access"],
-  ["residential_area",     "🏘️ Residential area"],
-  ["security_checkin",     "🔐 Security check-in"],
-  ["ppe_required",         "🦺 PPE required"],
-  ["driver_id_required",   "🪪 Driver ID required"],
-  ["do_not_arrive_early",  "⏰ Do not arrive early"],
-  ["holding_area_required","🅿️ Holding area required"],
-  ["port_access",          "⚓ Port access"],
-  ["airport_access",       "✈️ Airport access"],
+  ["narrow_road",          "Narrow road"],
+  ["height_restriction",   "Height restriction"],
+  ["weight_restriction",   "Weight restriction"],
+  ["length_restriction",   "Length restriction"],
+  ["no_artic_access",      "No artic access"],
+  ["no_trailer_access",    "No trailer access"],
+  ["residential_area",     "Residential area"],
+  ["security_checkin",     "Security check-in"],
+  ["ppe_required",         "PPE required"],
+  ["driver_id_required",   "Driver ID required"],
+  ["do_not_arrive_early",  "Do not arrive early"],
+  ["holding_area_required","Holding area required"],
+  ["port_access",          "Port access"],
+  ["airport_access",       "Airport access"],
 ];
 
 const SPECIAL_REQUIREMENTS: [string, string][] = [
-  ["dangerous_goods",           "⚠️ Dangerous goods (ADR)"],
-  ["temperature_controlled",    "❄️ Temperature controlled"],
-  ["fragile",                   "⚠️ Fragile / handle with care"],
-  ["high_value",                "💎 High value goods"],
-  ["oversized",                 "📏 Oversized load"],
-  ["secure_transport_required", "🔒 Secure transport"],
-  ["escort_required",           "🚔 Police escort required"],
-  ["temperature_monitored",     "🌡️ Temperature monitored"],
+  ["dangerous_goods",           "Dangerous goods (ADR)"],
+  ["temperature_controlled",    "Temperature controlled"],
+  ["fragile",                   "Fragile / handle with care"],
+  ["high_value",                "High value goods"],
+  ["oversized",                 "Oversized load"],
+  ["secure_transport_required", "Secure transport"],
+  ["escort_required",           "Police escort required"],
+  ["temperature_monitored",     "Temperature monitored"],
 ];
 
 const PRICING_TYPES: [string, string][] = [
@@ -155,13 +155,13 @@ const PRICING_TYPES: [string, string][] = [
 ];
 
 const DRIVER_CHIPS: [string, string][] = [
-  ["call_before_arrival",  "📞 Call before arrival"],
-  ["report_to_security",   "🔐 Report to security"],
-  ["use_rear_entrance",    "🚪 Use rear entrance"],
-  ["ppe_required",         "🦺 PPE required"],
-  ["bring_straps",         "🔗 Bring straps"],
-  ["bring_pump_truck",     "🔧 Bring pump truck"],
-  ["do_not_arrive_early",  "⏰ Do not arrive early"],
+  ["call_before_arrival",  "Call before arrival"],
+  ["report_to_security",   "Report to security"],
+  ["use_rear_entrance",    "Use rear entrance"],
+  ["ppe_required",         "PPE required"],
+  ["bring_straps",         "Bring straps"],
+  ["bring_pump_truck",     "Bring pump truck"],
+  ["do_not_arrive_early",  "Do not arrive early"],
 ];
 
 const PROOF_REQUIREMENTS: [string, string][] = [
@@ -484,7 +484,6 @@ function StopCard({
         onClick={() => onChange({ collapsed: !stop.collapsed })}
       >
         <StatusDot complete={complete} started={started} />
-        <span className="text-base">{STOP_TYPES.find(([v]) => v === stop.type)?.[0] === stop.type ? (stop.type === "collection" ? "📦" : stop.type === "delivery" ? "🏁" : "📍") : "📍"}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className={`text-xs font-bold uppercase tracking-widest ${complete ? "text-green-600" : started ? "text-blue-500" : "text-muted"}`}>
