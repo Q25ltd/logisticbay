@@ -217,7 +217,7 @@ const SECURING_REQUIREMENTS: [string, string][] = [
   ["edge_protection_required",       "Edge protection"],
   ["sheets_required",                "Sheets"],
   ["curtains_must_not_touch_load",   "Curtains must not touch load"],
-  ["uprights_required",              "Uprights required"],
+  ["stanchions_required",            "Stanchions / stake poles (flatbed)"],
   ["temperature_monitoring_required","Temperature monitoring"],
 ];
 
