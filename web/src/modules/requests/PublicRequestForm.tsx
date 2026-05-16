@@ -179,15 +179,6 @@ const SPECIAL_REQUIREMENTS: [string, string][] = [
 ];
 
 
-const DRIVER_CHIPS: [string, string][] = [
-  ["call_before_arrival",  "Call before arrival"],
-  ["report_to_security",   "Report to security"],
-  ["use_rear_entrance",    "Use rear entrance"],
-  ["ppe_required",         "PPE required"],
-  ["bring_straps",         "Bring straps"],
-  ["bring_pump_truck",     "Bring pump truck"],
-  ["do_not_arrive_early",  "Do not arrive early"],
-];
 
 const PROOF_REQUIREMENTS: [string, string][] = [
   ["signature_required",         "Signature required"],
@@ -955,7 +946,6 @@ export default function PublicRequestForm() {
   const [s4, setS4] = useState(true);
   const [s5, setS5] = useState(true);
   const [s6, setS6] = useState(true);
-  const [s7, setS7] = useState(true);
 
   // ── Sec 1: Requester ──────────────────────────────────────────────────────
   const [customerCompanyName, setCustomerCompanyName] = useState("");
@@ -1056,12 +1046,10 @@ export default function PublicRequestForm() {
   const [poNumber,        setPoNumber]        = useState("");
   const [billingRef,      setBillingRef]      = useState("");
 
-  // ── Sec 7: Notes ─────────────────────────────────────────────────────────
-  const [driverChips,         setDriverChips]         = useState<string[]>([]);
-  const [driverVisibleNotes,         setDriverVisibleNotes]         = useState("");
-  const [showNotesOpts,       setShowNotesOpts]       = useState(false);
-  const [safetyNotes,         setSafetyNotes]         = useState("");
+  // ── Notes for planner (in Section 1 optional) ────────────────────────────
   const [customerNotes,       setCustomerNotes]       = useState("");
+
+  // ── Return / exception policy ─────────────────────────────────────────────
   const [showExceptionPolicy, setShowExceptionPolicy] = useState(false);
 
   // Exception policy state
@@ -1084,7 +1072,6 @@ export default function PublicRequestForm() {
   const sec4Complete = true; // optional section
   const sec5Complete = true; // optional
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
-  const sec7Complete = true; // optional
 
   const sec1Started = !!(customerCompanyName || contactName);
   const sec2Started = stops.some(stopStarted);
@@ -1197,11 +1184,8 @@ export default function PublicRequestForm() {
         purchaseOrderNumber: poNumber.trim()   || undefined,
         billingReference:    billingRef.trim() || undefined,
       },
-      notesData: (driverChips.length || driverVisibleNotes.trim() || safetyNotes.trim() || customerNotes.trim()) ? {
-        driverNoteChips:    driverChips.length ? driverChips : undefined,
-        driverVisibleNotes: driverVisibleNotes.trim()   || undefined,
-        safetyInstructions: safetyNotes.trim()   || undefined,
-        customerNotes:      customerNotes.trim() || undefined,
+      notesData: customerNotes.trim() ? {
+        customerNotes: customerNotes.trim(),
       } : undefined,
       exceptionPolicyData: hasExceptionPolicy ? {
         rejectionAction:               rejectionAction               || undefined,
@@ -1333,12 +1317,19 @@ export default function PublicRequestForm() {
                 placeholder="jane@acme.com" />
 
               <OptionalToggle open={showRequesterOpts} onToggle={() => setShowRequesterOpts(o => !o)}
-                label="customer reference" />
+                label="reference & notes for the planner" />
               {showRequesterOpts && (
-                <div className="border-l-2 border-blue-100 pl-4">
+                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
                   <TextField label="Your internal reference / order number" value={customerRef}
                     onChange={setCustomerRef} placeholder="ORD-2026-1234"
                     hint="Your own reference number for this job, if you have one." />
+                  <div>
+                    <FieldLabel>Notes for the planner</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={3}
+                      value={customerNotes} onChange={e => setCustomerNotes(e.target.value)}
+                      placeholder="Please confirm the delivery window the day before. Contact Jane if anything changes — not the warehouse." />
+                    <div className="text-xs text-muted mt-1">Anything the planner needs to know that isn't covered by the form above.</div>
+                  </div>
                 </div>
               )}
               <SectionFooter complete={sec1Complete} label="Your details" onCollapse={() => setS1(true)} />
@@ -1827,105 +1818,80 @@ export default function PublicRequestForm() {
           )}
         </div>
 
-        {/* ── Sec 7: Notes for driver ───────────────────────────────────────── */}
+        {/* ── Exception / return policy card ──────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={7} icon="📝" title="Notes for driver" subtitle="Instructions the driver needs to know"
-            active collapsed={s7} onToggle={() => setS7(o => !o)}
-            complete optional
-            summary={driverVisibleNotes ? driverVisibleNotes.slice(0, 40) + (driverVisibleNotes.length > 40 ? "…" : "") : undefined} />
-          {!s7 && (
+          {/* Card header — always visible, click to expand/collapse */}
+          <button
+            type="button"
+            onClick={() => setShowExceptionPolicy(o => !o)}
+            className="w-full flex items-center gap-3 px-5 py-4 border-b border-border text-left hover:bg-slate-50/60 transition-colors">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 border ${showExceptionPolicy ? "bg-orange-50 border-orange-200" : "bg-white border-slate-200 shadow-sm"}`}>
+              🔄
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black text-primary">Rejection &amp; return policy</h2>
+                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
+              </div>
+              <p className="text-xs text-muted mt-0.5">
+                {rejectionAction
+                  ? REJECTION_ACTIONS.find(([v]) => v === rejectionAction)?.[1] ?? rejectionAction
+                  : "What should the driver do if goods are refused or damaged?"}
+              </p>
+            </div>
+            <span className={`text-xl font-bold flex-shrink-0 ml-1 transition-transform duration-200 ${showExceptionPolicy ? "text-accent" : "text-muted"}`}>
+              {showExceptionPolicy ? "⌄" : "›"}
+            </span>
+          </button>
+
+          {showExceptionPolicy && (
             <div className="px-5 pt-5 pb-4 space-y-4">
+              <div className="text-xs text-slate-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 leading-relaxed">
+                Fill this in so the planner and driver know exactly what to do without having to call you — saves time on the day.
+              </div>
+
               <div>
-                <FieldLabel>Quick instructions</FieldLabel>
+                <FieldLabel>If delivery is rejected at the door, what should the driver do?</FieldLabel>
                 <div className="mt-1">
-                  <MultiCheck options={DRIVER_CHIPS} value={driverChips} onChange={setDriverChips} />
+                  <Chips options={REJECTION_ACTIONS} value={rejectionAction} onChange={setRejectionAction} />
                 </div>
               </div>
+
+              {rejectionAction === "deliver_to_alternative_address" && (
+                <div className="space-y-3 border-l-2 border-orange-200 pl-4">
+                  <TextField label="Alternative delivery address" value={alternativeReturnAddress}
+                    onChange={setAlternativeReturnAddress} placeholder="12 Warehouse Lane, Manchester" />
+                  <TextField label="Postcode" value={alternativeReturnPostcode}
+                    onChange={setAlternativeReturnPostcode} placeholder="M1 1AA" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <TextField label="Contact name" value={alternativeReturnContactName}
+                      onChange={setAlternativeReturnContactName} placeholder="Jane Smith" />
+                    <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
+                      onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
+                  </div>
+                </div>
+              )}
+
+              {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval") && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-l-2 border-orange-200 pl-4">
+                  <TextField label="Approval contact name" value={approvalContactName}
+                    onChange={setApprovalContactName} placeholder="Jane Smith" />
+                  <TextField label="Approval contact phone" type="tel" value={approvalContactPhone}
+                    onChange={setApprovalContactPhone} placeholder="+44 7700 900123" />
+                </div>
+              )}
+
+              <Toggle value={photosRequiredOnRejection} onChange={setPhotosRequiredOnRejection}
+                label="Photos required on rejection" />
+              <Toggle value={rejectionSignatureRequired} onChange={setRejectionSignatureRequired}
+                label="Rejection signature required" />
+
               <div>
-                <FieldLabel>Additional driver notes</FieldLabel>
-                <textarea className="input mt-1 w-full" rows={3}
-                  value={driverVisibleNotes} onChange={e => setDriverVisibleNotes(e.target.value)}
-                  placeholder="Ask for John at site office. Registration must be provided at barrier." />
-                <div className="text-xs text-muted mt-1">
-                  Anything the driver must know that isn't covered by the stop instructions above.
-                </div>
+                <FieldLabel>Additional rejection / return notes</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={2}
+                  value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)}
+                  placeholder="Do not leave goods unattended. Call depot before returning." />
               </div>
-              <OptionalToggle open={showNotesOpts} onToggle={() => setShowNotesOpts(o => !o)} label="safety & office notes" />
-              {showNotesOpts && (
-                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
-                  <div>
-                    <FieldLabel>Safety instructions</FieldLabel>
-                    <textarea className="input mt-1 w-full" rows={2}
-                      value={safetyNotes} onChange={e => setSafetyNotes(e.target.value)}
-                      placeholder="COSHH data sheets provided. No open flames near load." />
-                  </div>
-                  <div>
-                    <FieldLabel>Notes for the office</FieldLabel>
-                    <textarea className="input mt-1 w-full" rows={2}
-                      value={customerNotes} onChange={e => setCustomerNotes(e.target.value)}
-                      placeholder="Please call to confirm delivery window the day before." />
-                  </div>
-                </div>
-              )}
-
-              {/* Rejection / return policy */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowExceptionPolicy(o => !o)}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">
-                  {showExceptionPolicy ? "− Hide rejection / return instructions" : "+ Add rejection / return instructions"}
-                </button>
-              </div>
-
-              {showExceptionPolicy && (
-                <div className="space-y-4 border-l-2 border-orange-200 pl-4">
-                  <div>
-                    <FieldLabel>If delivery is rejected at the door, what should the driver do?</FieldLabel>
-                    <div className="mt-1">
-                      <Chips options={REJECTION_ACTIONS} value={rejectionAction} onChange={setRejectionAction} />
-                    </div>
-                  </div>
-
-                  {rejectionAction === "deliver_to_alternative_address" && (
-                    <div className="space-y-3">
-                      <TextField label="Alternative return address" value={alternativeReturnAddress}
-                        onChange={setAlternativeReturnAddress} placeholder="12 Warehouse Lane, Manchester" />
-                      <TextField label="Alternative return postcode" value={alternativeReturnPostcode}
-                        onChange={setAlternativeReturnPostcode} placeholder="M1 1AA" />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <TextField label="Contact name at alternative address" value={alternativeReturnContactName}
-                          onChange={setAlternativeReturnContactName} placeholder="Jane Smith" />
-                        <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
-                          onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
-                      </div>
-                    </div>
-                  )}
-
-                  {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval") && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <TextField label="Approval contact name" value={approvalContactName}
-                        onChange={setApprovalContactName} placeholder="Jane Smith" />
-                      <TextField label="Approval contact phone" type="tel" value={approvalContactPhone}
-                        onChange={setApprovalContactPhone} placeholder="+44 7700 900123" />
-                    </div>
-                  )}
-
-                  <Toggle value={photosRequiredOnRejection} onChange={setPhotosRequiredOnRejection}
-                    label="Photos required on rejection" />
-                  <Toggle value={rejectionSignatureRequired} onChange={setRejectionSignatureRequired}
-                    label="Rejection signature required" />
-
-                  <div>
-                    <FieldLabel>Additional rejection / return notes</FieldLabel>
-                    <textarea className="input mt-1 w-full" rows={2}
-                      value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)}
-                      placeholder="Do not leave goods unattended. Call depot before returning." />
-                  </div>
-                </div>
-              )}
-
-              <SectionFooter complete label="Notes" onCollapse={() => setS7(true)} />
             </div>
           )}
         </div>
