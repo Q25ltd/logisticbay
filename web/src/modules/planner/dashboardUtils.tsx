@@ -133,11 +133,11 @@ export function routeSummary(job: PlannedJob) {
   const stops = sortedStops(job);
   const pickups = stops.filter(isPickup);
   const dropoffs = stops.filter(isDropoff);
-  const pickup = shortLocation(pickups[0], job.pickupTextSnapshot);
+  const pickup = shortLocation(pickups[0], job.pickupTextSnapshot ?? "");
 
-  if (dropoffs.length === 0) return `${pickup} -> ${compact(job.dropoffTextSnapshot)}`;
+  if (dropoffs.length === 0) return `${pickup} -> ${compact(job.dropoffTextSnapshot ?? "")}`;
 
-  const dropLabels = dropoffs.map((stop) => shortLocation(stop, job.dropoffTextSnapshot));
+  const dropLabels = dropoffs.map((stop) => shortLocation(stop, job.dropoffTextSnapshot ?? ""));
   const uniqueDropLabels = Array.from(new Set(dropLabels));
   if (dropoffs.length > 1 && uniqueDropLabels.length === 1) {
     return `${pickup} -> ${uniqueDropLabels[0]} (${dropoffs.length})`;
