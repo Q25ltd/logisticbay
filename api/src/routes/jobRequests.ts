@@ -274,6 +274,78 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     });
   });
 
+  // ── GET /public/geocode ─────────────────────────────────────────────────────
+  // Proxy ORS geocode search so the API key stays server-side.
+  // Query params: q (postcode or address text), country (ISO alpha-2, default GB)
+  app.get<{ Querystring: { q?: string; country?: string } }>("/public/geocode", async (req, reply) => {
+    const { q = "", country = "GB" } = req.query;
+    if (!q.trim()) return reply.send({ features: [] });
+
+    const ORS_KEY = process.env.ORS_API_KEY ?? "";
+    if (!ORS_KEY) return reply.send({ features: [] });
+
+    // Convert ISO 3166-1 alpha-2 → alpha-3 for ORS boundary.country param
+    const ALPHA3: Record<string, string> = {
+      GB:"GBR",AT:"AUT",BE:"BEL",BG:"BGR",HR:"HRV",CY:"CYP",CZ:"CZE",
+      DK:"DNK",EE:"EST",FI:"FIN",FR:"FRA",DE:"DEU",GR:"GRC",HU:"HUN",
+      IE:"IRL",IT:"ITA",LV:"LVA",LT:"LTU",LU:"LUX",MT:"MLT",NL:"NLD",
+      PL:"POL",PT:"PRT",RO:"ROU",SK:"SVK",SI:"SVN",ES:"ESP",SE:"SWE",
+    };
+    const alpha3 = ALPHA3[country.toUpperCase()] ?? "GBR";
+
+    try {
+      const url = new URL("https://api.openrouteservice.org/geocode/search");
+      url.searchParams.set("api_key", ORS_KEY);
+      url.searchParams.set("text", q.trim());
+      url.searchParams.set("boundary.country", alpha3);
+      url.searchParams.set("size", "6");
+      url.searchParams.set("layers", "address,venue,street");
+
+      const res = await fetch(url.toString());
+      if (!res.ok) return reply.send({ features: [] });
+
+      const data = await res.json() as {
+        features?: Array<{
+          geometry: { coordinates: [number, number] };
+          properties: {
+            label?: string;
+            name?: string;
+            housenumber?: string;
+            street?: string;
+            postalcode?: string;
+            locality?: string;
+            county?: string;
+            region?: string;
+            country_a?: string;
+          };
+        }>;
+      };
+
+      const features = (data.features ?? []).map(f => {
+        const p = f.properties;
+        const [lng, lat] = f.geometry.coordinates;
+        // Build street line: housenumber + street name
+        const streetLine = [p.housenumber, p.street].filter(Boolean).join(" ") || p.name || "";
+        // Reverse alpha3 → alpha2
+        const countryA2 = Object.entries(ALPHA3).find(([, v]) => v === p.country_a)?.[0] ?? country;
+        return {
+          label:    p.label ?? "",
+          street:   streetLine,
+          town:     p.locality ?? p.county ?? "",
+          county:   p.county ?? p.region ?? "",
+          postcode: p.postalcode ?? "",
+          country:  countryA2,
+          lat,
+          lng,
+        };
+      });
+
+      return reply.send({ features });
+    } catch {
+      return reply.send({ features: [] });
+    }
+  });
+
   // ── POST /public/request/:token ────────────────────────────────────────────
   app.post<{ Params: { token: string }; Body: PublicRequestBody }>(
     "/public/request/:token",

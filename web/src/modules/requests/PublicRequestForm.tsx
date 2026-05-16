@@ -504,6 +504,43 @@ function StopCard({
   onRemove: () => void;
 }) {
   const [showCoordHelp, setShowCoordHelp] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupResults, setLookupResults] = useState<Array<{
+    label: string; street: string; town: string;
+    county: string; postcode: string; country: string;
+    lat: number; lng: number;
+  }>>([]);
+  const [showLookup, setShowLookup] = useState(false);
+
+  async function handlePostcodeLookup() {
+    const q = stop.postcode.trim();
+    if (!q) return;
+    setLookupLoading(true);
+    setShowLookup(false);
+    try {
+      const res = await jobRequestsPublicApi.geocode(q, stop.country);
+      setLookupResults(res.features);
+      setShowLookup(res.features.length > 0);
+    } catch {
+      setLookupResults([]);
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
+  function applyLookupResult(r: typeof lookupResults[0]) {
+    onChange({
+      street:      r.street  || stop.street,
+      town:        r.town    || stop.town,
+      countyRegion:r.county  || stop.countyRegion,
+      postcode:    r.postcode || stop.postcode,
+      country:     r.country || stop.country,
+      lat:         String(r.lat),
+      lng:         String(r.lng),
+    });
+    setShowLookup(false);
+    setLookupResults([]);
+  }
   const complete = stopComplete(stop);
   const started  = stopStarted(stop);
   const typeLabel = STOP_TYPES.find(([v]) => v === stop.type)?.[1] ?? stop.type;
@@ -687,16 +724,46 @@ function StopCard({
                 value={stop.town} onChange={v => onChange({ town: v })}
                 placeholder="Birmingham" caseRule="proper_name" />
             </div>
-            <label className="block">
+            <div className="block">
               <FieldLabel required>{POSTCODE_META[stop.country]?.label ?? "Postcode"}</FieldLabel>
-              <input
-                className="input mt-1 w-full"
-                type="text"
-                value={stop.postcode}
-                placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
-                onChange={e => onChange({ postcode: e.target.value.toUpperCase() })}
-              />
-            </label>
+              <div className="flex gap-2 mt-1">
+                <input
+                  className="input flex-1"
+                  type="text"
+                  value={stop.postcode}
+                  placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
+                  onChange={e => { onChange({ postcode: e.target.value.toUpperCase() }); setShowLookup(false); }}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handlePostcodeLookup(); } }}
+                />
+                <button
+                  type="button"
+                  onClick={handlePostcodeLookup}
+                  disabled={lookupLoading || !stop.postcode.trim()}
+                  className="btn btn-secondary px-3 text-xs font-semibold flex-shrink-0 disabled:opacity-40">
+                  {lookupLoading ? "…" : "Find"}
+                </button>
+              </div>
+              {showLookup && lookupResults.length > 0 && (
+                <div className="mt-1 border border-border rounded-xl overflow-hidden shadow-md bg-white z-10 relative">
+                  {lookupResults.map((r, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => applyLookupResult(r)}
+                      className="w-full text-left px-3 py-2.5 text-xs hover:bg-blue-50 border-b border-border last:border-0 transition-colors">
+                      <div className="font-semibold text-slate-800 truncate">{r.street || r.label}</div>
+                      <div className="text-slate-400 truncate">{[r.town, r.county, r.postcode].filter(Boolean).join(", ")}</div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowLookup(false)}
+                    className="w-full text-center px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 transition-colors">
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <TextField label="County / region"
