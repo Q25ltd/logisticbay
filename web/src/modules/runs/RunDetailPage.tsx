@@ -308,6 +308,20 @@ export default function RunDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!run) return;
+    if (!window.confirm("Permanently delete this cancelled run? This cannot be undone.")) return;
+    setCancelling(true);
+    setError("");
+    try {
+      await runsApi.remove(runId);
+      navigate("/app/runs");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete run");
+      setCancelling(false);
+    }
+  }
+
   async function handleRemoveAssignment(assignment: RunAssignment) {
     if (!run) return;
     try {
@@ -374,6 +388,9 @@ export default function RunDetailPage() {
           )}
           {run.status !== "cancelled" && (
             <Button variant="danger" loading={cancelling} onClick={handleCancel}>Cancel Run</Button>
+          )}
+          {run.status === "cancelled" && (
+            <Button variant="danger" loading={cancelling} onClick={handleDelete}>Delete Run</Button>
           )}
         </div>
       </div>

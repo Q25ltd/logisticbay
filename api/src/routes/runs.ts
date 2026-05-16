@@ -276,7 +276,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(updated);
   });
 
-  // ── DELETE /runs/:id — cancel a run ──────────────────────────────────────
+  // ── DELETE /runs/:id — cancel (non-cancelled) or hard-delete (cancelled) ──
   app.delete("/runs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
     const { companyId, userId } = request.user!;
@@ -288,7 +288,17 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(409).send({ error: "Cannot delete a completed run" });
     }
 
-    // Mark all active assignments as removed
+    if (run.status === "cancelled") {
+      // Hard delete: remove assignments + load tracks + the run itself
+      await prisma.$transaction(async (tx) => {
+        await tx.loadTrack.deleteMany({ where: { runId: id } });
+        await tx.runAssignment.deleteMany({ where: { runId: id } });
+        await tx.run.delete({ where: { id } });
+      });
+      return reply.status(204).send();
+    }
+
+    // Not yet cancelled — soft cancel first
     await prisma.$transaction(async (tx) => {
       await tx.runAssignment.updateMany({
         where: { runId: id, companyId, removedAt: null },
