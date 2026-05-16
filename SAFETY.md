@@ -170,6 +170,9 @@ Job status is derived from events, not stored directly. The `status` field on `P
 **Current production behavior:**
 Production startup uses `prisma migrate deploy` via `api/start.sh`. `prisma db push` is allowed only for local development and must never run during production startup/deploy.
 
+**Idempotent migration rule:**
+When a migration creates a constraint with an explicit name, guard both `pg_constraint.conname` and `pg_class.relname`. PostgreSQL unique constraints create backing relations/indexes, and a partial or drifted migration can leave the relation name present even when the constraint guard alone does not catch it.
+
 **Intended (post-launch hardening):**
 ```bash
 # development only
@@ -182,6 +185,9 @@ prisma migrate deploy
 **Local manual push** (only needed if Railway auto-deploy is broken):
 Requires TCP Proxy URL from Railway dashboard → Postgres → Settings → TCP Proxy.
 Internal Railway hostname does NOT work from outside Railway network.
+
+**Failed migration recovery:**
+If Railway logs show Prisma `P3009`, deploys will keep failing until the failed migration row is resolved. Prefer `prisma migrate resolve --rolled-back <migration_name>` followed by `prisma migrate deploy`. If the database is intentionally disposable, reset the Railway database and redeploy only after confirming no customer data must be preserved.
 
 ### Safe migration flow
 1. Add new field (nullable or with default)

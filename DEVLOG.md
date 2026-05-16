@@ -1117,3 +1117,25 @@ User decision: selecting trailer types ALLOWED implicitly forbids all others. A 
 **Test suite:**
 - All 27 tenant-isolation tests pass on a clean database
 - CI failure was caused by the incomplete first migration (missing `DROP NOT NULL`); fixed by `724742e`
+
+---
+
+### 2026-05-16 — Railway migration crash: Run model phase 1
+
+**Incident:**
+Railway API startup failed during `prisma migrate deploy` on migration `20260516000000_phase1_run_model`.
+Initial error was Prisma `P3018` / PostgreSQL `42P07`: relation `Run_companyId_runReference_key` already existed while the migration attempted to add the same unique constraint. Later restarts showed Prisma `P3009` because `_prisma_migrations` now contains a failed migration row.
+
+**Fix in repo:**
+- Patched `api/prisma/migrations/20260516000000_phase1_run_model/migration.sql`.
+- Unique constraint creation now checks both `pg_constraint.conname` and `pg_class.relname` for:
+  - `Run_companyId_runReference_key`
+  - `RunAssignment_runId_sequenceNumber_key`
+
+**Verification:**
+- `DATABASE_URL=postgresql://user:pass@localhost:5432/db npx prisma validate --schema prisma/schema.prisma` → pass.
+- `DATABASE_URL=postgresql://user:pass@localhost:5432/db npx prisma generate` → pass.
+- `npx tsc --noEmit` in `api/` → pass.
+
+**Production recovery still required:**
+The Railway database must have the failed migration state cleared before deploy can proceed. Use `prisma migrate resolve --rolled-back 20260516000000_phase1_run_model` followed by `prisma migrate deploy`, or reset the Railway database if it is confirmed disposable. Local CLI cannot reach Railway's internal `postgres-dj9q.railway.internal` host; use Railway internal execution, a TCP proxy/public connection URL, or the Railway dashboard.

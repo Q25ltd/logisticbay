@@ -141,7 +141,9 @@ BEGIN
     ALTER TABLE "Run" ADD CONSTRAINT "Run_assignedDriverId_fkey"
         FOREIGN KEY ("assignedDriverId") REFERENCES "DriverProfile"("id");
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Run_companyId_runReference_key') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Run_companyId_runReference_key')
+     AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'Run_companyId_runReference_key')
+  THEN
     ALTER TABLE "Run" ADD CONSTRAINT "Run_companyId_runReference_key"
         UNIQUE ("companyId", "runReference");
   END IF;
@@ -189,7 +191,9 @@ BEGIN
     ALTER TABLE "RunAssignment" ADD CONSTRAINT "RunAssignment_jobId_fkey"
         FOREIGN KEY ("jobId") REFERENCES "PlannedJob"("id");
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'RunAssignment_runId_sequenceNumber_key') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'RunAssignment_runId_sequenceNumber_key')
+     AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'RunAssignment_runId_sequenceNumber_key')
+  THEN
     ALTER TABLE "RunAssignment" ADD CONSTRAINT "RunAssignment_runId_sequenceNumber_key"
         UNIQUE ("runId", "sequenceNumber");
   END IF;
