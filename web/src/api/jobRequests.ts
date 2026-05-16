@@ -132,7 +132,7 @@ export interface SpecialRequirementsData {
 export interface TransportRequirementsData {
   plannerDecides?:      boolean;
   reqBodyCategory?:     string;
-  reqBodyType?:         string;
+  reqBodyTypes?:        string[];
   reqEquipment?:        string[];
   trailerTypesAllowed?: string[];
 }

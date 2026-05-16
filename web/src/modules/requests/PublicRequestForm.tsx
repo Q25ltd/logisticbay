@@ -1053,7 +1053,7 @@ export default function PublicRequestForm() {
   const [plannerDecides,  setPlannerDecides]  = useState(true);
   // Advanced transport (only when plannerDecides=false)
   const [reqBodyCategory,     setReqBodyCategory]     = useState("");
-  const [reqBodyType,         setReqBodyType]         = useState("");
+  const [reqBodyTypes,        setReqBodyTypes]        = useState<string[]>([]);
   const [reqEquipment,        setReqEquipment]        = useState<string[]>([]);
   const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
 
@@ -1197,7 +1197,7 @@ export default function PublicRequestForm() {
       transportRequirementsData: {
         plannerDecides,
         reqBodyCategory:     plannerDecides ? undefined : reqBodyCategory || undefined,
-        reqBodyType:         plannerDecides ? undefined : reqBodyType     || undefined,
+        reqBodyTypes:        plannerDecides ? undefined : reqBodyTypes.length ? reqBodyTypes : undefined,
         reqEquipment:        plannerDecides ? undefined : reqEquipment.length ? reqEquipment : undefined,
         trailerTypesAllowed: plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
       },
@@ -1743,7 +1743,7 @@ export default function PublicRequestForm() {
             summary={plannerDecides ? "Planner will decide" : (
               [
                 BODY_CATEGORIES.find(c => c.value === reqBodyCategory)?.label,
-                BODY_TYPES.find(t => t.value === reqBodyType)?.label,
+                reqBodyTypes.map(t => BODY_TYPES.find(b => b.value === t)?.label).filter(Boolean).join(", "),
               ].filter(Boolean).join(" · ") || undefined
             )} />
           {!s5 && (
@@ -1760,7 +1760,7 @@ export default function PublicRequestForm() {
                     <div className="flex flex-wrap gap-2 mt-1">
                       {BODY_CATEGORIES.map(({ value, label }) => (
                         <button key={value} type="button"
-                          onClick={() => { setReqBodyCategory(value); setReqBodyType(""); }}
+                          onClick={() => { setReqBodyCategory(value); setReqBodyTypes([]); }}
                           className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
                             (reqBodyCategory === value
                               ? "bg-accent text-white border-accent"
@@ -1772,7 +1772,6 @@ export default function PublicRequestForm() {
                   </div>
                   {reqBodyCategory && (() => {
                     const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []);
-                    // Build grouped options: group → [{value, label}]
                     const grouped: Record<string, { value: string; label: string }[]> = {};
                     BODY_TYPES.forEach(bt => {
                       if (!allowed.has(bt.value)) return;
@@ -1780,29 +1779,33 @@ export default function PublicRequestForm() {
                       grouped[bt.group].push({ value: bt.value, label: bt.label });
                     });
                     const groups = Object.keys(grouped);
+                    function toggleType(v: string) {
+                      setReqBodyTypes(prev =>
+                        prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
+                      );
+                    }
                     return (
-                      <div>
-                        <FieldLabel>Body type</FieldLabel>
-                        <div className="relative mt-1">
-                          <select
-                            className="input w-full appearance-none pr-9"
-                            value={reqBodyType}
-                            onChange={e => setReqBodyType(e.target.value)}>
-                            <option value="">— select body type —</option>
-                            {groups.map(g => (
-                              <optgroup key={g} label={BODY_TYPE_GROUP_LABELS[g] ?? g}>
-                                {grouped[g].map(bt => (
-                                  <option key={bt.value} value={bt.value}>{bt.label}</option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                            <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                            </svg>
+                      <div className="space-y-3">
+                        <FieldLabel>Body type — select all that work</FieldLabel>
+                        {groups.map(g => (
+                          <div key={g}>
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                              {BODY_TYPE_GROUP_LABELS[g] ?? g}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {grouped[g].map(bt => {
+                                const on = reqBodyTypes.includes(bt.value);
+                                return (
+                                  <button key={bt.value} type="button" onClick={() => toggleType(bt.value)}
+                                    className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+                                      (on ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
+                                    {bt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        ))}
                       </div>
                     );
                   })()}

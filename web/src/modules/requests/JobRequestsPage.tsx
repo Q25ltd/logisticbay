@@ -316,12 +316,13 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
             const tr = r.transportRequirementsData;
             const equip = tr?.reqEquipment ?? [];
             const trailers = tr?.trailerTypesAllowed ?? [];
-            if (!tr?.reqBodyCategory && !tr?.reqBodyType && !equip.length && !trailers.length) return null;
+            const bodyTypes = tr?.reqBodyTypes ?? [];
+            if (!tr?.reqBodyCategory && !bodyTypes.length && !equip.length && !trailers.length) return null;
             return (
               <div className="text-xs p-3 rounded-xl bg-indigo-50 border border-indigo-100">
                 <div className="font-semibold text-indigo-800 mb-1">Transport requirements</div>
                 {tr.reqBodyCategory && <div>Category: <span className="font-medium">{tr.reqBodyCategory}</span></div>}
-                {tr.reqBodyType     && <div>Body type: <span className="font-medium">{tr.reqBodyType.replace(/_/g, " ")}</span></div>}
+                {bodyTypes.length > 0 && <div>Body type: <span className="font-medium">{bodyTypes.map(t => t.replace(/_/g, " ")).join(", ")}</span></div>}
                 {equip.length > 0   && <div>Equipment: <span className="font-medium">{equip.join(", ")}</span></div>}
                 {trailers.length > 0 && <div>Trailers: <span className="font-medium">{trailers.join(", ")}</span></div>}
               </div>
