@@ -886,9 +886,21 @@ function StopCard({
           </div>
 
           {/* Optional fields */}
+          {/* Booking required — always visible for delivery stops, hidden in optional for collection */}
+          {stop.type === "delivery" && (
+            <div className="space-y-3">
+              <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
+                label="Booking / goods-in slot required before arrival" />
+              {stop.bookingRequired && (
+                <TextField label="Booking reference" value={stop.bookingRef}
+                  onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
+              )}
+            </div>
+          )}
+
           <OptionalToggle open={stop.showOptional}
             onToggle={() => onChange({ showOptional: !stop.showOptional })}
-            label="site contact, opening hours, booking & proof" />
+            label={stop.type === "delivery" ? "site contact, opening hours & proof" : "site contact, opening hours, booking & proof"} />
 
           {stop.showOptional && (
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">
@@ -900,11 +912,16 @@ function StopCard({
                 <TextField label="Site contact email" type="email" value={stop.contactEmail}
                   onChange={v => onChange({ contactEmail: v })} />
               </div>
-              <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
-                label="Booking required before arrival" />
-              {stop.bookingRequired && (
-                <TextField label="Booking reference" value={stop.bookingRef}
-                  onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
+              {/* Booking for collection stops stays in optional */}
+              {stop.type === "collection" && (
+                <>
+                  <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
+                    label="Booking required before arrival" />
+                  {stop.bookingRequired && (
+                    <TextField label="Booking reference" value={stop.bookingRef}
+                      onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
+                  )}
+                </>
               )}
               <TextField label="Opening hours" value={stop.openingHours}
                 onChange={v => onChange({ openingHours: v })} placeholder="Mon–Fri 06:00–18:00" />
@@ -989,6 +1006,7 @@ export default function PublicRequestForm() {
   const [buildingMaterialWeatherSensitive, setBuildingMaterialWeatherSensitive] = useState(false);
   // Liquid / tanker
   const [liquidProductType,       setLiquidProductType]       = useState("");
+  const [liquidVolumeLitres,      setLiquidVolumeLitres]      = useState("");
   const [liquidFoodGrade,         setLiquidFoodGrade]         = useState(false);
   // General
   const [generalPackagingType,    setGeneralPackagingType]    = useState("");
@@ -1009,6 +1027,7 @@ export default function PublicRequestForm() {
   const [tempType,                setTempType]                = useState("");
   // Food
   const [tempRange,               setTempRange]               = useState("");
+  const [foodPreCooled,           setFoodPreCooled]           = useState(false);
   // Vehicles
   const [vehicleCount,            setVehicleCount]            = useState("");
   const [vehicleMakeModel,        setVehicleMakeModel]        = useState("");
@@ -1029,7 +1048,11 @@ export default function PublicRequestForm() {
   const [adrClass,                     setAdrClass]                     = useState("");
   const [unNumber,                     setUnNumber]                     = useState("");
   const [packingGroup,                 setPackingGroup]                 = useState("");
+  const [hazardousQuantityKg,          setHazardousQuantityKg]          = useState("");
   const [hazardousPaperworkAvailable,  setHazardousPaperworkAvailable]  = useState(false);
+  const [oversizedWidth,               setOversizedWidth]               = useState("");
+  const [oversizedHeight,              setOversizedHeight]              = useState("");
+  const [oversizedLength,              setOversizedLength]              = useState("");
 
   // ── Sec 5: Transport ──────────────────────────────────────────────────────
   const [plannerDecides,  setPlannerDecides]  = useState(true);
@@ -1145,6 +1168,7 @@ export default function PublicRequestForm() {
         buildingMaterialLongestItem:     buildingMaterialLongestItem.trim() || undefined,
         buildingMaterialWeatherSensitive: buildingMaterialWeatherSensitive || undefined,
         liquidProductType:    liquidProductType.trim() || undefined,
+        liquidVolumeLitres:   liquidVolumeLitres ? parseFloat(liquidVolumeLitres) : undefined,
         liquidFoodGrade:      liquidFoodGrade           || undefined,
         generalPackagingType: generalPackagingType      || undefined,
         generalPieceCount:    generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
@@ -1159,6 +1183,7 @@ export default function PublicRequestForm() {
         tippingRequired:      tippingReq     || undefined,
         temperatureRange:     tempRange.trim()     || undefined,
         chilledFrozenAmbient: tempType        || undefined,
+        foodPreCooled:        foodPreCooled   || undefined,
         vehicleCount:         vehicleCount  ? parseInt(vehicleCount, 10)  : undefined,
         vehicleMakeModel:     vehicleMakeModel.trim()  || undefined,
         vehicleKeysWithVehicle: vehicleKeysWithVehicle || undefined,
@@ -1176,7 +1201,11 @@ export default function PublicRequestForm() {
         adrClass:                   adrClass.trim()       || undefined,
         unNumber:                   unNumber.trim()        || undefined,
         packingGroup:               packingGroup.trim()    || undefined,
+        hazardousQuantityKg:        hazardousQuantityKg ? parseFloat(hazardousQuantityKg) : undefined,
         hazardousPaperworkAvailable: hazardousPaperworkAvailable || undefined,
+        oversizedWidth:             oversizedWidth.trim()  || undefined,
+        oversizedHeight:            oversizedHeight.trim() || undefined,
+        oversizedLength:            oversizedLength.trim() || undefined,
       } : undefined,
       transportRequirementsData: {
         plannerDecides,
@@ -1516,6 +1545,10 @@ export default function PublicRequestForm() {
                   <TextField label="Product" value={liquidProductType} onChange={setLiquidProductType}
                     placeholder="Vegetable oil, diesel, milk, wastewater…"
                     hint="Be specific — determines tanker certification and any ADR requirements." />
+                  <TextField label="Volume (litres)" type="number" min="0" step="1"
+                    value={liquidVolumeLitres} onChange={setLiquidVolumeLitres}
+                    placeholder="24000"
+                    hint="Needed to match the right tanker size — total litres to be loaded." />
                   <Toggle value={liquidFoodGrade} onChange={setLiquidFoodGrade}
                     label="Food-grade product (requires food-safe tanker)" />
                   <div className="text-xs text-muted bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
@@ -1597,6 +1630,13 @@ export default function PublicRequestForm() {
                   </div>
                   <TextField label="Required temperature range" value={tempRange}
                     onChange={setTempRange} placeholder="2°C – 8°C" />
+                  <Toggle value={foodPreCooled} onChange={setFoodPreCooled}
+                    label="Vehicle must be pre-cooled before arrival at collection" />
+                  {foodPreCooled && (
+                    <div className="text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                      Pre-cooling takes 2–4 hours to arrange — we'll factor this into the plan.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1718,8 +1758,41 @@ export default function PublicRequestForm() {
                     placeholder="UN 1993" />
                   <TextField label="Packing group (I, II, or III)" value={packingGroup}
                     onChange={setPackingGroup} placeholder="II" />
+                  <TextField label="Total quantity of hazardous goods (kg or litres)" type="number" min="0"
+                    value={hazardousQuantityKg} onChange={setHazardousQuantityKg}
+                    placeholder="500"
+                    hint="Used to determine if the shipment falls within exemption thresholds (LQ / EQ)." />
                   <Toggle value={hazardousPaperworkAvailable} onChange={setHazardousPaperworkAvailable}
                     label="Hazardous paperwork available / will be provided" />
+                </div>
+              )}
+
+              {/* Conditional: oversized */}
+              {specialItems.includes("oversized") && (
+                <div className="space-y-3 border-l-2 border-amber-300 pl-4">
+                  <div className="text-xs text-slate-500 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    Overall dimensions including the load on the vehicle — not just the item itself. Width determines whether a permit is needed.
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <TextField label="Overall width (m)" type="number" min="0"
+                      value={oversizedWidth} onChange={setOversizedWidth} placeholder="3.2" />
+                    <TextField label="Overall height (m)" type="number" min="0"
+                      value={oversizedHeight} onChange={setOversizedHeight} placeholder="4.8" />
+                    <TextField label="Overall length (m)" type="number" min="0"
+                      value={oversizedLength} onChange={setOversizedLength} placeholder="18.5" />
+                  </div>
+                  {oversizedWidth && parseFloat(oversizedWidth) > 2.5 && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                      <span className="text-amber-500 flex-shrink-0">⚠</span>
+                      <p className="text-xs font-semibold text-amber-800">Over 2.5m wide — likely requires an abnormal load permit. The planner will advise on routing and escort requirements.</p>
+                    </div>
+                  )}
+                  {oversizedHeight && parseFloat(oversizedHeight) > 4.65 && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                      <span className="text-amber-500 flex-shrink-0">⚠</span>
+                      <p className="text-xs font-semibold text-amber-800">Over 4.65m high — route survey may be required for bridge and power line clearances.</p>
+                    </div>
+                  )}
                 </div>
               )}
 

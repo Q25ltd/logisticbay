@@ -85,6 +85,7 @@ export interface LoadData {
   buildingMaterialWeatherSensitive?: boolean;
   // Liquid / tanker
   liquidProductType?:     string;
+  liquidVolumeLitres?:    number;
   liquidFoodGrade?:       boolean;
   // General goods
   generalPackagingType?:  string;
@@ -105,6 +106,7 @@ export interface LoadData {
   // Food / refrigerated
   temperatureRange?:      string;
   chilledFrozenAmbient?:  string;
+  foodPreCooled?:         boolean;
   // Vehicles
   vehicleCount?:          number;
   vehicleMakeModel?:      string;
@@ -122,11 +124,15 @@ export interface LoadData {
 }
 
 export interface SpecialRequirementsData {
-  items?:                       string[]; // dangerous_goods | temperature_controlled | fragile | high_value | oversized | secure_transport_required | escort_required | temperature_monitored
+  items?:                       string[]; // dangerous_goods | fragile | high_value | oversized | secure_transport_required | escort_required
   adrClass?:                    string;
   unNumber?:                    string;
   packingGroup?:                string;
+  hazardousQuantityKg?:         number;
   hazardousPaperworkAvailable?: boolean;
+  oversizedWidth?:              string;
+  oversizedHeight?:             string;
+  oversizedLength?:             string;
 }
 
 export interface TransportRequirementsData {
