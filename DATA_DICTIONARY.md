@@ -769,12 +769,14 @@ Stored in `JobRequest.billingData` (Json column, default `{}`).
 
 Stored in `JobRequest.notesData` (Json column, default `{}`).
 
+The "Notes for driver" section was removed from the public intake form. Only `customerNotes` is now collected from the customer (in the Section 1 optional block). Driver-specific fields (`driverNoteChips`, `driverVisibleNotes`, `safetyInstructions`) are planner-managed only.
+
 | Field | Type | Required | Values / Format | Description |
 |---|---|---|---|---|
-| driverNoteChips | String[]? | No | `call_before_arrival` \| `report_to_security` \| `use_rear_entrance` \| `ppe_required` \| `bring_straps` \| `bring_pump_truck` \| `do_not_arrive_early` | Quick-select instructions for the driver |
-| driverVisibleNotes | String? | No | Free text | Free-text instructions the driver must read before the job |
-| safetyInstructions | String? | No | Free text | Safety information (COSHH, hazard warnings, PPE requirements) |
-| customerNotes | String? | No | Free text | Notes from the customer for the office — not shown to drivers |
+| customerNotes | String? | No | Free text | Notes from the customer for the planner — collected in Section 1 (optional). Not shown to drivers. |
+| driverNoteChips | String[]? | No | `call_before_arrival` \| `report_to_security` \| `use_rear_entrance` \| `ppe_required` \| `bring_straps` \| `bring_pump_truck` \| `do_not_arrive_early` | Quick-select instructions for the driver — planner-managed only, not on public form |
+| driverVisibleNotes | String? | No | Free text | Free-text instructions the driver must read before the job — planner-managed only |
+| safetyInstructions | String? | No | Free text | Safety information (COSHH, hazard warnings, PPE requirements) — planner-managed only |
 
 ---
 
@@ -947,29 +949,22 @@ The following table maps every labelled UI form field in the public `PublicReque
 | **4 — Special requirements** | UN number | `JobRequest.specialRequirementsData.unNumber` |
 | **4 — Special requirements** | Packing group | `JobRequest.specialRequirementsData.packingGroup` |
 | **4 — Special requirements** | Hazardous paperwork available | `JobRequest.specialRequirementsData.hazardousPaperworkAvailable` |
-| **4 — Special requirements** | Required temperature range (special section) | `JobRequest.specialRequirementsData.temperatureRange` |
 | **5 — Transport requirements** | Let the planner choose (toggle) | `JobRequest.transportRequirementsData.plannerDecides` |
 | **5 — Transport requirements** | Vehicle body category | `JobRequest.transportRequirementsData.reqBodyCategory` |
-| **5 — Transport requirements** | Body type | `JobRequest.transportRequirementsData.reqBodyType` |
-| **6 — Billing & insurance** | Pricing arrangement | `JobRequest.billingData.pricingType` (note: overridden server-side to `quote_required`) |
-| **6 — Billing & insurance** | Purchase order number | `JobRequest.billingData.purchaseOrderNumber` |
-| **6 — Billing & insurance** | Billing reference / cost code | `JobRequest.billingData.billingReference` |
-| **6 — Billing & insurance** | Declared value of goods (£) | `JobRequest.billingData.declaredGoodsValue` |
-| **6 — Billing & insurance** | We are VAT registered (toggle) | `JobRequest.billingData.vatRegistered` |
-| **6 — Billing & insurance** | VAT number | `JobRequest.billingData.vatNumber` |
-| **7 — Notes for driver** | Quick instructions (driver chips) | `JobRequest.notesData.driverNoteChips[]` |
-| **7 — Notes for driver** | Additional driver notes | `JobRequest.notesData.driverVisibleNotes` |
-| **7 — Notes for driver** | Safety instructions | `JobRequest.notesData.safetyInstructions` |
-| **7 — Notes for driver** | Notes for the office | `JobRequest.notesData.customerNotes` |
-| **7 — Notes / Exception policy** | If delivery is rejected — what should driver do? | `JobRequest.exceptionPolicyData.rejectionAction` |
-| **7 — Notes / Exception policy** | Alternative return address | `JobRequest.exceptionPolicyData.alternativeReturnAddress` |
-| **7 — Notes / Exception policy** | Alternative return postcode | `JobRequest.exceptionPolicyData.alternativeReturnPostcode` |
-| **7 — Notes / Exception policy** | Contact name at alternative address | `JobRequest.exceptionPolicyData.alternativeReturnContactName` |
-| **7 — Notes / Exception policy** | Contact phone (alternative address) | `JobRequest.exceptionPolicyData.alternativeReturnContactPhone` |
-| **7 — Notes / Exception policy** | Approval contact name | `JobRequest.exceptionPolicyData.approvalContactName` |
-| **7 — Notes / Exception policy** | Approval contact phone | `JobRequest.exceptionPolicyData.approvalContactPhone` |
-| **7 — Notes / Exception policy** | Photos required on rejection | `JobRequest.exceptionPolicyData.photosRequiredOnRejection` |
-| **7 — Notes / Exception policy** | Rejection signature required | `JobRequest.exceptionPolicyData.rejectionSignatureRequired` |
-| **7 — Notes / Exception policy** | Additional rejection / return notes | `JobRequest.exceptionPolicyData.rejectionNotes` |
+| **5 — Transport requirements** | Body types (multi-select) | `JobRequest.transportRequirementsData.reqBodyTypes[]` |
+| **6 — Billing** | Declared value of goods (£) | `JobRequest.billingData.declaredGoodsValue` |
+| **6 — Billing** | Purchase order number | `JobRequest.billingData.purchaseOrderNumber` |
+| **6 — Billing** | Billing reference / cost code | `JobRequest.billingData.billingReference` |
+| **1 — Your details (optional)** | Notes for the planner | `JobRequest.notesData.customerNotes` |
+| **Exception / return policy card** | If delivery is rejected — what should driver do? | `JobRequest.exceptionPolicyData.rejectionAction` |
+| **Exception / return policy card** | Alternative delivery address | `JobRequest.exceptionPolicyData.alternativeReturnAddress` |
+| **Exception / return policy card** | Alternative delivery postcode | `JobRequest.exceptionPolicyData.alternativeReturnPostcode` |
+| **Exception / return policy card** | Contact name at alternative address | `JobRequest.exceptionPolicyData.alternativeReturnContactName` |
+| **Exception / return policy card** | Contact phone (alternative address) | `JobRequest.exceptionPolicyData.alternativeReturnContactPhone` |
+| **Exception / return policy card** | Approval contact name | `JobRequest.exceptionPolicyData.approvalContactName` |
+| **Exception / return policy card** | Approval contact phone | `JobRequest.exceptionPolicyData.approvalContactPhone` |
+| **Exception / return policy card** | Photos required on rejection | `JobRequest.exceptionPolicyData.photosRequiredOnRejection` |
+| **Exception / return policy card** | Rejection signature required | `JobRequest.exceptionPolicyData.rejectionSignatureRequired` |
+| **Exception / return policy card** | Additional rejection / return notes | `JobRequest.exceptionPolicyData.rejectionNotes` |
 | **Server-computed (not on form)** | Distance from postcode to entrance pin | `JobRequest.stops[n].entranceDistanceFromPostcode` |
 | **Server-computed (not on form)** | Entrance pin warning level | `JobRequest.stops[n].entranceWarningLevel` |
