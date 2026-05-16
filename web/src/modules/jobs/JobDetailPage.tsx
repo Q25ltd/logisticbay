@@ -150,7 +150,7 @@ export default function JobDetailPage() {
               </div>
               <div>
                 <span className="text-muted text-xs uppercase tracking-wide">Cust. Ref</span>
-                <div className="font-medium font-mono">{job.referenceNumber || "—"}</div>
+                <div className="font-medium font-mono">{job.customerRef || "—"}</div>
               </div>
               <div>
                 <span className="text-muted text-xs uppercase tracking-wide">Priority</span>
