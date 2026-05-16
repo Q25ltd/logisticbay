@@ -295,6 +295,7 @@ model PlannedJob {
   qualityScore         Int       @default(0)
   status               String    @default("draft")
   requirePOD           Boolean   @default(false)
+  canSplitShipment     String    @default("must_stay_together")
 
   // Override close fields — set only when planner confirms a quantity mismatch
   overrideClosed            Boolean   @default(false)
@@ -393,6 +394,13 @@ model JobPart {
   accessRequirements Json?   // ["ppe", "high_vis", "induction"]
   handlingMethods    Json?   // ["forklift", "tail_lift", "crane", "manual"]
 
+  // Equipment exchange / asset return at this stop
+  exchangeDropQty    Decimal?
+  exchangeCollectQty Decimal?
+  exchangeUnit       String   @default("")
+  // Load readiness reported by customer
+  loadReadiness      String   @default("")
+
   // Stop-level load specification — drives trailer compatibility checks
   stopGoodsType        String?
   stopWeight           Decimal?
@@ -445,6 +453,9 @@ model LoadDetails {
   stackable    Boolean @default(false)
   tempControlled       Boolean @default(false)
   tempRange            String  @default("")
+  goodsType            String  @default("")
+  securingRequirements Json?
+  specialRequirements  Json?
   photosRequired       Boolean @default(false)
   weighbridgeRequired  Boolean @default(false)
   forkliftRequired     Boolean @default(false)

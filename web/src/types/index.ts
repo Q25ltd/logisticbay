@@ -102,6 +102,20 @@ export interface JobPart {
   numPallets?: number | null;
   internalNotes?: string;
   status?: string;
+  // New form-parity fields
+  quantityRequired?: number | null;
+  quantityUnit?: string;
+  exchangeDropQty?: number | null;
+  exchangeCollectQty?: number | null;
+  exchangeUnit?: string;
+  handlingMethods?: string[] | null;
+  accessRequirements?: string[] | null;
+  proofRequirements?: string[] | null;
+  loadReadiness?: string;
+  stopNotes?: string;
+  addressLine2?: string;
+  countyRegion?: string;
+  country?: string;
 }
 
 export interface LoadDetails {
@@ -125,6 +139,9 @@ export interface LoadDetails {
   craneRequired?: boolean;
   loadingMethod?: string;
   unloadingMethod?: string;
+  goodsType?: string;
+  securingRequirements?: string[] | null;
+  specialRequirements?: string[] | null;
 }
 
 export interface PlannedJob {
@@ -164,6 +181,7 @@ export interface PlannedJob {
   assistanceNote?:  string;
   internalNotes?:   string;
   requirePOD?:      boolean;
+  canSplitShipment?: string;
   validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "ready_for_planner" | "planned";
   qualityScore?:    number;
   // Vehicle/trailer requirement sources

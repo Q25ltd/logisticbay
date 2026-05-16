@@ -232,6 +232,17 @@ export interface JobPartInput {
   country?:                   string;
   addressLine2?:              string;
   countyRegion?:              string;
+  // New form-parity fields
+  quantityRequired?:          number | null;
+  quantityUnit?:              string;
+  exchangeDropQty?:           number | null;
+  exchangeCollectQty?:        number | null;
+  exchangeUnit?:              string;
+  handlingMethods?:           string[] | null;
+  accessRequirements?:        string[] | null;
+  proofRequirements?:         string[] | null;
+  loadReadiness?:             string;
+  stopNotes?:                 string;
 }
 
 export interface LoadDetailsInput {
@@ -254,6 +265,9 @@ export interface LoadDetailsInput {
   craneRequired?:             boolean;
   loadingMethod?:             string;
   unloadingMethod?:           string;
+  goodsType?:                 string;
+  securingRequirements?:      string[] | null;
+  specialRequirements?:       string[] | null;
 }
 
 export interface CreateJobBody {
@@ -289,6 +303,7 @@ export interface CreateJobBody {
   saveMode?:             "draft" | "ready_to_plan";
   requireCollection?:    boolean;
   requirePOD?:           boolean;
+  canSplitShipment?:     string;
   requireDeliveryQty?:   boolean;
   sequence?:             number;
   saveAsTemplate?:       boolean;
@@ -348,6 +363,7 @@ export interface PatchJobBody {
   saveMode?:             "draft" | "ready_to_plan";
   requireCollection?:    boolean;
   requirePOD?:           boolean;
+  canSplitShipment?:     string;
   requireDeliveryQty?:   boolean;
   sequence?:             number;
   jobType?:                   string;

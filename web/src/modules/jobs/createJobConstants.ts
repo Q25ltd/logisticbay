@@ -70,10 +70,74 @@ export const LOAD_UNITS: [string, string][] = [
 export const HANDLING_METHODS: [string, string][] = [
   ["forklift",          "Forklift"],
   ["handball",          "Handball"],
-  ["crane",             "Crane"],
-  ["pump",              "Pump"],
-  ["tip",               "Tip"],
+  ["crane",             "Crane / HIAB"],
+  ["moffett",           "Moffett / vehicle forklift"],
+  ["tail_lift",         "Tail lift"],
+  ["pump_truck",        "Pump truck / pallet jack"],
+  ["tipper_discharge",  "Tipper discharge"],
+  ["grab",              "Grab"],
+  ["pump_discharge",    "Pump discharge (tanker)"],
+  ["loading_bay",       "Loading bay"],
+  ["roro",              "RORO (drive on/off)"],
   ["customer_loads",    "Customer loads / unloads"],
   ["driver_loads",      "Driver loads / unloads"],
   ["other",             "Other"],
+];
+
+export const EXCHANGE_UNITS: [string, string][] = [
+  ["pallets",    "Pallets"],
+  ["roll_cages", "Roll cages / yorks"],
+  ["stillages",  "Stillages"],
+  ["ibc_tanks",  "IBC tanks"],
+  ["other",      "Other"],
+];
+
+export const PROOF_REQUIREMENTS: [string, string][] = [
+  ["signature_required",         "Signature"],
+  ["photos_required",            "Photos"],
+  ["pod_required",               "POD document"],
+  ["weighbridge_ticket_required","Weighbridge ticket"],
+  ["seal_number_required",       "Seal number"],
+  ["name_required",              "Printed name"],
+];
+
+export const LOAD_READINESS: [string, string][] = [
+  ["ready_now",            "Ready now"],
+  ["ready_at_booked_time", "Ready at booked time"],
+  ["still_being_prepared", "Still being prepared"],
+  ["unsure",               "Unsure"],
+];
+
+export const GOODS_TYPES: [string, string][] = [
+  ["pallets",            "Pallets"],
+  ["roll_cages",         "Roll cages / yorks"],
+  ["machinery",          "Machinery"],
+  ["building_materials", "Building materials"],
+  ["food_refrigerated",  "Food / refrigerated"],
+  ["bulk_material",      "Bulk material"],
+  ["liquid_bulk",        "Liquid / tanker"],
+  ["steel_long",         "Steel / long loads"],
+  ["vehicles",           "Vehicles"],
+  ["containers",         "Containers"],
+  ["general",            "General goods"],
+  ["other",              "Other"],
+];
+
+export const SECURING_REQUIREMENTS: [string, string][] = [
+  ["straps_required",                 "Straps required"],
+  ["chains_required",                 "Chains required"],
+  ["edge_protection_required",        "Edge protection"],
+  ["sheets_required",                 "Sheets"],
+  ["curtains_must_not_touch_load",    "Curtains must not touch load"],
+  ["stanchions_required",             "Stanchions / stake poles"],
+  ["temperature_monitoring_required", "Temperature monitoring"],
+];
+
+export const SPECIAL_REQUIREMENTS_OPTS: [string, string][] = [
+  ["dangerous_goods",           "Dangerous goods (ADR)"],
+  ["fragile",                   "Fragile / handle with care"],
+  ["high_value",                "High value goods"],
+  ["oversized",                 "Oversized load"],
+  ["secure_transport_required", "Secure transport"],
+  ["escort_required",           "Police escort required"],
 ];

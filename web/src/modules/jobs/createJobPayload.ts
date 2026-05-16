@@ -5,6 +5,10 @@ import { toMins } from "./createJobUtils";
 
 export interface CreateJobPayload {
   stops: StopState[];
+  canSplitShipment: string;
+  goodsType: string;
+  securingRequirements: string[];
+  specialRequirements: string[];
   unit: string;
   unitOther: string;
   materialType: string;
@@ -92,6 +96,10 @@ export interface CreateJobPayload {
 export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_to_plan"): Record<string, unknown> {
   const {
     stops,
+    canSplitShipment,
+    goodsType,
+    securingRequirements,
+    specialRequirements,
     unit,
     unitOther,
     materialType,
@@ -206,6 +214,16 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
       internalNotes:         stop.internalNotes,
       earliestArrivalMinutes: toMins(stop.earliestArrival),
       unloadingAllowanceMinutes: toMins(stop.unloadingTime),
+      quantityRequired:      stop.stopQuantity ? parseFloat(stop.stopQuantity) : null,
+      quantityUnit:          stop.stopQuantity ? stop.stopQuantityUnit : null,
+      exchangeDropQty:       stop.exchangeDropQty ? parseFloat(stop.exchangeDropQty) : null,
+      exchangeCollectQty:    stop.exchangeCollectQty ? parseFloat(stop.exchangeCollectQty) : null,
+      exchangeUnit:          (stop.exchangeDropQty || stop.exchangeCollectQty) ? stop.exchangeUnit : null,
+      handlingMethods:       stop.handlingMethods.length ? stop.handlingMethods : null,
+      accessRequirements:    [...stop.accessRequirements, ...stop.ppeItems].length ? [...stop.accessRequirements, ...stop.ppeItems] : null,
+      proofRequirements:     stop.proofRequirements.length ? stop.proofRequirements : null,
+      loadReadiness:         stop.loadReadiness || null,
+      stopNotes:             stop.stopNotes || null,
     };
 
     if (stop.timeType === "exact" && stop.exactTime) {
@@ -220,6 +238,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
 
   const effectiveUnit = unit === "other" ? unitOther : unit;
   const loadDetails = {
+    goodsType,
     materialType,
     quantity:           quantity ? parseFloat(quantity) : null,
     unit:               effectiveUnit,
@@ -239,6 +258,8 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     craneRequired,
     loadingMethod,
     unloadingMethod,
+    securingRequirements: securingRequirements.length ? securingRequirements : null,
+    specialRequirements:  specialRequirements.length  ? specialRequirements  : null,
   };
 
   const vehicleClassRequired = reqBodyCategory || (vehicleClass === "other"
@@ -247,6 +268,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
 
   return {
     saveMode,
+    canSplitShipment,
     assignedDriverId:       assignedDriverId ?? undefined,
     customerId,
     customerName,

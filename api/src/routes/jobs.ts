@@ -519,6 +519,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           validationStatus:    structuredValidation.validationStatus,
           qualityScore:        quality.score,
           requirePOD:          body.requirePOD ?? false,
+          canSplitShipment:    body.canSplitShipment ?? "must_stay_together",
           status:              "draft",
           stops: {
             create: stops.map(s => buildStopData(s, companyId)),
@@ -546,6 +547,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
                 craneRequired:       loadDetails?.craneRequired ?? false,
                 loadingMethod:       loadDetails?.loadingMethod?.toString() ?? "",
                 unloadingMethod:     loadDetails?.unloadingMethod?.toString() ?? "",
+                goodsType:           loadDetails?.goodsType?.toString() ?? "",
+                securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
+                specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
               },
             },
           } : {}),
@@ -821,6 +825,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
             craneRequired:       loadDetails?.craneRequired ?? false,
             loadingMethod:       loadDetails?.loadingMethod?.toString() ?? "",
             unloadingMethod:     loadDetails?.unloadingMethod?.toString() ?? "",
+            goodsType:           loadDetails?.goodsType?.toString() ?? "",
+            securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
+            specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
           },
           update: {
             quantity:        toNullableNumber(loadDetails?.quantity),
@@ -842,6 +849,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
             craneRequired:       loadDetails?.craneRequired ?? false,
             loadingMethod:       loadDetails?.loadingMethod?.toString() ?? "",
             unloadingMethod:     loadDetails?.unloadingMethod?.toString() ?? "",
+            goodsType:           loadDetails?.goodsType?.toString() ?? "",
+            securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
+            specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
           },
         });
       }
@@ -894,6 +904,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           validationStatus:    structuredValidation.validationStatus,
           qualityScore:        quality.score,
           requirePOD:          body.requirePOD ?? job.requirePOD,
+          canSplitShipment:    body.canSplitShipment ?? job.canSplitShipment,
           plannedDate:         body.plannedDate ? new Date(body.plannedDate) : job.plannedDate,
         },
         include: {

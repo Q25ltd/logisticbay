@@ -1,5 +1,6 @@
 import type { StructuredJobPartInput, StructuredLoadDetailsInput } from "../services/jobValidation.js";
 import { toNullableDate } from "./coerce.js";
+import { Prisma } from "../generated/client.js";
 
 export function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | undefined): boolean {
   if (!loadDetails) return false;
@@ -49,6 +50,17 @@ export function buildStopData(s: StructuredJobPartInput, companyId: number) {
     country:                   typeof s.country === "string" ? s.country.trim() : "United Kingdom",
     addressLine2:              typeof s.addressLine2 === "string" ? s.addressLine2.trim() : "",
     countyRegion:              typeof s.countyRegion === "string" ? s.countyRegion.trim() : "",
+    // New form-parity fields
+    quantityRequired:          s.quantityRequired != null ? Number(s.quantityRequired) : null,
+    quantityUnit:              typeof s.quantityUnit === "string" ? s.quantityUnit.trim() : "",
+    exchangeDropQty:           s.exchangeDropQty != null ? Number(s.exchangeDropQty) : null,
+    exchangeCollectQty:        s.exchangeCollectQty != null ? Number(s.exchangeCollectQty) : null,
+    exchangeUnit:              typeof s.exchangeUnit === "string" ? s.exchangeUnit.trim() : "",
+    handlingMethods:           Array.isArray(s.handlingMethods) ? (s.handlingMethods as Prisma.InputJsonValue) : undefined,
+    accessRequirements:        Array.isArray(s.accessRequirements) ? (s.accessRequirements as Prisma.InputJsonValue) : undefined,
+    proofRequirements:         Array.isArray(s.proofRequirements) ? (s.proofRequirements as Prisma.InputJsonValue) : undefined,
+    loadReadiness:             typeof s.loadReadiness === "string" ? s.loadReadiness.trim() : "",
+    stopNotes:                 typeof s.stopNotes === "string" ? s.stopNotes.trim() : "",
     status:                    "pending",
   };
 }

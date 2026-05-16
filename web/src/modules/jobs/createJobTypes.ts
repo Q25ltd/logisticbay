@@ -37,4 +37,16 @@ export interface StopState {
   earliestArrival: string;
   unloadingTime: string;
   internalNotes: string;
+  // New parity fields (matching PublicRequestForm stop structure)
+  stopQuantity: string;
+  stopQuantityUnit: string;
+  exchangeDropQty: string;
+  exchangeCollectQty: string;
+  exchangeUnit: string;
+  handlingMethods: string[];
+  accessRequirements: string[];
+  ppeItems: string[];
+  proofRequirements: string[];
+  loadReadiness: string;
+  stopNotes: string;
 }

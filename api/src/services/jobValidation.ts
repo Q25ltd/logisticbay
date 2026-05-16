@@ -45,6 +45,17 @@ export interface StructuredJobPartInput {
   country?: unknown;
   addressLine2?: unknown;
   countyRegion?: unknown;
+  // New form-parity fields
+  quantityRequired?: number | null;
+  quantityUnit?: unknown;
+  exchangeDropQty?: number | null;
+  exchangeCollectQty?: number | null;
+  exchangeUnit?: unknown;
+  handlingMethods?: unknown[] | null;
+  accessRequirements?: unknown[] | null;
+  proofRequirements?: unknown[] | null;
+  loadReadiness?: unknown;
+  stopNotes?: unknown;
 }
 
 export interface StructuredLoadDetailsInput {
@@ -67,6 +78,9 @@ export interface StructuredLoadDetailsInput {
   craneRequired?: boolean;
   loadingMethod?: unknown;
   unloadingMethod?: unknown;
+  goodsType?: unknown;
+  securingRequirements?: unknown[] | null;
+  specialRequirements?: unknown[] | null;
 }
 
 export interface StructuredJobValidationInput {

@@ -47,6 +47,17 @@ export function makeStop(): StopState {
     earliestArrival: "",
     unloadingTime: "",
     internalNotes: "",
+    stopQuantity: "",
+    stopQuantityUnit: "pallets",
+    exchangeDropQty: "",
+    exchangeCollectQty: "",
+    exchangeUnit: "pallets",
+    handlingMethods: [],
+    accessRequirements: [],
+    ppeItems: [],
+    proofRequirements: [],
+    loadReadiness: "",
+    stopNotes: "",
   };
 }
 
@@ -123,6 +134,17 @@ export function jobPartToStopState(stop: JobPart): StopState {
     earliestArrival: minsToHHMM(stop.earliestArrivalMinutes),
     unloadingTime: minsToHHMM(stop.unloadingAllowanceMinutes),
     internalNotes: stop.internalNotes || "",
+    stopQuantity: stop.quantityRequired != null ? String(stop.quantityRequired) : "",
+    stopQuantityUnit: stop.quantityUnit || "pallets",
+    exchangeDropQty: (stop as any).exchangeDropQty != null ? String((stop as any).exchangeDropQty) : "",
+    exchangeCollectQty: (stop as any).exchangeCollectQty != null ? String((stop as any).exchangeCollectQty) : "",
+    exchangeUnit: (stop as any).exchangeUnit || "pallets",
+    handlingMethods: Array.isArray(stop.handlingMethods) ? stop.handlingMethods as string[] : [],
+    accessRequirements: Array.isArray(stop.accessRequirements) ? stop.accessRequirements as string[] : [],
+    ppeItems: [],
+    proofRequirements: Array.isArray(stop.proofRequirements) ? stop.proofRequirements as string[] : [],
+    loadReadiness: (stop as any).loadReadiness || "",
+    stopNotes: stop.stopNotes || "",
   };
 }
 

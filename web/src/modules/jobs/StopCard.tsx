@@ -3,7 +3,7 @@ import type { SavedLocation } from "../../types";
 import type { StopState } from "./createJobTypes";
 import { stopComplete, toMins, fmtMins } from "./createJobUtils";
 import { FieldLabel, OptionalToggle, Toggle } from "./CreateJobFormComponents";
-import { LOCATION_TYPES } from "./createJobConstants";
+import { LOCATION_TYPES, EXCHANGE_UNITS, HANDLING_METHODS, PROOF_REQUIREMENTS, LOAD_READINESS, LOAD_UNITS } from "./createJobConstants";
 import { applyCase, type CaseRule } from "../../lib/textCase";
 
 // ── Location typeahead (per stop) ─────────────────────────────────────────────
@@ -257,18 +257,78 @@ export function StopTimingBlock({ stop, onChange }: {
       <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Quantities & Stop Timing</div>
       <div className="space-y-3">
 
-        {/* Pallets + quantity */}
+        {/* Stop quantity — structured */}
+        <div>
+          <FieldLabel>Quantity at this stop</FieldLabel>
+          <div className="flex gap-2 mt-1">
+            <input
+              type="number" min="0" step="any"
+              className="input flex-1 font-mono"
+              placeholder="0"
+              value={stop.stopQuantity}
+              onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E") e.preventDefault(); }}
+              onChange={e => onChange({ stopQuantity: e.target.value })}
+            />
+            <div className="relative min-w-[9rem]">
+              <select className="input w-full appearance-none pr-8"
+                value={stop.stopQuantityUnit}
+                onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
+                {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-muted mt-1">Items {stop.type === "collection" ? "collected" : "delivered"} at this specific stop.</p>
+        </div>
+
+        {/* Equipment exchange */}
+        <div>
+          <FieldLabel>{stop.type === "collection" ? "Returning assets / empties at this stop" : "Equipment exchange at this stop"}</FieldLabel>
+          <p className="text-xs text-muted mb-2">
+            {stop.type === "collection"
+              ? "Empty pallets, cages or hired equipment being returned here — leave blank if nothing."
+              : "Drop full units, collect empties — leave blank if no exchange."}
+          </p>
+          <div className="flex gap-2 items-end flex-wrap">
+            {stop.type === "delivery" && (
+              <div className="flex-1 min-w-[6rem]">
+                <FieldLabel>Drop (full)</FieldLabel>
+                <input type="number" min="0" step="1" className="input w-full font-mono" placeholder="0"
+                  value={stop.exchangeDropQty}
+                  onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                  onChange={e => onChange({ exchangeDropQty: e.target.value })} />
+              </div>
+            )}
+            <div className="flex-1 min-w-[6rem]">
+              <FieldLabel>{stop.type === "collection" ? "Returning (qty)" : "Collect empties"}</FieldLabel>
+              <input type="number" min="0" step="1" className="input w-full font-mono" placeholder="0"
+                value={stop.exchangeCollectQty}
+                onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                onChange={e => onChange({ exchangeCollectQty: e.target.value })} />
+            </div>
+            <div className="relative min-w-[9rem]">
+              <FieldLabel>Unit</FieldLabel>
+              <select className="input w-full appearance-none pr-8"
+                value={stop.exchangeUnit}
+                onChange={e => onChange({ exchangeUnit: e.target.value })}>
+                {EXCHANGE_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <div className="pointer-events-none absolute bottom-0 right-3 flex items-center h-[42px]">
+                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pallets (legacy field for mobile compatibility) */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <FieldLabel>Number of Pallets</FieldLabel>
+            <FieldLabel>Pallets (legacy)</FieldLabel>
             <input type="number" min="0" inputMode="numeric" className="input" placeholder="e.g. 26"
               value={stop.numPallets} onChange={e => onChange({ numPallets: e.target.value })} />
-            <p className="text-xs text-muted mt-1">Will total across all stops in Load Details</p>
-          </div>
-          <div>
-            <FieldLabel>Quantity / Weight</FieldLabel>
-            <input type="text" className="input" placeholder="e.g. 14.5t / 3 cages"
-              value={stop.quantity} onChange={e => onChange({ quantity: e.target.value })} />
+            <p className="text-xs text-muted mt-1">Legacy field — prefer "Quantity" above</p>
           </div>
         </div>
 
@@ -667,6 +727,90 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                   <FieldLabel>Navigation Instructions</FieldLabel>
                   <input type="text" className="input" placeholder="Paste Google Maps or Waze link…"
                     value={stop.navigationInstructions} onChange={set("navigationInstructions")} onBlur={setCase("navigationInstructions", "sentence")} autoCapitalize="sentences" />
+                </div>
+              </div>
+            </div>
+
+            {/* Handling & access */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling</div>
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>{stop.type === "collection" ? "Loading method" : "Unloading method"}</FieldLabel>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {HANDLING_METHODS.map(([v, l]) => (
+                      <button key={v} type="button"
+                        onClick={() => {
+                          const next = stop.handlingMethods.includes(v)
+                            ? stop.handlingMethods.filter(m => m !== v)
+                            : [...stop.handlingMethods, v];
+                          onChange({ handlingMethods: next });
+                        }}
+                        className={
+                          "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                          (stop.handlingMethods.includes(v)
+                            ? "bg-slate-700 text-white border-slate-700"
+                            : "bg-white text-muted border-border hover:border-gray-400")
+                        }>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Proof of delivery */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Proof Required</div>
+              <div className="flex flex-wrap gap-2">
+                {PROOF_REQUIREMENTS.map(([v, l]) => (
+                  <button key={v} type="button"
+                    onClick={() => {
+                      const next = stop.proofRequirements.includes(v)
+                        ? stop.proofRequirements.filter(x => x !== v)
+                        : [...stop.proofRequirements, v];
+                      onChange({ proofRequirements: next });
+                    }}
+                    className={
+                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (stop.proofRequirements.includes(v)
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")
+                    }>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Load readiness */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Load Readiness</div>
+              <div className="flex flex-wrap gap-2">
+                {LOAD_READINESS.map(([v, l]) => (
+                  <button key={v} type="button"
+                    onClick={() => onChange({ loadReadiness: stop.loadReadiness === v ? "" : v })}
+                    className={
+                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (stop.loadReadiness === v
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")
+                    }>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Stop notes (driver visible) */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Stop Notes</div>
+              <div className="space-y-3">
+                <div>
+                  <FieldLabel>Notes for driver at this stop</FieldLabel>
+                  <textarea className="input min-h-16 resize-none" placeholder="Gate code 1234, use back entrance, call 30 min ahead…"
+                    value={stop.stopNotes} onChange={set("stopNotes")} onBlur={setCase("stopNotes", "sentence")} />
                 </div>
               </div>
             </div>

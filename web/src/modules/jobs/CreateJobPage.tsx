@@ -12,6 +12,7 @@ import {
   DRIVER_LICENCE_OPTS, DRIVER_ENDORSEMENT_OPTS,
   TRAILER_LENGTH_OPTS, LOAD_UNITS, HANDLING_METHODS,
   TRAILER_BODY_TYPE_VALUES, equipmentForBodyType,
+  GOODS_TYPES, SECURING_REQUIREMENTS, SPECIAL_REQUIREMENTS_OPTS,
 } from "./createJobConstants";
 import type { StopState } from "./createJobTypes";
 import { today, nowDisplay, makeStop, jobPartToStopState, stopComplete } from "./createJobUtils";
@@ -321,15 +322,17 @@ export default function CreateJobPage() {
     setSec2Collapsed(false);
     setSec3Collapsed(false);
     setSec4Collapsed(false);
+    setSec4bCollapsed(false);
     setSec5Collapsed(false);
     setSec6Collapsed(false);
   }
 
   // ── Section collapse state ───────────────────────────────────────────────
-  const [sec1Collapsed, setSec1Collapsed] = useState(true);
-  const [sec2Collapsed, setSec2Collapsed] = useState(true);
-  const [sec3Collapsed, setSec3Collapsed] = useState(true);
-  const [sec4Collapsed, setSec4Collapsed] = useState(true);
+  const [sec1Collapsed,  setSec1Collapsed]  = useState(true);
+  const [sec2Collapsed,  setSec2Collapsed]  = useState(true);
+  const [sec3Collapsed,  setSec3Collapsed]  = useState(true);
+  const [sec4Collapsed,  setSec4Collapsed]  = useState(true);
+  const [sec4bCollapsed, setSec4bCollapsed] = useState(true);
 
   // ── Section 01 — Job Basics ──────────────────────────────────────────────
   const [showBasicsOpts,      setShowBasicsOpts]      = useState(false);
@@ -376,6 +379,13 @@ export default function CreateJobPage() {
 
   // ── Section 04 — Load Details ────────────────────────────────────────────
   const [showLoadOpts,     setShowLoadOpts]     = useState(false);
+  const [goodsType,        setGoodsType]        = useState("");
+  const [canSplitShipment, setCanSplitShipment] = useState("must_stay_together");
+  const [securingRequirements, setSecuringRequirements] = useState<string[]>([]);
+  const [specialRequirements,  setSpecialRequirements]  = useState<string[]>([]);
+  const [adrUnNumber,      setAdrUnNumber]      = useState("");
+  const [adrPackingGroup,  setAdrPackingGroup]  = useState("");
+  const [oversizedDimensions, setOversizedDimensions] = useState("");
   const [materialType,     setMaterialType]     = useState("");
   const [quantity,         setQuantity]         = useState("");
   const [unit,             setUnit]             = useState("");
@@ -603,6 +613,7 @@ export default function CreateJobPage() {
       setSec2Collapsed(false);
       setSec3Collapsed(false);
       setSec4Collapsed(false);
+      setSec4bCollapsed(false);
       setSec5Collapsed(false);
       setSec6Collapsed(false);
     }).catch(() => {
@@ -857,6 +868,10 @@ export default function CreateJobPage() {
   function makePayloadParams(saveMode: "draft" | "ready_to_plan"): [CreateJobPayload, "draft" | "ready_to_plan"] {
     const params: CreateJobPayload = {
       stops,
+      canSplitShipment,
+      goodsType,
+      securingRequirements,
+      specialRequirements,
       unit,
       unitOther,
       materialType,
@@ -1335,11 +1350,54 @@ export default function CreateJobPage() {
             complete={loadComplete} started={sec4Started} />
           {!sec4Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
 
+            {/* Goods type */}
+            <div>
+              <FieldLabel>Goods Type</FieldLabel>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {GOODS_TYPES.map(([v, l]) => (
+                  <button key={v} type="button"
+                    onClick={() => setGoodsType(goodsType === v ? "" : v)}
+                    className={
+                      "text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (goodsType === v
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")
+                    }>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Goods description */}
             <div>
               <FieldLabel required>Goods / Material Description</FieldLabel>
               <input type="text" className="input" placeholder="e.g. Construction aggregate, frozen poultry, retail fixtures"
                 value={materialType} onChange={e => setMaterialType(e.target.value)} />
+            </div>
+
+            {/* Can split shipment */}
+            <div>
+              <FieldLabel>Can this shipment be split?</FieldLabel>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {([
+                  ["must_stay_together",  "Must stay together"],
+                  ["can_split_partially", "Can split partially"],
+                  ["can_split_freely",    "Can split freely"],
+                ] as [string, string][]).map(([v, l]) => (
+                  <button key={v} type="button"
+                    onClick={() => setCanSplitShipment(v)}
+                    className={
+                      "text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (canSplitShipment === v
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")
+                    }>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted mt-1.5">Determines if runs can be assigned to different stops independently.</p>
             </div>
 
             {/* Qty + unit */}
@@ -1466,6 +1524,27 @@ export default function CreateJobPage() {
                   </div>
                 </div>
 
+                {/* Securing requirements */}
+                <div>
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Securing Requirements</div>
+                  <div className="flex flex-wrap gap-2">
+                    {SECURING_REQUIREMENTS.map(([v, l]) => (
+                      <button key={v} type="button"
+                        onClick={() => setSecuringRequirements(prev =>
+                          prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
+                        )}
+                        className={
+                          "text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                          (securingRequirements.includes(v)
+                            ? "bg-slate-700 text-white border-slate-700"
+                            : "bg-white text-muted border-border hover:border-gray-400")
+                        }>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Extra */}
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Extra</div>
@@ -1484,6 +1563,70 @@ export default function CreateJobPage() {
             )}
           </div>}
           {!sec4Collapsed && <SectionFooter complete={loadComplete} label="Load details" onCollapse={() => setSec4Collapsed(true)} />}
+        </div>
+
+        {/* ── Section 04b — Special Requirements ─────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={4} icon="⚠️" title="Special Requirements" subtitle="ADR, fragile, high-value, oversized or secure goods" active
+            collapsed={sec4bCollapsed} onToggle={() => setSec4bCollapsed(o => !o)}
+            summary={specialRequirements.length > 0 ? `${specialRequirements.length} selected` : undefined}
+            complete={true} started={specialRequirements.length > 0} />
+          {!sec4bCollapsed && <div className="px-5 pt-5 pb-4 space-y-4">
+            <p className="text-sm text-muted">Select any special characteristics that affect vehicle choice, insurance or driver qualifications.</p>
+
+            {/* Special requirement chips */}
+            <div className="flex flex-wrap gap-2">
+              {SPECIAL_REQUIREMENTS_OPTS.map(([v, l]) => (
+                <button key={v} type="button"
+                  onClick={() => setSpecialRequirements(prev =>
+                    prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
+                  )}
+                  className={
+                    "text-sm px-3 py-2 rounded-xl border font-medium transition-colors " +
+                    (specialRequirements.includes(v)
+                      ? "bg-amber-600 text-white border-amber-600"
+                      : "bg-white text-muted border-border hover:border-amber-400")
+                  }>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {/* ADR sub-fields */}
+            {specialRequirements.includes("dangerous_goods") && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="text-sm font-bold text-amber-800">Dangerous Goods Details</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <FieldLabel>ADR Class</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. Class 3"
+                      value={adrClass} onChange={e => setAdrClass(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>UN Number</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. UN1203"
+                      value={adrUnNumber} onChange={e => setAdrUnNumber(e.target.value)} />
+                  </div>
+                  <div>
+                    <FieldLabel>Packing Group</FieldLabel>
+                    <input type="text" className="input" placeholder="e.g. II"
+                      value={adrPackingGroup} onChange={e => setAdrPackingGroup(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Oversized sub-fields */}
+            {specialRequirements.includes("oversized") && (
+              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                <div className="text-sm font-bold text-orange-800 mb-2">Oversized Load Dimensions</div>
+                <input type="text" className="input" placeholder="e.g. 6.2m × 2.8m × 3.5m"
+                  value={oversizedDimensions} onChange={e => setOversizedDimensions(e.target.value)} />
+                <p className="text-xs text-orange-700 mt-1.5">Length × Width × Height</p>
+              </div>
+            )}
+
+          </div>}
         </div>
 
         {/* ── Section 05 — Vehicle Requirements ─────────────────────────────── */}

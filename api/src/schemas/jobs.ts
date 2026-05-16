@@ -35,6 +35,17 @@ const JobPartSchema = z.object({
   country:                    z.string().optional(),
   addressLine2:               z.string().optional(),
   countyRegion:               z.string().optional(),
+  // New form-parity fields
+  quantityRequired:           z.number().nullable().optional(),
+  quantityUnit:               z.string().optional(),
+  exchangeDropQty:            z.number().nullable().optional(),
+  exchangeCollectQty:         z.number().nullable().optional(),
+  exchangeUnit:               z.string().optional(),
+  handlingMethods:            z.array(z.string()).nullable().optional(),
+  accessRequirements:         z.array(z.string()).nullable().optional(),
+  proofRequirements:          z.array(z.string()).nullable().optional(),
+  loadReadiness:              z.string().optional(),
+  stopNotes:                  z.string().optional(),
 });
 
 const LoadDetailsSchema = z.object({
@@ -55,8 +66,11 @@ const LoadDetailsSchema = z.object({
   forkliftRequired:   z.boolean().optional(),
   tailLiftRequired:   z.boolean().optional(),
   craneRequired:      z.boolean().optional(),
-  loadingMethod:      z.string().optional(),
-  unloadingMethod:    z.string().optional(),
+  loadingMethod:       z.string().optional(),
+  unloadingMethod:     z.string().optional(),
+  goodsType:           z.string().optional(),
+  securingRequirements:z.array(z.string()).nullable().optional(),
+  specialRequirements: z.array(z.string()).nullable().optional(),
 });
 
 const JobCommonFields = z.object({
@@ -92,6 +106,7 @@ const JobCommonFields = z.object({
   saveMode:                 z.enum(["draft", "ready_to_plan"]).optional(),
   requireCollection:        z.boolean().optional(),
   requirePOD:               z.boolean().optional(),
+  canSplitShipment:         z.string().optional(),
   requireDeliveryQty:       z.boolean().optional(),
   sequence:                 z.number().int().optional(),
   jobType:                  z.string().optional(),
