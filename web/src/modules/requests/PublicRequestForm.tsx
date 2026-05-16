@@ -214,12 +214,10 @@ const SECURING_REQUIREMENTS: [string, string][] = [
 ];
 
 const REJECTION_ACTIONS: [string, string][] = [
-  ["call_office_before_leaving",      "Call office before leaving"],
-  ["return_to_collection_point",      "Return to collection point"],
-  ["deliver_to_alternative_address",  "Deliver to alternative address"],
-  ["wait_for_further_instruction",    "Wait for further instruction"],
-  ["do_not_return_without_approval",  "Do not return without approval"],
-  ["other",                           "Other"],
+  ["call_office_before_leaving",     "Call office before leaving"],
+  ["return_to_collection_point",     "Return to collection point"],
+  ["deliver_to_alternative_address", "Deliver to alternative address"],
+  ["other",                          "Other"],
 ];
 
 // ── Country list (ISO 3166-1 alpha-2) ─────────────────────────────────────────
@@ -1968,7 +1966,7 @@ export default function PublicRequestForm() {
                 </div>
               )}
 
-              {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval" || rejectionAction === "wait_for_further_instruction") && (
+              {rejectionAction === "call_office_before_leaving" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-l-2 border-orange-200 pl-4">
                   <TextField label="Approval contact name" value={approvalContactName}
                     onChange={setApprovalContactName} placeholder="Jane Smith" />
