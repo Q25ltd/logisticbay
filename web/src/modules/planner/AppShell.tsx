@@ -6,6 +6,7 @@ const NAV = [
   { to:"/app/dashboard",     icon:"🏠", label:"Dashboard",    active:true  },
   { to:"/app/jobs",          icon:"📋", label:"Jobs",         active:true  },
   { to:"/app/job-requests",  icon:"📥", label:"Requests",     active:true  },
+  { to:"/app/runs",          icon:"🚛", label:"Runs",          active:true  },
   { to:"/app/templates",     icon:"📄", label:"Templates",    active:true  },
   { to:"/app/locations",     icon:"📍", label:"Locations",    active:true  },
   { to:"/app/fleet",         icon:"🚛", label:"Fleet",        active:true  },
