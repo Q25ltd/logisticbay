@@ -187,6 +187,9 @@ export interface PlannedJob {
   createdAt: string;
   updatedAt: string;
 
+  // Planning status — computed from RunAssignments, not stored
+  planningStatus?: "no_stops" | "not_planned" | "partially_planned" | "planned" | "partially_done" | "done";
+
   // ── Fields removed from DB (Phase 1) — kept here so web UI compiles ──────
   // These are no longer returned by the API. UI components should migrate to
   // reading assignedDriverId/assignedTruck/assignedTrailer from Run instead.

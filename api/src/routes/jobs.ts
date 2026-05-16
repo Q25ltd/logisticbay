@@ -39,7 +39,28 @@ const JOB_DETAIL_INCLUDE = {
   stops:       { orderBy: { sequenceNumber: "asc" as const } },
   loadDetails: true,
   events:      { orderBy: { createdAt: "asc" as const } },
+  runAssignments: {
+    where:  { removedAt: null },
+    select: { id: true, jobPartId: true, status: true },
+  },
 } satisfies Prisma.PlannedJobInclude;
+
+type PlanningStatus = "no_stops" | "not_planned" | "partially_planned" | "planned" | "partially_done" | "done";
+
+function computePlanningStatus(
+  stops: { id?: number }[],
+  assignments: { jobPartId: number; status: string }[]
+): PlanningStatus {
+  if (stops.length === 0) return "no_stops";
+  const assignedPartIds = new Set(assignments.map((a) => a.jobPartId));
+  const completedCount  = assignments.filter((a) => a.status === "completed").length;
+  const assignedCount   = assignedPartIds.size;
+  if (completedCount >= stops.length) return "done";
+  if (completedCount > 0)             return "partially_done";
+  if (assignedCount  >= stops.length) return "planned";
+  if (assignedCount  > 0)             return "partially_planned";
+  return "not_planned";
+}
 
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -288,7 +309,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const page        = hasNextPage ? jobs.slice(0, limit) : jobs;
     const nextCursor  = hasNextPage ? page[page.length - 1].id : null;
 
-    return reply.send({ data: page, pagination: { limit, nextCursor, hasNextPage } });
+    const jobsWithStatus = page.map((job) => ({
+      ...job,
+      planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []),
+    }));
+
+    return reply.send({ data: jobsWithStatus, pagination: { limit, nextCursor, hasNextPage } });
   });
 
   // ── GET /jobs/my — driver's own jobs ──────────────────────────────────────
@@ -323,14 +349,20 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         stops:       { orderBy: { sequenceNumber: "asc" } },
         loadDetails: true,
         events:      { orderBy: { createdAt: "asc" } },
+        runAssignments: {
+          where:  { removedAt: null },
+          select: { id: true, jobPartId: true, status: true },
+        },
       },
       orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
     });
 
     const todayStr     = today.toISOString().split("T")[0];
     const datedJobs    = jobs.filter(j => j.plannedDate !== null);
-    const todayJobs    = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] === todayStr);
-    const upcomingJobs = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] !== todayStr);
+    const todayJobs    = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] === todayStr)
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []) }));
+    const upcomingJobs = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] !== todayStr)
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []) }));
 
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });
@@ -355,7 +387,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       if (!assignment) return reply.status(403).send({ error: "Not your job" });
     }
 
-    return reply.send(job);
+    return reply.send({
+      ...job,
+      planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []),
+    });
   });
 
   // ── POST /jobs — create structured job ────────────────────────────────────

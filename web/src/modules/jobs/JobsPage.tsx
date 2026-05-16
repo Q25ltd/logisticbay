@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import { driversApi } from "../../api/drivers";
-import type { PlannedJob, Driver, JobTemplate } from "../../types";
+import type { PlannedJob, JobTemplate } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
@@ -31,6 +30,35 @@ const RANGE_PRESETS = [
   { label: "← 30d", back: 30, fwd: 0  },
   { label: "30d →", back: 0,  fwd: 30 },
 ];
+
+const PLANNING_LABELS: Record<string, string> = {
+  no_stops:          "No stops",
+  not_planned:       "Not planned",
+  partially_planned: "Partly planned",
+  planned:           "Planned",
+  partially_done:    "In progress",
+  done:              "Done",
+};
+
+const PLANNING_COLORS: Record<string, string> = {
+  no_stops:          "bg-slate-100 text-slate-500",
+  not_planned:       "bg-red-100 text-red-700",
+  partially_planned: "bg-amber-100 text-amber-700",
+  planned:           "bg-blue-100 text-blue-700",
+  partially_done:    "bg-purple-100 text-purple-700",
+  done:              "bg-green-100 text-green-700",
+};
+
+function PlanningBadge({ status }: { status?: string }) {
+  if (!status) return null;
+  const label = PLANNING_LABELS[status] ?? status;
+  const cls   = PLANNING_COLORS[status] ?? "bg-slate-100 text-slate-500";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}>
+      {label}
+    </span>
+  );
+}
 
 function hasStatus(statuses: readonly string[], status: string) {
   return statuses.includes(status);
@@ -69,103 +97,11 @@ function jobQuantity(job: PlannedJob) {
   return quantity ? `${quantity} ${unit || ""}`.trim() : "";
 }
 
-function AssignModal({ job, drivers, onClose, onSaved }: {
-  job: PlannedJob;
-  drivers: Driver[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [driverId,      setDriverId]      = useState<string>(job.assignedDriverId ? String(job.assignedDriverId) : "");
-  const [trailer,       setTrailer]       = useState(job.assignedTrailer ?? "");
-  const [truck,         setTruck]         = useState(job.assignedTruck   ?? "");
-  const [loadingNote,   setLoadingNote]   = useState("");
-  const [saving,        setSaving]        = useState(false);
-  const [error,         setError]         = useState("");
-
-  const selectedDriver = drivers.find(d => String(d.id) === driverId);
-
-  async function save() {
-    if (!driverId) { setError("Select a driver"); return; }
-    setSaving(true); setError("");
-    try {
-      await jobsApi.allocate(job.id, {
-        assignedDriverId: parseInt(driverId, 10),
-        assignedTrailer:  trailer.trim() || selectedDriver?.defaultTrailerReg || "",
-        assignedTruck:    truck.trim()   || selectedDriver?.defaultTruckReg   || "",
-        overrideReason:   loadingNote.trim() || undefined,
-      });
-      onSaved();
-    } catch (err: any) { setError(err.message); }
-    finally { setSaving(false); }
-  }
-
-  async function unassign() {
-    if (!window.confirm("Remove driver from this job?")) return;
-    setSaving(true); setError("");
-    try {
-      await jobsApi.allocate(job.id, { assignedDriverId: null });
-      onSaved();
-    } catch (err: any) { setError(err.message); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-        <h3 className="font-bold text-primary mb-1">
-          {job.assignedDriverId ? "Reassign Driver" : "Assign Driver"}
-        </h3>
-        <p className="text-xs text-muted mb-4">
-          {job.jobReference || `Job #${job.id}`} · {job.plannedDate || "No date set"}
-        </p>
-
-        {error && <div className="text-xs text-red-600 bg-red-50 rounded-lg p-2 mb-3">{error}</div>}
-
-        {/* 1 — Driver */}
-        <label className="block text-sm font-semibold mb-1">Driver *</label>
-        <select className="input w-full mb-4" value={driverId} onChange={e => {
-          const d = drivers.find(dr => String(dr.id) === e.target.value);
-          setDriverId(e.target.value);
-          if (d) { setTrailer(d.defaultTrailerReg ?? ""); setTruck(d.defaultTruckReg ?? ""); }
-        }}>
-          <option value="">Select driver...</option>
-          {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
-        </select>
-
-        {/* 2 — Trailer */}
-        <label className="block text-sm font-semibold mb-1">Trailer</label>
-        <input className="input w-full mb-3" value={trailer} onChange={e => setTrailer(e.target.value)}
-          placeholder={selectedDriver?.defaultTrailerReg || "Registration (optional)"} />
-
-        {/* 3 — Truck */}
-        <label className="block text-sm font-semibold mb-1">Truck</label>
-        <input className="input w-full mb-4" value={truck} onChange={e => setTruck(e.target.value)}
-          placeholder={selectedDriver?.defaultTruckReg || "Registration"} />
-
-        {/* 4 — Loading / unloading note */}
-        <label className="block text-sm font-semibold mb-1">Loading / unloading note</label>
-        <textarea className="input w-full min-h-16 mb-4" value={loadingNote} onChange={e => setLoadingNote(e.target.value)}
-          placeholder="Any special instructions for this assignment..." />
-
-        <div className="flex gap-2">
-          <Button className="flex-1" onClick={save} loading={saving}>Assign</Button>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          {job.assignedDriverId && (
-            <Button variant="outline" onClick={unassign} loading={saving}
-              className="text-red-600 border-red-300 hover:bg-red-50">Unassign</Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function JobRow({ job, onStatusChange, onNote, onEdit, onAssign, onDelete, onView }: {
+function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
   job: PlannedJob;
   onStatusChange: (id: number, status: string) => void;
   onNote: (id: number) => void;
   onEdit: (id: number) => void;
-  onAssign: (job: PlannedJob) => void;
   onDelete: (job: PlannedJob) => void;
   onView: (id: number) => void;
 }) {
@@ -181,13 +117,15 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onAssign, onDelete, onVie
         <div className="text-sm font-medium text-primary truncate max-w-48 hover:underline">{firstStopText(job, "pickup")}</div>
         <div className="text-xs text-muted">→ {firstStopText(job, "dropoff")}</div>
       </td>
-      <td className="px-4 py-3 text-sm text-muted">{job.assignedDriver?.displayName ?? "—"}</td>
       <td className="px-4 py-3 text-sm font-mono">
-        {job.jobReference
-          ? <span className="text-primary font-semibold">{job.jobReference}</span>
-          : <span className="text-muted italic text-xs">Assigned when ready</span>}
+        <div className="flex items-center gap-2 flex-wrap">
+          {job.jobReference
+            ? <span className="text-primary font-semibold">{job.jobReference}</span>
+            : <span className="text-muted italic text-xs">Assigned when ready</span>}
+          <PlanningBadge status={job.planningStatus} />
+        </div>
       </td>
-      <td className="px-4 py-3 text-sm text-muted">{job.referenceNumber || "—"}</td>
+      <td className="px-4 py-3 text-sm text-muted">{job.customerRef || "—"}</td>
       <td className="px-4 py-3 text-sm text-muted">
         <div>{jobMaterial(job)}</div>
         {jobQuantity(job) && <div className="text-xs text-muted">⚖️ {jobQuantity(job)}</div>}
@@ -205,10 +143,6 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onAssign, onDelete, onVie
               {statusActionLabel(nextStatus)}
             </button>
           )}
-          <button onClick={() => onAssign(job)}
-            className={`text-xs font-semibold whitespace-nowrap ${job.assignedDriverId ? "text-muted hover:text-primary" : "text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded hover:bg-green-100"}`}>
-            {job.assignedDriverId ? "Reassign" : "Assign"}
-          </button>
           <button onClick={() => onNote(job.id)} className="text-xs text-muted hover:text-primary">+ Note</button>
           <button onClick={() => onEdit(job.id)} className="text-xs text-muted hover:text-primary">Edit</button>
           <button onClick={() => onDelete(job)} className="text-xs text-red-500 hover:underline font-semibold">Delete</button>
@@ -248,17 +182,14 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
 
 export default function JobsPage() {
   const navigate = useNavigate();
-  const [jobs,          setJobs]          = useState<PlannedJob[]>([]);
-  const [drivers,       setDrivers]       = useState<Driver[]>([]);
-  const [templates,     setTemplates]     = useState<JobTemplate[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [error,         setError]         = useState("");
-  const [dateRange,     setDateRange]     = useState({ from: today(), to: today() });
-  const [statusFilter,  setStatusFilter]  = useState("all");
-  const [driverFilter,  setDriverFilter]  = useState("all");
-  const [noteJobId,     setNoteJobId]     = useState<number|null>(null);
-  const [assignJob,     setAssignJob]     = useState<PlannedJob|null>(null);
-  const [success,       setSuccess]       = useState("");
+  const [jobs,         setJobs]         = useState<PlannedJob[]>([]);
+  const [templates,    setTemplates]    = useState<JobTemplate[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState("");
+  const [dateRange,    setDateRange]    = useState({ from: today(), to: today() });
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [noteJobId,    setNoteJobId]    = useState<number|null>(null);
+  const [success,      setSuccess]      = useState("");
 
   function applyRange(back: number, fwd: number) {
     setDateRange({ from: addDays(today(), -back), to: addDays(today(), fwd) });
@@ -267,12 +198,11 @@ export default function JobsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [j, d, t] = await Promise.all([
+      const [j, t] = await Promise.all([
         jobsApi.listRange(dateRange.from, dateRange.to),
-        driversApi.list("active"),
         jobsApi.templates(),
       ]);
-      setJobs(j.data); setDrivers(d.data); setTemplates(t.data);
+      setJobs(j.data); setTemplates(t.data);
     } catch (err: any) { setError(err.message); }
     setLoading(false);
   }, [dateRange]);
@@ -283,26 +213,24 @@ export default function JobsPage() {
   async function handleStatusChange(id: number, status: string) {
     try {
       await jobsApi.updateStatus(id, status);
-      setSuccess(`Job updated ✓`);
+      setSuccess("Job updated");
       setTimeout(() => setSuccess(""), 3000);
       load();
     } catch (err: any) { alert(err.message); }
   }
 
   async function handleDelete(job: PlannedJob) {
-    const label = job.referenceNumber || `job #${job.id}`;
+    const label = job.jobReference || `job #${job.id}`;
     if (!window.confirm(`Cancel ${label}? It will be hidden from active planning but kept for audit/history.`)) return;
     try {
       await jobsApi.remove(job.id);
-      setSuccess("Job cancelled ✓");
+      setSuccess("Job cancelled");
       setTimeout(() => setSuccess(""), 3000);
       load();
     } catch (err: any) { alert(err.message); }
   }
 
-  const filtered = jobs
-    .filter(j => statusFilter === "all" || j.status === statusFilter)
-    .filter(j => driverFilter === "all" || String(j.assignedDriverId) === driverFilter);
+  const filtered = jobs.filter(j => statusFilter === "all" || j.status === statusFilter);
 
   const stats = {
     total:     jobs.length,
@@ -312,6 +240,9 @@ export default function JobsPage() {
   };
 
   const rangeLabel = dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} → ${dateRange.to}`;
+
+  // suppress unused warning for templates — kept for future use
+  void templates;
 
   return (
     <div className="p-4 sm:p-6">
@@ -357,7 +288,7 @@ export default function JobsPage() {
       {error   && <Alert type="error"   message={error}   />}
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <select className="input flex-1 sm:flex-none sm:w-auto text-sm" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+        <select className="input flex-1 sm:flex-none sm:w-auto text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
           <option value="accepted">Accepted</option>
@@ -367,10 +298,6 @@ export default function JobsPage() {
           <option value="arrived_dropoff">At Dropoff</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
-        </select>
-        <select className="input flex-1 sm:flex-none sm:w-auto text-sm" value={driverFilter} onChange={e=>setDriverFilter(e.target.value)}>
-          <option value="all">All drivers</option>
-          {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
         </select>
       </div>
 
@@ -391,7 +318,7 @@ export default function JobsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    {["Date","Route","Driver","Job Ref","Cust Ref / PO","Material","Status","Last Update","Actions"].map(h => (
+                    {["Date","Route","Job Ref / Planning","Customer Ref","Material","Status","Last Update","Actions"].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -405,7 +332,6 @@ export default function JobsPage() {
                       onNote={id => setNoteJobId(id)}
                       onView={id => navigate(`/app/jobs/${id}`)}
                       onEdit={id => navigate(`/app/jobs/${id}/edit`)}
-                      onAssign={setAssignJob}
                       onDelete={handleDelete}
                     />
                   ))}
@@ -430,12 +356,14 @@ export default function JobsPage() {
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
                     {job.plannedDate && <span>📅 {fmt(job.plannedDate)}</span>}
-                    {job.assignedDriver && <span>👤 {job.assignedDriver.displayName}</span>}
                     {jobMaterial(job) !== "—" && <span>📦 {jobMaterial(job)}</span>}
-                    {job.jobReference
-                      ? <span className="font-mono font-semibold text-primary">{job.jobReference}</span>
-                      : <span className="italic text-muted">Assigned when ready</span>}
-                    {job.referenceNumber && <span className="text-muted">#{job.referenceNumber}</span>}
+                    <div className="flex items-center gap-2">
+                      {job.jobReference
+                        ? <span className="font-mono font-semibold text-primary">{job.jobReference}</span>
+                        : <span className="italic text-muted">Assigned when ready</span>}
+                      <PlanningBadge status={job.planningStatus} />
+                    </div>
+                    {job.customerRef && <span className="text-muted">#{job.customerRef}</span>}
                   </div>
                   <div className="flex items-center gap-3 pt-1 border-t border-slate-100 flex-wrap">
                     {canProgress && nextStatus && (
@@ -444,10 +372,6 @@ export default function JobsPage() {
                         {statusActionLabel(nextStatus)}
                       </button>
                     )}
-                    <button onClick={() => setAssignJob(job)}
-                      className={`text-xs font-semibold ${job.assignedDriverId ? "text-muted" : "text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded"}`}>
-                      {job.assignedDriverId ? "Reassign" : "Assign"}
-                    </button>
                     <button onClick={() => setNoteJobId(job.id)}
                       className="text-xs text-muted hover:text-primary ml-auto">+ Note</button>
                     <button onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
@@ -464,19 +388,6 @@ export default function JobsPage() {
 
       {noteJobId && (
         <NoteModal jobId={noteJobId} onClose={() => { setNoteJobId(null); load(); }} />
-      )}
-      {assignJob && (
-        <AssignModal
-          job={assignJob}
-          drivers={drivers}
-          onClose={() => setAssignJob(null)}
-          onSaved={() => {
-            setAssignJob(null);
-            setSuccess("Driver assigned ✓");
-            setTimeout(() => setSuccess(""), 3000);
-            load();
-          }}
-        />
       )}
     </div>
   );

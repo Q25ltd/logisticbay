@@ -1,119 +1,107 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { dashboardApi } from "../../api/dashboard";
-import { driversApi }   from "../../api/drivers";
-import type { Driver, FleetTrailer, FleetUnit, PlannedJob } from "../../types";
+import { runsApi } from "../../api/runs";
+import { driversApi } from "../../api/drivers";
+import type { Run, Driver } from "../../types";
 import { Alert } from "../../components/Alert";
-import type { JobContext } from "./dashboardTypes";
-import {
-  dayKey,
-  earliestTimeRank,
-  hasMissingPlanningInfo,
-  isClosed,
-  makeJobContext,
-  riskRank,
-} from "./dashboardUtils";
-import JobCard from "./JobCard";
-import DriverSnapshot from "./DriverSnapshot";
-import FleetSnapshot from "./FleetSnapshot";
-import QuickFixDrawer from "./QuickFixDrawer";
-import JobDetailDrawer from "./JobDetailDrawer";
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+function addDays(dateStr: string, n: number) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+const RUN_BADGE: Record<string, string> = {
+  draft:       "pending",
+  assigned:    "accepted",
+  in_progress: "in_progress",
+  completed:   "completed",
+  cancelled:   "cancelled",
+};
+
+const RUN_LABEL: Record<string, string> = {
+  draft:       "Draft",
+  assigned:    "Assigned",
+  in_progress: "In Progress",
+  completed:   "Completed",
+  cancelled:   "Cancelled",
+};
+
+const STATUS_SORT_ORDER = ["in_progress", "assigned", "draft", "completed", "cancelled"];
+
+function statusSortKey(status: string): number {
+  const idx = STATUS_SORT_ORDER.indexOf(status);
+  return idx >= 0 ? idx : 99;
+}
+
+function RunStatusBadge({ status }: { status: string }) {
+  const colorMap: Record<string, string> = {
+    draft:       "bg-slate-100 text-slate-600",
+    assigned:    "bg-blue-100 text-blue-700",
+    in_progress: "bg-amber-100 text-amber-700",
+    completed:   "bg-green-100 text-green-700",
+    cancelled:   "bg-red-100 text-red-600",
+  };
+  const cls = colorMap[status] ?? "bg-slate-100 text-slate-600";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}>
+      {RUN_LABEL[status] ?? status}
+    </span>
+  );
+}
 
 function SummaryCard({
   title,
   lead,
   detail,
   tone = "slate",
-  onClick,
 }: {
   title: string;
   lead: string;
   detail: string;
   tone?: "slate" | "blue" | "amber" | "green";
-  onClick?: () => void;
 }) {
   const toneClass = {
-    slate: "border-slate-200 hover:border-slate-300",
-    blue: "border-blue-200 hover:border-blue-300",
-    amber: "border-amber-200 hover:border-amber-300",
-    green: "border-emerald-200 hover:border-emerald-300",
+    slate: "border-slate-200",
+    blue:  "border-blue-200",
+    amber: "border-amber-200",
+    green: "border-emerald-200",
   }[tone];
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`card p-3 text-left min-h-[86px] transition-colors ${toneClass}`}
-    >
+    <div className={`card p-3 min-h-[86px] ${toneClass}`}>
       <div className="text-xs font-bold uppercase tracking-wide text-muted">{title}</div>
       <div className="mt-1 text-lg font-black text-primary leading-tight">{lead}</div>
       <div className="mt-1 text-xs text-muted leading-snug">{detail}</div>
-    </button>
+    </div>
   );
 }
-
-function FilterPill({ active, children, onClick }: { active: boolean; children: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-        active ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
-  const [dateRange, setDateRange] = useState({ from: today(), to: today() });
-
-  function addDays(dateStr: string, n: number) {
-    const d = new Date(dateStr + "T12:00:00Z");
-    d.setUTCDate(d.getUTCDate() + n);
-    return d.toISOString().slice(0, 10);
-  }
-  function applyRange(back: number, forward: number) {
-    setDateRange({ from: addDays(today(), -back), to: addDays(today(), forward) });
-  }
-  const [jobs, setJobs] = useState<PlannedJob[]>([]);
+  const navigate  = useNavigate();
+  const [date,    setDate]    = useState(today());
+  const [runs,    setRuns]    = useState<Run[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [units, setUnits] = useState<FleetUnit[]>([]);
-  const [trailers, setTrailers] = useState<FleetTrailer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [refreshed, setRefreshed] = useState(new Date());
-
-  const [statusFilter, setStatusFilter] = useState("default");
-  const [customerFilter, setCustomerFilter] = useState("all");
-  const [vehicleFilter, setVehicleFilter] = useState("all");
-  const [warningOnly, setWarningOnly] = useState(false);
-  const [loadedOnly, setLoadedOnly] = useState(false);
-  const [carriedOnly, setCarriedOnly] = useState(false);
-
-  const [details, setDetails] = useState<JobContext | null>(null);
-  const [quickFix, setQuickFix] = useState<JobContext | null>(null);
+  const [error,   setError]   = useState("");
 
   const load = useCallback(async () => {
     setError("");
     try {
-      const res = await dashboardApi.load(dateRange.from, dateRange.to);
-      setJobs(res.jobs);
-      setDrivers(res.drivers);
-      setUnits(res.units);
-      setTrailers(res.trailers);
-      setRefreshed(new Date());
+      const [runsRes, driversRes] = await Promise.all([
+        runsApi.list({ date, limit: 100 }),
+        driversApi.list("active"),
+      ]);
+      setRuns(runsRes.data);
+      setDrivers(driversRes.data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load dashboard");
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [date]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -121,304 +109,188 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [load]);
 
-  const contexts = useMemo(() => {
-    return jobs
-      .map((job) => makeJobContext(job, drivers, units, trailers, today()))
-      .filter((context) => {
-        // Closed jobs only show if planned within the selected range
-        if (isClosed(context.job)) {
-          const planned = dayKey(context.job.plannedDate);
-          return !!planned && planned >= dateRange.from && planned <= dateRange.to;
-        }
-        // All open jobs always show
-        return true;
-      });
-  }, [jobs, drivers, units, trailers, dateRange]);
+  const sortedRuns = [...runs].sort((a, b) => statusSortKey(a.status) - statusSortKey(b.status));
 
-  const filteredContexts = useMemo(() => {
-    return contexts
-      .filter((context) => {
-        if (statusFilter === "default" && ["draft", "completed", "cancelled"].includes(context.status)) return false;
-        if (statusFilter !== "default" && context.status !== statusFilter) return false;
-        if (customerFilter !== "all" && context.customer !== customerFilter) return false;
-        if (vehicleFilter !== "all" && context.vehicle !== vehicleFilter) return false;
-        if (warningOnly && !context.warnings.some((w) => w.level === "critical" || w.level === "warning")) return false;
-        if (loadedOnly && !context.loadedTrailer) return false;
-        if (carriedOnly && !context.isCarriedOver) return false;
-        return true;
-      })
-      .sort((a, b) => (
-        riskRank(a) - riskRank(b)
-        || earliestTimeRank(a.job) - earliestTimeRank(b.job)
-        || a.route.localeCompare(b.route)
-      ));
-  }, [contexts, statusFilter, customerFilter, vehicleFilter, warningOnly, loadedOnly, carriedOnly]);
+  const totalRuns     = runs.length;
+  const inProgressCt  = runs.filter(r => r.status === "in_progress").length;
+  const assignedCt    = runs.filter(r => r.status === "assigned").length;
+  const draftCt       = runs.filter(r => r.status === "draft").length;
 
-  const customerOptions = useMemo(() => Array.from(new Set(contexts.map((context) => context.customer))).sort(), [contexts]);
-  const vehicleOptions = useMemo(() => Array.from(new Set(contexts.map((context) => context.vehicle))).sort(), [contexts]);
-
-  const openContexts = contexts.filter((context) => !isClosed(context.job));
-  const completedContexts = contexts.filter((context) => context.status === "completed");
-  const needsPlanning = contexts.filter((context) => ["needs_planning", "ready_to_plan", "draft"].includes(context.status)).length;
-  const planned = contexts.filter((context) => context.status === "planned").length;
-  const active = contexts.filter((context) => context.status === "active").length;
-  const criticalIssues = contexts.flatMap((context) => context.warnings).filter((warning) => warning.level === "critical").length;
-  const allWarnings = contexts.flatMap((context) => context.warnings);
-  const missingInfo = allWarnings.filter(hasMissingPlanningInfo).length;
-  const mismatches = allWarnings.filter((warning) => warning.type.includes("mismatch")).length;
-  const unavailableDrivers = drivers.filter((driver) => driver.status !== "active" || driver.user?.status === "inactive").length;
-  const loadedTrailers = trailers.filter((trailer) => trailer.status === "loaded").length;
-  const carriedOver = contexts.filter((context) => context.isCarriedOver).length;
-  const unitsFree = units.filter((unit) => unit.status === "available").length;
-  const trailersFree = trailers.filter((trailer) => trailer.status === "available").length;
-  const fleetVor = units.filter((unit) => unit.status === "vor").length + trailers.filter((trailer) => trailer.status === "vor").length;
-
-  function resetToggles() {
-    setWarningOnly(false);
-    setLoadedOnly(false);
-    setCarriedOnly(false);
+  function borderColor(status: string) {
+    if (status === "in_progress") return "border-l-4 border-l-green-400";
+    if (status === "assigned")    return "border-l-4 border-l-blue-400";
+    if (status === "draft")       return "border-l-4 border-l-slate-300";
+    return "";
   }
 
-  async function markDriverUnavailable(driver: Driver) {
-    if (!window.confirm(`Mark ${driver.displayName} unavailable?`)) return;
+  function assignmentCount(run: Run) {
+    return run.assignments?.length ?? 0;
+  }
 
-    setError("");
-    try {
-      await driversApi.setStatus(driver.id, "inactive");
-      setSuccess(`${driver.displayName} is unavailable.`);
-      setTimeout(() => setSuccess(""), 4000);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not mark driver unavailable");
+  function driverName(run: Run) {
+    if (run.driver) return run.driver.displayName;
+    if (run.assignedDriverId) {
+      const d = drivers.find(dr => dr.id === run.assignedDriverId);
+      return d?.displayName ?? `Driver #${run.assignedDriverId}`;
     }
+    return "Unassigned";
   }
+
+  // Build driver coverage: for each active driver, find their run today
+  const driverCoverage = drivers.map(driver => {
+    const run = runs.find(r => r.assignedDriverId === driver.id && r.status !== "cancelled");
+    return { driver, run };
+  });
 
   if (loading) {
-    return <div className="flex h-64 items-center justify-center text-muted">Loading planner dashboard...</div>;
+    return <div className="flex h-64 items-center justify-center text-muted">Loading dashboard...</div>;
   }
 
   return (
     <div className="p-4 sm:p-6">
+      {/* Header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-black text-primary">Dashboard</h1>
-          <p className="text-xs text-muted">
-            {dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} → ${dateRange.to}`} | Refreshed {refreshed.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-          </p>
+          <p className="text-xs text-muted">Runs for {date}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Quick range pills */}
-          {([
-            { label: "Today",   back: 0,  fwd: 0  },
-            { label: "← 7d",   back: 7,  fwd: 0  },
-            { label: "7d →",   back: 0,  fwd: 7  },
-            { label: "← 14d",  back: 14, fwd: 0  },
-            { label: "14d →",  back: 0,  fwd: 14 },
-            { label: "← 30d",  back: 30, fwd: 0  },
-            { label: "30d →",  back: 0,  fwd: 30 },
-          ] as { label: string; back: number; fwd: number }[]).map(({ label, back, fwd }) => {
-            const isActive = dateRange.from === addDays(today(), -back) && dateRange.to === addDays(today(), fwd);
-            return (
-              <button key={label} type="button" onClick={() => applyRange(back, fwd)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                  isActive ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
-                }`}>
-                {label}
-              </button>
-            );
-          })}
-          {/* Manual from/to inputs */}
-          <div className="flex items-center gap-1 text-xs text-muted">
-            <input type="date" value={dateRange.from}
-              onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-              className="input py-1 text-xs w-36" />
-            <span>→</span>
-            <input type="date" value={dateRange.to}
-              onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-              className="input py-1 text-xs w-36" />
-          </div>
+          <button
+            type="button"
+            onClick={() => setDate(d => addDays(d, -1))}
+            className="btn btn-outline text-sm"
+          >
+            ← Prev
+          </button>
+          <button
+            type="button"
+            onClick={() => setDate(today())}
+            className={`btn text-sm ${date === today() ? "btn-primary" : "btn-outline"}`}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setDate(d => addDays(d, 1))}
+            className="btn btn-outline text-sm"
+          >
+            Next →
+          </button>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="input py-1 text-xs w-36"
+          />
           <button type="button" onClick={load} className="btn btn-outline text-sm">Refresh</button>
-          <button type="button" onClick={() => navigate("/app/jobs/create")} className="btn btn-primary text-sm">New job</button>
+          <button type="button" onClick={() => navigate("/app/jobs/create")} className="btn btn-primary text-sm">New Job</button>
         </div>
       </div>
 
       {error && <Alert type="error" message={error} />}
-      {success && <Alert type="success" message={success} />}
 
-      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          title="Jobs"
-          lead={`${contexts.length} jobs`}
-          detail={`${needsPlanning} need planning | ${planned} planned | ${active} active | ${completedContexts.length} done`}
-          onClick={() => { setStatusFilter("default"); resetToggles(); }}
-        />
-        <SummaryCard
-          title="Attention"
-          lead={`${criticalIssues + allWarnings.filter((warning) => warning.level === "warning").length} issues`}
-          detail={`${missingInfo} missing info | ${mismatches} mismatches | ${loadedTrailers} loaded | ${carriedOver} carried`}
-          tone={criticalIssues ? "amber" : "slate"}
-          onClick={() => { setWarningOnly(true); setStatusFilter("default"); }}
-        />
-        <SummaryCard
-          title="Drivers"
-          lead={`${drivers.length} drivers`}
-          detail={`${unavailableDrivers} unavailable today`}
-          tone="blue"
-          onClick={() => navigate("/app/drivers")}
-        />
-        <SummaryCard
-          title="Fleet"
-          lead={`${unitsFree} units free`}
-          detail={`${trailersFree} trailers free | ${loadedTrailers} loaded | ${fleetVor} VOR`}
-          tone="green"
-          onClick={() => navigate("/app/fleet")}
-        />
+      {/* Summary cards */}
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <SummaryCard title="Runs Today"  lead={String(totalRuns)}   detail="total runs planned" tone="slate" />
+        <SummaryCard title="In Progress" lead={String(inProgressCt)} detail="currently running"  tone="amber" />
+        <SummaryCard title="Assigned"    lead={String(assignedCt)}  detail="driver assigned, not started" tone="blue" />
+        <SummaryCard title="Draft"       lead={String(draftCt)}     detail="not yet assigned"    tone="slate" />
       </div>
 
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <select className="input w-full sm:w-auto" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="default">Default action view</option>
-            <option value="needs_planning">Needs planning</option>
-            <option value="ready_to_plan">Ready to plan</option>
-            <option value="draft">Draft</option>
-            <option value="planned">Planned</option>
-            <option value="active">In progress</option>
-            <option value="loaded_trailer">Loaded trailer parked</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <select className="input w-full sm:w-auto" value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)}>
-            <option value="all">All customers</option>
-            {customerOptions.map((customer) => <option key={customer} value={customer}>{customer}</option>)}
-          </select>
-          <select className="input w-full sm:w-auto" value={vehicleFilter} onChange={(event) => setVehicleFilter(event.target.value)}>
-            <option value="all">All vehicle types</option>
-            {vehicleOptions.map((vehicle) => <option key={vehicle} value={vehicle}>{vehicle}</option>)}
-          </select>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <FilterPill active={warningOnly} onClick={() => setWarningOnly((value) => !value)}>Has warnings</FilterPill>
-          <FilterPill active={loadedOnly} onClick={() => setLoadedOnly((value) => !value)}>Loaded trailer</FilterPill>
-          <FilterPill active={carriedOnly} onClick={() => setCarriedOnly((value) => !value)}>Carried over</FilterPill>
-          <button
-            type="button"
-            onClick={() => {
-              setStatusFilter("default");
-              setCustomerFilter("all");
-              setVehicleFilter("all");
-              resetToggles();
-            }}
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-primary"
-          >
-            Clear filters
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr),380px]">
+      {/* Main layout */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr),300px]">
+        {/* Runs list */}
         <main>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-wide text-primary">Job Quick List</h2>
-              <p className="text-xs text-muted">
-                {filteredContexts.length} shown — all open jobs (today, past, unplanned, in progress). Completed &amp; cancelled hidden by default.
-              </p>
+          <h2 className="mb-3 text-sm font-black uppercase tracking-wide text-primary">
+            Runs — {date}
+          </h2>
+
+          {sortedRuns.length === 0 ? (
+            <div className="card p-8 text-center">
+              <div className="text-sm font-bold text-primary mb-1">No runs planned for this date</div>
+              <div className="text-xs text-muted mb-4">Go to Runs to create one</div>
+              <button
+                type="button"
+                onClick={() => navigate("/app/runs")}
+                className="btn btn-outline text-sm"
+              >
+                Go to Runs
+              </button>
             </div>
-          </div>
-
-          <div className="space-y-3">
-            {filteredContexts.map((context) => (
-              <JobCard
-                key={context.job.id}
-                context={context}
-                onAssign={() => navigate("/app/runs")}
-                onDetails={() => setDetails(context)}
-                onQuickFix={() => setQuickFix(context)}
-              />
-            ))}
-
-            {filteredContexts.length === 0 && (
-              <div className="card p-8 text-center">
-                <div className="text-sm font-bold text-primary">
-                  {contexts.length ? "Jobs are loaded but hidden by filters" : "No dashboard jobs loaded"}
-                </div>
-                <div className="mt-1 text-sm text-muted">
-                  {contexts.length
-                    ? `${contexts.length} job${contexts.length > 1 ? "s are" : " is"} available in this dashboard range. Clear filters or choose a status like Draft/Completed to show hidden work.`
-                    : "Try another planning date range or refresh after the API restarts."}
-                </div>
-                {contexts.length > 0 && (
-                  <div className="mt-4 flex justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter("default");
-                        setCustomerFilter("all");
-                        setVehicleFilter("all");
-                        resetToggles();
-                      }}
-                      className="btn btn-outline text-sm"
-                    >
-                      Clear filters
-                    </button>
-                    {contexts.some((context) => context.status === "draft") && (
-                      <button type="button" onClick={() => setStatusFilter("draft")} className="btn btn-outline text-sm">
-                        Show drafts
-                      </button>
+          ) : (
+            <div className="space-y-2">
+              {sortedRuns.map(run => (
+                <div
+                  key={run.id}
+                  onClick={() => navigate(`/app/runs/${run.id}`)}
+                  className={`card p-4 cursor-pointer hover:shadow-md transition-shadow ${borderColor(run.status)} ${run.status === "completed" ? "opacity-60" : ""}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-bold text-sm text-primary">
+                      {run.runReference}
+                    </span>
+                    <RunStatusBadge status={run.status} />
+                    {run.publishedToDriver && (
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                        Published
+                      </span>
                     )}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {statusFilter === "default" && completedContexts.length > 0 && (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-muted">
-              {completedContexts.length} completed job{completedContexts.length > 1 ? "s are" : " is"} collapsed in this action view.
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
+                    {run.plannedDate && (
+                      <span>
+                        📅 {new Date(run.plannedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                      </span>
+                    )}
+                    <span>
+                      👤 {driverName(run)}
+                    </span>
+                    {run.estimatedStartTime && (
+                      <span>🕐 {run.estimatedStartTime}</span>
+                    )}
+                    <span>🗂 {assignmentCount(run)} stop{assignmentCount(run) !== 1 ? "s" : ""}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </main>
 
-        <aside className="space-y-5">
-          <DriverSnapshot
-            drivers={drivers}
-            contexts={contexts}
-            units={units}
-            trailers={trailers}
-            onAssignDriver={() => navigate("/app/runs")}
-            onPickJobForDriver={() => navigate("/app/runs")}
-            onViewMore={() => navigate("/app/drivers")}
-            onMarkUnavailable={markDriverUnavailable}
-            onUnitTrailerSaved={load}
-          />
-          <FleetSnapshot
-            units={units}
-            trailers={trailers}
-            drivers={drivers}
-            openContexts={openContexts}
-            onViewMore={() => navigate("/app/fleet")}
-          />
+        {/* Driver coverage sidebar */}
+        <aside>
+          <div className="card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-black uppercase tracking-wide text-primary">Driver Coverage</h2>
+              <button
+                type="button"
+                onClick={() => navigate("/app/runs")}
+                className="text-xs text-accent hover:underline font-semibold"
+              >
+                Manage Runs →
+              </button>
+            </div>
+
+            {driverCoverage.length === 0 ? (
+              <p className="text-xs text-muted">No active drivers found.</p>
+            ) : (
+              <div className="space-y-2">
+                {driverCoverage.map(({ driver, run }) => (
+                  <div key={driver.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-slate-100 last:border-0">
+                    <span className="text-sm text-primary font-medium truncate">{driver.displayName}</span>
+                    {run ? (
+                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200 whitespace-nowrap">
+                        {run.runReference}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted">No run today</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </aside>
       </div>
-
-      {quickFix && (
-        <QuickFixDrawer
-          context={quickFix}
-          onClose={() => setQuickFix(null)}
-          onSaved={load}
-        />
-      )}
-
-      {details && (
-        <JobDetailDrawer
-          context={details}
-          onClose={() => setDetails(null)}
-          onAssign={() => { navigate("/app/runs"); setDetails(null); }}
-          onQuickFix={() => { setQuickFix(details); setDetails(null); }}
-          onEditJob={() => { setDetails(null); navigate(`/app/jobs/${details.job.id}/edit`); }}
-        />
-      )}
     </div>
   );
 }
