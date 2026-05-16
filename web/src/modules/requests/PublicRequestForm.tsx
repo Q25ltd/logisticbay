@@ -138,13 +138,11 @@ const ACCESS_REQUIREMENTS: [string, string][] = [
 
 const SPECIAL_REQUIREMENTS: [string, string][] = [
   ["dangerous_goods",           "Dangerous goods (ADR)"],
-  ["temperature_controlled",    "Temperature controlled"],
   ["fragile",                   "Fragile / handle with care"],
   ["high_value",                "High value goods"],
   ["oversized",                 "Oversized load"],
   ["secure_transport_required", "Secure transport"],
   ["escort_required",           "Police escort required"],
-  ["temperature_monitored",     "Temperature monitored"],
 ];
 
 const PRICING_TYPES: [string, string][] = [
@@ -1698,14 +1696,6 @@ export default function PublicRequestForm() {
                     onChange={setPackingGroup} placeholder="II" />
                   <Toggle value={hazardousPaperworkAvailable} onChange={setHazardousPaperworkAvailable}
                     label="Hazardous paperwork available / will be provided" />
-                </div>
-              )}
-
-              {/* Conditional: temperature controlled */}
-              {specialItems.includes("temperature_controlled") && (
-                <div className="border-l-2 border-blue-200 pl-4">
-                  <TextField label="Required temperature range" value={specTempRange}
-                    onChange={setSpecTempRange} placeholder="2°C – 8°C" />
                 </div>
               )}
 
