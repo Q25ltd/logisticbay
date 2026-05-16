@@ -83,6 +83,8 @@ export interface CreateJobPayload {
   isEditMode: boolean;
   saveAsTemplate: boolean;
   templateName: string;
+  agreedRate: string;
+  plannerNotes: string;
 }
 
 // ── Builder function ──────────────────────────────────────────────────────────
@@ -168,6 +170,8 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     isEditMode,
     saveAsTemplate,
     templateName,
+    agreedRate,
+    plannerNotes,
   } = params;
 
   const mappedStops = stops.map((stop, i) => {
@@ -301,5 +305,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     loadDetails,
     saveAsTemplate:         !isEditMode && saveAsTemplate,
     templateName:           !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
+    agreedRate:             agreedRate ? parseFloat(agreedRate) : undefined,
+    plannerNotes:           plannerNotes.trim() || undefined,
   };
 }

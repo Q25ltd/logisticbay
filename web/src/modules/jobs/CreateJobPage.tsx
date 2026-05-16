@@ -427,6 +427,11 @@ export default function CreateJobPage() {
 
   // ── Section 06 — Return Instructions ────────────────────────────────────
   const [sec6Collapsed,      setSec6Collapsed]      = useState(true);
+
+  // ── Section 07 — Planner Details ────────────────────────────────────────
+  const [sec7Collapsed,      setSec7Collapsed]      = useState(true);
+  const [agreedRate,         setAgreedRate]         = useState("");
+  const [plannerNotes,       setPlannerNotes]       = useState("");
   const [failureAction,      setFailureAction]      = useState("call_assistance");
   // call_assistance
   const [assistancePhone,    setAssistancePhone]    = useState("");
@@ -515,6 +520,7 @@ export default function CreateJobPage() {
   const sec4Started = !!(materialType || quantity || weight);
   const sec5Started = !!(reqBodyCategory || reqGvwMin || reqBodyType || reqEquipment.length || reqLicenceClass || trailerTypesAllowed.length);
   const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
+  const sec7Started = !!(assignedDriverId || assignedTruck || assignedTrailer || agreedRate || plannerNotes);
   const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started;
 
   // Auto-collapse removed — sections stay open until the user manually closes them.
@@ -929,6 +935,8 @@ export default function CreateJobPage() {
       isEditMode,
       saveAsTemplate,
       templateName,
+      agreedRate,
+      plannerNotes,
     };
     return [params, saveMode];
   }
@@ -1014,9 +1022,9 @@ export default function CreateJobPage() {
         </div>
       </div>
 
-      {error && <div className="max-w-3xl mx-auto px-4 pt-4"><div className="bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 text-sm font-medium">{error}</div></div>}
+      {error && <div className="px-4 sm:px-6 pt-4"><div className="bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 text-sm font-medium">{error}</div></div>}
 
-      <div className="max-w-3xl mx-auto px-4 pt-6 space-y-4">
+      <div className="px-4 sm:px-6 py-6 space-y-4">
 
         {/* ── Template name input (template-edit mode) ──────────────────────── */}
         {isTemplateMode && (
@@ -1166,43 +1174,15 @@ export default function CreateJobPage() {
             collapsed={sec1Collapsed} onToggle={() => setSec1Collapsed(o => !o)}
             summary={[customerName, plannedDate, serviceType].filter(Boolean).join(" · ")}
             complete={basicsComplete} started={sec1Started} />
-          {!sec1Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
+          {!sec1Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
             <div>
               <FieldLabel required>Customer</FieldLabel>
               <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel required>Planned Date</FieldLabel>
-                <input type="date" className="input" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
-              </div>
-              <div>
-                <FieldLabel>Assign Driver</FieldLabel>
-                <select className="input" value={assignedDriverId ?? ""} onChange={e => {
-                  const id = e.target.value ? parseInt(e.target.value, 10) : null;
-                  setAssignedDriverId(id);
-                  const d = drivers.find(dr => dr.id === id);
-                  if (d) {
-                    if (d.defaultTruckReg)   setAssignedTruck(d.defaultTruckReg);
-                    if (d.defaultTrailerReg) setAssignedTrailer(d.defaultTrailerReg);
-                  }
-                }}>
-                  <option value="">Unassigned</option>
-                  {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
-                </select>
-              </div>
+            <div>
+              <FieldLabel required>Planned Date</FieldLabel>
+              <input type="date" className="input mt-1" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
             </div>
-
-            {/* Driver schedule feasibility warning */}
-            {scheduleLoading && (
-              <div className="text-sm text-muted px-3 py-2 rounded-xl bg-slate-50 border">
-                Checking driver schedule...
-              </div>
-            )}
-            {!scheduleLoading && driverSchedule && driverSchedule.stops.length > 0 && (
-              <DriverScheduleWarning schedule={driverSchedule} />
-            )}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FieldLabel required>Service Type</FieldLabel>
@@ -1271,7 +1251,7 @@ export default function CreateJobPage() {
             collapsed={sec2Collapsed} onToggle={() => setSec2Collapsed(o => !o)}
             summary={[contactName, contactPhone].filter(Boolean).join(" · ")}
             complete={customerComplete} started={sec2Started} />
-          {!sec2Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
+          {!sec2Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
             {customerId && (
               <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                 <span>✓</span>
@@ -1353,7 +1333,7 @@ export default function CreateJobPage() {
             collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
             summary={[materialType, weight ? weight + "t" : ""].filter(Boolean).join(" · ")}
             complete={loadComplete} started={sec4Started} />
-          {!sec4Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
+          {!sec4Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
 
             {/* Goods description */}
             <div>
@@ -1517,7 +1497,7 @@ export default function CreateJobPage() {
             ].filter(Boolean).join(" · ") : undefined}
             complete={vehicleComplete} started={sec5Started} />
 
-          {!sec5Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
+          {!sec5Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
 
             <div>
               <FieldLabel required>Body Category</FieldLabel>
@@ -1599,49 +1579,8 @@ export default function CreateJobPage() {
                     {TRAILER_LENGTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
                 </div>
-                <div className="max-w-xs">
-                  <FieldLabel>Trailer Number Plate</FieldLabel>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g. TR45 XYZ  (leave blank if not yet known)"
-                    value={assignedTrailer}
-                    onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
-                  />
-                </div>
               </div>
             )}
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-xl">
-              <div>
-                <FieldLabel>Truck / Unit Registration</FieldLabel>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="e.g. AB12 CDE"
-                  value={assignedTruck}
-                  onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
-                />
-                <p className="text-xs text-muted mt-1.5">
-                  Optional at creation. Planner assigns from dashboard.
-                </p>
-              </div>
-              {!trailerRequired && (
-                <div>
-                  <FieldLabel>Trailer Number Plate</FieldLabel>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g. TR45 XYZ"
-                    value={assignedTrailer}
-                    onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
-                  />
-                  <p className="text-xs text-muted mt-1.5">
-                    Use when a trailer is already known or loaded.
-                  </p>
-                </div>
-              )}
-            </div>
 
             <div>
               <FieldLabel>Onboard Equipment</FieldLabel>
@@ -1722,7 +1661,7 @@ export default function CreateJobPage() {
               failureAction === "finish_then_return"   ? `Finish deliveries, then return${returnDestination ? ` to ${returnDestination}` : ""}` : ""
             ) : undefined} />
 
-          {!sec6Collapsed && <div className="px-6 pt-5 pb-5 space-y-5">
+          {!sec6Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
 
             {/* Main dropdown */}
             <div>
@@ -1907,6 +1846,92 @@ export default function CreateJobPage() {
 
           </div>}
           {!sec6Collapsed && <SectionFooter complete={sec6Complete} label="Return instructions" onCollapse={() => setSec6Collapsed(true)} />}
+        </div>
+
+        {/* ── Section 07 — Planner Details ────────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={7} icon="🗂️" title="Planner details" subtitle="Driver, vehicle and internal planning notes" optional
+            collapsed={sec7Collapsed} onToggle={() => setSec7Collapsed(o => !o)}
+            complete={sec7Started} started={sec7Started} />
+          {!sec7Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
+
+            {/* Driver assignment */}
+            <div>
+              <FieldLabel>Assign Driver</FieldLabel>
+              <select className="input mt-1" value={assignedDriverId ?? ""} onChange={e => {
+                const id = e.target.value ? parseInt(e.target.value, 10) : null;
+                setAssignedDriverId(id);
+                const d = drivers.find(dr => dr.id === id);
+                if (d) {
+                  if (d.defaultTruckReg)   setAssignedTruck(d.defaultTruckReg);
+                  if (d.defaultTrailerReg) setAssignedTrailer(d.defaultTrailerReg);
+                }
+              }}>
+                <option value="">Unassigned</option>
+                {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+              </select>
+            </div>
+
+            {/* Driver schedule feasibility warning */}
+            {scheduleLoading && (
+              <div className="text-sm text-muted px-3 py-2 rounded-xl bg-slate-50 border">
+                Checking driver schedule...
+              </div>
+            )}
+            {!scheduleLoading && driverSchedule && driverSchedule.stops.length > 0 && (
+              <DriverScheduleWarning schedule={driverSchedule} />
+            )}
+
+            {/* Truck / Trailer */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FieldLabel>Assigned Truck</FieldLabel>
+                <input
+                  type="text"
+                  className="input mt-1"
+                  placeholder="e.g. AB12 CDE"
+                  value={assignedTruck}
+                  onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
+                />
+              </div>
+              <div>
+                <FieldLabel>Assigned Trailer</FieldLabel>
+                <input
+                  type="text"
+                  className="input mt-1"
+                  placeholder="e.g. TR45 XYZ"
+                  value={assignedTrailer}
+                  onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
+                />
+              </div>
+            </div>
+
+            {/* Agreed rate */}
+            <div className="max-w-xs">
+              <FieldLabel>Agreed rate (£)</FieldLabel>
+              <input
+                type="number"
+                step="0.01"
+                className="input mt-1"
+                placeholder="0.00"
+                value={agreedRate}
+                onChange={e => setAgreedRate(e.target.value)}
+              />
+            </div>
+
+            {/* Internal planner notes */}
+            <div>
+              <FieldLabel>Internal planner notes</FieldLabel>
+              <textarea
+                className="input mt-1 min-h-20 resize-none"
+                placeholder="Allocated to North route. Driver briefed. Check axle weights at site."
+                value={plannerNotes}
+                onChange={e => setPlannerNotes(e.target.value)}
+              />
+            </div>
+
+          </div>}
+          {!sec7Collapsed && <SectionFooter complete={sec7Started} label="Planner details" onCollapse={() => setSec7Collapsed(true)} />}
         </div>
 
       </div>
