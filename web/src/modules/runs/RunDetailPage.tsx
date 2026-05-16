@@ -536,6 +536,13 @@ export default function RunDetailPage() {
                   {/* Actions */}
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
+                      onClick={() => navigate(`/app/jobs/${assignment.jobId}`)}
+                      className="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-blue-600 hover:border-blue-300 text-xs font-bold"
+                      title="View job"
+                    >
+                      ↗
+                    </button>
+                    <button
                       onClick={() => handleMoveAssignment(assignment, "up")}
                       disabled={idx === 0}
                       className="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-primary hover:border-primary disabled:opacity-30 disabled:cursor-not-allowed text-sm"

@@ -143,6 +143,7 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
               {statusActionLabel(nextStatus)}
             </button>
           )}
+          <button onClick={() => onView(job.id)} className="text-xs font-semibold text-blue-600 hover:underline">View</button>
           <button onClick={() => onNote(job.id)} className="text-xs text-muted hover:text-primary">+ Note</button>
           <button onClick={() => onEdit(job.id)} className="text-xs text-muted hover:text-primary">Edit</button>
           <button onClick={() => onDelete(job)} className="text-xs text-red-500 hover:underline font-semibold">Delete</button>
@@ -372,8 +373,10 @@ export default function JobsPage() {
                         {statusActionLabel(nextStatus)}
                       </button>
                     )}
+                    <button onClick={() => navigate(`/app/jobs/${job.id}`)}
+                      className="text-xs font-semibold text-blue-600 hover:underline ml-auto">View</button>
                     <button onClick={() => setNoteJobId(job.id)}
-                      className="text-xs text-muted hover:text-primary ml-auto">+ Note</button>
+                      className="text-xs text-muted hover:text-primary">+ Note</button>
                     <button onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
                       className="text-xs text-muted hover:text-primary">Edit</button>
                     <button onClick={() => handleDelete(job)}
