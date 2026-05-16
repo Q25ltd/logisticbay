@@ -270,7 +270,6 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
                     </span>
                   ))}
                   {spec?.adrClass && <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800 font-bold">ADR {spec.adrClass}{spec.unNumber ? ` UN${spec.unNumber}` : ""}</span>}
-                  {spec?.temperatureRange && <span className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">❄ {spec.temperatureRange}</span>}
                 </div>
               ) : null;
             })()}

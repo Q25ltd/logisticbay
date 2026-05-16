@@ -1015,7 +1015,6 @@ export default function PublicRequestForm() {
   const [unNumber,                     setUnNumber]                     = useState("");
   const [packingGroup,                 setPackingGroup]                 = useState("");
   const [hazardousPaperworkAvailable,  setHazardousPaperworkAvailable]  = useState(false);
-  const [specTempRange,                setSpecTempRange]                = useState("");
 
   // ── Sec 5: Transport ──────────────────────────────────────────────────────
   const [plannerDecides,  setPlannerDecides]  = useState(true);
@@ -1161,7 +1160,6 @@ export default function PublicRequestForm() {
         unNumber:                   unNumber.trim()        || undefined,
         packingGroup:               packingGroup.trim()    || undefined,
         hazardousPaperworkAvailable: hazardousPaperworkAvailable || undefined,
-        temperatureRange:           specTempRange.trim()   || undefined,
       } : undefined,
       transportRequirementsData: {
         plannerDecides,

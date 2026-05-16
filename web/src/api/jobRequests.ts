@@ -127,7 +127,6 @@ export interface SpecialRequirementsData {
   unNumber?:                    string;
   packingGroup?:                string;
   hazardousPaperworkAvailable?: boolean;
-  temperatureRange?:            string;
 }
 
 export interface TransportRequirementsData {
