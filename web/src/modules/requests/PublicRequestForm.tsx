@@ -1054,8 +1054,13 @@ export default function PublicRequestForm() {
 
   // Exception policy state
   const [rejectionAction,                setRejectionAction]                = useState("");
+  const [alternativeReturnSiteName,      setAlternativeReturnSiteName]      = useState("");
   const [alternativeReturnAddress,       setAlternativeReturnAddress]       = useState("");
+  const [alternativeReturnAddressLine2,  setAlternativeReturnAddressLine2]  = useState("");
+  const [alternativeReturnTown,          setAlternativeReturnTown]          = useState("");
+  const [alternativeReturnCounty,        setAlternativeReturnCounty]        = useState("");
   const [alternativeReturnPostcode,      setAlternativeReturnPostcode]      = useState("");
+  const [alternativeReturnCountry,       setAlternativeReturnCountry]       = useState("GB");
   const [alternativeReturnContactName,   setAlternativeReturnContactName]   = useState("");
   const [alternativeReturnContactPhone,  setAlternativeReturnContactPhone]  = useState("");
   const [approvalContactName,            setApprovalContactName]            = useState("");
@@ -1189,8 +1194,13 @@ export default function PublicRequestForm() {
       } : undefined,
       exceptionPolicyData: hasExceptionPolicy ? {
         rejectionAction:               rejectionAction               || undefined,
+        alternativeReturnSiteName:     alternativeReturnSiteName.trim()     || undefined,
         alternativeReturnAddress:      alternativeReturnAddress.trim()      || undefined,
+        alternativeReturnAddressLine2: alternativeReturnAddressLine2.trim() || undefined,
+        alternativeReturnTown:         alternativeReturnTown.trim()         || undefined,
+        alternativeReturnCounty:       alternativeReturnCounty.trim()       || undefined,
         alternativeReturnPostcode:     alternativeReturnPostcode.trim()     || undefined,
+        alternativeReturnCountry:      alternativeReturnCountry             || undefined,
         alternativeReturnContactName:  alternativeReturnContactName.trim()  || undefined,
         alternativeReturnContactPhone: alternativeReturnContactPhone.trim() || undefined,
         approvalContactName:           approvalContactName.trim()           || undefined,
@@ -1859,13 +1869,58 @@ export default function PublicRequestForm() {
 
               {rejectionAction === "deliver_to_alternative_address" && (
                 <div className="space-y-3 border-l-2 border-orange-200 pl-4">
-                  <TextField label="Alternative delivery address" value={alternativeReturnAddress}
-                    onChange={setAlternativeReturnAddress} placeholder="12 Warehouse Lane, Manchester" />
-                  <TextField label="Postcode" value={alternativeReturnPostcode}
-                    onChange={setAlternativeReturnPostcode} placeholder="M1 1AA" />
+                  <TextField label="Site name" value={alternativeReturnSiteName}
+                    onChange={setAlternativeReturnSiteName}
+                    placeholder="Acme Returns Depot — Unit 3" caseRule="proper_name" />
+                  <TextField label="Address line 1" value={alternativeReturnAddress}
+                    onChange={setAlternativeReturnAddress}
+                    placeholder="12 Warehouse Lane" caseRule="proper_name" />
+                  <TextField label="Address line 2" value={alternativeReturnAddressLine2}
+                    onChange={setAlternativeReturnAddressLine2}
+                    placeholder="Industrial Estate" caseRule="proper_name" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <TextField label="Town / city" value={alternativeReturnTown}
+                        onChange={setAlternativeReturnTown}
+                        placeholder="Manchester" caseRule="proper_name" />
+                    </div>
+                    <label className="block">
+                      <FieldLabel>{POSTCODE_META[alternativeReturnCountry]?.label ?? "Postcode"}</FieldLabel>
+                      <input
+                        className="input mt-1 w-full"
+                        type="text"
+                        value={alternativeReturnPostcode}
+                        placeholder={POSTCODE_META[alternativeReturnCountry]?.placeholder ?? "Postcode"}
+                        onChange={e => setAlternativeReturnPostcode(e.target.value.toUpperCase())}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <TextField label="County / region" value={alternativeReturnCounty}
+                      onChange={setAlternativeReturnCounty}
+                      placeholder="Greater Manchester" caseRule="proper_name" />
+                    <label className="block">
+                      <FieldLabel>Country</FieldLabel>
+                      <div className="relative mt-1">
+                        <select
+                          className="input w-full appearance-none pr-9"
+                          value={alternativeReturnCountry}
+                          onChange={e => setAlternativeReturnCountry(e.target.value)}>
+                          {COUNTRIES.map(([code, name]) => (
+                            <option key={code} value={code}>{name}</option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                          <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <TextField label="Contact name" value={alternativeReturnContactName}
-                      onChange={setAlternativeReturnContactName} placeholder="Jane Smith" />
+                      onChange={setAlternativeReturnContactName} placeholder="Jane Smith" caseRule="proper_name" />
                     <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
                       onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
                   </div>
