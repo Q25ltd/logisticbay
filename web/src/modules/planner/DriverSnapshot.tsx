@@ -27,7 +27,6 @@ export default function DriverSnapshot({
   onUnitTrailerSaved: () => void;
 }) {
   const openContexts = contexts.filter((context) => !isClosed(context.job));
-  const assignedIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
 
   // Inline unit/trailer editing state — keyed by driver id
   const [editing, setEditing] = useState<Record<number, {
@@ -116,19 +115,17 @@ export default function DriverSnapshot({
     }));
   }
 
-  // Sort: needs-attention first (no vehicle or no job), then busy, then unavailable
+  // Sort: needs-attention first (no vehicle), then active, then unavailable
   function driverSortKey(driver: Driver) {
-    if (driver.status !== "active") return 3;
-    const hasJob = assignedIds.has(driver.id);
+    if (driver.status !== "active") return 2;
     const hasVehicle = !!driver.defaultTruckReg;
-    if (!hasJob && !hasVehicle) return 0;
-    if (!hasJob) return 1;
-    return 2;
+    if (!hasVehicle) return 0;
+    return 1;
   }
 
   const sortedDrivers = [...drivers].sort((a, b) => driverSortKey(a) - driverSortKey(b));
-  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg));
-  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && (!assignedIds.has(d.id) || !d.defaultTruckReg)));
+  const needsAttentionDrivers = sortedDrivers.filter((d) => d.status === "active" && !d.defaultTruckReg);
+  const otherDrivers = sortedDrivers.filter((d) => !(d.status === "active" && !d.defaultTruckReg));
   const visibleDrivers = [...needsAttentionDrivers, ...otherDrivers].slice(0, 8);
 
   return (
@@ -138,8 +135,8 @@ export default function DriverSnapshot({
           <h2 className="text-sm font-black uppercase tracking-wide text-primary">Drivers</h2>
           <p className="text-xs text-muted">
             {needsAttentionDrivers.length > 0
-              ? `${needsAttentionDrivers.length} need${needsAttentionDrivers.length === 1 ? "s" : ""} attention`
-              : "All active drivers assigned"}
+              ? `${needsAttentionDrivers.length} need${needsAttentionDrivers.length === 1 ? "s" : ""} a unit`
+              : "All active drivers have a unit"}
           </p>
         </div>
         <button type="button" onClick={onViewMore} className="text-xs font-semibold text-accent hover:underline">View all</button>
@@ -147,14 +144,9 @@ export default function DriverSnapshot({
 
       <div className="space-y-2">
         {visibleDrivers.map((driver) => {
-          const driverJobs = openContexts.filter((context) => context.job.assignedDriverId === driver.id);
-          const activeJob = driverJobs.find((context) => context.status === "active" || context.status === "loaded_trailer");
-          const freeSoon = driver.status === "active" && !!activeJob && ["collected", "arrived_dropoff"].includes(activeJob.job.status);
-          const hasJob = assignedIds.has(driver.id);
           const isActive = driver.status === "active";
-          const noJob = isActive && !hasJob;
           const noVehicle = isActive && !driver.defaultTruckReg;
-          const needsAttention = noJob || noVehicle;
+          const needsAttention = noVehicle;
           const editState = editing[driver.id];
           const linkedTrailer = driver.defaultTrailerReg
             ? trailers.find((t) => t.registration.toUpperCase() === driver.defaultTrailerReg.toUpperCase())
@@ -166,13 +158,6 @@ export default function DriverSnapshot({
                 <div className="truncate text-sm font-bold text-primary">{driver.displayName}</div>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {!isActive && <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-100 text-slate-500">Unavailable</span>}
-                  {isActive && noJob && <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No job</span>}
-                  {isActive && hasJob && freeSoon && <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-700">Free soon</span>}
-                  {isActive && hasJob && !freeSoon && (
-                    <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-700">
-                      {driverJobs.length} job{driverJobs.length !== 1 ? "s" : ""}
-                    </span>
-                  )}
                   {isActive && noVehicle
                     ? <span className="rounded px-1.5 py-0.5 text-[11px] font-bold bg-red-100 text-red-700">No unit</span>
                     : isActive && (() => {
@@ -333,17 +318,16 @@ export default function DriverSnapshot({
 
               {isActive && !editState && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {/* Unit assignment is the first priority — driver needs a unit before a job */}
                   {noVehicle && (
                     <button type="button" onClick={() => startEditing(driver)}
                       className="text-xs font-semibold text-accent hover:underline">
                       Assign unit →
                     </button>
                   )}
-                  {!noVehicle && noJob && (
+                  {!noVehicle && (
                     <button type="button" onClick={() => onAssignDriver(driver)}
                       className="text-xs font-semibold text-accent hover:underline">
-                      Assign job →
+                      View Runs →
                     </button>
                   )}
                   {!noVehicle && (

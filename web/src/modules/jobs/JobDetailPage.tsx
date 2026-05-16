@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import { driversApi } from "../../api/drivers";
-import type { PlannedJob, Driver } from "../../types";
+import type { PlannedJob } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
@@ -39,89 +38,6 @@ const STATUS_LABELS: Record<string, string> = {
   completed:       "Completed",
   cancelled:       "Cancelled",
 };
-
-function AssignPanel({ job, drivers, onSaved }: {
-  job: PlannedJob; drivers: Driver[]; onSaved: () => void;
-}) {
-  const [driverId,    setDriverId]    = useState(job.assignedDriverId ? String(job.assignedDriverId) : "");
-  const [trailer,     setTrailer]     = useState(job.assignedTrailer ?? "");
-  const [truck,       setTruck]       = useState(job.assignedTruck   ?? "");
-  const [loadingNote, setLoadingNote] = useState("");
-  const [saving,      setSaving]      = useState(false);
-  const [error,       setError]       = useState("");
-
-  const selectedDriver = drivers.find(d => String(d.id) === driverId);
-
-  async function save() {
-    if (!driverId) { setError("Select a driver"); return; }
-    setSaving(true); setError("");
-    try {
-      await jobsApi.allocate(job.id, {
-        assignedDriverId: parseInt(driverId, 10),
-        assignedTrailer:  trailer.trim() || selectedDriver?.defaultTrailerReg || "",
-        assignedTruck:    truck.trim()   || selectedDriver?.defaultTruckReg   || "",
-        overrideReason:   loadingNote.trim() || undefined,
-      });
-      onSaved();
-    } catch (err: any) { setError(err.message); }
-    finally { setSaving(false); }
-  }
-
-  async function unassign() {
-    if (!window.confirm("Remove driver from this job?")) return;
-    setSaving(true); setError("");
-    try {
-      await jobsApi.allocate(job.id, { assignedDriverId: null });
-      onSaved();
-    } catch (err: any) { setError(err.message); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div className="card p-4">
-      <h2 className="font-bold text-primary mb-3">Driver Assignment</h2>
-      {error && <Alert type="error" message={error} />}
-
-      {/* 1 — Driver */}
-      <label className="block text-sm font-semibold mb-1">Driver *</label>
-      <select className="input w-full mb-4" value={driverId} onChange={e => {
-        const d = drivers.find(dr => String(dr.id) === e.target.value);
-        setDriverId(e.target.value);
-        if (d) { setTrailer(d.defaultTrailerReg ?? ""); setTruck(d.defaultTruckReg ?? ""); }
-      }}>
-        <option value="">Select driver...</option>
-        {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
-      </select>
-
-      {/* 2 — Trailer */}
-      <label className="block text-sm font-semibold mb-1">Trailer</label>
-      <input className="input w-full mb-3" value={trailer} onChange={e => setTrailer(e.target.value)}
-        placeholder={selectedDriver?.defaultTrailerReg || "Registration (optional)"} />
-
-      {/* 3 — Truck */}
-      <label className="block text-sm font-semibold mb-1">Truck</label>
-      <input className="input w-full mb-4" value={truck} onChange={e => setTruck(e.target.value)}
-        placeholder={selectedDriver?.defaultTruckReg || "Registration"} />
-
-      {/* 4 — Loading / unloading note */}
-      <label className="block text-sm font-semibold mb-1">Loading / unloading note</label>
-      <textarea className="input w-full min-h-16 mb-4" value={loadingNote} onChange={e => setLoadingNote(e.target.value)}
-        placeholder="Any special instructions for this run..." />
-
-      <div className="flex gap-2">
-        <Button className="flex-1" onClick={save} loading={saving}>
-          {job.assignedDriverId ? "Reassign" : "Assign Driver"}
-        </Button>
-        {job.assignedDriverId && (
-          <Button variant="outline" onClick={unassign} loading={saving}
-            className="text-red-600 border-red-300 hover:bg-red-50">
-            Unassign
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function StatusOverridePanel({ job, onSaved }: { job: PlannedJob; onSaved: () => void }) {
   const [status,  setStatus]  = useState<string>(job.status);
@@ -165,7 +81,6 @@ export default function JobDetailPage() {
   const { id }      = useParams<{ id: string }>();
   const navigate    = useNavigate();
   const [job,       setJob]     = useState<PlannedJob | null>(null);
-  const [drivers,   setDrivers] = useState<Driver[]>([]);
   const [loading,   setLoading] = useState(true);
   const [error,     setError]   = useState("");
   const [success,   setSuccess] = useState("");
@@ -173,11 +88,8 @@ export default function JobDetailPage() {
   async function load() {
     setLoading(true); setError("");
     try {
-      const [j, d] = await Promise.all([
-        jobsApi.get(parseInt(id!, 10)),
-        driversApi.list("active"),
-      ]);
-      setJob(j); setDrivers(d.data);
+      const j = await jobsApi.get(parseInt(id!, 10));
+      setJob(j);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }
@@ -244,18 +156,6 @@ export default function JobDetailPage() {
                 <span className="text-muted text-xs uppercase tracking-wide">Priority</span>
                 <div className="font-medium capitalize">{job.priority || "Normal"}</div>
               </div>
-              {job.assignedTruck && (
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Truck</span>
-                  <div className="font-medium font-mono">{job.assignedTruck}</div>
-                </div>
-              )}
-              {job.assignedTrailer && (
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Trailer</span>
-                  <div className="font-medium font-mono">{job.assignedTrailer}</div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -378,25 +278,21 @@ export default function JobDetailPage() {
 
         {/* Right sidebar */}
         <div className="space-y-4">
-          {/* Driver card */}
+          {/* Driver & Vehicle card */}
           <div className="card p-4">
-            <h2 className="font-bold text-primary mb-2">Driver</h2>
-            {job.assignedDriver ? (
-              <div className="text-sm">
-                <div className="font-semibold text-primary">{job.assignedDriver.displayName}</div>
-                {job.assignedDriver.phoneNumber && (
-                  <a href={`tel:${job.assignedDriver.phoneNumber}`}
-                    className="text-muted hover:text-primary block mt-0.5">
-                    {job.assignedDriver.phoneNumber}
-                  </a>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-muted italic">Not assigned</p>
-            )}
+            <h2 className="font-bold text-primary mb-2">Driver & Vehicle</h2>
+            <p className="text-sm text-muted mb-3">
+              Driver and vehicle assignment is managed via Runs.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/app/runs")}
+              className="btn btn-outline w-full text-sm"
+            >
+              Go to Runs →
+            </button>
           </div>
 
-          <AssignPanel job={job} drivers={drivers} onSaved={() => onSaved("Driver assigned ✓")} />
           <StatusOverridePanel job={job} onSaved={() => onSaved("Status updated ✓")} />
 
           {/* Metadata */}

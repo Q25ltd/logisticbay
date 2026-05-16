@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { dashboardApi } from "../../api/dashboard";
-import { jobsApi }      from "../../api/jobs";
 import { driversApi }   from "../../api/drivers";
 import type { Driver, FleetTrailer, FleetUnit, PlannedJob } from "../../types";
 import { Alert } from "../../components/Alert";
 import type { JobContext } from "./dashboardTypes";
 import {
-  appendPlannerReason,
   dayKey,
   earliestTimeRank,
   hasMissingPlanningInfo,
@@ -18,7 +16,6 @@ import {
 import JobCard from "./JobCard";
 import DriverSnapshot from "./DriverSnapshot";
 import FleetSnapshot from "./FleetSnapshot";
-import AssignDrawer from "./AssignDrawer";
 import QuickFixDrawer from "./QuickFixDrawer";
 import JobDetailDrawer from "./JobDetailDrawer";
 
@@ -95,13 +92,10 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState("default");
   const [customerFilter, setCustomerFilter] = useState("all");
   const [vehicleFilter, setVehicleFilter] = useState("all");
-  const [driverFilter, setDriverFilter] = useState("all");
   const [warningOnly, setWarningOnly] = useState(false);
   const [loadedOnly, setLoadedOnly] = useState(false);
   const [carriedOnly, setCarriedOnly] = useState(false);
 
-  const [assigning, setAssigning] = useState<{ context: JobContext; presetDriverId?: number } | null>(null);
-  const [pickingForDriver, setPickingForDriver] = useState<Driver | null>(null);
   const [details, setDetails] = useState<JobContext | null>(null);
   const [quickFix, setQuickFix] = useState<JobContext | null>(null);
 
@@ -148,7 +142,6 @@ export default function DashboardPage() {
         if (statusFilter !== "default" && context.status !== statusFilter) return false;
         if (customerFilter !== "all" && context.customer !== customerFilter) return false;
         if (vehicleFilter !== "all" && context.vehicle !== vehicleFilter) return false;
-        if (driverFilter !== "all" && String(context.job.assignedDriverId ?? "unassigned") !== driverFilter) return false;
         if (warningOnly && !context.warnings.some((w) => w.level === "critical" || w.level === "warning")) return false;
         if (loadedOnly && !context.loadedTrailer) return false;
         if (carriedOnly && !context.isCarriedOver) return false;
@@ -159,7 +152,7 @@ export default function DashboardPage() {
         || earliestTimeRank(a.job) - earliestTimeRank(b.job)
         || a.route.localeCompare(b.route)
       ));
-  }, [contexts, statusFilter, customerFilter, vehicleFilter, driverFilter, warningOnly, loadedOnly, carriedOnly]);
+  }, [contexts, statusFilter, customerFilter, vehicleFilter, warningOnly, loadedOnly, carriedOnly]);
 
   const customerOptions = useMemo(() => Array.from(new Set(contexts.map((context) => context.customer))).sort(), [contexts]);
   const vehicleOptions = useMemo(() => Array.from(new Set(contexts.map((context) => context.vehicle))).sort(), [contexts]);
@@ -176,9 +169,6 @@ export default function DashboardPage() {
   const unavailableDrivers = drivers.filter((driver) => driver.status !== "active" || driver.user?.status === "inactive").length;
   const loadedTrailers = trailers.filter((trailer) => trailer.status === "loaded").length;
   const carriedOver = contexts.filter((context) => context.isCarriedOver).length;
-  const assignedDriverIds = new Set(openContexts.map((context) => context.job.assignedDriverId).filter((id): id is number => id != null));
-  const activeDrivers = drivers.filter((driver) => driver.status === "active");
-  const freeDrivers = activeDrivers.filter((driver) => !assignedDriverIds.has(driver.id)).length;
   const unitsFree = units.filter((unit) => unit.status === "available").length;
   const trailersFree = trailers.filter((trailer) => trailer.status === "available").length;
   const fleetVor = units.filter((unit) => unit.status === "vor").length + trailers.filter((trailer) => trailer.status === "vor").length;
@@ -189,38 +179,13 @@ export default function DashboardPage() {
     setCarriedOnly(false);
   }
 
-  function assignFirstJobToDriver(driver: Driver) {
-    const target = filteredContexts.find((context) => !isClosed(context.job) && !context.job.assignedDriverId)
-      ?? contexts.find((context) => !isClosed(context.job) && !context.job.assignedDriverId);
-    if (target) {
-      setAssigning({ context: target, presetDriverId: driver.id });
-    } else {
-      setSuccess("No unassigned dashboard jobs are available for that driver.");
-      setTimeout(() => setSuccess(""), 3000);
-    }
-  }
-
   async function markDriverUnavailable(driver: Driver) {
-    const affected = contexts.filter((context) => !isClosed(context.job) && context.job.assignedDriverId === driver.id);
-    const message = affected.length
-      ? `${driver.displayName} has ${affected.length} open dashboard job(s). Mark unavailable and remove the driver from those assignments?`
-      : `Mark ${driver.displayName} unavailable?`;
-    if (!window.confirm(message)) return;
+    if (!window.confirm(`Mark ${driver.displayName} unavailable?`)) return;
 
     setError("");
     try {
       await driversApi.setStatus(driver.id, "inactive");
-      await Promise.all(affected.map((context) => jobsApi.update(context.job.id, {
-        assignedDriverId: null,
-        plannerNotes: appendPlannerReason(
-          context.job.plannerNotes,
-          `${driver.displayName} marked unavailable. Job needs replanning. Unit/trailer values were left unchanged.`,
-        ),
-        saveMode: "draft",
-      })));
-      setSuccess(affected.length
-        ? `${driver.displayName} is unavailable. ${affected.length} job(s) need replanning.`
-        : `${driver.displayName} is unavailable.`);
+      setSuccess(`${driver.displayName} is unavailable.`);
       setTimeout(() => setSuccess(""), 4000);
       await load();
     } catch (e) {
@@ -297,7 +262,7 @@ export default function DashboardPage() {
         <SummaryCard
           title="Drivers"
           lead={`${drivers.length} drivers`}
-          detail={`${freeDrivers} free | ${assignedDriverIds.size} assigned | ${unavailableDrivers} unavailable`}
+          detail={`${unavailableDrivers} unavailable today`}
           tone="blue"
           onClick={() => navigate("/app/drivers")}
         />
@@ -331,11 +296,6 @@ export default function DashboardPage() {
             <option value="all">All vehicle types</option>
             {vehicleOptions.map((vehicle) => <option key={vehicle} value={vehicle}>{vehicle}</option>)}
           </select>
-          <select className="input w-full sm:w-auto" value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)}>
-            <option value="all">All drivers</option>
-            <option value="unassigned">Unassigned</option>
-            {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.displayName}</option>)}
-          </select>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <FilterPill active={warningOnly} onClick={() => setWarningOnly((value) => !value)}>Has warnings</FilterPill>
@@ -347,7 +307,6 @@ export default function DashboardPage() {
               setStatusFilter("default");
               setCustomerFilter("all");
               setVehicleFilter("all");
-              setDriverFilter("all");
               resetToggles();
             }}
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-primary"
@@ -373,7 +332,7 @@ export default function DashboardPage() {
               <JobCard
                 key={context.job.id}
                 context={context}
-                onAssign={() => setAssigning({ context })}
+                onAssign={() => navigate("/app/runs")}
                 onDetails={() => setDetails(context)}
                 onQuickFix={() => setQuickFix(context)}
               />
@@ -397,7 +356,6 @@ export default function DashboardPage() {
                         setStatusFilter("default");
                         setCustomerFilter("all");
                         setVehicleFilter("all");
-                        setDriverFilter("all");
                         resetToggles();
                       }}
                       className="btn btn-outline text-sm"
@@ -428,8 +386,8 @@ export default function DashboardPage() {
             contexts={contexts}
             units={units}
             trailers={trailers}
-            onAssignDriver={assignFirstJobToDriver}
-            onPickJobForDriver={setPickingForDriver}
+            onAssignDriver={() => navigate("/app/runs")}
+            onPickJobForDriver={() => navigate("/app/runs")}
             onViewMore={() => navigate("/app/drivers")}
             onMarkUnavailable={markDriverUnavailable}
             onUnitTrailerSaved={load}
@@ -444,73 +402,6 @@ export default function DashboardPage() {
         </aside>
       </div>
 
-      {/* ── Job picker — "Assign another" on a driver card ── */}
-      {pickingForDriver && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-            <div className="border-b border-border px-5 py-4">
-              <h2 className="text-base font-black text-primary">Pick a job for {pickingForDriver.displayName}</h2>
-              <p className="mt-0.5 text-xs text-muted">Select any open job to open the allocation panel.</p>
-            </div>
-            <div className="max-h-96 overflow-y-auto p-3 space-y-1.5">
-              {contexts
-                .filter((ctx) => !isClosed(ctx.job))
-                .sort((a, b) => {
-                  // Unassigned first
-                  const aAssigned = !!a.job.assignedDriverId;
-                  const bAssigned = !!b.job.assignedDriverId;
-                  if (aAssigned !== bAssigned) return aAssigned ? 1 : -1;
-                  return a.route.localeCompare(b.route);
-                })
-                .map((ctx) => {
-                  const assignedDriver = ctx.job.assignedDriverId
-                    ? drivers.find((d) => d.id === ctx.job.assignedDriverId)
-                    : null;
-                  return (
-                    <button
-                      key={ctx.job.id}
-                      type="button"
-                      onClick={() => {
-                        setPickingForDriver(null);
-                        setAssigning({ context: ctx, presetDriverId: pickingForDriver.id });
-                      }}
-                      className="w-full text-left rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-2.5 transition-colors"
-                    >
-                      <div className="text-sm font-semibold text-primary truncate">{ctx.route}</div>
-                      <div className="text-xs text-muted mt-0.5">
-                        {ctx.job.referenceNumber && <span className="mr-2">Ref: {ctx.job.referenceNumber}</span>}
-                        {assignedDriver
-                          ? <span className="text-amber-700">Driver: {assignedDriver.displayName} — will be swapped</span>
-                          : <span className="text-green-700">No driver — free to assign</span>}
-                      </div>
-                    </button>
-                  );
-                })}
-              {contexts.filter((ctx) => !isClosed(ctx.job)).length === 0 && (
-                <p className="py-6 text-center text-sm text-muted">No open jobs today.</p>
-              )}
-            </div>
-            <div className="border-t border-border px-5 py-3 flex justify-end">
-              <button type="button" onClick={() => setPickingForDriver(null)} className="btn btn-outline text-sm">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {assigning && (
-        <AssignDrawer
-          context={assigning.context}
-          allContexts={contexts}
-          drivers={drivers}
-          units={units}
-          trailers={trailers}
-          date={dateRange.from}
-          presetDriverId={assigning.presetDriverId}
-          onClose={() => setAssigning(null)}
-          onSaved={load}
-        />
-      )}
-
       {quickFix && (
         <QuickFixDrawer
           context={quickFix}
@@ -523,7 +414,7 @@ export default function DashboardPage() {
         <JobDetailDrawer
           context={details}
           onClose={() => setDetails(null)}
-          onAssign={() => { setAssigning({ context: details }); setDetails(null); }}
+          onAssign={() => { navigate("/app/runs"); setDetails(null); }}
           onQuickFix={() => { setQuickFix(details); setDetails(null); }}
           onEditJob={() => { setDetails(null); navigate(`/app/jobs/${details.job.id}/edit`); }}
         />
