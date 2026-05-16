@@ -1461,7 +1461,7 @@ export default function PublicRequestForm() {
             </div>
           )}
           <button type="button" className="btn btn-primary mt-6"
-            onClick={() => { setSubmitted(false); setErrors([]); }}>
+            onClick={() => window.location.reload()}>
             Submit another request
           </button>
         </div>
