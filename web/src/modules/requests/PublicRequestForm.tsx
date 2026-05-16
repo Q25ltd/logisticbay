@@ -1685,7 +1685,7 @@ export default function PublicRequestForm() {
 
         {/* ── Sec 4: Special requirements ──────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={4} icon="⚠️" title="Special requirements" subtitle="ADR, temperature, fragile, high value, oversized"
+          <SectionHeader num={4} icon="⚠️" title="Special requirements" subtitle="ADR, fragile, high value, oversized, secure transport"
             active collapsed={s4} onToggle={() => setS4(o => !o)}
             complete optional
             summary={specialItems.length > 0
