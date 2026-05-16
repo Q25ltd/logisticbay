@@ -263,12 +263,6 @@ export const jobRequestsPublicApi = {
     publicGet<PublicLinkInfo>(`/public/request/${token}`),
   submit: (token: string, body: SubmitRequestBody) =>
     publicPost<{ id: number; warnings: string[] }>(`/public/request/${token}`, body),
-  geocode: (q: string, country: string) =>
-    publicGet<{ features: Array<{
-      label: string; street: string; town: string;
-      county: string; postcode: string; country: string;
-      lat: number; lng: number;
-    }> }>(`/public/geocode?q=${encodeURIComponent(q)}&country=${encodeURIComponent(country)}`),
 };
 
 // ── Internal (auth required) ──────────────────────────────────────────────────

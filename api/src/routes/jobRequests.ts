@@ -274,67 +274,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     });
   });
 
-  // ── GET /public/geocode ─────────────────────────────────────────────────────
-  // Proxy Nominatim (OSM) geocode search — no API key required.
-  // Query params: q (postcode or address text), country (ISO alpha-2, default GB)
-  app.get<{ Querystring: { q?: string; country?: string } }>("/public/geocode", async (req, reply) => {
-    const { q = "", country = "GB" } = req.query;
-    if (!q.trim()) return reply.send({ features: [] });
-
-    try {
-      const url = new URL("https://nominatim.openstreetmap.org/search");
-      url.searchParams.set("q", q.trim());
-      url.searchParams.set("countrycodes", country.toLowerCase());
-      url.searchParams.set("format", "json");
-      url.searchParams.set("addressdetails", "1");
-      url.searchParams.set("limit", "8");
-
-      const res = await fetch(url.toString(), {
-        headers: { "User-Agent": "LogisticBay/1.0 (transport management platform)" },
-      });
-      if (!res.ok) return reply.send({ features: [] });
-
-      const data = await res.json() as Array<{
-        lat: string;
-        lon: string;
-        display_name: string;
-        address: {
-          house_number?: string;
-          road?: string;
-          suburb?: string;
-          city?: string;
-          town?: string;
-          village?: string;
-          county?: string;
-          state?: string;
-          postcode?: string;
-          country_code?: string;
-        };
-      }>;
-
-      const features = data.map(item => {
-        const a = item.address;
-        const streetLine = [a.house_number, a.road].filter(Boolean).join(" ");
-        const townLine   = a.city ?? a.town ?? a.village ?? a.suburb ?? "";
-        const countyLine = a.county ?? a.state ?? "";
-        return {
-          label:    item.display_name,
-          street:   streetLine,
-          town:     townLine,
-          county:   countyLine,
-          postcode: a.postcode ?? "",
-          country:  (a.country_code ?? country).toUpperCase(),
-          lat:      parseFloat(item.lat),
-          lng:      parseFloat(item.lon),
-        };
-      });
-
-      return reply.send({ features });
-    } catch {
-      return reply.send({ features: [] });
-    }
-  });
-
   // ── POST /public/request/:token ────────────────────────────────────────────
   app.post<{ Params: { token: string }; Body: PublicRequestBody }>(
     "/public/request/:token",
