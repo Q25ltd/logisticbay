@@ -1968,7 +1968,7 @@ export default function PublicRequestForm() {
                 </div>
               )}
 
-              {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval") && (
+              {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval" || rejectionAction === "wait_for_further_instruction") && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-l-2 border-orange-200 pl-4">
                   <TextField label="Approval contact name" value={approvalContactName}
                     onChange={setApprovalContactName} placeholder="Jane Smith" />
