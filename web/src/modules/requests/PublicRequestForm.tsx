@@ -430,6 +430,23 @@ function stopStarted(s: StopState): boolean {
   return !!(s.siteName || s.street || s.referenceNumber);
 }
 
+function stopMissingFields(s: StopState): string[] {
+  const needsRef = s.type === "collection" || s.type === "delivery";
+  const missing: string[] = [];
+  if (!s.siteName.trim())               missing.push("site name");
+  if (!s.street.trim())                 missing.push("address line 1");
+  if (!s.town.trim())                   missing.push("town / city");
+  if (!s.postcode.trim())               missing.push("postcode");
+  if (!s.lat || !s.lng)                 missing.push("entrance pin (lat / lng)");
+  if (!s.navigationInstructions.trim()) missing.push("entrance instructions");
+  if (!s.date)                          missing.push("date");
+  if (!s.earliestArrivalTime)           missing.push("earliest arrival time");
+  if (!s.latestArrivalTime)             missing.push("latest arrival time");
+  if (!s.serviceTime)                   missing.push("loading / unloading time");
+  if (needsRef && !s.referenceNumber.trim()) missing.push("reference number");
+  return missing;
+}
+
 function stopToRequestStop(s: StopState, seq: number): RequestStop {
   const customMin = Math.max(0, parseInt(s.serviceTimeCustom, 10) || 0);
   const svcMin = s.serviceTime === "custom" ? (customMin > 0 ? customMin : 30) : parseInt(s.serviceTime, 10);
@@ -1176,6 +1193,36 @@ export default function PublicRequestForm() {
   const sec2Started = stops.some(stopStarted);
   const sec3Started = !!(goodsType || goodsDesc);
 
+  // ── Human-readable missing field lists (shown in SectionFooter) ──────────────
+  const sec1Missing: string[] = [
+    !customerCompanyName.trim() ? "company / organisation name"  : "",
+    !contactName.trim()         ? "contact name"                 : "",
+    !contactPhone.trim()        ? "contact phone"                : "",
+    !contactEmail.trim()        ? "contact email"                : "",
+    contactPhoneError           ? `phone: ${contactPhoneError}`  : "",
+    contactEmailError           ? `email: ${contactEmailError}`  : "",
+  ].filter(Boolean) as string[];
+
+  const sec2Missing: string[] = [
+    ...stops.flatMap((s, i) =>
+      stopMissingFields(s).map(f => `Stop ${i + 1} — ${s.type}: ${f}`)
+    ),
+    ...(!stops.some(s => s.type === "collection") ? ["at least one collection stop required"] : []),
+    ...(!stops.some(s => s.type === "delivery")   ? ["at least one delivery stop required"]   : []),
+  ];
+
+  const sec3Missing: string[] = [
+    !goodsType                         ? "goods type"                                    : "",
+    goodsDesc.trim().length < 15       ? "goods description (min 15 characters)"         : "",
+    !quantity                          ? "quantity"                                       : "",
+    !unit                              ? "unit"                                           : "",
+    !(parseFloat(estWeight) > 0)       ? "estimated weight"                               : "",
+  ].filter(Boolean) as string[];
+
+  const sec6Missing: string[] = [
+    !(parseFloat(declaredValue) > 0) ? "declared goods value" : "",
+  ].filter(Boolean) as string[];
+
   const collectionCount = stops.filter(s => s.type === "collection").length;
   const deliveryCount   = stops.filter(s => s.type === "delivery").length;
   const sec2Summary = [
@@ -1205,13 +1252,58 @@ export default function PublicRequestForm() {
     e.preventDefault();
     setErrors([]);
 
-    // ── Final validation sweep before submit ──────────────────────────────────
+    // ── Final validation sweep — collect every problem across all sections ─────
     const phoneErr = validatePhone(contactPhone, stops[0]?.country ?? "GB");
     const emailErr = validateEmail(contactEmail);
     if (phoneErr) setContactPhoneError(phoneErr);
     if (emailErr) setContactEmailError(emailErr);
-    if (phoneErr || emailErr) {
-      setErrors(["Please fix the highlighted fields before submitting."]);
+
+    const allProblems: string[] = [];
+
+    // Section 1
+    const s1Problems = [
+      !customerCompanyName.trim() ? "Company / organisation name is required"        : "",
+      !contactName.trim()         ? "Contact name is required"                        : "",
+      !contactPhone.trim()        ? "Contact phone is required"                       : "",
+      phoneErr                    ? `Contact phone: ${phoneErr}`                      : "",
+      !contactEmail.trim()        ? "Contact email is required"                       : "",
+      emailErr                    ? `Contact email: ${emailErr}`                      : "",
+    ].filter(Boolean) as string[];
+
+    if (s1Problems.length) { setS1(false); allProblems.push(...s1Problems.map(p => `Your details — ${p}`)); }
+
+    // Section 2 — stops
+    const s2Problems: string[] = [
+      ...stops.flatMap((s, i) =>
+        stopMissingFields(s).map(f => `Stop ${i + 1} (${s.type}): ${f}`)
+      ),
+      ...(!stops.some(s => s.type === "collection") ? ["At least one collection stop is required"] : []),
+      ...(!stops.some(s => s.type === "delivery")   ? ["At least one delivery stop is required"]   : []),
+    ];
+    if (s2Problems.length) { setS2(false); allProblems.push(...s2Problems); }
+
+    // Section 3 — load
+    const s3Problems = [
+      !goodsType                   ? "Goods type is required"                              : "",
+      goodsDesc.trim().length < 15 ? "Goods description must be at least 15 characters"   : "",
+      !quantity                    ? "Quantity is required"                                : "",
+      !unit                        ? "Unit is required"                                    : "",
+      !(parseFloat(estWeight) > 0) ? "Estimated weight is required"                       : "",
+    ].filter(Boolean) as string[];
+    if (s3Problems.length) { setS3(false); allProblems.push(...s3Problems.map(p => `Load details — ${p}`)); }
+
+    // Section 6 — billing
+    const s6Problems = [
+      !(parseFloat(declaredValue) > 0) ? "Declared goods value is required" : "",
+    ].filter(Boolean) as string[];
+    if (s6Problems.length) { setS6(false); allProblems.push(...s6Problems.map(p => `Billing — ${p}`)); }
+
+    // Declaration
+    if (!declarationAccepted) allProblems.push("You must accept the declaration before submitting");
+
+    if (allProblems.length > 0) {
+      setErrors(allProblems);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
@@ -1391,9 +1483,21 @@ export default function PublicRequestForm() {
       <form onSubmit={handleSubmit} className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 
         {errors.length > 0 && (
-          <div className="card border-red-200 p-4">
-            <div className="font-semibold text-red-800 mb-2 text-sm">Please fix the following before submitting:</div>
-            {errors.map((e, i) => <div key={i} className="text-sm text-red-700">• {e}</div>)}
+          <div className="card border-red-300 bg-red-50 p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 text-white text-xs font-black">!</span>
+              <span className="font-bold text-red-800 text-sm">
+                {errors.length} thing{errors.length !== 1 ? "s" : ""} still need{errors.length === 1 ? "s" : ""} attention before you can submit:
+              </span>
+            </div>
+            <ul className="ml-7 space-y-1">
+              {errors.map((e, i) => (
+                <li key={i} className="text-sm text-red-700 flex items-start gap-1.5">
+                  <span className="flex-shrink-0 mt-0.5">•</span>
+                  <span>{e}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -1421,7 +1525,8 @@ export default function PublicRequestForm() {
           <SectionHeader num={1} icon="👤" title="Your details" subtitle="Company and contact information"
             active collapsed={s1} onToggle={() => setS1(o => !o)}
             complete={sec1Complete} started={sec1Started}
-            summary={customerCompanyName || contactName} />
+            summary={customerCompanyName || contactName}
+            missingCount={sec1Missing.length} />
           {!s1 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               <TextField label="Company / organisation name" required
@@ -1461,7 +1566,7 @@ export default function PublicRequestForm() {
                   </div>
                 </div>
               )}
-              <SectionFooter complete={sec1Complete} label="Your details" onCollapse={() => setS1(true)} />
+              <SectionFooter complete={sec1Complete} label="Your details" onCollapse={() => setS1(true)} missing={sec1Missing} />
             </div>
           )}
         </div>
@@ -1473,7 +1578,8 @@ export default function PublicRequestForm() {
             subtitle="Where to collect from and deliver to"
             active collapsed={s2} onToggle={() => setS2(o => !o)}
             complete={sec2Complete} started={sec2Started}
-            summary={sec2Summary || undefined} />
+            summary={sec2Summary || undefined}
+            missingCount={sec2Missing.length} />
           {!s2 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               {stops.map((stop, idx) => (
@@ -1496,7 +1602,7 @@ export default function PublicRequestForm() {
                 </div>
               )}
 
-              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => setS2(true)} />
+              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => setS2(true)} missing={sec2Missing} />
             </div>
           )}
         </div>
@@ -1508,7 +1614,8 @@ export default function PublicRequestForm() {
             complete={sec3Complete} started={sec3Started}
             summary={goodsType
               ? `${LOAD_TYPES.find(([v]) => v === goodsType)?.[1] ?? goodsType}${goodsDesc ? ` · ${goodsDesc.slice(0, 30)}` : ""}`
-              : undefined} />
+              : undefined}
+            missingCount={sec3Missing.length} />
           {!s3 && (
             <div className="px-5 pt-5 pb-4 space-y-5">
 
@@ -1812,7 +1919,7 @@ export default function PublicRequestForm() {
                   placeholder="Stacked 3 high. Do not tip. Handle with care near top." />
               </div>
 
-              <SectionFooter complete={sec3Complete} label="Load details" onCollapse={() => setS3(true)} />
+              <SectionFooter complete={sec3Complete} label="Load details" onCollapse={() => setS3(true)} missing={sec3Missing} />
             </div>
           )}
         </div>
@@ -1969,7 +2076,8 @@ export default function PublicRequestForm() {
           <SectionHeader num={6} icon="📄" title="Billing" subtitle="Declared goods value and reference numbers"
             active collapsed={s6} onToggle={() => setS6(o => !o)}
             complete={sec6Complete} started={!!declaredValue || !!poNumber}
-            summary={declaredValue ? `£${declaredValue}${poNumber ? ` · PO: ${poNumber}` : ""}` : undefined} />
+            summary={declaredValue ? `£${declaredValue}${poNumber ? ` · PO: ${poNumber}` : ""}` : undefined}
+            missingCount={sec6Missing.length} />
           {!s6 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               <TextField label="Declared value of goods (£)" required type="number" min="0"
@@ -1982,7 +2090,7 @@ export default function PublicRequestForm() {
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
-              <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} />
+              <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} missing={sec6Missing} />
             </div>
           )}
         </div>

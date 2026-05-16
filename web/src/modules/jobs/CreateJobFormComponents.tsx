@@ -102,14 +102,16 @@ export function StatusDot({ complete, started }: { complete?: boolean; started?:
   return <span className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white flex-shrink-0" />;
 }
 
-export function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary, onToggle, complete, started, optional }: {
+export function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary, onToggle, complete, started, optional, missingCount }: {
   num: number; icon: string; title: string; subtitle: string;
   active?: boolean; collapsed?: boolean; summary?: string; onToggle?: () => void;
   complete?: boolean; started?: boolean; optional?: boolean;
+  missingCount?: number; // shows a red "N missing" badge when collapsed + incomplete
 }) {
   const accent =
-    complete ? "border-l-green-500" :
-    started  ? "border-l-blue-400"  : "border-l-transparent";
+    complete                          ? "border-l-green-500" :
+    collapsed && (missingCount ?? 0) > 0 ? "border-l-red-400"  :
+    started                           ? "border-l-blue-400"  : "border-l-transparent";
   const bg =
     complete && collapsed ? "bg-green-50/60" :
     !collapsed            ? "bg-white"        : "bg-slate-50/70";
@@ -132,6 +134,11 @@ export function SectionHeader({ num, icon, title, subtitle, active, collapsed, s
           {optional && !complete && (
             <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
           )}
+          {collapsed && !complete && (missingCount ?? 0) > 0 && (
+            <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              {missingCount} field{missingCount !== 1 ? "s" : ""} missing
+            </span>
+          )}
         </div>
         {collapsed && summary
           ? <p className="text-xs text-accent font-semibold mt-0.5 truncate">{summary}</p>
@@ -148,10 +155,13 @@ export function SectionHeader({ num, icon, title, subtitle, active, collapsed, s
   );
 }
 
-export function SectionFooter({ complete, label, onCollapse }: { complete: boolean; label: string; onCollapse?: () => void }) {
+export function SectionFooter({ complete, label, onCollapse, missing }: {
+  complete: boolean; label: string; onCollapse?: () => void;
+  missing?: string[]; // list of human-readable missing field names
+}) {
   return (
     <div className={
-      "px-5 py-3 border-t text-sm font-semibold flex items-center gap-2.5 " +
+      "px-5 py-3 border-t text-sm font-semibold flex items-start gap-2.5 " +
       (complete
         ? "text-green-700 bg-green-50/80 border-green-100"
         : "text-amber-700 bg-amber-50/80 border-amber-100")
@@ -163,7 +173,7 @@ export function SectionFooter({ complete, label, onCollapse }: { complete: boole
           onClick={onCollapse}
           title="Collapse section"
           className={
-            "flex-shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors mr-1 " +
+            "flex-shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors mr-1 mt-0.5 " +
             (complete
               ? "text-green-600 hover:bg-green-100"
               : "text-amber-600 hover:bg-amber-100")
@@ -176,18 +186,30 @@ export function SectionFooter({ complete, label, onCollapse }: { complete: boole
       )}
       {complete ? (
         <>
-          <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+          <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0 mt-0.5">
             <svg viewBox="0 0 10 10" className="w-3 h-3" fill="none">
               <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </span>
-          {label} complete
+          <span className="mt-0.5">{label} complete</span>
         </>
       ) : (
-        <>
-          <span className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0 text-white text-xs font-black leading-none">!</span>
-          Fill in the required fields above
-        </>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0 text-white text-xs font-black leading-none">!</span>
+            <span>Still needs:</span>
+          </div>
+          {missing && missing.length > 0 && (
+            <ul className="mt-1.5 ml-7 space-y-0.5">
+              {missing.map((m, i) => (
+                <li key={i} className="text-xs font-medium text-amber-800 flex items-start gap-1.5">
+                  <span className="mt-0.5 flex-shrink-0">•</span>
+                  <span>{m}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
