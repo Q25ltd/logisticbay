@@ -1131,6 +1131,7 @@ Initial error was Prisma `P3018` / PostgreSQL `42P07`: relation `Run_companyId_r
 - Unique constraint creation now checks both `pg_constraint.conname` and `pg_class.relname` for:
   - `Run_companyId_runReference_key`
   - `RunAssignment_runId_sequenceNumber_key`
+- Follow-up: patched `api/prisma/migrations/20260516000001_jobpart_restriction_fields/migration.sql` to use `ADD COLUMN IF NOT EXISTS` after Railway revealed those columns had already been created by prior schema sync/drift.
 
 **Verification:**
 - `DATABASE_URL=postgresql://user:pass@localhost:5432/db npx prisma validate --schema prisma/schema.prisma` → pass.
