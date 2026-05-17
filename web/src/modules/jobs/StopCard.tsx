@@ -3,7 +3,10 @@ import type { SavedLocation } from "../../types";
 import type { StopState } from "./createJobTypes";
 import { stopComplete, toMins, fmtMins } from "./createJobUtils";
 import { FieldLabel, OptionalToggle, Toggle } from "./CreateJobFormComponents";
-import { LOCATION_TYPES, EXCHANGE_UNITS, HANDLING_METHODS, PROOF_REQUIREMENTS, LOAD_READINESS, LOAD_UNITS, ACCESS_REQUIREMENTS, PPE_ITEMS } from "./createJobConstants";
+import {
+  LOCATION_TYPES, EXCHANGE_UNITS, HANDLING_METHODS, PROOF_REQUIREMENTS,
+  LOAD_READINESS, LOAD_UNITS, ACCESS_REQUIREMENTS, PPE_ITEMS, COUNTRIES,
+} from "./createJobConstants";
 import { applyCase, type CaseRule } from "../../lib/textCase";
 
 // ── Location typeahead (per stop) ─────────────────────────────────────────────
@@ -84,18 +87,14 @@ export function CoordsHelp() {
           <p><strong>4.</strong> Click the coordinates at the <strong>top of the menu</strong> — they copy automatically.</p>
           <p><strong>5.</strong> Paste the first number into Latitude, the second into Longitude.</p>
 
-          {/* SVG illustration of the Google Maps right-click menu */}
           <div className="rounded-xl overflow-hidden border border-blue-200 bg-white mt-2">
             <svg viewBox="0 0 340 210" xmlns="http://www.w3.org/2000/svg" className="w-full">
-              {/* Map background */}
               <rect width="340" height="210" fill="#e8e0d5"/>
-              {/* Roads */}
               <rect x="0" y="88" width="340" height="14" fill="#fff" opacity="0.7"/>
               <rect x="140" y="0" width="12" height="210" fill="#fff" opacity="0.7"/>
               <rect x="0" y="150" width="340" height="8" fill="#fff" opacity="0.5"/>
               <rect x="80" y="0" width="6" height="210" fill="#fff" opacity="0.4"/>
               <rect x="230" y="0" width="6" height="210" fill="#fff" opacity="0.4"/>
-              {/* Buildings */}
               <rect x="20" y="30" width="50" height="48" rx="2" fill="#d4c9b8"/>
               <rect x="80" y="20" width="48" height="60" rx="2" fill="#c8bfb0"/>
               <rect x="162" y="20" width="55" height="58" rx="2" fill="#d4c9b8"/>
@@ -108,33 +107,20 @@ export function CoordsHelp() {
               <rect x="20" y="172" width="100" height="30" rx="2" fill="#c8bfb0"/>
               <rect x="162" y="172" width="70" height="30" rx="2" fill="#d4c9b8"/>
               <rect x="244" y="172" width="78" height="30" rx="2" fill="#c8bfb0"/>
-
-              {/* Pin at entrance */}
               <circle cx="146" cy="93" r="7" fill="#EA4335"/>
               <path d="M146 100 L143 108 L146 106 L149 108 Z" fill="#EA4335"/>
-
-              {/* Cursor / right-click indicator */}
               <polygon points="146,93 156,100 152,101 154,107 151,108 149,102 146,105" fill="#333" opacity="0.85"/>
-
-              {/* Context menu */}
-              <rect x="152" y="60" width="168" height="142" rx="4" fill="white"
-                filter="url(#shadow)" stroke="#dadce0" strokeWidth="0.5"/>
+              <rect x="152" y="60" width="168" height="142" rx="4" fill="white" filter="url(#shadow)" stroke="#dadce0" strokeWidth="0.5"/>
               <defs>
                 <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
                   <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#0003"/>
                 </filter>
               </defs>
-
-              {/* Coords row — highlighted, clickable */}
               <rect x="152" y="60" width="168" height="30" rx="4" fill="#e8f0fe"/>
               <rect x="152" y="76" width="168" height="14" fill="#e8f0fe"/>
               <text x="162" y="79" fontSize="9.5" fontFamily="monospace" fill="#1a73e8" fontWeight="bold">51.5074, -0.1278</text>
               <text x="162" y="89" fontSize="7.5" fontFamily="sans-serif" fill="#5f6368">Click to copy</text>
-
-              {/* Divider */}
               <line x1="152" y1="90" x2="320" y2="90" stroke="#e0e0e0" strokeWidth="0.5"/>
-
-              {/* Menu items */}
               {[
                 { y: 105, label: "Directions to here" },
                 { y: 120, label: "Directions from here" },
@@ -147,8 +133,6 @@ export function CoordsHelp() {
                   {item.label}
                 </text>
               ))}
-
-              {/* Arrow pointing to coords row */}
               <line x1="108" y1="75" x2="148" y2="75" stroke="#1a73e8" strokeWidth="1.5" markerEnd="url(#arr)"/>
               <defs>
                 <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
@@ -176,7 +160,6 @@ function DurationInput({ value, onChange, label, hint }: {
   label: string;
   hint?: string;
 }) {
-  // Value stored as "HH:MM" duration string (e.g. "01:30" = 1 h 30 min)
   const parts = value.match(/^(\d+):(\d{2})$/);
   const hVal = parts ? String(parseInt(parts[1], 10)) : "";
   const mVal = parts ? String(parseInt(parts[2], 10)) : "";
@@ -213,176 +196,18 @@ function DurationInput({ value, onChange, label, hint }: {
 }
 
 function fmtHHMM(totalMins: number): string {
-  const safe = ((totalMins % 1440) + 1440) % 1440; // wrap midnight
+  const safe = ((totalMins % 1440) + 1440) % 1440;
   const h = Math.floor(safe / 60);
   const m = safe % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// ── Stop quantities & timing block ───────────────────────────────────────────
+// ── Section header helper ─────────────────────────────────────────────────────
 
-export function StopTimingBlock({ stop, onChange }: {
-  stop: StopState;
-  onChange: (patch: Partial<StopState>) => void;
-  set: (f: keyof StopState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
-}) {
-  // Booked / window anchor in minutes-since-midnight
-  const bookedMins =
-    stop.timeType === "exact"  ? toMins(stop.exactTime) :
-    stop.timeType === "window" ? toMins(stop.windowStart) : null;
-  const windowEndMins = stop.timeType === "window" ? toMins(stop.windowEnd) : null;
-
-  // Durations — stored as "HH:MM" strings
-  const earliestDuration  = toMins(stop.earliestArrival);  // how far before booking driver may arrive
-  const unloadingDuration = toMins(stop.unloadingTime);    // time spent on-site
-
-  // Computed clock times
-  const earliestArrivalTime =
-    bookedMins !== null && earliestDuration !== null ? bookedMins - earliestDuration : null;
-  const releaseTime =
-    bookedMins !== null && unloadingDuration !== null ? bookedMins + unloadingDuration : null;
-
-  const warnings: string[] = [];
-  if (releaseTime !== null && windowEndMins !== null && releaseTime > windowEndMins) {
-    warnings.push(
-      `Unloading (${fmtMins(unloadingDuration!)}) would finish at ${fmtHHMM(releaseTime)}, ` +
-      `after the window closes at ${stop.windowEnd}.`
-    );
-  }
-
-  const showInfo = bookedMins !== null && (earliestArrivalTime !== null || releaseTime !== null);
-
+function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div>
-      <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Quantities & Stop Timing</div>
-      <div className="space-y-3">
-
-        {/* Stop quantity — structured */}
-        <div>
-          <FieldLabel>Quantity at this stop</FieldLabel>
-          <div className="flex gap-2 mt-1">
-            <input
-              type="number" min="0" step="any"
-              className="input flex-1 font-mono"
-              placeholder="0"
-              value={stop.stopQuantity}
-              onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E") e.preventDefault(); }}
-              onChange={e => onChange({ stopQuantity: e.target.value })}
-            />
-            <div className="relative min-w-[9rem]">
-              <select className="input w-full appearance-none pr-8"
-                value={stop.stopQuantityUnit}
-                onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
-                {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
-              </div>
-            </div>
-          </div>
-          <p className="text-xs text-muted mt-1">Items {stop.type === "collection" ? "collected" : "delivered"} at this specific stop.</p>
-        </div>
-
-        {/* Equipment exchange */}
-        <div>
-          <FieldLabel>{stop.type === "collection" ? "Returning assets / empties at this stop" : "Equipment exchange at this stop"}</FieldLabel>
-          <p className="text-xs text-muted mb-2">
-            {stop.type === "collection"
-              ? "Empty pallets, cages or hired equipment being returned here — leave blank if nothing."
-              : "Drop full units, collect empties — leave blank if no exchange."}
-          </p>
-          <div className="flex gap-2 items-end flex-wrap">
-            {stop.type === "delivery" && (
-              <div className="flex-1 min-w-[6rem]">
-                <FieldLabel>Drop (full)</FieldLabel>
-                <input type="number" min="0" step="1" className="input w-full font-mono" placeholder="0"
-                  value={stop.exchangeDropQty}
-                  onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
-                  onChange={e => onChange({ exchangeDropQty: e.target.value })} />
-              </div>
-            )}
-            <div className="flex-1 min-w-[6rem]">
-              <FieldLabel>{stop.type === "collection" ? "Returning (qty)" : "Collect empties"}</FieldLabel>
-              <input type="number" min="0" step="1" className="input w-full font-mono" placeholder="0"
-                value={stop.exchangeCollectQty}
-                onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
-                onChange={e => onChange({ exchangeCollectQty: e.target.value })} />
-            </div>
-            <div className="relative min-w-[9rem]">
-              <FieldLabel>Unit</FieldLabel>
-              <select className="input w-full appearance-none pr-8"
-                value={stop.exchangeUnit}
-                onChange={e => onChange({ exchangeUnit: e.target.value })}>
-                {EXCHANGE_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-              <div className="pointer-events-none absolute bottom-0 right-3 flex items-center h-[42px]">
-                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Pallets (legacy field for mobile compatibility) */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <FieldLabel>Pallets (legacy)</FieldLabel>
-            <input type="number" min="0" inputMode="numeric" className="input" placeholder="e.g. 26"
-              value={stop.numPallets} onChange={e => onChange({ numPallets: e.target.value })} />
-            <p className="text-xs text-muted mt-1">Legacy field — prefer "Quantity" above</p>
-          </div>
-        </div>
-
-        {/* Duration inputs */}
-        <div className="grid grid-cols-2 gap-3">
-          <DurationInput
-            label="Earliest Arrival (before booking)"
-            value={stop.earliestArrival}
-            onChange={val => onChange({ earliestArrival: val })}
-            hint={
-              stop.timeType === "exact"  ? `How long before ${stop.exactTime || "booked time"} driver may arrive` :
-              stop.timeType === "window" ? `How long before window start (${stop.windowStart || "—"}) driver may arrive` :
-              "How early before the booking the driver may arrive"
-            }
-          />
-          <DurationInput
-            label="Loading / Unloading Time"
-            value={stop.unloadingTime}
-            onChange={val => onChange({ unloadingTime: val })}
-            hint="How long the driver will be held in the yard"
-          />
-        </div>
-
-        {/* Computed arrival / release info */}
-        {showInfo && (
-          <div className="flex flex-wrap gap-3 text-xs">
-            {earliestArrivalTime !== null && (
-              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-blue-800">
-                <span>🕐</span>
-                <span>Arrive from <strong>{fmtHHMM(earliestArrivalTime)}</strong></span>
-              </div>
-            )}
-            {releaseTime !== null && (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700">
-                <span>🏁</span>
-                <span>Expected release <strong>{fmtHHMM(releaseTime)}</strong></span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Timing conflict warnings */}
-        {warnings.length > 0 && (
-          <div className="space-y-1">
-            {warnings.map((w, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                <span className="flex-shrink-0 mt-0.5">⚠</span>
-                <span>{w}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-      </div>
+    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pt-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">
+      {children}
     </div>
   );
 }
@@ -424,13 +249,26 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
     });
   }
 
+  // ── Computed timing ──────────────────────────────────────────────────────────
+  const bookedMins =
+    stop.timeType === "exact"  ? toMins(stop.exactTime) :
+    stop.timeType === "window" ? toMins(stop.windowStart) : null;
+  const windowEndMins  = stop.timeType === "window" ? toMins(stop.windowEnd) : null;
+  const unloadingMins  = toMins(stop.unloadingTime);
+  const earliestMins   = toMins(stop.earliestArrival);
+  const releaseTime    = bookedMins !== null && unloadingMins  !== null ? bookedMins + unloadingMins  : null;
+  const earliestTime   = bookedMins !== null && earliestMins   !== null ? bookedMins - earliestMins   : null;
+  const timingWarning  = releaseTime !== null && windowEndMins !== null && releaseTime > windowEndMins
+    ? `Unloading (${fmtMins(unloadingMins!)}) would finish at ${fmtHHMM(releaseTime)}, after the window closes at ${stop.windowEnd}.`
+    : null;
+
   const dateLabel = stop.type === "collection" ? "Collection Date" : "Delivery Date";
   const complete  = stopComplete(stop);
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden" style={{boxShadow: '0 1px 3px rgba(15,23,42,0.06)'}}>
+    <div className="border border-slate-200 rounded-2xl overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
 
-      {/* Stop header — clickable to collapse */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className={`flex items-center justify-between px-4 py-3 border-b border-slate-100 cursor-pointer select-none transition-colors ${complete ? "bg-green-50/70" : "bg-slate-50/80"}`}
         onClick={() => onChange({ collapsed: !stop.collapsed })}>
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -461,7 +299,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
 
       {!stop.collapsed && <div className="p-4 space-y-4">
 
-        {/* Stop type */}
+        {/* ── Stop type ───────────────────────────────────────────────────── */}
         <div>
           <FieldLabel required>Stop Type</FieldLabel>
           <div className="flex gap-3">
@@ -482,9 +320,9 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           </div>
         </div>
 
-        {/* ── Location ─────────────────────────────────────────────────────── */}
+        {/* ── Location ────────────────────────────────────────────────────── */}
         <div className="space-y-3">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pt-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Location</div>
+          <SectionHeader>Location</SectionHeader>
 
           <div>
             <FieldLabel>Address / Saved Location</FieldLabel>
@@ -521,6 +359,12 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               value={stop.street} onChange={set("street")} onBlur={setCase("street", "address_line")} autoCapitalize="words" />
           </div>
 
+          <div>
+            <FieldLabel>Address Line 2</FieldLabel>
+            <input type="text" className="input" placeholder="Industrial estate, zone B"
+              value={stop.addressLine2} onChange={set("addressLine2")} onBlur={setCase("addressLine2", "address_line")} autoCapitalize="words" />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel required>Town / City</FieldLabel>
@@ -535,12 +379,27 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           </div>
 
           <div>
-            <FieldLabel required>Country</FieldLabel>
-            <input type="text" className="input" placeholder="United Kingdom"
-              value={stop.country} onChange={set("country")} onBlur={setCase("country", "proper_name")} autoCapitalize="words" />
+            <FieldLabel>County / Region</FieldLabel>
+            <input type="text" className="input" placeholder="Exampleshire"
+              value={stop.countyRegion} onChange={set("countyRegion")} onBlur={setCase("countyRegion", "proper_name")} autoCapitalize="words" />
           </div>
 
-          {/* Lat / Lng — required */}
+          <div>
+            <FieldLabel required>Country</FieldLabel>
+            <div className="relative">
+              <select className="input w-full appearance-none pr-8"
+                value={stop.country}
+                onChange={e => onChange({ country: e.target.value })}>
+                {COUNTRIES.map(([, name]) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <FieldLabel required>Latitude</FieldLabel>
@@ -570,9 +429,9 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           <CoordsHelp />
         </div>
 
-        {/* ── Timing ───────────────────────────────────────────────────────── */}
+        {/* ── Timing ──────────────────────────────────────────────────────── */}
         <div className="space-y-3">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pt-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Timing</div>
+          <SectionHeader>Timing</SectionHeader>
 
           <div>
             <FieldLabel required>{dateLabel}</FieldLabel>
@@ -618,10 +477,22 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           )}
         </div>
 
-        {/* ── Reference number — always visible, matches PRF ───────────────── */}
+        {/* ── Entrance / navigation instructions ──────────────────────────── */}
+        <div>
+          <FieldLabel>Entrance / navigation instructions</FieldLabel>
+          <textarea className="input min-h-[80px] resize-none"
+            placeholder="Gate to use, security check-in, what to say on arrival, how to find the loading bay…"
+            value={stop.navigationInstructions}
+            onChange={set("navigationInstructions")}
+            onBlur={setCase("navigationInstructions", "sentence")} />
+          <p className="text-xs text-muted mt-1">How the driver reaches the loading area — gate number, security code, landmarks.</p>
+        </div>
+
+        {/* ── Collection / Delivery reference ─────────────────────────────── */}
         <div>
           <FieldLabel>{stop.type === "collection" ? "Collection reference" : "Delivery reference"}</FieldLabel>
-          <input type="text" className="input" placeholder={stop.type === "collection" ? "COL-2026-001" : "DEL-2026-001"}
+          <input type="text" className="input"
+            placeholder={stop.type === "collection" ? "COL-2026-001" : "DEL-2026-001"}
             value={stop.referenceNumber} onChange={set("referenceNumber")} />
           <p className="text-xs text-muted mt-1">
             {stop.type === "collection"
@@ -630,36 +501,254 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           </p>
         </div>
 
+        {/* ── Quantities at this stop ──────────────────────────────────────── */}
+        <div className="space-y-3">
+          <SectionHeader>Quantities at this stop</SectionHeader>
+
+          {/* Stop quantity */}
+          <div>
+            <FieldLabel>Quantity at this stop</FieldLabel>
+            <div className="flex gap-2 mt-1">
+              <input
+                type="number" min="0" step="any"
+                className="input flex-1 font-mono"
+                placeholder="0"
+                value={stop.stopQuantity}
+                onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E") e.preventDefault(); }}
+                onChange={e => onChange({ stopQuantity: e.target.value })}
+              />
+              <div className="relative min-w-[9rem]">
+                <select className="input w-full appearance-none pr-8"
+                  value={stop.stopQuantityUnit}
+                  onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
+                  {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                  <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-muted mt-1">Items {stop.type === "collection" ? "collected" : "delivered"} at this specific stop.</p>
+          </div>
+
+          {/* Equipment exchange */}
+          <div>
+            <FieldLabel>{stop.type === "collection" ? "Returning assets / empties at this stop" : "Equipment exchange at this stop"}</FieldLabel>
+            <p className="text-xs text-muted mb-2">
+              {stop.type === "collection"
+                ? "Empty pallets, cages or hired equipment being returned here — leave blank if nothing."
+                : "Drop full units, collect empties — leave blank if no exchange."}
+            </p>
+            <div className="flex gap-2 items-end flex-wrap">
+              {stop.type === "delivery" && (
+                <div className="flex-1 min-w-[6rem]">
+                  <FieldLabel>Drop (full)</FieldLabel>
+                  <input type="number" min="0" step="1" className="input w-full font-mono" placeholder="0"
+                    value={stop.exchangeDropQty}
+                    onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                    onChange={e => onChange({ exchangeDropQty: e.target.value })} />
+                </div>
+              )}
+              <div className="flex-1 min-w-[6rem]">
+                <FieldLabel>{stop.type === "collection" ? "Returning (qty)" : "Collect empties"}</FieldLabel>
+                <input type="number" min="0" step="1" className="input w-full font-mono" placeholder="0"
+                  value={stop.exchangeCollectQty}
+                  onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
+                  onChange={e => onChange({ exchangeCollectQty: e.target.value })} />
+              </div>
+              <div className="relative min-w-[9rem]">
+                <FieldLabel>Unit</FieldLabel>
+                <select className="input w-full appearance-none pr-8"
+                  value={stop.exchangeUnit}
+                  onChange={e => onChange({ exchangeUnit: e.target.value })}>
+                  {EXCHANGE_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <div className="pointer-events-none absolute bottom-0 right-3 flex items-center h-[42px]">
+                  <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Unloading time + computed release */}
+          <DurationInput
+            label="Loading / Unloading time"
+            value={stop.unloadingTime}
+            onChange={val => onChange({ unloadingTime: val })}
+            hint="Estimated time the driver will be held on site"
+          />
+          {releaseTime !== null && (
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 w-fit">
+              <span>🏁</span>
+              <span>Expected release <strong>{fmtHHMM(releaseTime)}</strong></span>
+            </div>
+          )}
+          {timingWarning && (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <span className="flex-shrink-0 mt-0.5">⚠</span>
+              <span>{timingWarning}</span>
+            </div>
+          )}
+        </div>
+
+        {/* ── Handling ────────────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader>Handling</SectionHeader>
+          <FieldLabel>{stop.type === "collection" ? "Loading method" : "Unloading method"}</FieldLabel>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {HANDLING_METHODS.map(([v, l]) => (
+              <button key={v} type="button"
+                onClick={() => {
+                  const next = stop.handlingMethods.includes(v)
+                    ? stop.handlingMethods.filter(m => m !== v)
+                    : [...stop.handlingMethods, v];
+                  onChange({ handlingMethods: next });
+                }}
+                className={
+                  "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                  (stop.handlingMethods.includes(v)
+                    ? "bg-slate-700 text-white border-slate-700"
+                    : "bg-white text-muted border-border hover:border-gray-400")
+                }>
+                {l}
+              </button>
+            ))}
+          </div>
+          {stop.handlingMethods.includes("other") && (
+            <input type="text" className="input mt-2"
+              placeholder="Describe the handling method…"
+              value={stop.handlingMethodOther}
+              onChange={e => onChange({ handlingMethodOther: e.target.value })} />
+          )}
+        </div>
+
+        {/* ── Site access requirements ─────────────────────────────────────── */}
+        <div>
+          <SectionHeader>Site Access Requirements</SectionHeader>
+          <div className="flex flex-wrap gap-2">
+            {ACCESS_REQUIREMENTS.map(([v, l]) => (
+              <button key={v} type="button"
+                onClick={() => {
+                  const next = stop.accessRequirements.includes(v)
+                    ? stop.accessRequirements.filter(x => x !== v)
+                    : [...stop.accessRequirements, v];
+                  onChange({ accessRequirements: next });
+                }}
+                className={
+                  "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                  (stop.accessRequirements.includes(v)
+                    ? "bg-slate-700 text-white border-slate-700"
+                    : "bg-white text-muted border-border hover:border-gray-400")
+                }>
+                {l}
+              </button>
+            ))}
+          </div>
+          {stop.accessRequirements.includes("height_restriction") && (
+            <input className="input mt-2 max-w-xs" type="text" placeholder="Height restriction (e.g. 4.2m)"
+              value={stop.heightRestrictionValue}
+              onChange={e => onChange({ heightRestrictionValue: e.target.value })} />
+          )}
+          {stop.accessRequirements.includes("weight_restriction") && (
+            <input className="input mt-2 max-w-xs" type="text" placeholder="Weight restriction (e.g. 7.5t)"
+              value={stop.weightRestrictionValue}
+              onChange={e => onChange({ weightRestrictionValue: e.target.value })} />
+          )}
+          {stop.accessRequirements.includes("length_restriction") && (
+            <input className="input mt-2 max-w-xs" type="text" placeholder="Length restriction (e.g. 18m)"
+              value={stop.lengthRestrictionValue}
+              onChange={e => onChange({ lengthRestrictionValue: e.target.value })} />
+          )}
+        </div>
+
+        {/* ── PPE required ─────────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader>PPE Required at This Site</SectionHeader>
+          <p className="text-xs text-muted mb-2">Select everything the driver must wear on site.</p>
+          <div className="flex flex-wrap gap-2">
+            {PPE_ITEMS.map(([v, l]) => (
+              <button key={v} type="button"
+                onClick={() => {
+                  const next = stop.ppeItems.includes(v)
+                    ? stop.ppeItems.filter(x => x !== v)
+                    : [...stop.ppeItems, v];
+                  onChange({ ppeItems: next });
+                }}
+                className={
+                  "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                  (stop.ppeItems.includes(v)
+                    ? "bg-slate-700 text-white border-slate-700"
+                    : "bg-white text-muted border-border hover:border-gray-400")
+                }>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Load readiness ───────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader>Load Readiness</SectionHeader>
+          <div className="flex flex-wrap gap-2">
+            {LOAD_READINESS.map(([v, l]) => (
+              <button key={v} type="button"
+                onClick={() => onChange({ loadReadiness: stop.loadReadiness === v ? "" : v })}
+                className={
+                  "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                  (stop.loadReadiness === v
+                    ? "bg-slate-700 text-white border-slate-700"
+                    : "bg-white text-muted border-border hover:border-gray-400")
+                }>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Notes for driver ─────────────────────────────────────────────── */}
+        <div>
+          <FieldLabel>Notes for driver at this stop</FieldLabel>
+          <textarea className="input min-h-[64px] resize-none"
+            placeholder="Gate code 1234, use back entrance, call 30 min ahead…"
+            value={stop.stopNotes} onChange={set("stopNotes")} onBlur={setCase("stopNotes", "sentence")} />
+        </div>
+
         {/* ── Optional toggle ───────────────────────────────────────────────── */}
-        <OptionalToggle open={stop.showOptional} onToggle={() => onChange({ showOptional: !stop.showOptional })} label="stop details" />
+        <OptionalToggle open={stop.showOptional} onToggle={() => onChange({ showOptional: !stop.showOptional })} label="more details" />
 
         {stop.showOptional && (
           <div className="space-y-4 pt-1 border-t border-border">
 
-            {/* Address clarity */}
+            {/* Unit / Building */}
             <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Address Clarity</div>
-              <div className="space-y-3">
-                <div>
-                  <FieldLabel>Unit / Building</FieldLabel>
-                  <input type="text" className="input" placeholder="Unit 4 / Gatehouse"
-                    value={stop.unitName} onChange={set("unitName")} onBlur={setCase("unitName", "address_line")} autoCapitalize="words" />
-                </div>
-                <div>
-                  <FieldLabel>Address Line 2</FieldLabel>
-                  <input type="text" className="input" placeholder="Industrial estate, zone B"
-                    value={stop.addressLine2} onChange={set("addressLine2")} onBlur={setCase("addressLine2", "address_line")} autoCapitalize="words" />
-                </div>
-                <div>
-                  <FieldLabel>County / Region</FieldLabel>
-                  <input type="text" className="input" placeholder="Exampleshire"
-                    value={stop.countyRegion} onChange={set("countyRegion")} onBlur={setCase("countyRegion", "proper_name")} autoCapitalize="words" />
-                </div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Address</div>
+              <div>
+                <FieldLabel>Unit / Building</FieldLabel>
+                <input type="text" className="input" placeholder="Unit 4 / Gatehouse"
+                  value={stop.unitName} onChange={set("unitName")} onBlur={setCase("unitName", "address_line")} autoCapitalize="words" />
               </div>
             </div>
 
-            {/* Quantities & stop timing */}
-            <StopTimingBlock stop={stop} onChange={onChange} set={set} />
+            {/* Earliest arrival */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Earliest Arrival</div>
+              <DurationInput
+                label="Earliest arrival (before booking)"
+                value={stop.earliestArrival}
+                onChange={val => onChange({ earliestArrival: val })}
+                hint={
+                  stop.timeType === "exact"  ? `How long before ${stop.exactTime || "booked time"} driver may arrive` :
+                  stop.timeType === "window" ? `How long before window start (${stop.windowStart || "—"}) driver may arrive` :
+                  "How early before the booking the driver may arrive"
+                }
+              />
+              {earliestTime !== null && (
+                <div className="mt-2 flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-800 w-fit">
+                  <span>🕐</span>
+                  <span>Arrive from <strong>{fmtHHMM(earliestTime)}</strong></span>
+                </div>
+              )}
+            </div>
 
             {/* Contact */}
             <div>
@@ -689,9 +778,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
             <div>
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Booking</div>
               <div className="space-y-3">
-                <div>
-                  <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })} label="Booking required" />
-                </div>
+                <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })} label="Booking required" />
                 {stop.bookingRequired && (
                   <div>
                     <FieldLabel>Booking Reference</FieldLabel>
@@ -721,117 +808,18 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               </div>
             </div>
 
-            {/* Driver */}
+            {/* Driver instructions */}
             <div>
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Driver</div>
-              <div className="space-y-3">
-                <div>
-                  <FieldLabel>Driver Notes / Instructions</FieldLabel>
-                  <textarea className="input min-h-16 resize-none" placeholder="Use gate 3, call ahead 30 min before arrival…"
-                    value={stop.instructions} onChange={set("instructions")} onBlur={setCase("instructions", "sentence")} />
-                </div>
-                <div>
-                  <FieldLabel>Navigation Instructions</FieldLabel>
-                  <input type="text" className="input" placeholder="Paste Google Maps or Waze link…"
-                    value={stop.navigationInstructions} onChange={set("navigationInstructions")} onBlur={setCase("navigationInstructions", "sentence")} autoCapitalize="sentences" />
-                </div>
+              <div>
+                <FieldLabel>Additional Driver Instructions</FieldLabel>
+                <textarea className="input min-h-[64px] resize-none"
+                  placeholder="Use gate 3, call ahead 30 min before arrival…"
+                  value={stop.instructions} onChange={set("instructions")} onBlur={setCase("instructions", "sentence")} />
               </div>
             </div>
 
-            {/* Handling & access */}
-            <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling</div>
-              <div className="space-y-3">
-                <div>
-                  <FieldLabel>{stop.type === "collection" ? "Loading method" : "Unloading method"}</FieldLabel>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {HANDLING_METHODS.map(([v, l]) => (
-                      <button key={v} type="button"
-                        onClick={() => {
-                          const next = stop.handlingMethods.includes(v)
-                            ? stop.handlingMethods.filter(m => m !== v)
-                            : [...stop.handlingMethods, v];
-                          onChange({ handlingMethods: next });
-                        }}
-                        className={
-                          "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                          (stop.handlingMethods.includes(v)
-                            ? "bg-slate-700 text-white border-slate-700"
-                            : "bg-white text-muted border-border hover:border-gray-400")
-                        }>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Access requirements */}
-            <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Site Access Requirements</div>
-              <div className="flex flex-wrap gap-2">
-                {ACCESS_REQUIREMENTS.map(([v, l]) => (
-                  <button key={v} type="button"
-                    onClick={() => {
-                      const next = stop.accessRequirements.includes(v)
-                        ? stop.accessRequirements.filter(x => x !== v)
-                        : [...stop.accessRequirements, v];
-                      onChange({ accessRequirements: next });
-                    }}
-                    className={
-                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (stop.accessRequirements.includes(v)
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-white text-muted border-border hover:border-gray-400")
-                    }>
-                    {l}
-                  </button>
-                ))}
-              </div>
-              {stop.accessRequirements.includes("height_restriction") && (
-                <input className="input mt-2 max-w-xs" type="text" placeholder="Height restriction (e.g. 4.2m)"
-                  value={stop.heightRestrictionValue}
-                  onChange={e => onChange({ heightRestrictionValue: e.target.value })} />
-              )}
-              {stop.accessRequirements.includes("weight_restriction") && (
-                <input className="input mt-2 max-w-xs" type="text" placeholder="Weight restriction (e.g. 7.5t)"
-                  value={stop.weightRestrictionValue}
-                  onChange={e => onChange({ weightRestrictionValue: e.target.value })} />
-              )}
-              {stop.accessRequirements.includes("length_restriction") && (
-                <input className="input mt-2 max-w-xs" type="text" placeholder="Length restriction (e.g. 18m)"
-                  value={stop.lengthRestrictionValue}
-                  onChange={e => onChange({ lengthRestrictionValue: e.target.value })} />
-              )}
-            </div>
-
-            {/* PPE required */}
-            <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">PPE Required at This Site</div>
-              <p className="text-xs text-muted mb-2">Select everything the driver must wear on site.</p>
-              <div className="flex flex-wrap gap-2">
-                {PPE_ITEMS.map(([v, l]) => (
-                  <button key={v} type="button"
-                    onClick={() => {
-                      const next = stop.ppeItems.includes(v)
-                        ? stop.ppeItems.filter(x => x !== v)
-                        : [...stop.ppeItems, v];
-                      onChange({ ppeItems: next });
-                    }}
-                    className={
-                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (stop.ppeItems.includes(v)
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-white text-muted border-border hover:border-gray-400")
-                    }>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Proof of delivery */}
+            {/* Proof required */}
             <div>
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Proof Required</div>
               <div className="flex flex-wrap gap-2">
@@ -855,43 +843,12 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               </div>
             </div>
 
-            {/* Load readiness */}
-            <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Load Readiness</div>
-              <div className="flex flex-wrap gap-2">
-                {LOAD_READINESS.map(([v, l]) => (
-                  <button key={v} type="button"
-                    onClick={() => onChange({ loadReadiness: stop.loadReadiness === v ? "" : v })}
-                    className={
-                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (stop.loadReadiness === v
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-white text-muted border-border hover:border-gray-400")
-                    }>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Stop notes (driver visible) */}
-            <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Stop Notes</div>
-              <div className="space-y-3">
-                <div>
-                  <FieldLabel>Notes for driver at this stop</FieldLabel>
-                  <textarea className="input min-h-16 resize-none" placeholder="Gate code 1234, use back entrance, call 30 min ahead…"
-                    value={stop.stopNotes} onChange={set("stopNotes")} onBlur={setCase("stopNotes", "sentence")} />
-                </div>
-              </div>
-            </div>
-
-            {/* Internal */}
+            {/* Internal notes */}
             <div>
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Internal</div>
               <div>
                 <FieldLabel>Internal Notes</FieldLabel>
-                <textarea className="input min-h-16 resize-none" placeholder="Not shown to driver — planner only…"
+                <textarea className="input min-h-[64px] resize-none" placeholder="Not shown to driver — planner only…"
                   value={stop.internalNotes} onChange={set("internalNotes")} onBlur={setCase("internalNotes", "sentence")} />
               </div>
             </div>
@@ -901,7 +858,7 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
 
       </div>}
 
-      {/* Stop footer — always visible */}
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div className={`px-4 py-2.5 border-t text-xs font-semibold flex items-center gap-2 ${complete ? "text-green-700 bg-green-50/80 border-green-100" : "text-amber-700 bg-amber-50/80 border-amber-100"}`}>
         {complete ? (
           <><span className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0"><svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></span> Stop {index + 1} complete</>

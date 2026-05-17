@@ -1112,6 +1112,7 @@ export default function PublicRequestForm() {
   const [steelWidth,              setSteelWidth]              = useState("");
   // Bulk
   const [tippingReq,              setTippingReq]              = useState(false);
+  const [wetDry,                  setWetDry]                  = useState("");
   const [tempType,                setTempType]                = useState("");
   // Food
   const [tempRange,               setTempRange]               = useState("");
@@ -1369,7 +1370,7 @@ export default function PublicRequestForm() {
         steelWidth:           steelWidth.trim()    || undefined,
         tippingRequired:      tippingReq     || undefined,
         temperatureRange:     tempRange.trim()     || undefined,
-        chilledFrozenAmbient: tempType        || undefined,
+        chilledFrozenAmbient: (goodsType === "bulk_material" ? wetDry : tempType) || undefined,
         foodPreCooled:        foodPreCooled   || undefined,
         vehicleCount:         vehicleCount  ? parseInt(vehicleCount, 10)  : undefined,
         vehicleMakeModel:     vehicleMakeModel.trim()  || undefined,
@@ -1795,7 +1796,7 @@ export default function PublicRequestForm() {
                   <div>
                     <FieldLabel>Wet or dry</FieldLabel>
                     <div className="mt-1">
-                      <Chips options={WET_DRY_OPTIONS} value={tempType} onChange={setTempType} />
+                      <Chips options={WET_DRY_OPTIONS} value={wetDry} onChange={setWetDry} />
                     </div>
                   </div>
                 </div>

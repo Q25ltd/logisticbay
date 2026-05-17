@@ -305,9 +305,7 @@ export default function CreateJobPage() {
   const [declaredValue,       setDeclaredValue]      = useState("");
   const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
   const [billingRef,          setBillingRef]          = useState("");
-  const [vatRegistered,       setVatRegistered]       = useState(false);
-  const [vatNumber,           setVatNumber]           = useState("");
-
+  const [plannerNotes,        setPlannerNotes]        = useState("");
   // ── Section 07 — Rejection & return policy ───────────────────────────────────
   const [showExceptionPolicy, setShowExceptionPolicy] = useState(false);
   const [rejectionAction,              setRejectionAction]              = useState("");
@@ -333,7 +331,7 @@ export default function CreateJobPage() {
   const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim());
   const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
-  const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 5 && quantity && unit && parseFloat(estWeight) > 0);
+  const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
 
   const sec1Started = !!(customerName || contactName);
@@ -359,7 +357,7 @@ export default function CreateJobPage() {
 
   const sec3Missing: string[] = [
     !goodsType                    ? "goods type"                            : "",
-    goodsDesc.trim().length < 5   ? "goods description (min 5 chars)"       : "",
+    goodsDesc.trim().length < 15  ? "goods description (min 15 chars)"      : "",
     !quantity                     ? "quantity"                               : "",
     !unit                         ? "unit"                                   : "",
     !(parseFloat(estWeight) > 0)  ? "estimated weight"                       : "",
@@ -444,6 +442,7 @@ export default function CreateJobPage() {
       setContactEmail(job.bookingContactEmail || "");
       setCustomerRef(job.customerRef || "");
       setPurchaseOrderNumber(job.purchaseOrderNumber || "");
+      if (job.plannerNotes) setPlannerNotes(job.plannerNotes);
 
       if (job.stops && job.stops.length > 0) {
         setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobPartToStopState));
@@ -506,8 +505,6 @@ export default function CreateJobPage() {
       if (bdb) {
         if (bdb.declaredGoodsValue)  setDeclaredValue(String(bdb.declaredGoodsValue));
         if (bdb.billingReference)    setBillingRef(String(bdb.billingReference));
-        if (bdb.vatRegistered !== undefined) setVatRegistered(Boolean(bdb.vatRegistered));
-        if (bdb.vatNumber)           setVatNumber(String(bdb.vatNumber));
       }
       if (job.purchaseOrderNumber) setPurchaseOrderNumber(job.purchaseOrderNumber);
 
@@ -628,8 +625,6 @@ export default function CreateJobPage() {
       declaredGoodsValue:  declaredValue ? parseFloat(declaredValue) : undefined,
       purchaseOrderNumber: purchaseOrderNumber.trim() || undefined,
       billingReference:    billingRef.trim() || undefined,
-      vatRegistered:       vatRegistered || undefined,
-      vatNumber:           vatRegistered ? vatNumber.trim() || undefined : undefined,
     };
 
     const specialRequirementsData = specialItems.length ? {
@@ -765,6 +760,7 @@ export default function CreateJobPage() {
       specialRequirementsData,
       transportRequirementsData,
       exceptionPolicyData,
+      plannerNotes:    plannerNotes.trim() || undefined,
       saveAsTemplate:  !isEditMode && saveAsTemplate,
       templateName:    !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
     };
@@ -1017,6 +1013,13 @@ export default function CreateJobPage() {
               <TextField label="Customer reference / order number" value={customerRef}
                 onChange={setCustomerRef} placeholder="ORD-2026-1234"
                 hint="Your internal reference for this job, if you have one." />
+              <div>
+                <FieldLabel>Notes for planner</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={3}
+                  value={plannerNotes} onChange={e => setPlannerNotes(e.target.value)}
+                  placeholder="Any context the planning team needs — constraints, customer preferences, special arrangements." />
+                <div className="text-xs text-muted mt-1">Internal only — not shown to the driver or customer.</div>
+              </div>
               <SectionFooter complete={sec1Complete} label="Customer details" onCollapse={() => setS1(true)} missing={sec1Missing} />
             </div>
           )}
@@ -1094,8 +1097,8 @@ export default function CreateJobPage() {
                 <textarea className="input mt-1 w-full" rows={2}
                   value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
                   placeholder="Describe exactly what is being transported — be specific" />
-                <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 5 ? "text-muted" : "text-amber-600 font-medium"}`}>
-                  {goodsDesc.trim().length} / 5 characters minimum
+                <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 15 ? "text-muted" : "text-amber-600 font-medium"}`}>
+                  {goodsDesc.trim().length} / 15 characters minimum
                 </div>
               </div>
 
@@ -1525,10 +1528,6 @@ export default function CreateJobPage() {
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
-              <Toggle value={vatRegistered} onChange={setVatRegistered} label="Customer is VAT registered" />
-              {vatRegistered && (
-                <TextField label="VAT number" value={vatNumber} onChange={setVatNumber} placeholder="GB123456789" />
-              )}
               <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} missing={sec6Missing} />
             </div>
           )}
