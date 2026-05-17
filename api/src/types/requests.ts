@@ -281,25 +281,48 @@ export interface CreateJobBody {
   pickupTextSnapshot?:   string;
   dropoffTextSnapshot?:  string;
   referenceNumber?:      string;
-  materialType?:         string;
-  quantityExpected?:     string;
+  materialType?:         string;        // legacy alias → goodsDescription
+  quantityExpected?:     string;        // legacy alias → quantity
   quantityUnit?:         string;
   plannerNotes?:         string;
   assignedTruck?:        string;
   assignedTrailer?:      string;
   vehicleClass?:         string;
   vehicleClassRequired?: string;
-  reqBodyCategory?:      string;
-  reqGvwMin?:            string;
-  reqBodyType?:          string;
-  reqEquipment?:         string[];
+  // Legacy vehicle requirement field names (still accepted for backward compat)
+  reqBodyCategory?:      string;        // → vehicleCategory
+  reqGvwMin?:            string;        // → minGvwClass
+  reqBodyType?:          string;        // → bodyType
+  reqEquipment?:         string[];      // → equipment
   reqLicenceClass?:      string;
-  trailerTypesAllowed?:  string[];
+  trailerTypesAllowed?:  string[];      // → trailersAllowed
+  // Canonical vehicle requirement field names
+  vehicleCategory?:      string;
+  minGvwClass?:          string;
+  bodyType?:             string;
+  equipment?:            string[];
+  trailersAllowed?:      string[];
   priority?:             "low" | "normal" | "high";
   serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
   stops?:                JobPartInput[];
   loadDetails?:          LoadDetailsInput | null;
+  // Canonical flat load fields (accept alongside nested loadDetails)
+  goodsDescription?:     string;
+  goodsType?:            string;
+  quantity?:             number | null;
+  weight?:               number | null;
+  volume?:               number | null;
+  dimensions?:           string;
+  fragile?:              boolean;
+  stackable?:            boolean;
+  tempControlled?:       boolean;
+  tempRange?:            string;
+  hazardClass?:          string;
+  photosRequired?:       boolean;
+  weighbridgeRequired?:  boolean;
+  securingRequirements?: string[] | null;
+  specialRequirements?:  string[] | null;
   saveMode?:             "draft" | "ready_to_plan";
   requireCollection?:    boolean;
   requirePOD?:           boolean;
@@ -329,12 +352,24 @@ export interface CreateJobBody {
   failureAction?:             string;
   assistancePhone?:           string;
   assistanceNote?:            string;
-  returnDestination?:         string;
+  // Canonical exception / return fields
+  alternativeReturnAddress?:  string;
+  approvalContactName?:       string;
+  approvalContactPhone?:      string;
+  // Legacy exception field names (still accepted)
+  returnDestination?:         string;   // → alternativeReturnAddress
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
   loadData?:                  Record<string, unknown> | null;
   billingData?:               Record<string, unknown> | null;
+  // Canonical flattened notes fields
+  driverNoteChips?:           string[] | null;
+  driverVisibleNotes?:        string;
+  safetyInstructions?:        string;
+  // Billing
+  billingReference?:          string;
+  declaredGoodsValue?:        number | null;
 }
 
 export interface PatchJobBody {
@@ -345,25 +380,48 @@ export interface PatchJobBody {
   pickupTextSnapshot?:   string;
   dropoffTextSnapshot?:  string;
   referenceNumber?:      string;
-  materialType?:         string;
-  quantityExpected?:     string;
+  materialType?:         string;        // legacy alias → goodsDescription
+  quantityExpected?:     string;        // legacy alias → quantity
   quantityUnit?:         string;
   plannerNotes?:         string;
   assignedTruck?:        string;
   assignedTrailer?:      string;
   vehicleClass?:         string;
   vehicleClassRequired?: string;
-  reqBodyCategory?:      string;
-  reqGvwMin?:            string;
-  reqBodyType?:          string;
-  reqEquipment?:         string[];
+  // Legacy vehicle requirement field names (still accepted for backward compat)
+  reqBodyCategory?:      string;        // → vehicleCategory
+  reqGvwMin?:            string;        // → minGvwClass
+  reqBodyType?:          string;        // → bodyType
+  reqEquipment?:         string[];      // → equipment
   reqLicenceClass?:      string;
-  trailerTypesAllowed?:  string[];
+  trailerTypesAllowed?:  string[];      // → trailersAllowed
+  // Canonical vehicle requirement field names
+  vehicleCategory?:      string;
+  minGvwClass?:          string;
+  bodyType?:             string;
+  equipment?:            string[];
+  trailersAllowed?:      string[];
   priority?:             "low" | "normal" | "high";
   serviceType?:          "delivery" | "collection" | "transfer" | string;
   internalNotes?:        string;
   stops?:                JobPartInput[];
   loadDetails?:          LoadDetailsInput | null;
+  // Canonical flat load fields (accept alongside nested loadDetails)
+  goodsDescription?:     string;
+  goodsType?:            string;
+  quantity?:             number | null;
+  weight?:               number | null;
+  volume?:               number | null;
+  dimensions?:           string;
+  fragile?:              boolean;
+  stackable?:            boolean;
+  tempControlled?:       boolean;
+  tempRange?:            string;
+  hazardClass?:          string;
+  photosRequired?:       boolean;
+  weighbridgeRequired?:  boolean;
+  securingRequirements?: string[] | null;
+  specialRequirements?:  string[] | null;
   saveMode?:             "draft" | "ready_to_plan";
   requireCollection?:    boolean;
   requirePOD?:           boolean;
@@ -391,12 +449,25 @@ export interface PatchJobBody {
   failureAction?:             string;
   assistancePhone?:           string;
   assistanceNote?:            string;
-  returnDestination?:         string;
+  // Canonical exception / return fields
+  alternativeReturnAddress?:  string;
+  approvalContactName?:       string;
+  approvalContactPhone?:      string;
+  // Legacy exception field names (still accepted)
+  returnDestination?:         string;   // → alternativeReturnAddress
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
   loadData?:                  Record<string, unknown> | null;
   billingData?:               Record<string, unknown> | null;
+  // Canonical flattened notes fields
+  driverNoteChips?:           string[] | null;
+  driverVisibleNotes?:        string;
+  safetyInstructions?:        string;
+  // Billing
+  billingReference?:          string;
+  declaredGoodsValue?:        number | null;
+  status?:                    string;
 }
 
 export interface UpdateJobStatusBody {
