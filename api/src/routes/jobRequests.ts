@@ -187,9 +187,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
 
     // ── Load ─────────────────────────────────────────────────────────────────
     const tempControlled = bool(body.tempControlled);
-    const tempRange      = strN(body.tempRange);
+    const tempRange      = str(body.tempRange);
     const fragile        = bool(body.fragile);
-    const hazardClass    = strN(body.hazardClass);
+    const hazardClass    = str(body.hazardClass);
     const specialItems: string[] = Array.isArray(body.specialRequirements) ? body.specialRequirements as string[] : [];
 
     // ── Exception policy ─────────────────────────────────────────────────────
@@ -236,19 +236,19 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
 
           // Customer / requester
           customerName:        str(body.customerName) || (link.customer?.name ?? ""),
-          customerRef:         strN(body.customerRef),
-          bookingContactName:  strN(body.bookingContactName),
-          bookingContactPhone: strN(body.bookingContactPhone),
-          bookingContactEmail: strN(body.bookingContactEmail),
+          customerRef:         str(body.customerRef),
+          bookingContactName:  str(body.bookingContactName),
+          bookingContactPhone: str(body.bookingContactPhone),
+          bookingContactEmail: str(body.bookingContactEmail),
 
           // Billing
-          purchaseOrderNumber: strN(body.purchaseOrderNumber),
+          purchaseOrderNumber: str(body.purchaseOrderNumber),
           billingReference:    strN(body.billingReference),
           declaredGoodsValue:  body.declaredGoodsValue != null ? str(body.declaredGoodsValue) : null,
 
           // Load
-          goodsType:           strN(body.goodsType),
-          goodsDescription:    strN(body.goodsDescription),
+          goodsType:           str(body.goodsType),
+          goodsDescription:    str(body.goodsDescription),
           quantity:            toNullableNumber(body.quantity as number | null | undefined),
           quantityUnit:        str(body.quantityUnit),
           weight:              toNullableNumber(body.weight as number | null | undefined),
