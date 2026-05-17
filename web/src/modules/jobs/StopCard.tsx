@@ -618,6 +618,18 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
           )}
         </div>
 
+        {/* ── Reference number — always visible, matches PRF ───────────────── */}
+        <div>
+          <FieldLabel>{stop.type === "collection" ? "Collection reference" : "Delivery reference"}</FieldLabel>
+          <input type="text" className="input" placeholder={stop.type === "collection" ? "COL-2026-001" : "DEL-2026-001"}
+            value={stop.referenceNumber} onChange={set("referenceNumber")} />
+          <p className="text-xs text-muted mt-1">
+            {stop.type === "collection"
+              ? "Warehouse release number or booking ref. Driver shows this on arrival."
+              : "Goods-in booking number or PO. Driver shows this to unload."}
+          </p>
+        </div>
+
         {/* ── Optional toggle ───────────────────────────────────────────────── */}
         <OptionalToggle open={stop.showOptional} onToggle={() => onChange({ showOptional: !stop.showOptional })} label="stop details" />
 
@@ -673,15 +685,10 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
               </div>
             </div>
 
-            {/* Reference / booking */}
+            {/* Booking */}
             <div>
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Reference / Booking</div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Booking</div>
               <div className="space-y-3">
-                <div>
-                  <FieldLabel>Reference Number</FieldLabel>
-                  <input type="text" className="input" placeholder="REF-00123"
-                    value={stop.referenceNumber} onChange={set("referenceNumber")} />
-                </div>
                 <div>
                   <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })} label="Booking required" />
                 </div>
