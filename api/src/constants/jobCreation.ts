@@ -15,11 +15,20 @@ export {
   isLicenceClass,
 } from "./vehicleTaxonomy.js";
 
+// Canonical stop types (matches DATA_DICTIONARY.md JobPart.type)
+// Legacy aliases (pickup/dropoff/handover/yard/depot) are still accepted for
+// backwards compatibility with existing API clients, but new data should use
+// the canonical values only.
 export const JOB_STOP_TYPES = [
-  "pickup",
-  "dropoff",
   "collection",
   "delivery",
+  "reload",
+  "return",
+  "waypoint",
+  "other",
+  // legacy aliases — kept for backwards compat, deprecated
+  "pickup",
+  "dropoff",
   "handover",
   "yard",
   "depot",
@@ -33,7 +42,7 @@ export const LOAD_UNITS = [
   "items",
   "bags",
   "litres",
-  "m3",
+  "cubic_metres",
   "other",
 ] as const;
 

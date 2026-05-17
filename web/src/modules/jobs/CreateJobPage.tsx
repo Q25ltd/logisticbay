@@ -40,16 +40,15 @@ import {
 const LOAD_TYPES: [string, string][] = GOODS_TYPES;
 
 const LOAD_UNITS: [string, string][] = [
-  ["pallets",     "Pallets"],
-  ["roll_cages",  "Roll cages"],
-  ["tonnes",      "Tonnes"],
-  ["kg",          "Kilograms"],
-  ["bags",        "Bags"],
-  ["items",       "Items"],
-  ["loads",       "Loads"],
-  ["litres",      "Litres"],
-  ["cubic_metres","Cubic metres"],
-  ["other",       "Other"],
+  ["pallets",      "Pallets"],
+  ["tonnes",       "Tonnes"],
+  ["kg",           "Kilograms"],
+  ["bags",         "Bags"],
+  ["items",        "Items"],
+  ["loads",        "Loads"],
+  ["litres",       "Litres"],
+  ["cubic_metres", "Cubic metres"],
+  ["other",        "Other"],
 ];
 
 const SPLIT_OPTIONS: [string, string][] = [

@@ -150,9 +150,9 @@ Table: `FleetUnit`
 | registration | String | Yes | Vehicle registration plate | Vehicle registration number |
 | vehicleClass | String | Yes | Free text (structured) | Canonical vehicle class (e.g. `CE`, `C`, `B`) |
 | vehicleClassLegacy | String | Yes | Free text, default `""` | Legacy vehicle class string migrated from older data |
-| bodyCategory | String | Yes | `tractor` \| `rigid` \| `van` \| `other`, default `""` | High-level body category |
-| gvwClass | String | Yes | Free text (e.g. `7.5t`, `18t`, `44t`), default `""` | Gross vehicle weight class |
-| bodyType | String | Yes | `curtainsider` \| `flatbed` \| `box` \| `tipper` \| `fridge` \| `tanker` \| `mixer` \| `other`, default `""` | Specific body type |
+| bodyCategory | String | Yes | `van` \| `luton_van` \| `pickup` \| `rigid` \| `tractor` \| `drawbar` \| `heavy_haulage` \| `spmt` \| `plant`, default `""` | High-level body category (see `vehicleTaxonomy.ts` BODY_CATEGORIES) |
+| gvwClass | String | Yes | `3.5t` \| `7.5t` \| `12t` \| `18t` \| `26t` \| `32t` \| `44t`, default `""` | Gross vehicle weight class |
+| bodyType | String | Yes | `curtain_sider` \| `double_deck_curtain` \| `box` \| `double_deck_box` \| `panel` \| `luton` \| `sliding_tarp` \| `flatbed` \| `dropside` \| `extending_flat` \| `step_frame` \| `beavertail` \| `tipper` \| `bulk_tipper` \| `walking_floor` \| `ejector_trailer` \| `powder_tanker` \| `blower_tanker` \| `tanker_food` \| `tanker_fuel` \| `tanker_chemical` \| `tanker_water` \| `tanker_vacuum` \| `tanker_bitumen` \| `tanker_other` \| `fridge` \| `fridge_multi_temp` \| `fridge_pharma` \| `insulated` \| `skeletal_20` \| `skeletal_40` \| `skeletal_45` \| `skeletal_extending` \| `swap_body` \| `low_loader` \| `low_loader_extending` \| `modular_heavy` \| `girder_frame` \| `mixer` \| `concrete_pump` \| `hooklift` \| `skip_loader` \| `roro_lorry` \| `refuse` \| `other`, default `""` | Specific body type (see `vehicleTaxonomy.ts` BODY_TYPES) |
 | onboardEquipment | Json? | No | String array | Equipment fitted to this unit (e.g. `tail_lift`, `hiab_crane`) |
 | status | String | Yes | `available` \| `in_use` \| `off_road` \| `disposed`, default `available` | Current operational status |
 | notes | String? | No | Free text | Maintenance notes or other remarks |
@@ -271,14 +271,16 @@ The internal `CreateJobPage` form writes all columns marked "Yes (form)" below. 
 | quantityExpected | String | Yes | Free text, default `""` | Expected quantity of goods (denormalised from LoadDetails) |
 | quantityUnit | String | Yes | Free text, default `""` | Unit for the expected quantity (denormalised from LoadDetails) |
 | plannerNotes | String | Yes | Free text, default `""` | Internal notes visible to the planner only |
-| reqBodyCategory | String | Yes | `tractor` \| `rigid` \| `van` \| `other`, default `""` | Required vehicle body category |
-| reqGvwMin | String | Yes | Free text (e.g. `7.5t`), default `""` | Minimum GVW required |
-| reqBodyType | String | Yes | `curtainsider` \| `flatbed` \| `box` \| `tipper` \| `fridge` \| `tanker` \| `mixer` \| `other`, default `""` | Required body type |
+| jobType | String | Yes | `ftl` \| `ltl` \| `groupage` \| `multi_drop` \| `multi_collection` \| `milk_run` \| `return_load` \| `trunking` \| `shunt` \| `pallet_network` \| `fcl` \| `lcl` \| `sameday_express` \| `abnormal` \| `subcontracted`, default `""` | Load / service type classification (see `vehicleTaxonomy.ts` JOB_TYPES) |
+| jobTitle | String | Yes | Free text, default `""` | Optional short human-readable job title shown in lists and notifications |
+| reqBodyCategory | String | Yes | `van` \| `luton_van` \| `pickup` \| `rigid` \| `tractor` \| `drawbar` \| `heavy_haulage` \| `spmt` \| `plant`, default `""` | Required vehicle body category (same canonical values as `FleetUnit.bodyCategory`) |
+| reqGvwMin | String | Yes | `3.5t` \| `7.5t` \| `12t` \| `18t` \| `26t` \| `32t` \| `44t`, default `""` | Minimum GVW required |
+| reqBodyType | String | Yes | Same canonical values as `FleetUnit.bodyType` — see above | Required body type |
 | reqEquipment | Json? | No | String array | Required onboard equipment (e.g. `tail_lift`, `hiab_crane`) |
 | reqLicenceClass | String | Yes | Licence category string, default `""` | Minimum driver licence class required |
 | trailerTypesAllowed | Json? | No | String array | Trailer types permitted for this job |
 | priority | String | Yes | `low` \| `normal` \| `high` \| `urgent`, default `normal` | Job planning priority |
-| serviceType | String | Yes | Free text, default `""` | Service classification (e.g. `delivery`, `collection`, `multi_drop`) |
+| serviceType | String | Yes | `delivery` \| `collection` \| `collection_delivery` \| `transfer` \| `trunking` \| `sameday` \| `next_day` \| `economy` \| `last_mile` \| `first_mile` \| `drayage` \| `container_haulage` \| `intermodal` \| `cross_dock` \| `warehousing` \| `returns` \| `abnormal` \| `removals` \| `courier`, default `""` | Service classification (see `vehicleTaxonomy.ts` SERVICE_TYPES) |
 | customerRef | String | Yes | Free text, default `""` | Customer's own reference number |
 | purchaseOrderNumber | String | Yes | Free text, default `""` | Customer's purchase order number |
 | billingNotes | String | Yes | Free text, default `""` | Notes relevant to invoicing |
@@ -435,14 +437,14 @@ One row per physical piece of work on a job (collection, delivery, etc.). Multip
 | openingHours | String | Yes | Free text (e.g. `Mon–Fri 06:00–18:00`), default `""` | Site opening hours |
 | instructions | String | Yes | Free text, default `""` | General instructions for the driver at this stop |
 | navigationInstructions | String | Yes | Free text, default `""` | Entrance / navigation instructions shown to driver |
-| locationType | String | Yes | Free text, default `""` | Type of site (e.g. warehouse, port, residential) |
+| locationType | String | Yes | `warehouse` \| `depot` \| `site` \| `retail` \| `residential` \| `port` \| `airport` \| `other`, default `""` | Type of site |
 | numPallets | Int? | No | Integer | **Legacy field** — pallet count at this stop. Kept for mobile app compatibility; new submissions use `quantityRequired` instead |
 | quantityRequired | Decimal? | No | Positive number | Quantity required at this stop (replaces legacy `numPallets`) |
 | quantityUnit | String | Yes | Free text, default `""` | Unit of measure for `quantityRequired` |
 | quantityCollected | Decimal | Yes | Default: 0 | Quantity confirmed as collected at this stop (updated by execution events) |
 | quantityDelivered | Decimal | Yes | Default: 0 | Quantity confirmed as delivered at this stop (updated by execution events) |
 | proofRequirements | Json? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
-| accessRequirements | Json? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints the driver needs to know |
+| accessRequirements | Json? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `ppe_safety_boots` \| `ppe_hi_vis` \| `ppe_hard_hat` \| `ppe_gloves` \| `ppe_glasses` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints. `ppe_required` is the top-level flag; the `ppe_*` sub-items record which specific PPE is needed. |
 | handlingMethods | Json? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `overhead_crane` \| `magnetic_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop |
 | exchangeDropQty | Decimal? | No | Positive number | Number of full units to drop at this stop as part of an equipment exchange |
 | exchangeCollectQty | Decimal? | No | Positive number | Number of empty units to collect back as part of an equipment exchange |
@@ -903,7 +905,7 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `overhead_crane` \| `magnetic_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
 | handlingMethodOther | String? | No | Free text | Description of the handling method when `other` is selected in handlingMethods. Substituted into the array as `other: <value>` on submission |
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
-| accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints the driver needs to know |
+| accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `ppe_safety_boots` \| `ppe_hi_vis` \| `ppe_hard_hat` \| `ppe_gloves` \| `ppe_glasses` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints. `ppe_required` is the top-level flag; `ppe_*` sub-items record specific PPE needed. |
 | loadReadiness | String? | No | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure` | Whether the load will be ready when the driver arrives (collection stops only) |
 | heightRestrictionValue | String? | No | Free text (e.g. `4.2m`) | Numeric or descriptive height restriction value (only present when `height_restriction` is in accessRequirements) |
 | weightRestrictionValue | String? | No | Free text (e.g. `7.5t`) | Numeric or descriptive weight restriction value (only present when `weight_restriction` is in accessRequirements) |

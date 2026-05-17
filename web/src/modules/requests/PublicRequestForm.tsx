@@ -137,16 +137,15 @@ const GENERAL_PACKAGING: [string, string][] = [
 ];
 
 const LOAD_UNITS: [string, string][] = [
-  ["pallets",     "Pallets"],
-  ["roll_cages",  "Roll cages"],
-  ["tonnes",      "Tonnes"],
-  ["kg",          "Kilograms"],
-  ["bags",        "Bags"],
-  ["items",       "Items"],
-  ["loads",       "Loads"],
-  ["litres",      "Litres"],
-  ["cubic_metres","Cubic metres"],
-  ["other",       "Other"],
+  ["pallets",      "Pallets"],
+  ["tonnes",       "Tonnes"],
+  ["kg",           "Kilograms"],
+  ["bags",         "Bags"],
+  ["items",        "Items"],
+  ["loads",        "Loads"],
+  ["litres",       "Litres"],
+  ["cubic_metres", "Cubic metres"],
+  ["other",        "Other"],
 ];
 
 // Units that can be exchanged per stop
@@ -187,6 +186,7 @@ const ACCESS_REQUIREMENTS: [string, string][] = [
   ["no_trailer_access",    "No trailer access"],
   ["residential_area",     "Residential area"],
   ["security_checkin",     "Security check-in"],
+  ["ppe_required",         "PPE required"],
   ["driver_id_required",   "Driver ID required"],
   ["do_not_arrive_early",  "Do not arrive early"],
   ["holding_area_required","Holding area required"],
@@ -204,6 +204,8 @@ const PPE_ITEMS: [string, string][] = [
 
 const SPECIAL_REQUIREMENTS: [string, string][] = [
   ["dangerous_goods",           "Dangerous goods (ADR)"],
+  ["temperature_controlled",    "Temperature controlled"],
+  ["temperature_monitored",     "Temperature monitored"],
   ["fragile",                   "Fragile / handle with care"],
   ["high_value",                "High value goods"],
   ["oversized",                 "Oversized load"],
@@ -266,6 +268,8 @@ const REJECTION_ACTIONS: [string, string][] = [
   ["call_office_before_leaving",     "Call office before leaving"],
   ["return_to_collection_point",     "Return to collection point"],
   ["deliver_to_alternative_address", "Deliver to alternative address"],
+  ["wait_for_further_instruction",   "Wait for further instruction"],
+  ["do_not_return_without_approval", "Do not return without approval"],
   ["other",                          "Other"],
 ];
 

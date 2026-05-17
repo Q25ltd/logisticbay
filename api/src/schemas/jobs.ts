@@ -98,7 +98,7 @@ const JobCommonFields = z.object({
   reqEquipment:             z.array(z.string()).optional(),
   reqLicenceClass:          z.string().optional(),
   trailerTypesAllowed:      z.array(z.string()).optional(),
-  priority:                 z.enum(["low", "normal", "high"]).optional(),
+  priority:                 z.enum(["low", "normal", "high", "urgent"]).optional(),
   serviceType:              z.string().optional(),
   internalNotes:            z.string().optional(),
   stops:                    z.array(JobPartSchema).optional(),

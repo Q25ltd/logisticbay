@@ -312,7 +312,7 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     referenceNumber,
     customerRef,
     purchaseOrderNumber,
-    priority:               priority as "low" | "normal" | "high",
+    priority:               priority as "low" | "normal" | "high" | "urgent",
     bookingContactName:     contactName,
     bookingContactPhone:    contactPhone,
     bookingContactEmail:    contactEmail,

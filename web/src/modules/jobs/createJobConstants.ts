@@ -33,7 +33,8 @@ export const JOB_TYPES: [string, string][] = TAXONOMY_JOB_TYPES.map(x => [x.valu
 export const PRIORITY_OPTS: [string, string][] = [
   ["low",    "Low"],
   ["normal", "Normal"],
-  ["high",   "High — Urgent"],
+  ["high",   "High"],
+  ["urgent", "Urgent"],
 ];
 
 export const LOCATION_TYPES: [string, string][] = [
@@ -62,7 +63,7 @@ export const LOAD_UNITS: [string, string][] = [
   ["bags",    "Bags"],
   ["loads",   "Loads"],
   ["litres",  "Litres"],
-  ["m3",      "Cubic metres"],
+  ["cubic_metres", "Cubic metres"],
   ["items",   "Items"],
   ["other",   "Other"],
 ];
@@ -138,6 +139,8 @@ export const SECURING_REQUIREMENTS: [string, string][] = [
 
 export const SPECIAL_REQUIREMENTS_OPTS: [string, string][] = [
   ["dangerous_goods",           "Dangerous goods (ADR)"],
+  ["temperature_controlled",    "Temperature controlled"],
+  ["temperature_monitored",     "Temperature monitored"],
   ["fragile",                   "Fragile / handle with care"],
   ["high_value",                "High value goods"],
   ["oversized",                 "Oversized load"],
@@ -189,6 +192,7 @@ export const ACCESS_REQUIREMENTS: [string, string][] = [
   ["no_trailer_access",     "No trailer access"],
   ["residential_area",      "Residential area"],
   ["security_checkin",      "Security check-in"],
+  ["ppe_required",          "PPE required"],
   ["driver_id_required",    "Driver ID required"],
   ["do_not_arrive_early",   "Do not arrive early"],
   ["holding_area_required", "Holding area required"],

@@ -165,7 +165,7 @@ export interface PlannedJob {
   trailerTypesAllowed?: string[];
   equipmentRequired?:   string[];
   driverQualificationsReq?: string[];
-  priority?:           "low" | "normal" | "high";
+  priority?:           "low" | "normal" | "high" | "urgent";
   serviceType?:        string;
   customerRef?:        string;
   purchaseOrderNumber?: string;
