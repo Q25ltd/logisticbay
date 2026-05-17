@@ -166,8 +166,8 @@ export function loadSummary(job: PlannedJob) {
 
 export function vehicleRequirement(job: PlannedJob) {
   const category = BODY_CATEGORIES.find(c => c.value === job.vehicleCategory)?.label ?? job.vehicleCategory;
-  const bt = BODY_TYPES.find(t => t.value === job.bodyType)?.label ?? job.bodyType;
-  return [category, job.minGvwClass, bt].filter(Boolean).join(" / ")
+  const btLabels = compactArray(job.bodyTypes).map(bt => BODY_TYPES.find(t => t.value === bt)?.label ?? bt);
+  return [category, job.minGvwClass, ...btLabels].filter(Boolean).join(" / ")
     || "Vehicle not set";
 }
 
@@ -324,7 +324,7 @@ export function buildWarnings(
     warnings.push({ level: "critical", type: "missing_stops", message: "Collection/drop-off stops are incomplete." });
   }
 
-  if (!job.vehicleCategory && !job.bodyType) {
+  if (!job.vehicleCategory && !job.bodyTypes?.length) {
     warnings.push({ level: "warning", type: "missing_vehicle", message: "Vehicle type requirement is missing." });
   }
 

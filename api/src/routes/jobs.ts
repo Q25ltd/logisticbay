@@ -418,21 +418,44 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           ];
         })();
 
+    // Accept load fields from the new flat layout (goodsDescription, quantity, quantityUnit…)
+    // or from the legacy nested body.loadDetails object
     const loadDetails: StructuredLoadDetailsInput | null = body.loadDetails ?? (
+      body.goodsDescription || body.quantity != null || body.goodsType ||
       body.quantityExpected || body.quantityUnit || body.materialType
         ? {
-            quantity:     body.quantityExpected ?? null,
+            goodsType:    body.goodsType ?? "",
+            materialType: body.goodsDescription ?? body.materialType ?? "",
+            quantity:     body.quantity ?? body.quantityExpected ?? null,
             unit:         body.quantityUnit ?? "",
-            materialType: body.materialType ?? "",
+            weight:       body.weight ?? null,
+            volume:       body.volume ?? null,
+            dimensions:   body.dimensions ?? "",
+            fragile:      body.fragile ?? false,
+            stackable:    body.stackable ?? false,
+            tempControlled:  body.tempControlled ?? false,
+            tempRange:       body.tempRange ?? "",
+            hazardClass:     body.hazardClass ?? "",
+            photosRequired:  body.photosRequired ?? false,
+            weighbridgeRequired: body.weighbridgeRequired ?? false,
+            securingRequirements: body.securingRequirements ?? null,
+            specialRequirements:  body.specialRequirements ?? null,
           }
         : null
     );
 
     const legacyRequirement = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
-    const vehicleCategory   = body.reqBodyCategory ?? legacyRequirement.bodyCategory;
-    const minGvwClass       = body.reqGvwMin ?? "";
-    const bodyType          = body.reqBodyType ?? legacyRequirement.bodyType;
-    const equipment         = normalizeEquipment(body.reqEquipment, [
+    // Accept new canonical names OR old req* names for backward compat with the CJP form
+    const vehicleCategory   = body.vehicleCategory ?? body.reqBodyCategory ?? legacyRequirement.bodyCategory;
+    const minGvwClass       = body.minGvwClass ?? body.reqGvwMin ?? "";
+    // bodyTypes is a Json[] array — accept body.bodyTypes[] or legacy scalar body.bodyType/body.reqBodyType
+    const bodyTypes: string[] = Array.isArray(body.bodyTypes)
+      ? body.bodyTypes
+      : body.bodyType    ? [body.bodyType]
+      : body.reqBodyType ? [body.reqBodyType]
+      : legacyRequirement.bodyType ? [legacyRequirement.bodyType]
+      : [];
+    const equipment         = normalizeEquipment(body.equipment ?? body.reqEquipment, [
       ...normalizeEquipment(body.equipmentRequired),
       ...legacyRequirement.equipment,
     ]);
@@ -454,7 +477,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       vehicleClassRequired: body.vehicleClassRequired,
       reqBodyCategory:      vehicleCategory,
       reqGvwMin:            minGvwClass,
-      reqBodyType:          bodyType,
+      reqBodyType:          bodyTypes[0] ?? "",
       reqEquipment:         equipment,
       reqLicenceClass,
       trailerTypesAllowed:  body.trailerTypesAllowed,
@@ -490,9 +513,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           plannerNotes:        body.plannerNotes ?? "",
           vehicleCategory,
           minGvwClass,
-          bodyType,
+          bodyTypes:           bodyTypes.length > 0 ? (bodyTypes as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           equipment,
-          trailersAllowed:     body.trailerTypesAllowed ?? [],
+          trailersAllowed:     body.trailersAllowed ?? body.trailerTypesAllowed ?? [],
           priority:            body.priority ?? "normal",
           serviceType:         body.serviceType ?? "",
           customerRef:         body.customerRef ?? "",
@@ -508,7 +531,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           assistancePhone:     body.assistancePhone ?? "",
           assistanceNote:      body.assistanceNote ?? "",
           internalNotes:       body.internalNotes ?? "",
-          loadData:            body.loadData   ? body.loadData   as Prisma.InputJsonValue : undefined,
           billingData:         body.billingData ? body.billingData as Prisma.InputJsonValue : undefined,
           validationStatus:    structuredValidation.validationStatus,
           qualityScore:        quality.score,
@@ -598,10 +620,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           podRequired:     body.requirePOD ?? true,
           vehicleCategory,
           minGvwClass,
-          bodyType,
+          bodyTypes,
           equipment,
           reqLicenceClass,
-          trailersAllowed:  body.trailerTypesAllowed ?? [],
+          trailersAllowed:  body.trailersAllowed ?? body.trailerTypesAllowed ?? [],
           lengthRestriction: body.lengthRestriction  ?? "",
           accessNotes:       body.vehicleAccessNotes ?? "",
           failureAction:     body.failureAction       ?? "call_assistance",
@@ -706,16 +728,25 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         : existingLoadDetails;
 
     const saveMode = body.saveMode ?? (job.validationStatus === "ready_to_plan" ? "ready_to_plan" : "draft");
-    const existingEquipment = Array.isArray(job.equipment) ? job.equipment.map(String) : [];
-    const legacyRequirement = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
-    const vehicleCategory   = body.reqBodyCategory ?? job.vehicleCategory ?? legacyRequirement.bodyCategory;
-    const minGvwClass       = body.reqGvwMin ?? job.minGvwClass ?? "";
-    const bodyType          = body.reqBodyType ?? job.bodyType ?? legacyRequirement.bodyType;
-    const equipment         = normalizeEquipment(body.reqEquipment, [
+    const existingEquipment  = Array.isArray(job.equipment)  ? job.equipment.map(String)  : [];
+    const existingBodyTypes  = Array.isArray(job.bodyTypes)  ? job.bodyTypes.map(String)   : [];
+    const legacyRequirement  = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
+    // Accept new canonical names OR old req* names for backward compat with the CJP form
+    const vehicleCategory    = body.vehicleCategory ?? body.reqBodyCategory ?? job.vehicleCategory ?? legacyRequirement.bodyCategory;
+    const minGvwClass        = body.minGvwClass ?? body.reqGvwMin ?? job.minGvwClass ?? "";
+    // bodyTypes is a Json[] array — accept body.bodyTypes[] or legacy scalar body.bodyType/body.reqBodyType
+    const bodyTypes: string[] = Array.isArray(body.bodyTypes)
+      ? body.bodyTypes
+      : body.bodyType    ? [body.bodyType]
+      : body.reqBodyType ? [body.reqBodyType]
+      : existingBodyTypes.length > 0 ? existingBodyTypes
+      : legacyRequirement.bodyType ? [legacyRequirement.bodyType]
+      : [];
+    const equipment          = normalizeEquipment(body.equipment ?? body.reqEquipment, [
       ...(existingEquipment.length > 0 ? existingEquipment : normalizeEquipment(body.equipmentRequired)),
       ...legacyRequirement.equipment,
     ]);
-    const reqLicenceClass   = body.reqLicenceClass ?? legacyRequirement.licenceClass;
+    const reqLicenceClass    = body.reqLicenceClass ?? legacyRequirement.licenceClass;
 
     const effectiveCustomerId = body.customerId !== undefined ? body.customerId : job.customerId;
 
@@ -738,10 +769,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       vehicleClassRequired: body.vehicleClassRequired,
       reqBodyCategory:      vehicleCategory,
       reqGvwMin:            minGvwClass,
-      reqBodyType:          bodyType,
+      reqBodyType:          bodyTypes[0] ?? "",
       reqEquipment:         equipment,
       reqLicenceClass,
-      trailerTypesAllowed:  body.trailerTypesAllowed ?? (Array.isArray(job.trailersAllowed) ? job.trailersAllowed : []),
+      trailerTypesAllowed:  body.trailersAllowed ?? body.trailerTypesAllowed ?? (Array.isArray(job.trailersAllowed) ? job.trailersAllowed : []),
       stops,
       loadDetails,
     });
@@ -793,9 +824,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           plannerNotes:        body.plannerNotes ?? job.plannerNotes,
           vehicleCategory,
           minGvwClass,
-          bodyType,
+          bodyTypes:           bodyTypes.length > 0 ? (bodyTypes as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           equipment,
-          trailersAllowed:     body.trailerTypesAllowed ?? JSON.parse(JSON.stringify(job.trailersAllowed ?? [])),
+          trailersAllowed:     body.trailersAllowed ?? body.trailerTypesAllowed ?? JSON.parse(JSON.stringify(job.trailersAllowed ?? [])),
           priority:            body.priority ?? job.priority,
           serviceType:         body.serviceType ?? job.serviceType,
           customerRef:         body.customerRef ?? job.customerRef,
@@ -811,7 +842,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           assistancePhone:     body.assistancePhone ?? job.assistancePhone,
           assistanceNote:      body.assistanceNote ?? job.assistanceNote,
           internalNotes:       body.internalNotes ?? job.internalNotes,
-          ...(body.loadData    !== undefined ? { loadData:    body.loadData    as Prisma.InputJsonValue } : {}),
           ...(body.billingData !== undefined ? { billingData: body.billingData as Prisma.InputJsonValue } : {}),
           validationStatus:    structuredValidation.validationStatus,
           qualityScore:        quality.score,

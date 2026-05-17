@@ -319,12 +319,12 @@ model Job {
   weighbridgeRequired  Boolean @default(false)
   securingRequirements Json?   // string[]
   specialRequirements  Json?   // string[]
-  loadData             Json?   // goods sub-type detail only (pallet type/count, cage count, etc.)
+  // loadData dropped — goods sub-type details belong in dedicated columns, not a blob
 
   // ── vehicle requirements ──────────────────────────────────────────────────
   // What the job NEEDS — system checks against fleet/driver at assignment time.
   vehicleCategory    String  @default("")   // matches FleetUnit.bodyCategory
-  bodyType           String  @default("")   // matches FleetUnit.bodyType
+  bodyTypes          Json?                  // string[] — each value matches FleetUnit.bodyType
   minGvwClass        String  @default("")   // matches FleetUnit.gvwClass
   equipment          Json?                  // string[] — matches FleetUnit.onboardEquipment
   trailersAllowed    Json?                  // string[] — matches FleetTrailer.bodyType

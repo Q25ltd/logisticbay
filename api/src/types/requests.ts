@@ -292,14 +292,15 @@ export interface CreateJobBody {
   // Legacy vehicle requirement field names (still accepted for backward compat)
   reqBodyCategory?:      string;        // → vehicleCategory
   reqGvwMin?:            string;        // → minGvwClass
-  reqBodyType?:          string;        // → bodyType
+  reqBodyType?:          string;        // legacy scalar alias → wrapped into bodyTypes[0]
   reqEquipment?:         string[];      // → equipment
   reqLicenceClass?:      string;
   trailerTypesAllowed?:  string[];      // → trailersAllowed
   // Canonical vehicle requirement field names
   vehicleCategory?:      string;
   minGvwClass?:          string;
-  bodyType?:             string;
+  bodyTypes?:            string[];      // array of allowed body types
+  bodyType?:             string;        // legacy scalar alias → wrapped into bodyTypes[0]
   equipment?:            string[];
   trailersAllowed?:      string[];
   priority?:             "low" | "normal" | "high";
@@ -361,7 +362,6 @@ export interface CreateJobBody {
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
-  loadData?:                  Record<string, unknown> | null;
   billingData?:               Record<string, unknown> | null;
   // Canonical flattened notes fields
   driverNoteChips?:           string[] | null;
@@ -391,14 +391,15 @@ export interface PatchJobBody {
   // Legacy vehicle requirement field names (still accepted for backward compat)
   reqBodyCategory?:      string;        // → vehicleCategory
   reqGvwMin?:            string;        // → minGvwClass
-  reqBodyType?:          string;        // → bodyType
+  reqBodyType?:          string;        // legacy scalar alias → wrapped into bodyTypes[0]
   reqEquipment?:         string[];      // → equipment
   reqLicenceClass?:      string;
   trailerTypesAllowed?:  string[];      // → trailersAllowed
   // Canonical vehicle requirement field names
   vehicleCategory?:      string;
   minGvwClass?:          string;
-  bodyType?:             string;
+  bodyTypes?:            string[];      // array of allowed body types
+  bodyType?:             string;        // legacy scalar alias → wrapped into bodyTypes[0]
   equipment?:            string[];
   trailersAllowed?:      string[];
   priority?:             "low" | "normal" | "high";
@@ -458,7 +459,6 @@ export interface PatchJobBody {
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
-  loadData?:                  Record<string, unknown> | null;
   billingData?:               Record<string, unknown> | null;
   // Canonical flattened notes fields
   driverNoteChips?:           string[] | null;
