@@ -1,46 +1,65 @@
 /**
- * Internal review queue for incoming transport requests.
- * Planner/office staff see all pending requests and can accept or reject.
+ * Internal review queue for incoming transport requests (pending_review jobs).
+ * Planner/office staff see all pending jobs from the PRF and can accept or reject.
+ *
+ * Accept = sets plannedDate (required) + plannerNotes (optional) → ready_to_plan
+ * Reject = cancels the job and logs a reason
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { jobRequestsApi, type JobRequest, type RequestStop, type ExceptionPolicyData } from "../../api/jobRequests";
+import type { Job, JobPart } from "../../types";
+import { jobRequestsApi } from "../../api/jobRequests";
+
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_TABS = [
-  { key: "",               label: "All" },
   { key: "pending_review", label: "Pending" },
-  { key: "accepted",       label: "Accepted" },
-  { key: "rejected",       label: "Rejected" },
+  { key: "",               label: "All"     },
 ];
 
 const STATUS_BADGE: Record<string, string> = {
   pending_review: "bg-amber-100 text-amber-800",
-  accepted:       "bg-green-100 text-green-800",
-  rejected:       "bg-red-100 text-red-800",
-  cancelled:      "bg-gray-100 text-gray-500",
+  ready_to_plan:  "bg-blue-100 text-blue-700",
+  in_planning:    "bg-indigo-100 text-indigo-700",
+  planned:        "bg-green-100 text-green-800",
+  in_progress:    "bg-teal-100 text-teal-800",
+  completed:      "bg-gray-100 text-gray-600",
+  cancelled:      "bg-red-100 text-red-500",
+  draft:          "bg-slate-100 text-slate-500",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   pending_review: "Pending review",
-  accepted:       "Accepted",
-  rejected:       "Rejected",
+  ready_to_plan:  "Ready to plan",
+  in_planning:    "In planning",
+  planned:        "Planned",
+  in_progress:    "In progress",
+  completed:      "Completed",
   cancelled:      "Cancelled",
-};
-
-const SOURCE_LABEL: Record<string, string> = {
-  client_request_link: "Customer portal",
-  internal_manual:     "Manual entry",
+  draft:          "Draft",
 };
 
 const STOP_TYPE_LABEL: Record<string, string> = {
+  pickup:     "Pickup",
+  dropoff:    "Drop-off",
   collection: "Collection",
   delivery:   "Delivery",
-  reload:     "Reload",
-  return:     "Return",
-  waypoint:   "Waypoint",
-  other:      "Stop",
+  handover:   "Handover",
+  yard:       "Yard",
+  depot:      "Depot",
 };
+
+const REJECT_REASONS = [
+  { value: "no_capacity",           label: "No capacity"           },
+  { value: "outside_service_area",  label: "Outside service area"  },
+  { value: "incomplete_information",label: "Incomplete information" },
+  { value: "pricing_issue",         label: "Pricing issue"         },
+  { value: "duplicate_request",     label: "Duplicate request"     },
+  { value: "other",                 label: "Other"                 },
+];
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function timeSince(iso: string): string {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
@@ -49,22 +68,35 @@ function timeSince(iso: string): string {
   return `${Math.floor(mins / 1440)}d ago`;
 }
 
-// Guard API blobs from older rows or malformed responses.
-function toStops(raw: unknown): RequestStop[] {
-  return Array.isArray(raw) ? raw as unknown as RequestStop[] : [];
+/** Format an ISO datetime string as "12 Jun · 09:00–13:00" */
+function fmtWindow(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start) return "";
+  const s  = new Date(start);
+  const date = s.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const st   = s.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (!end) return `${date} from ${st}`;
+  const et   = new Date(end).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return `${date} · ${st}–${et}`;
 }
+
+/** Today's date as YYYY-MM-DD (for date input min). */
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function JobRequestsPage() {
   const navigate = useNavigate();
   const [tab,      setTab]      = useState("pending_review");
-  const [requests, setRequests] = useState<JobRequest[]>([]);
+  const [jobs,     setJobs]     = useState<Job[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [total,    setTotal]    = useState(0);
 
   const load = useCallback(() => {
     setLoading(true);
     jobRequestsApi.list(tab || undefined)
-      .then(r => { setRequests(r.data); setTotal(r.total); })
+      .then(r => { setJobs(r.data); setTotal(r.total); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [tab]);
@@ -73,12 +105,13 @@ export default function JobRequestsPage() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black" style={{ color: "#0f172a" }}>Job Requests</h1>
           <p className="text-sm mt-0.5" style={{ color: "#6b7280" }}>
-            Incoming transport requests from customers. Accept to create a job for planning.
+            Incoming transport requests from customers — accept to move to planning.
           </p>
         </div>
         <button
@@ -108,124 +141,134 @@ export default function JobRequestsPage() {
       {/* List */}
       {loading ? (
         <div className="text-sm text-muted py-8 text-center">Loading…</div>
-      ) : requests.length === 0 ? (
+      ) : jobs.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-4xl mb-3">📭</div>
           <div className="font-semibold" style={{ color: "#0f172a" }}>No requests</div>
           <p className="text-sm mt-1" style={{ color: "#6b7280" }}>
             {tab === "pending_review"
-              ? "All requests have been reviewed."
-              : "No requests in this category yet."}
+              ? "No pending requests — all reviewed."
+              : "No requests yet."}
           </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {requests.map(r => <RequestRow key={r.id} request={r} onRefresh={load} />)}
+          {jobs.map(j => (
+            <RequestRow key={j.id} job={j} onRefresh={load} onNavigate={navigate} />
+          ))}
+          {total > jobs.length && (
+            <p className="text-xs text-center text-muted pt-2">
+              Showing {jobs.length} of {total}
+            </p>
+          )}
         </div>
       )}
-
-      {/* suppress unused total warning */}
-      {total === -1 && null}
     </div>
   );
 }
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh: () => void }) {
-  const navigate    = useNavigate();
-  const [rejecting, setRejecting] = useState(false);
+function RequestRow({
+  job: j,
+  onRefresh,
+  onNavigate,
+}: {
+  job:         Job;
+  onRefresh:   () => void;
+  onNavigate:  ReturnType<typeof useNavigate>;
+}) {
+  const [rejecting,    setRejecting]    = useState(false);
   const [rejectReason, setRejectReason] = useState("no_capacity");
   const [rejectNotes,  setRejectNotes]  = useState("");
   const [accepting,    setAccepting]    = useState(false);
+  const [plannedDate,  setPlannedDate]  = useState("");
   const [plannerNotes, setPlannerNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState("");
   const [showModal, setShowModal] = useState(false);
 
-  const stops   = toStops(r.stops);
-  const load    = r.loadData;
-
-  const collections = stops.filter(s => s.type === "collection");
-  const deliveries  = stops.filter(s => s.type === "delivery");
+  const stops      = j.stops ?? [];
+  const collections = stops.filter(s => s.type === "collection" || s.type === "pickup");
+  const deliveries  = stops.filter(s => s.type === "delivery"   || s.type === "dropoff");
   const firstStop   = stops[0];
-  const lastStop    = stops[stops.length - 1];
-
-  const hasWarn = stops.some(
-    s => s.entranceWarningLevel === "warn" || s.entranceWarningLevel === "danger"
-  );
 
   async function accept() {
+    if (!plannedDate) { setErr("Planned date is required"); return; }
     setBusy(true); setErr("");
     try {
-      const result = await jobRequestsApi.accept(r.id, plannerNotes);
+      const result = await jobRequestsApi.accept(j.id, plannedDate, plannerNotes.trim() || undefined);
       onRefresh();
-      navigate(`/app/jobs/${result.jobId}/edit`);
+      onNavigate(`/app/jobs/${result.jobId}`);
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
   }
 
   async function reject() {
     setBusy(true); setErr("");
     try {
-      await jobRequestsApi.reject(r.id, rejectReason, rejectNotes);
+      await jobRequestsApi.reject(j.id, rejectReason, rejectNotes.trim() || undefined);
       onRefresh();
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
   }
 
+  const isPending = j.status === "pending_review";
+
   return (
     <>
-      <div className={"card border " + (r.status === "pending_review" ? "border-amber-200" : "border-border")}>
+      <div className={"card border " + (isPending ? "border-amber-200" : "border-border")}>
+
         {/* Summary row */}
         <div className="flex items-start gap-3 p-4">
           <div className="flex-1 min-w-0">
-            {/* Name + badges */}
+
+            {/* Name + status badge */}
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm" style={{ color: "#0f172a" }}>
-                {r.customerName}
+                {j.customerName || "(no customer)"}
               </span>
-              <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (STATUS_BADGE[r.status] ?? "bg-gray-100 text-gray-600")}>
-                {STATUS_LABEL[r.status] ?? r.status}
+              <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " +
+                (STATUS_BADGE[j.status] ?? "bg-gray-100 text-gray-600")}>
+                {STATUS_LABEL[j.status] ?? j.status}
               </span>
-              {hasWarn && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                  ⚠ Pin warning
-                </span>
-              )}
-              {r.convertedJob && (
-                <button
-                  className="text-xs text-indigo-600 underline"
-                  onClick={() => navigate(`/app/jobs/${r.convertedJob!.id}`)}
-                >
-                  {r.convertedJob.jobReference ?? `Job #${r.convertedJob.id}`}
-                </button>
+              {j.jobReference && (
+                <span className="text-xs font-mono text-slate-400">{j.jobReference}</span>
               )}
             </div>
 
             {/* Contact + route */}
             <div className="text-xs mt-1 space-x-2" style={{ color: "#6b7280" }}>
-              <span>{r.contactName} · {r.contactPhone}</span>
-              <span>·</span>
-              <span>
-                {collections.length > 0
-                  ? <>{collections[0].siteName}{collections.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{collections.length - 1}</span>}</>
-                  : firstStop?.siteName ?? "?"
-                }
-                {" → "}
-                {deliveries.length > 0
-                  ? <>{deliveries[deliveries.length - 1].siteName}{deliveries.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveries.length - 1}</span>}</>
-                  : lastStop?.siteName ?? "?"
-                }
-              </span>
+              {j.bookingContactName && (
+                <span>{j.bookingContactName}{j.bookingContactPhone ? ` · ${j.bookingContactPhone}` : ""}</span>
+              )}
+              {(collections.length > 0 || deliveries.length > 0) && (
+                <>
+                  {j.bookingContactName && <span>·</span>}
+                  <span>
+                    {collections.length > 0
+                      ? <>{collections[0].siteName}{collections.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{collections.length - 1}</span>}</>
+                      : (firstStop?.siteName ?? "?")
+                    }
+                    {" → "}
+                    {deliveries.length > 0
+                      ? <>{deliveries[deliveries.length - 1].siteName}{deliveries.length > 1 && <span className="ml-1 text-blue-600 font-medium">+{deliveries.length - 1}</span>}</>
+                      : (stops[stops.length - 1]?.siteName ?? "?")
+                    }
+                  </span>
+                </>
+              )}
             </div>
 
             {/* Date + goods */}
             <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-              {firstStop && <span>{firstStop.date} · {firstStop.earliestArrivalTime}–{firstStop.latestArrivalTime}</span>}
-              {lastStop && firstStop?.date !== lastStop.date && (
-                <><span className="mx-1">→</span><span>{lastStop.date}</span></>
+              {firstStop?.timeWindowStart && (
+                <span>{fmtWindow(firstStop.timeWindowStart, firstStop.timeWindowEnd)}</span>
               )}
-              {load?.goodsDescription && <><span className="mx-2">·</span><span>{load.goodsDescription}</span></>}
-              {load?.quantity && <span> · {load.quantity} {load.unit}</span>}
+              {j.goodsDescription && (
+                <><span className="mx-2">·</span><span>{j.goodsDescription}</span></>
+              )}
+              {j.quantity != null && j.quantityUnit && (
+                <span className="ml-1 text-slate-500">{j.quantity} {j.quantityUnit}</span>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -236,15 +279,18 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
               >
                 Full details
               </button>
-              {r.status === "pending_review" && !accepting && !rejecting && (
+              {isPending && !accepting && !rejecting && (
                 <>
-                  <button className="btn btn-primary text-xs px-3 py-1" onClick={() => setAccepting(true)}>
+                  <button
+                    className="btn btn-primary text-xs px-3 py-1"
+                    onClick={() => { setAccepting(true); setRejecting(false); setErr(""); }}
+                  >
                     ✓ Accept
                   </button>
                   <button
                     className="btn text-xs px-3 py-1 border"
                     style={{ color: "#ef4444", borderColor: "#fca5a5" }}
-                    onClick={() => setRejecting(true)}
+                    onClick={() => { setRejecting(true); setAccepting(false); setErr(""); }}
                   >
                     ✗ Reject
                   </button>
@@ -253,34 +299,65 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
             </div>
           </div>
 
-          {/* Source + time */}
+          {/* Time since */}
           <div className="text-right text-xs shrink-0" style={{ color: "#9ca3af" }}>
-            <div>{SOURCE_LABEL[r.source] ?? r.source}</div>
-            <div>{timeSince(r.createdAt)}</div>
+            <div>{timeSince(j.createdAt)}</div>
           </div>
         </div>
 
-        {/* Accept/reject panels */}
+        {/* Accept / reject panels */}
         {(accepting || rejecting || err) && (
           <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
-            {err && <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</div>}
+            {err && (
+              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</div>
+            )}
 
             {accepting && (
               <div className="p-3 rounded-xl bg-green-50 border border-green-200 space-y-3">
                 <div className="font-semibold text-sm text-green-800">Accept this request</div>
+
+                {/* Planned date — required */}
                 <div>
                   <label className="text-xs font-medium" style={{ color: "#374151" }}>
-                    Planner notes (optional — visible internally)
+                    Planned date <span className="text-red-500">*</span>
                   </label>
-                  <textarea className="input mt-1 text-sm" rows={2} value={plannerNotes}
-                    onChange={e => setPlannerNotes(e.target.value)}
-                    placeholder="Ready to plan. Allocated to North route." />
+                  <input
+                    type="date"
+                    className="input mt-1 text-sm"
+                    min={todayISO()}
+                    value={plannedDate}
+                    onChange={e => { setPlannedDate(e.target.value); setErr(""); }}
+                  />
                 </div>
+
+                {/* Planner notes — optional */}
+                <div>
+                  <label className="text-xs font-medium" style={{ color: "#374151" }}>
+                    Planner notes <span className="text-xs font-normal text-slate-400">(optional — internal only)</span>
+                  </label>
+                  <textarea
+                    className="input mt-1 text-sm"
+                    rows={2}
+                    value={plannerNotes}
+                    onChange={e => setPlannerNotes(e.target.value)}
+                    placeholder="Allocated to North route. Call site before 08:00."
+                  />
+                </div>
+
                 <div className="flex gap-2">
-                  <button className="btn btn-primary text-sm" onClick={accept} disabled={busy}>
-                    {busy ? "Creating job…" : "✓ Accept & open in job form"}
+                  <button
+                    className="btn btn-primary text-sm"
+                    onClick={accept}
+                    disabled={busy || !plannedDate}
+                  >
+                    {busy ? "Creating job…" : "✓ Accept & open job"}
                   </button>
-                  <button className="btn btn-secondary text-sm" onClick={() => setAccepting(false)}>Cancel</button>
+                  <button
+                    className="btn btn-secondary text-sm"
+                    onClick={() => { setAccepting(false); setErr(""); }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
@@ -288,58 +365,57 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
             {rejecting && (
               <div className="p-3 rounded-xl bg-red-50 border border-red-200 space-y-3">
                 <div className="font-semibold text-sm text-red-800">Reject this request</div>
+
                 <div>
                   <label className="text-xs font-medium" style={{ color: "#374151" }}>Reason</label>
-                  <select className="input mt-1 text-sm" value={rejectReason} onChange={e => setRejectReason(e.target.value)}>
-                    <option value="no_capacity">No capacity</option>
-                    <option value="outside_service_area">Outside service area</option>
-                    <option value="incomplete_information">Incomplete information</option>
-                    <option value="pricing_issue">Pricing issue</option>
-                    <option value="duplicate_request">Duplicate request</option>
-                    <option value="other">Other</option>
+                  <select
+                    className="input mt-1 text-sm"
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                  >
+                    {REJECT_REASONS.map(r => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="text-xs font-medium" style={{ color: "#374151" }}>Note (optional)</label>
-                  <textarea className="input mt-1 text-sm" rows={2} value={rejectNotes}
+                  <label className="text-xs font-medium" style={{ color: "#374151" }}>
+                    Note <span className="text-xs font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <textarea
+                    className="input mt-1 text-sm"
+                    rows={2}
+                    value={rejectNotes}
                     onChange={e => setRejectNotes(e.target.value)}
-                    placeholder="We cannot accommodate this date — please rebook for next week." />
+                    placeholder="Cannot accommodate this date — please rebook for next week."
+                  />
                 </div>
+
                 <div className="flex gap-2">
-                  <button className="btn text-sm" style={{ background: "#ef4444", color: "white" }}
-                    onClick={reject} disabled={busy}>
+                  <button
+                    className="btn text-sm"
+                    style={{ background: "#ef4444", color: "white" }}
+                    onClick={reject}
+                    disabled={busy}
+                  >
                     {busy ? "Rejecting…" : "✗ Reject request"}
                   </button>
-                  <button className="btn btn-secondary text-sm" onClick={() => setRejecting(false)}>Cancel</button>
+                  <button
+                    className="btn btn-secondary text-sm"
+                    onClick={() => { setRejecting(false); setErr(""); }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
-
-            {/* Rejection detail */}
-            {r.status === "rejected" && r.rejectionReason && (
-              <div className="text-sm p-3 rounded-xl bg-red-50 border border-red-100">
-                <span className="font-semibold text-red-800">Rejected: </span>
-                <span className="text-red-700">{r.rejectionReason.replace(/_/g, " ")}</span>
-                {r.reviewNotes && <span className="ml-2 text-red-600">— {r.reviewNotes}</span>}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Rejection detail when not in panels block */}
-        {!accepting && !rejecting && !err && r.status === "rejected" && r.rejectionReason && (
-          <div className="border-t border-border px-4 pb-4 pt-3">
-            <div className="text-sm p-3 rounded-xl bg-red-50 border border-red-100">
-              <span className="font-semibold text-red-800">Rejected: </span>
-              <span className="text-red-700">{r.rejectionReason.replace(/_/g, " ")}</span>
-              {r.reviewNotes && <span className="ml-2 text-red-600">— {r.reviewNotes}</span>}
-            </div>
           </div>
         )}
       </div>
 
       {showModal && (
-        <RequestDetailModal request={r} onClose={() => setShowModal(false)} />
+        <JobDetailModal job={j} onClose={() => setShowModal(false)} onNavigate={onNavigate} />
       )}
     </>
   );
@@ -347,32 +423,29 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
 
 // ── Detail modal ──────────────────────────────────────────────────────────────
 
-function RequestDetailModal({ request: r, onClose }: { request: JobRequest; onClose: () => void }) {
-  const navigate = useNavigate();
-  const stops   = toStops(r.stops);
-  const load    = r.loadData;
-  const billing = r.billingData;
-  const notes   = r.notesData;
-  const spec    = r.specialRequirementsData;
-  const tr      = r.transportRequirementsData;
-  const ep      = (r as unknown as { exceptionPolicyData: ExceptionPolicyData | null }).exceptionPolicyData;
+function JobDetailModal({
+  job: j,
+  onClose,
+  onNavigate,
+}: {
+  job:        Job;
+  onClose:    () => void;
+  onNavigate: ReturnType<typeof useNavigate>;
+}) {
+  const stops = j.stops ?? [];
 
-  const hasTransport = !!(
-    tr?.plannerDecides || tr?.reqBodyCategory ||
-    (tr?.reqBodyTypes?.length) || (tr?.reqEquipment?.length) || (tr?.trailerTypesAllowed?.length)
-  );
+  const hasVehicle = !!(j.vehicleCategory || (j.bodyTypes && j.bodyTypes.length) || j.minGvwClass ||
+    (j.equipment && j.equipment.length) || (j.trailersAllowed && j.trailersAllowed.length));
 
-  const hasException = !!(
-    ep?.rejectionAction || ep?.alternativeReturnSiteName || ep?.approvalContactName ||
-    ep?.photosRequiredOnRejection || ep?.rejectionSignatureRequired || ep?.rejectionNotes
-  );
+  const hasException = !!(j.failureAction && j.failureAction !== "call_assistance") ||
+    !!(j.approvalContactName || j.alternativeReturnAddress);
+
+  const hasNotes = !!(j.driverVisibleNotes || j.safetyInstructions ||
+    (j.driverNoteChips && j.driverNoteChips.length));
 
   return (
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
-      {/* Backdrop */}
       <div className="flex-1 bg-black/40" />
-
-      {/* Panel */}
       <div
         className="bg-white w-full max-w-2xl h-full overflow-y-auto flex flex-col shadow-2xl"
         onClick={e => e.stopPropagation()}
@@ -380,223 +453,137 @@ function RequestDetailModal({ request: r, onClose }: { request: JobRequest; onCl
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-border px-6 py-4 flex items-center justify-between z-10">
           <div>
-            <h2 className="text-base font-bold" style={{ color: "#0f172a" }}>{r.customerName}</h2>
-            <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-              {SOURCE_LABEL[r.source] ?? r.source} · {timeSince(r.createdAt)}
-              {r.convertedJob && (
-                <>
-                  {" · "}
-                  <button
-                    className="text-indigo-600 underline"
-                    onClick={() => navigate(`/app/jobs/${r.convertedJob!.id}`)}
-                  >
-                    {r.convertedJob.jobReference ?? `Job #${r.convertedJob.id}`}
-                  </button>
-                </>
-              )}
+            <h2 className="text-base font-bold" style={{ color: "#0f172a" }}>
+              {j.customerName || "(no customer)"}
+            </h2>
+            <div className="text-xs mt-0.5 flex items-center gap-2" style={{ color: "#6b7280" }}>
+              <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " +
+                (STATUS_BADGE[j.status] ?? "bg-gray-100 text-gray-600")}>
+                {STATUS_LABEL[j.status] ?? j.status}
+              </span>
+              {j.jobReference && <span className="font-mono">{j.jobReference}</span>}
+              <span>·</span>
+              <span>{timeSince(j.createdAt)}</span>
             </div>
           </div>
-          <button
-            className="ml-4 text-xl leading-none text-slate-400 hover:text-slate-700"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-3 ml-4">
+            <button
+              className="btn btn-secondary text-xs px-3 py-1.5"
+              onClick={() => { onClose(); onNavigate(`/app/jobs/${j.id}`); }}
+            >
+              Open job ↗
+            </button>
+            <button
+              className="text-xl leading-none text-slate-400 hover:text-slate-700"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Body */}
         <div className="px-6 py-5 space-y-6 flex-1">
 
-          {/* Requester */}
-          <Section title="Requester">
-            <Field label="Company" value={r.requesterData?.customerCompanyName ?? r.customerName} />
-            <Field label="Contact" value={r.contactName} />
-            <Field label="Phone"   value={r.contactPhone} />
-            {r.contactEmail && <Field label="Email" value={r.contactEmail} />}
-            {r.requesterData?.customerRef && <Field label="Customer ref" value={r.requesterData.customerRef} />}
-            {notes?.customerNotes && <Field label="Customer notes" value={notes.customerNotes} />}
+          {/* Customer / booking contact */}
+          <Section title="Customer">
+            <Field label="Company"      value={j.customerName} />
+            <Field label="Contact name" value={j.bookingContactName} />
+            <Field label="Phone"        value={j.bookingContactPhone} />
+            <Field label="Email"        value={j.bookingContactEmail} />
+            <Field label="Customer ref" value={j.customerRef} />
+            <Field label="PO number"    value={j.purchaseOrderNumber} />
           </Section>
 
           {/* Stops */}
-          <Section title="Stops">
+          <Section title={`Stops (${stops.length})`}>
             <div className="space-y-4">
-              {stops.map((stop, i) => (
-                <DetailedStopBlock
-                  key={i}
-                  title={stops.length > 1
-                    ? `${STOP_TYPE_LABEL[stop.type] ?? "Stop"} ${stops.filter((s, j) => s.type === stop.type && j <= i).length}`
-                    : (STOP_TYPE_LABEL[stop.type] ?? "Stop")
+              {stops.map((s, i) => (
+                <StopBlock
+                  key={s.id ?? i}
+                  title={
+                    stops.length > 1
+                      ? `${STOP_TYPE_LABEL[s.type] ?? s.type} ${stops.filter((x, j) => x.type === s.type && j <= i).length}`
+                      : (STOP_TYPE_LABEL[s.type] ?? s.type)
                   }
-                  stop={stop}
+                  stop={s}
                 />
               ))}
+              {stops.length === 0 && (
+                <p className="text-xs text-muted">No stops recorded.</p>
+              )}
             </div>
           </Section>
 
           {/* Load */}
           <Section title="Load">
-            <Field label="Goods type"        value={load?.goodsType?.replace(/_/g, " ") ?? ""} />
-            {load?.goodsTypeOther && <Field label="Goods type (other)" value={load.goodsTypeOther} />}
-            <Field label="Description"       value={load?.goodsDescription ?? ""} />
-            <Field label="Quantity"          value={`${load?.quantity ?? ""} ${load?.unit ?? ""}`} />
-            {load?.estimatedWeight != null && <Field label="Estimated weight" value={`${load.estimatedWeight} kg`} />}
-
-            {/* Pallets */}
-            {load?.palletCount != null && <Field label="Pallet count" value={String(load.palletCount)} />}
-            {load?.palletType && <Field label="Pallet type" value={load.palletTypeOther ?? load.palletType} />}
-            {load?.stackable != null && <Field label="Stackable" value={load.stackable ? "Yes" : "No"} />}
-
-            {/* Roll cages */}
-            {load?.cageCount != null && <Field label="Cage count" value={String(load.cageCount)} />}
-            {load?.cageFolded != null && <Field label="Cage folded" value={load.cageFolded ? "Yes" : "No"} />}
-
-            {/* Building materials */}
-            {load?.buildingMaterialType && <Field label="Material type" value={load.buildingMaterialType} />}
-            {load?.buildingMaterialPalletised != null && <Field label="Palletised" value={load.buildingMaterialPalletised ? "Yes" : "No"} />}
-            {load?.buildingMaterialLongestItem && <Field label="Longest item" value={load.buildingMaterialLongestItem} />}
-            {load?.buildingMaterialWeatherSensitive != null && <Field label="Weather sensitive" value={load.buildingMaterialWeatherSensitive ? "Yes" : "No"} />}
-
-            {/* Liquid */}
-            {load?.liquidProductType && <Field label="Liquid product" value={load.liquidProductType} />}
-            {load?.liquidVolumeLitres != null && <Field label="Volume" value={`${load.liquidVolumeLitres} L`} />}
-            {load?.liquidFoodGrade != null && <Field label="Food grade" value={load.liquidFoodGrade ? "Yes" : "No"} />}
-
-            {/* General */}
-            {load?.generalPackagingType && <Field label="Packaging type" value={load.generalPackagingType} />}
-            {load?.generalPieceCount != null && <Field label="Piece count" value={String(load.generalPieceCount)} />}
-
-            {/* Machinery */}
-            {load?.dimensions && <Field label="Dimensions" value={load.dimensions} />}
-            {load?.machineryPieceWeight != null && <Field label="Piece weight" value={`${load.machineryPieceWeight} kg`} />}
-            {load?.machineryLiftingPoints != null && <Field label="Lifting points" value={load.machineryLiftingPoints ? "Yes" : "No"} />}
-            {load?.machinerySkidMounted != null && <Field label="Skid mounted" value={load.machinerySkidMounted ? "Yes" : "No"} />}
-            {load?.craneRequired != null && <Field label="Crane required" value={load.craneRequired ? "Yes" : "No"} />}
-
-            {/* Steel */}
-            {load?.steelPieceCount != null && <Field label="Steel piece count" value={String(load.steelPieceCount)} />}
-            {load?.steelWidth && <Field label="Steel width" value={load.steelWidth} />}
-
-            {/* Bulk */}
-            {load?.tippingRequired != null && <Field label="Tipping required" value={load.tippingRequired ? "Yes" : "No"} />}
-
-            {/* Food */}
-            {load?.temperatureRange && <Field label="Temperature range" value={load.temperatureRange} />}
-            {load?.chilledFrozenAmbient && <Field label="Chilled/frozen/ambient" value={load.chilledFrozenAmbient} />}
-            {load?.foodPreCooled != null && <Field label="Pre-cooled" value={load.foodPreCooled ? "Yes" : "No"} />}
-
-            {/* Vehicles */}
-            {load?.vehicleCount != null && <Field label="Vehicle count" value={String(load.vehicleCount)} />}
-            {load?.vehicleMakeModel && <Field label="Make/model" value={load.vehicleMakeModel} />}
-            {load?.vehicleKeysWithVehicle != null && <Field label="Keys with vehicle" value={load.vehicleKeysWithVehicle ? "Yes" : "No"} />}
-            {load?.driveable != null && <Field label="Driveable" value={load.driveable ? "Yes" : "No"} />}
-
-            {/* Containers */}
-            {load?.containerSize && <Field label="Container size" value={load.containerSizeOther ?? load.containerSize} />}
-            {load?.loadedOrEmpty && <Field label="Loaded/empty" value={load.loadedOrEmpty} />}
-            {load?.containerNumber && <Field label="Container number" value={load.containerNumber} />}
-
-            {/* All types */}
-            {load?.loadHeight && <Field label="Load height" value={load.loadHeight} />}
-            {load?.canSplitShipment && <Field label="Can split shipment" value={load.canSplitShipment} />}
-            {load?.securingRequirements && load.securingRequirements.length > 0 && (
-              <div>
-                <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Securing requirements</div>
-                <Chips items={load.securingRequirements} />
-              </div>
+            <Field label="Goods type"    value={j.goodsType?.replace(/_/g, " ")} />
+            <Field label="Description"   value={j.goodsDescription} />
+            <Field label="Quantity"      value={j.quantity != null ? `${j.quantity} ${j.quantityUnit ?? ""}` : undefined} />
+            <Field label="Weight"        value={j.weight   != null ? `${j.weight} kg`  : undefined} />
+            <Field label="Volume"        value={j.volume   != null ? `${j.volume} m³`  : undefined} />
+            <Field label="Dimensions"    value={j.dimensions} />
+            {j.tempControlled && <Field label="Temperature" value={j.tempRange || "Temp-controlled"} />}
+            {j.hazardClass && <Field label="ADR class" value={j.hazardClass} />}
+            {j.fragile    && <Field label="Fragile"    value="Yes" />}
+            {j.stackable  && <Field label="Stackable"  value="Yes" />}
+            {j.weighbridgeRequired && <Field label="Weighbridge" value="Required" />}
+            {Array.isArray(j.securingRequirements) && j.securingRequirements.length > 0 && (
+              <ChipRow label="Securing" items={j.securingRequirements as string[]} />
             )}
-            {load?.loadNotes && <Field label="Load notes" value={load.loadNotes} />}
+            {Array.isArray(j.specialRequirements) && j.specialRequirements.length > 0 && (
+              <ChipRow label="Special requirements" items={j.specialRequirements as string[]} />
+            )}
           </Section>
 
-          {/* Special requirements */}
-          {spec?.items && spec.items.length > 0 && (
-            <Section title="Special requirements">
-              <Chips items={spec.items} />
-              {spec.adrClass && <Field label="ADR class" value={spec.adrClass} />}
-              {spec.unNumber && <Field label="UN number" value={spec.unNumber} />}
-              {spec.packingGroup && <Field label="Packing group" value={spec.packingGroup} />}
-              {spec.hazardousQuantityKg != null && <Field label="Hazardous qty" value={`${spec.hazardousQuantityKg} kg`} />}
-              {spec.hazardousPaperworkAvailable != null && (
-                <Field label="Paperwork available" value={spec.hazardousPaperworkAvailable ? "Yes" : "No"} />
+          {/* Vehicle requirements */}
+          {hasVehicle && (
+            <Section title="Vehicle requirements">
+              <Field label="Category"  value={j.vehicleCategory} />
+              {Array.isArray(j.bodyTypes) && j.bodyTypes.length > 0 && (
+                <ChipRow label="Body types" items={j.bodyTypes as string[]} />
               )}
-              {spec.oversizedWidth && <Field label="Oversized width" value={spec.oversizedWidth} />}
-              {spec.oversizedHeight && <Field label="Oversized height" value={spec.oversizedHeight} />}
-              {spec.oversizedLength && <Field label="Oversized length" value={spec.oversizedLength} />}
+              <Field label="Min GVW"   value={j.minGvwClass} />
+              {Array.isArray(j.equipment) && j.equipment.length > 0 && (
+                <ChipRow label="Equipment" items={j.equipment as string[]} />
+              )}
+              {Array.isArray(j.trailersAllowed) && j.trailersAllowed.length > 0 && (
+                <ChipRow label="Trailers" items={j.trailersAllowed as string[]} />
+              )}
+              <Field label="Access notes" value={j.vehicleAccessNotes} />
             </Section>
           )}
 
-          {/* Transport requirements */}
-          {hasTransport && (
-            <Section title="Transport requirements">
-              {tr?.plannerDecides && <Field label="Planner decides" value="Yes" />}
-              {tr?.reqBodyCategory && <Field label="Body category" value={tr.reqBodyCategory} />}
-              {tr?.reqBodyTypes && tr.reqBodyTypes.length > 0 && (
-                <div>
-                  <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Body types</div>
-                  <Chips items={tr.reqBodyTypes} />
-                </div>
+          {/* Driver-visible notes */}
+          {hasNotes && (
+            <Section title="Driver notes">
+              {Array.isArray(j.driverNoteChips) && j.driverNoteChips.length > 0 && (
+                <ChipRow label="Note chips" items={j.driverNoteChips as string[]} />
               )}
-              {tr?.reqEquipment && tr.reqEquipment.length > 0 && (
-                <div>
-                  <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Equipment</div>
-                  <Chips items={tr.reqEquipment} />
-                </div>
-              )}
-              {tr?.trailerTypesAllowed && tr.trailerTypesAllowed.length > 0 && (
-                <div>
-                  <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Trailer types</div>
-                  <Chips items={tr.trailerTypesAllowed} />
-                </div>
-              )}
+              <Field label="Driver notes"       value={j.driverVisibleNotes} />
+              <Field label="Safety instructions" value={j.safetyInstructions} />
             </Section>
           )}
 
-          {/* Billing */}
-          <Section title="Billing">
-            {billing?.declaredGoodsValue != null && (
-              <Field label="Declared goods value" value={`£${billing.declaredGoodsValue.toLocaleString()}`} />
-            )}
-            {billing?.purchaseOrderNumber && <Field label="PO number" value={billing.purchaseOrderNumber} />}
-            {billing?.billingReference && <Field label="Billing reference" value={billing.billingReference} />}
-          </Section>
-
-          {/* Notes */}
-          <Section title="Notes">
-            {notes?.driverNoteChips && notes.driverNoteChips.length > 0 && (
-              <div>
-                <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Driver note chips</div>
-                <Chips items={notes.driverNoteChips} />
-              </div>
-            )}
-            {notes?.driverVisibleNotes && <Field label="Driver notes" value={notes.driverVisibleNotes} />}
-            {notes?.safetyInstructions && <Field label="Safety instructions" value={notes.safetyInstructions} />}
-          </Section>
-
-          {/* Rejection & return policy */}
+          {/* Exception policy */}
           {hasException && (
-            <Section title="Rejection & return policy">
-              {ep?.rejectionAction && <Field label="Rejection action" value={ep.rejectionAction} />}
-              {ep?.alternativeReturnSiteName && <Field label="Alternative site name" value={ep.alternativeReturnSiteName} />}
-              {ep?.alternativeReturnAddress && <Field label="Alternative address" value={ep.alternativeReturnAddress} />}
-              {ep?.alternativeReturnAddressLine2 && <Field label="Alternative address line 2" value={ep.alternativeReturnAddressLine2} />}
-              {ep?.alternativeReturnTown && <Field label="Alternative town" value={ep.alternativeReturnTown} />}
-              {ep?.alternativeReturnCounty && <Field label="Alternative county" value={ep.alternativeReturnCounty} />}
-              {ep?.alternativeReturnPostcode && <Field label="Alternative postcode" value={ep.alternativeReturnPostcode} />}
-              {ep?.alternativeReturnCountry && <Field label="Alternative country" value={ep.alternativeReturnCountry} />}
-              {ep?.alternativeReturnNavigationInstructions && (
-                <Field label="Alternative entrance instructions" value={ep.alternativeReturnNavigationInstructions} />
-              )}
-              {ep?.alternativeReturnContactName && <Field label="Alternative contact name" value={ep.alternativeReturnContactName} />}
-              {ep?.alternativeReturnContactPhone && <Field label="Alternative contact phone" value={ep.alternativeReturnContactPhone} />}
-              {ep?.approvalContactName && <Field label="Approval contact" value={ep.approvalContactName} />}
-              {ep?.approvalContactPhone && <Field label="Approval phone" value={ep.approvalContactPhone} />}
-              {ep?.photosRequiredOnRejection != null && (
-                <Field label="Photos required on rejection" value={ep.photosRequiredOnRejection ? "Yes" : "No"} />
-              )}
-              {ep?.rejectionSignatureRequired != null && (
-                <Field label="Signature required" value={ep.rejectionSignatureRequired ? "Yes" : "No"} />
-              )}
-              {ep?.rejectionNotes && <Field label="Rejection notes" value={ep.rejectionNotes} />}
+            <Section title="Exception policy">
+              <Field label="Failure action"     value={j.failureAction?.replace(/_/g, " ")} />
+              <Field label="Assistance phone"   value={j.assistancePhone} />
+              <Field label="Approval contact"   value={j.approvalContactName} />
+              <Field label="Approval phone"     value={j.approvalContactPhone} />
+              <Field label="Alt return address" value={j.alternativeReturnAddress} />
+              <Field label="Alt return postcode" value={j.alternativeReturnPostcode} />
+              <Field label="Alt contact name"   value={j.alternativeReturnContactName} />
+              <Field label="Alt contact phone"  value={j.alternativeReturnContactPhone} />
+            </Section>
+          )}
+
+          {/* Planner notes (if any) */}
+          {j.plannerNotes && (
+            <Section title="Planner notes">
+              <p className="text-sm" style={{ color: "#374151" }}>{j.plannerNotes}</p>
             </Section>
           )}
         </div>
@@ -605,15 +592,9 @@ function RequestDetailModal({ request: r, onClose }: { request: JobRequest; onCl
   );
 }
 
-// ── Expanded stop block (used inside modal) ────────────────────────────────────
+// ── Stop block (inside modal) ─────────────────────────────────────────────────
 
-function DetailedStopBlock({ title, stop: s }: { title: string; stop: RequestStop }) {
-  const warnLevel = s.entranceWarningLevel;
-  const warnColor = warnLevel === "danger" ? "#ef4444" : warnLevel === "warn" ? "#d97706" : "#22c55e";
-
-  const ppeItems = s.accessRequirements?.filter(r => r.startsWith("ppe_")) ?? [];
-  const accessItems = s.accessRequirements?.filter(r => !r.startsWith("ppe_")) ?? [];
-
+function StopBlock({ title, stop: s }: { title: string; stop: JobPart }) {
   return (
     <div className="p-4 rounded-xl border bg-slate-50 space-y-2">
       <div className="font-semibold capitalize" style={{ color: "#0f172a" }}>{title}</div>
@@ -624,162 +605,59 @@ function DetailedStopBlock({ title, stop: s }: { title: string; stop: RequestSto
         </div>
       )}
 
-      {/* Site + address */}
-      <Field label="Site" value={s.siteName} />
-      <Field label="Address" value={[
-        s.street,
-        s.addressLine2,
-        s.town,
-        s.countyRegion,
-        s.postcode,
-        s.country,
-      ].filter(Boolean).join(", ")} />
+      <Field label="Site"    value={s.siteName} />
+      <Field
+        label="Address"
+        value={[s.street, s.addressLine2, s.town, s.countyRegion, s.postcode, s.country]
+          .filter(Boolean).join(", ")}
+      />
 
-      {/* Pin */}
       {s.lat != null && (
-        <div className="text-xs" style={{ color: warnColor }}>
-          <span className="font-medium">Entrance pin: </span>
-          {s.lat.toFixed(5)}, {s.lng.toFixed(5)}
-          {warnLevel === "warn"   && " ⚠ Pin >1mi from postcode"}
-          {warnLevel === "danger" && " ⚠⚠ Pin far from postcode — verify"}
+        <div className="text-xs" style={{ color: "#6b7280" }}>
+          <span className="font-medium">Pin: </span>
+          {s.lat.toFixed(5)}, {(s.lng ?? 0).toFixed(5)}
         </div>
       )}
 
-      {s.navigationInstructions && <Field label="Entrance instructions" value={s.navigationInstructions} />}
+      {s.navigationInstructions && (
+        <Field label="Entrance instructions" value={s.navigationInstructions} />
+      )}
 
-      {/* Schedule */}
-      <Field label="Date" value={s.date} />
-      <Field label="Arrival window" value={`${s.earliestArrivalTime} – ${s.latestArrivalTime}`} />
-      {s.bookedTime && <Field label="Booked time" value={s.bookedTime} />}
-      {s.unloadingAllowanceMinutes > 0 && (
+      {(s.timeWindowStart || s.timeWindowEnd) && (
+        <Field label="Time window" value={fmtWindow(s.timeWindowStart, s.timeWindowEnd)} />
+      )}
+      {s.bookedTime && (
+        <Field label="Booked time" value={new Date(s.bookedTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} />
+      )}
+      {s.unloadingAllowanceMinutes != null && s.unloadingAllowanceMinutes > 0 && (
         <Field label="Service time" value={`${s.unloadingAllowanceMinutes} min`} />
       )}
       {s.bookingRequired && (
-        <Field label="Booking required" value={s.bookingRef ? `Yes · ${s.bookingRef}` : "Yes"} />
+        <Field label="Booking" value={s.bookingRef ? `Required · ${s.bookingRef}` : "Required"} />
       )}
       {s.openingHours && <Field label="Opening hours" value={s.openingHours} />}
 
-      {/* Quantity at stop */}
       {s.quantityRequired != null && (
-        <Field label="Stop quantity" value={`${s.quantityRequired} ${s.quantityUnit ?? ""}`} />
+        <Field label="Quantity" value={`${s.quantityRequired} ${s.quantityUnit ?? ""}`} />
       )}
-
-      {/* Exchange */}
       {(s.exchangeDropQty != null || s.exchangeCollectQty != null) && (
         <Field
           label="Exchange"
-          value={`Drop: ${s.exchangeDropQty ?? 0} · Collect: ${s.exchangeCollectQty ?? 0}${s.exchangeUnit ? ` ${s.exchangeUnit}` : ""}`}
+          value={`Drop ${s.exchangeDropQty ?? 0} · Collect ${s.exchangeCollectQty ?? 0}${s.exchangeUnit ? ` ${s.exchangeUnit}` : ""}`}
         />
       )}
 
-      {s.loadReadiness && <Field label="Load readiness" value={s.loadReadiness} />}
+      {Array.isArray(s.handlingMethods)   && s.handlingMethods.length   > 0 && <ChipRow label="Handling"    items={s.handlingMethods as string[]} />}
+      {Array.isArray(s.accessRequirements) && s.accessRequirements.length > 0 && <ChipRow label="Site access" items={s.accessRequirements as string[]} variant="amber" />}
+      {Array.isArray(s.proofRequirements)  && s.proofRequirements.length  > 0 && <ChipRow label="Proof"      items={s.proofRequirements as string[]} />}
 
-      {/* Handling methods */}
-      {s.handlingMethods && s.handlingMethods.length > 0 && (
-        <div>
-          <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Handling methods</div>
-          <Chips items={s.handlingMethods} />
-        </div>
-      )}
-
-      {/* Site access requirements */}
-      {accessItems.length > 0 && (
-        <div>
-          <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Site access requirements</div>
-          <Chips items={accessItems} className="bg-amber-50 text-amber-700 border border-amber-200" />
-        </div>
-      )}
-
-      {/* PPE requirements */}
-      {ppeItems.length > 0 && (
-        <div>
-          <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>PPE requirements</div>
-          <Chips items={ppeItems} className="bg-orange-50 text-orange-700 border border-orange-200" />
-        </div>
-      )}
-
-      {/* Proof requirements */}
-      {s.proofRequirements && s.proofRequirements.length > 0 && (
-        <div>
-          <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>Proof requirements</div>
-          <Chips items={s.proofRequirements} />
-        </div>
-      )}
-
-      {/* Restrictions */}
       {s.heightRestriction && <Field label="Height restriction" value={s.heightRestriction} />}
       {s.weightRestriction && <Field label="Weight restriction" value={s.weightRestriction} />}
       {s.lengthRestriction && <Field label="Length restriction" value={s.lengthRestriction} />}
 
-      {/* Site contact */}
       {s.contactName && <Field label="Site contact" value={s.contactName} />}
-      {s.contactPhone && <Field label="Site phone" value={s.contactPhone} />}
-      {s.contactEmail && <Field label="Site email" value={s.contactEmail} />}
-
-      {s.stopNotes && <Field label="Stop notes" value={s.stopNotes} />}
-    </div>
-  );
-}
-
-// ── Small summary stop block (kept for backward compat) ───────────────────────
-
-function StopBlock({ title, stop: s }: { title: string; stop: RequestStop }) {
-  const warnLevel = s.entranceWarningLevel;
-  const warnColor = warnLevel === "danger" ? "#ef4444" : warnLevel === "warn" ? "#d97706" : "#22c55e";
-
-  return (
-    <div className="p-3 rounded-xl border bg-white">
-      <div className="font-semibold mb-2 capitalize" style={{ color: "#0f172a" }}>{title}</div>
-      {s.referenceNumber && (
-        <div className="font-mono text-xs mb-1 px-1 py-0.5 bg-blue-50 text-blue-800 rounded inline-block">
-          Ref: {s.referenceNumber}
-        </div>
-      )}
-      <div className="text-xs space-y-0.5 mt-1" style={{ color: "#374151" }}>
-        <div className="font-medium">{s.siteName}</div>
-        <div>{s.street}{s.addressLine2 ? `, ${s.addressLine2}` : ""}, {s.town} {s.postcode}</div>
-        <div className="mt-1">
-          {s.date} · {s.earliestArrivalTime}–{s.latestArrivalTime}
-          {s.bookedTime && <span className="ml-1 font-medium">({s.bookedTime} exact)</span>}
-        </div>
-        {s.unloadingAllowanceMinutes > 0 && (
-          <div>{s.unloadingAllowanceMinutes} min est. on-site</div>
-        )}
-        {s.bookingRequired && (
-          <div className="text-amber-700 font-medium">
-            Booking required{s.bookingRef ? ` · ${s.bookingRef}` : ""}
-          </div>
-        )}
-        {s.lat != null && (
-          <div className="mt-1" style={{ color: warnColor }}>
-            ● Entrance: {s.lat.toFixed(5)}, {s.lng.toFixed(5)}
-            {warnLevel === "warn"   && " ⚠ Pin >1mi from postcode"}
-            {warnLevel === "danger" && " ⚠⚠ Pin far from postcode — verify"}
-          </div>
-        )}
-        {s.navigationInstructions && (
-          <div className="mt-1 italic text-xs" style={{ color: "#6b7280" }}>{s.navigationInstructions}</div>
-        )}
-        {s.handlingMethods && s.handlingMethods.length > 0 && (
-          <div className="flex gap-1 flex-wrap mt-1">
-            {s.handlingMethods.map((m: string) => (
-              <span key={m} className="px-1.5 py-0.5 rounded bg-slate-100 text-xs">{m.replace(/_/g, " ")}</span>
-            ))}
-          </div>
-        )}
-        {s.siteRestrictions && s.siteRestrictions.length > 0 && (
-          <div className="flex gap-1 flex-wrap mt-1">
-            {s.siteRestrictions.map((r: string) => (
-              <span key={r} className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-xs border border-amber-200">{r.replace(/_/g, " ")}</span>
-            ))}
-          </div>
-        )}
-        {s.contactName && (
-          <div className="mt-1 text-xs text-muted">
-            Contact: {s.contactName}{s.contactPhone ? ` · ${s.contactPhone}` : ""}
-          </div>
-        )}
-      </div>
+      {s.contactPhone && <Field label="Site phone"  value={s.contactPhone} />}
+      {s.stopNotes    && <Field label="Stop notes"  value={s.stopNotes} />}
     </div>
   );
 }
@@ -792,9 +670,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 className="text-sm font-bold mb-3 pb-1 border-b border-border" style={{ color: "#0f172a" }}>
         {title}
       </h3>
-      <div className="space-y-2">
-        {children}
-      </div>
+      <div className="space-y-2">{children}</div>
     </div>
   );
 }
@@ -809,41 +685,29 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function Chips({ items, className }: { items: string[]; className?: string }) {
+function ChipRow({
+  label,
+  items,
+  variant,
+}: {
+  label:    string;
+  items:    string[];
+  variant?: "amber";
+}) {
   if (!items || items.length === 0) return null;
+  const cls = variant === "amber"
+    ? "bg-amber-50 text-amber-700 border border-amber-200"
+    : "bg-slate-100 text-slate-700";
   return (
-    <div className="flex gap-1 flex-wrap">
-      {items.map(item => (
-        <span
-          key={item}
-          className={"px-2 py-0.5 rounded-full text-xs font-medium " + (className ?? "bg-slate-100 text-slate-700")}
-        >
-          {item.replace(/_/g, " ")}
-        </span>
-      ))}
+    <div>
+      <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>{label}</div>
+      <div className="flex gap-1 flex-wrap">
+        {items.map(item => (
+          <span key={item} className={"px-2 py-0.5 rounded-full text-xs font-medium " + cls}>
+            {item.replace(/_/g, " ")}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
-
-function InfoChip({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="p-2 rounded-lg bg-slate-50 border">
-      <div className="text-xs" style={{ color: "#9ca3af" }}>{label}</div>
-      <div className="font-semibold text-xs capitalize" style={{ color: "#0f172a" }}>{value}</div>
-    </div>
-  );
-}
-
-function NoteRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="text-xs">
-      <span className="font-semibold">{label}: </span>
-      <span style={{ color: "#374151" }}>{value}</span>
-    </div>
-  );
-}
-
-// Suppress unused component warnings — these are kept for potential future use
-void StopBlock;
-void InfoChip;
-void NoteRow;

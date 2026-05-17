@@ -277,12 +277,13 @@ export const jobRequestsApi = {
     api.patch<RequestLink>(`/request-links/${id}`, body),
 
   list:    (status?: string, page?: number) =>
-    api.get<{ data: JobRequest[]; total: number; page: number; pages: number }>(
+    api.get<{ data: import("../types").Job[]; total: number; page: number; pages: number }>(
       `/job-requests?${new URLSearchParams({ ...(status ? { status } : {}), ...(page ? { page: String(page) } : {}) })}`,
     ),
-  get:     (id: number) => api.get<JobRequest>(`/job-requests/${id}`),
-  accept:  (id: number, plannerNotes?: string) =>
-    api.post<{ ok: boolean; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, { plannerNotes }),
+  get:     (id: number) => api.get<import("../types").Job>(`/job-requests/${id}`),
+  /** plannedDate is required by the server — pass as YYYY-MM-DD string. */
+  accept:  (id: number, plannedDate: string, plannerNotes?: string) =>
+    api.post<{ ok: true; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, { plannedDate, plannerNotes }),
   reject:  (id: number, reason: string, notes?: string) =>
     api.post<{ ok: true }>(`/job-requests/${id}/reject`, { reason, notes }),
 };

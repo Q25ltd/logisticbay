@@ -116,6 +116,10 @@ export interface JobPart {
   addressLine2?: string;
   countyRegion?: string;
   country?: string;
+  // Vehicle/access restrictions at this stop
+  heightRestriction?: string;
+  weightRestriction?: string;
+  lengthRestriction?: string;
 }
 
 // LoadDetails is now merged into Job — this interface is kept only for legacy template blobs
