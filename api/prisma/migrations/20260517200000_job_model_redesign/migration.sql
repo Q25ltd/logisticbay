@@ -1,39 +1,19 @@
 -- ────────────────────────────────────────────────────────────────────────────
--- Job model redesign
+-- Job model redesign  (IDEMPOTENT — safe to re-run after partial apply)
 --
--- Changes:
---   1. Drop JobRequest staging table (PRF will write directly to Job)
---   2. Drop LoadDetails (fields merged into Job)
---   3. Rename PlannedJob → Job + clean columns:
---        - Remove 12 redundant vehicle-requirement fields (15 → 5 clean fields)
---        - Flatten notesData / billingData / exceptionPolicyData blobs into columns
---        - Add goodsType, goodsDescription, weight, volume, dimensions,
---          fragile, stackable, tempControlled, tempRange, hazardClass,
---          photosRequired, weighbridgeRequired, securingRequirements,
---          specialRequirements from LoadDetails
---        - Add billingReference, declaredGoodsValue from billingData blob
---        - Add driverNoteChips, driverVisibleNotes, safetyInstructions from notesData blob
---        - Add approvalContactName/Phone, alternativeReturn* from exceptionPolicyData blob
---        - Add parentJobId (nullable self-relation for job splitting)
---        - Add jobType, jobTitle
---        - Rename reqBodyCategory → vehicleCategory
---                 reqBodyType    → bodyType
---                 reqGvwMin      → minGvwClass
---                 reqEquipment   → equipment
---                 trailerTypesAllowed → trailersAllowed
---
--- All data in job-related tables is TEST DATA — confirmed safe to drop.
+-- Why idempotent? A prisma db push ran before migration history was established,
+-- creating the Job table directly from schema.prisma. This migration is now
+-- re-run via `migrate resolve --rolled-back` + `migrate deploy`, so every
+-- statement must be a safe no-op when the target already exists.
 -- ────────────────────────────────────────────────────────────────────────────
 
 -- ── Step 1: Drop staging table and load details ───────────────────────────────
--- CASCADE drops their FK constraints and data automatically.
-
 DROP TABLE IF EXISTS "JobRequest" CASCADE;
 DROP TABLE IF EXISTS "LoadDetails" CASCADE;
 
--- ── Step 2: Truncate all child tables that reference PlannedJob ───────────────
--- Needed before we can drop PlannedJob.
--- These all contain test data only — user confirmed.
+-- ── Step 2: Truncate child tables (test data only — confirmed safe) ───────────
+-- TRUNCATE with CASCADE is safe because the referenced Job table will exist after
+-- Step 4. Orphaned rows are cleared here so FK constraints can be (re-)added.
 
 TRUNCATE TABLE "LoadTrack"          RESTART IDENTITY CASCADE;
 TRUNCATE TABLE "RunAssignment"      RESTART IDENTITY CASCADE;
@@ -42,15 +22,11 @@ TRUNCATE TABLE "JobAudit"           RESTART IDENTITY CASCADE;
 TRUNCATE TABLE "JobPart"            RESTART IDENTITY CASCADE;
 
 -- ── Step 3: Drop PlannedJob ───────────────────────────────────────────────────
--- CASCADE removes all FK constraints that reference PlannedJob
--- (JobStop_jobId_fkey / JobAudit_jobId_fkey / JobExecutionEvent_jobId_fkey /
---  RunAssignment_jobId_fkey / LoadTrack_jobId_fkey).
-
 DROP TABLE IF EXISTS "PlannedJob" CASCADE;
 
--- ── Step 4: Create Job ────────────────────────────────────────────────────────
+-- ── Step 4: Create Job (IF NOT EXISTS — idempotent) ───────────────────────────
 
-CREATE TABLE "Job" (
+CREATE TABLE IF NOT EXISTS "Job" (
     "id"              SERIAL,
 
     -- identity
@@ -77,7 +53,7 @@ CREATE TABLE "Job" (
     "billingReference"    TEXT,
     "declaredGoodsValue"  TEXT,
     "billingNotes"        TEXT NOT NULL DEFAULT '',
-    "billingData"         JSONB,       -- vatRegistered, vatNumber (kept as blob)
+    "billingData"         JSONB,
     "bookingContactName"  TEXT NOT NULL DEFAULT '',
     "bookingContactPhone" TEXT NOT NULL DEFAULT '',
     "bookingContactEmail" TEXT NOT NULL DEFAULT '',
@@ -108,11 +84,10 @@ CREATE TABLE "Job" (
     "weighbridgeRequired"  BOOLEAN NOT NULL DEFAULT false,
     "securingRequirements" JSONB,
     "specialRequirements"  JSONB,
-    "loadData"             JSONB,
 
-    -- vehicle requirements (Job says what it NEEDS; system checks at assignment)
+    -- vehicle requirements
     "vehicleCategory"    TEXT NOT NULL DEFAULT '',
-    "bodyType"           TEXT NOT NULL DEFAULT '',
+    "bodyTypes"          JSONB,
     "minGvwClass"        TEXT NOT NULL DEFAULT '',
     "equipment"          JSONB,
     "trailersAllowed"    JSONB,
@@ -149,45 +124,85 @@ CREATE TABLE "Job" (
     CONSTRAINT "Job_pkey" PRIMARY KEY ("id")
 );
 
--- ── Step 5: Indexes on Job ────────────────────────────────────────────────────
+-- ── Step 5: Indexes (IF NOT EXISTS — idempotent) ──────────────────────────────
 
-CREATE UNIQUE INDEX "Job_companyId_jobReference_key"    ON "Job"("companyId", "jobReference");
-CREATE INDEX        "Job_companyId_plannedDate_idx"     ON "Job"("companyId", "plannedDate");
-CREATE INDEX        "Job_companyId_status_idx"          ON "Job"("companyId", "status");
-CREATE INDEX        "Job_companyId_customerId_idx"      ON "Job"("companyId", "customerId");
-CREATE INDEX        "Job_companyId_updatedAt_idx"       ON "Job"("companyId", "updatedAt");
-CREATE INDEX        "Job_companyId_jobReference_idx"    ON "Job"("companyId", "jobReference");
+CREATE UNIQUE INDEX IF NOT EXISTS "Job_companyId_jobReference_key" ON "Job"("companyId", "jobReference");
+CREATE INDEX        IF NOT EXISTS "Job_companyId_plannedDate_idx"  ON "Job"("companyId", "plannedDate");
+CREATE INDEX        IF NOT EXISTS "Job_companyId_status_idx"       ON "Job"("companyId", "status");
+CREATE INDEX        IF NOT EXISTS "Job_companyId_customerId_idx"   ON "Job"("companyId", "customerId");
+CREATE INDEX        IF NOT EXISTS "Job_companyId_updatedAt_idx"    ON "Job"("companyId", "updatedAt");
+CREATE INDEX        IF NOT EXISTS "Job_companyId_jobReference_idx" ON "Job"("companyId", "jobReference");
 
--- ── Step 6: FK constraints ON Job (Job → other tables) ───────────────────────
+-- ── Step 6: FK constraints ON Job — wrapped in DO blocks (idempotent) ─────────
 
-ALTER TABLE "Job" ADD CONSTRAINT "Job_companyId_fkey"
-    FOREIGN KEY ("companyId")       REFERENCES "Company"("id")     ON DELETE RESTRICT  ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Job_companyId_fkey') THEN
+        ALTER TABLE "Job" ADD CONSTRAINT "Job_companyId_fkey"
+            FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "Job" ADD CONSTRAINT "Job_customerId_fkey"
-    FOREIGN KEY ("customerId")      REFERENCES "Customer"("id")    ON DELETE SET NULL  ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Job_customerId_fkey') THEN
+        ALTER TABLE "Job" ADD CONSTRAINT "Job_customerId_fkey"
+            FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "Job" ADD CONSTRAINT "Job_templateId_fkey"
-    FOREIGN KEY ("templateId")      REFERENCES "JobTemplate"("id") ON DELETE SET NULL  ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Job_templateId_fkey') THEN
+        ALTER TABLE "Job" ADD CONSTRAINT "Job_templateId_fkey"
+            FOREIGN KEY ("templateId") REFERENCES "JobTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "Job" ADD CONSTRAINT "Job_createdByUserId_fkey"
-    FOREIGN KEY ("createdByUserId") REFERENCES "User"("id")        ON DELETE RESTRICT  ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Job_createdByUserId_fkey') THEN
+        ALTER TABLE "Job" ADD CONSTRAINT "Job_createdByUserId_fkey"
+            FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "Job" ADD CONSTRAINT "Job_parentJobId_fkey"
-    FOREIGN KEY ("parentJobId")     REFERENCES "Job"("id")         ON DELETE SET NULL  ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Job_parentJobId_fkey') THEN
+        ALTER TABLE "Job" ADD CONSTRAINT "Job_parentJobId_fkey"
+            FOREIGN KEY ("parentJobId") REFERENCES "Job"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+END $$;
 
--- ── Step 7: FK constraints FROM child tables → Job ───────────────────────────
+-- ── Step 7: FK constraints FROM child tables → Job (idempotent) ───────────────
 
-ALTER TABLE "JobPart" ADD CONSTRAINT "JobPart_jobId_fkey"
-    FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'JobPart_jobId_fkey') THEN
+        ALTER TABLE "JobPart" ADD CONSTRAINT "JobPart_jobId_fkey"
+            FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "JobAudit" ADD CONSTRAINT "JobAudit_jobId_fkey"
-    FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'JobAudit_jobId_fkey') THEN
+        ALTER TABLE "JobAudit" ADD CONSTRAINT "JobAudit_jobId_fkey"
+            FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "JobExecutionEvent" ADD CONSTRAINT "JobExecutionEvent_jobId_fkey"
-    FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'JobExecutionEvent_jobId_fkey') THEN
+        ALTER TABLE "JobExecutionEvent" ADD CONSTRAINT "JobExecutionEvent_jobId_fkey"
+            FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "RunAssignment" ADD CONSTRAINT "RunAssignment_jobId_fkey"
-    FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'RunAssignment_jobId_fkey') THEN
+        ALTER TABLE "RunAssignment" ADD CONSTRAINT "RunAssignment_jobId_fkey"
+            FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "LoadTrack" ADD CONSTRAINT "LoadTrack_jobId_fkey"
-    FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'LoadTrack_jobId_fkey') THEN
+        ALTER TABLE "LoadTrack" ADD CONSTRAINT "LoadTrack_jobId_fkey"
+            FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END $$;
