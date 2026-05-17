@@ -371,7 +371,7 @@ Stored in `PlannedJob.loadData` (Json?). Populated on accept from `JobRequest.lo
 | goodsType | String? | `pallets` \| `roll_cages` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `liquid_bulk` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods |
 | goodsDescription | String? | Free text | Detailed description of what is being transported |
 | quantity | Number? | Positive number | Quantity of goods |
-| unit | String? | `pallets` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure |
+| unit | String? | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure |
 | estimatedWeight | Number? | Positive number (kg) | Estimated total weight |
 | canSplitShipment | String? | `must_stay_together` \| `can_split_partially` \| `can_split_freely` | Whether the shipment can be split |
 | securingRequirements | String[]? | See `JobRequest.loadData.securingRequirements` | Load securing equipment or methods required |
@@ -897,7 +897,7 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | bookedTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
 | unloadingAllowanceMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
 | stopQuantity | Number? | No | Positive integer | Number of items/units being collected or delivered at this specific stop (not the total job quantity) |
-| stopQuantityUnit | String? | No | `pallets` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity |
+| stopQuantityUnit | String? | No | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity |
 | stopNotes | String? | No | Free text | Free-text notes specific to this stop — anything not covered by other fields (e.g. partial loads, bay numbers, wait instructions) |
 | exchangeDropQty | Number? | No | Positive integer | Number of full units (pallets, cages, etc.) to drop at this stop as part of an exchange |
 | exchangeCollectQty | Number? | No | Positive integer | Number of empty units to collect back from this stop as part of an exchange |
@@ -925,7 +925,7 @@ Stored in `JobRequest.loadData` (Json column, default `{}`). Copied verbatim to 
 | goodsTypeOther | String? | No | Free text | Description of goods when goodsType = `other` |
 | goodsDescription | String | Yes | Free text, min 15 characters | Detailed description of what is being transported |
 | quantity | Number | Yes | Positive number | Quantity of goods |
-| unit | String | Yes | `pallets` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity |
+| unit | String | Yes | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity |
 | estimatedWeight | Number? | Yes (validated) | Positive number (kg) | Estimated total weight of the load in kilograms |
 | palletCount | Number? | No | Positive integer | Number of pallets (only when goodsType = `pallets`) |
 | palletType | String? | No | `euro` \| `uk` \| `half` \| `chep` \| `other` | Type of pallets (only when goodsType = `pallets`) |
@@ -972,7 +972,7 @@ Stored in `JobRequest.specialRequirementsData` (Json column, default `{}`).
 
 | Field | Type | Required | Values / Format | Description |
 |---|---|---|---|---|
-| items | String[]? | No | `dangerous_goods` \| `temperature_controlled` \| `fragile` \| `high_value` \| `oversized` \| `secure_transport_required` \| `escort_required` \| `temperature_monitored` | Special requirement flags checked by the customer |
+| items | String[]? | No | `dangerous_goods` \| `fragile` \| `high_value` \| `oversized` \| `secure_transport_required` \| `escort_required` | Special requirement flags. **`temperature_controlled` / `temperature_monitored` are intentionally absent** — temperature is captured via `goodsType = food_refrigerated` + `chilledFrozenAmbient` in Section 3 to avoid duplicate signals. |
 | adrClass | String? | No | Free text (e.g. `Class 3 — Flammable liquids`) | ADR hazard class description (only when `dangerous_goods` selected) |
 | unNumber | String? | No | Free text (e.g. `UN 1993`) | UN dangerous goods number (only when `dangerous_goods` selected) |
 | packingGroup | String? | No | `I` \| `II` \| `III` | ADR packing group (only when `dangerous_goods` selected) |

@@ -41,6 +41,7 @@ const LOAD_TYPES: [string, string][] = GOODS_TYPES;
 
 const LOAD_UNITS: [string, string][] = [
   ["pallets",      "Pallets"],
+  ["roll_cages",   "Roll cages / yorks"],
   ["tonnes",       "Tonnes"],
   ["kg",           "Kilograms"],
   ["bags",         "Bags"],

@@ -36,6 +36,7 @@ export const JOB_STOP_TYPES = [
 
 export const LOAD_UNITS = [
   "pallets",
+  "roll_cages",
   "kg",
   "tonnes",
   "loads",

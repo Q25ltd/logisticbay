@@ -138,6 +138,7 @@ const GENERAL_PACKAGING: [string, string][] = [
 
 const LOAD_UNITS: [string, string][] = [
   ["pallets",      "Pallets"],
+  ["roll_cages",   "Roll cages / yorks"],
   ["tonnes",       "Tonnes"],
   ["kg",           "Kilograms"],
   ["bags",         "Bags"],
@@ -204,8 +205,6 @@ const PPE_ITEMS: [string, string][] = [
 
 const SPECIAL_REQUIREMENTS: [string, string][] = [
   ["dangerous_goods",           "Dangerous goods (ADR)"],
-  ["temperature_controlled",    "Temperature controlled"],
-  ["temperature_monitored",     "Temperature monitored"],
   ["fragile",                   "Fragile / handle with care"],
   ["high_value",                "High value goods"],
   ["oversized",                 "Oversized load"],

@@ -57,15 +57,16 @@ export const DRIVER_ENDORSEMENT_OPTS: [string, string][] = DRIVER_ENDORSEMENTS.m
 export const TRAILER_LENGTH_OPTS: [string, string][] = TRAILER_LENGTHS.map(x => [x.value, x.label]);
 
 export const LOAD_UNITS: [string, string][] = [
-  ["tonnes",  "Tonnes"],
-  ["kg",      "Kg"],
-  ["pallets", "Pallets"],
-  ["bags",    "Bags"],
-  ["loads",   "Loads"],
-  ["litres",  "Litres"],
+  ["tonnes",       "Tonnes"],
+  ["kg",           "Kg"],
+  ["pallets",      "Pallets"],
+  ["roll_cages",   "Roll cages / yorks"],
+  ["bags",         "Bags"],
+  ["loads",        "Loads"],
+  ["litres",       "Litres"],
   ["cubic_metres", "Cubic metres"],
-  ["items",   "Items"],
-  ["other",   "Other"],
+  ["items",        "Items"],
+  ["other",        "Other"],
 ];
 
 export const HANDLING_METHODS: [string, string][] = [
@@ -139,8 +140,6 @@ export const SECURING_REQUIREMENTS: [string, string][] = [
 
 export const SPECIAL_REQUIREMENTS_OPTS: [string, string][] = [
   ["dangerous_goods",           "Dangerous goods (ADR)"],
-  ["temperature_controlled",    "Temperature controlled"],
-  ["temperature_monitored",     "Temperature monitored"],
   ["fragile",                   "Fragile / handle with care"],
   ["high_value",                "High value goods"],
   ["oversized",                 "Oversized load"],
