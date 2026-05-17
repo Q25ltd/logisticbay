@@ -1,45 +1,441 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import type { PlannedJob } from "../../types";
+import type { Job, JobPart } from "../../types";
 import { Badge } from "../../components/Badge";
-import { Button } from "../../components/Button";
-import { Alert } from "../../components/Alert";
 
-const fmt = (iso: string) =>
-  new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+// ── Formatters ────────────────────────────────────────────────────────────────
 
-const EVENT_LABELS: Record<string, string> = {
-  started:         "▶ Started",
-  arrived_pickup:  "📍 Arrived at pickup",
-  collected:       "✅ Collected",
-  arrived_dropoff: "📍 Arrived at dropoff",
-  completed:       "✅ Completed",
-  cancelled:       "🚫 Cancelled",
-  note_added:      "📝 Note",
-  status_override: "⚙ Status override",
-  driver_assigned: "👤 Driver assigned",
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtWindow(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start) return "";
+  const s  = new Date(start);
+  const st = s.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const date = s.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  if (!end) return `${date} from ${st}`;
+  const et = new Date(end).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return `${date} · ${st}–${et}`;
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const STOP_TYPE_LABEL: Record<string, string> = {
+  pickup:     "Pickup",
+  dropoff:    "Drop-off",
+  collection: "Collection",
+  delivery:   "Delivery",
+  handover:   "Handover",
+  yard:       "Yard",
+  depot:      "Depot",
 };
 
-const STATUS_FLOW = [
-  "pending","accepted","in_progress","arrived_pickup",
-  "collected","arrived_dropoff","completed",
+const STOP_DOT_COLOUR: Record<string, string> = {
+  pickup:     "bg-blue-500",
+  collection: "bg-blue-500",
+  dropoff:    "bg-green-500",
+  delivery:   "bg-green-500",
+  handover:   "bg-violet-500",
+  yard:       "bg-slate-400",
+  depot:      "bg-slate-400",
+};
+
+const PLANNING_STATUS_LABEL: Record<string, { label: string; colour: string }> = {
+  no_stops:         { label: "No stops",          colour: "text-slate-400" },
+  not_planned:      { label: "Not in a run",       colour: "text-amber-600" },
+  partially_planned:{ label: "Partially assigned", colour: "text-indigo-600" },
+  planned:          { label: "Fully assigned",     colour: "text-blue-600"  },
+  partially_done:   { label: "Partially done",     colour: "text-teal-600"  },
+  done:             { label: "All done",            colour: "text-green-600" },
+};
+
+const JOB_STATUSES = [
+  "draft", "pending_review", "ready_to_plan", "in_planning",
+  "planned", "in_progress", "completed", "cancelled",
 ] as const;
 
-const STATUS_LABELS: Record<string, string> = {
-  pending:         "Pending",
-  accepted:        "Accepted",
-  in_progress:     "In Progress",
-  arrived_pickup:  "At Pickup",
-  collected:       "Collected",
-  arrived_dropoff: "At Dropoff",
-  completed:       "Completed",
-  cancelled:       "Cancelled",
-};
+// ── Page ─────────────────────────────────────────────────────────────────────
 
-function StatusOverridePanel({ job, onSaved }: { job: PlannedJob; onSaved: () => void }) {
+export default function JobDetailPage() {
+  const { id }      = useParams<{ id: string }>();
+  const navigate    = useNavigate();
+  const [job,       setJob]     = useState<Job | null>(null);
+  const [loading,   setLoading] = useState(true);
+  const [error,     setError]   = useState("");
+  const [toast,     setToast]   = useState("");
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      setJob(await jobsApi.get(parseInt(id!, 10)));
+    } catch (err: unknown) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [id]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  if (loading) return (
+    <div className="p-6 text-center text-muted animate-pulse">Loading…</div>
+  );
+  if (error) return (
+    <div className="p-6">
+      <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>
+    </div>
+  );
+  if (!job) return null;
+
+  const stops = [...(job.stops ?? [])].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+  const planningInfo = PLANNING_STATUS_LABEL[job.planningStatus ?? "not_planned"]
+    ?? PLANNING_STATUS_LABEL.not_planned;
+
+  const hasLoad = !!(job.goodsDescription || job.goodsType || job.quantity != null || job.weight != null);
+  const hasVehicle = !!(job.vehicleCategory || (job.bodyTypes?.length) || job.minGvwClass ||
+    (job.equipment as string[] | null)?.length || (job.trailersAllowed as string[] | null)?.length);
+  const hasNotes = !!(job.plannerNotes || job.driverVisibleNotes || job.safetyInstructions ||
+    (job.driverNoteChips as string[] | null)?.length);
+  const hasException = !!(
+    (job.failureAction && job.failureAction !== "call_assistance") ||
+    job.approvalContactName || job.alternativeReturnAddress
+  );
+
+  return (
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-xl shadow-lg">
+          {toast}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <button
+            onClick={() => navigate("/app/jobs")}
+            className="text-xs mb-2 block hover:underline"
+            style={{ color: "#6b7280" }}
+          >
+            ← Back to Jobs
+          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl font-black" style={{ color: "#0f172a" }}>
+              {job.jobReference || `Job #${job.id}`}
+            </h1>
+            <Badge status={job.status} />
+            {job.priority && job.priority !== "normal" && (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                job.priority === "urgent" ? "bg-red-100 text-red-700"
+                : job.priority === "high" ? "bg-orange-100 text-orange-700"
+                : "bg-slate-100 text-slate-500"
+              }`}>
+                {job.priority.toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-sm" style={{ color: "#6b7280" }}>
+            {job.customerName && <span>{job.customerName}</span>}
+            {job.plannedDate && (
+              <><span>·</span><span>📅 {fmtDate(job.plannedDate)}</span></>
+            )}
+          </div>
+        </div>
+        <button
+          className="btn btn-secondary text-sm shrink-0"
+          onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
+        >
+          Edit job
+        </button>
+      </div>
+
+      {/* Two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* ── Main content ── */}
+        <div className="lg:col-span-2 space-y-5">
+
+          {/* Overview */}
+          <Card title="Overview">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+              <Field label="Customer"       value={job.customerName} />
+              <Field label="Job type"       value={job.jobType || job.serviceType} />
+              <Field label="Priority"       value={job.priority} />
+              <Field label="Customer ref"   value={job.customerRef} mono />
+              <Field label="PO number"      value={job.purchaseOrderNumber} mono />
+              <Field label="Planned date"   value={fmtDate(job.plannedDate)} />
+              {job.bookingContactName && (
+                <Field label="Booking contact" value={`${job.bookingContactName}${job.bookingContactPhone ? ` · ${job.bookingContactPhone}` : ""}`} />
+              )}
+              {job.jobTitle && <Field label="Job title" value={job.jobTitle} />}
+            </div>
+          </Card>
+
+          {/* Load */}
+          {hasLoad && (
+            <Card title="Load">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                <Field label="Description"  value={job.goodsDescription} />
+                <Field label="Goods type"   value={job.goodsType?.replace(/_/g, " ")} />
+                <Field label="Quantity"     value={job.quantity != null ? `${job.quantity} ${job.quantityUnit ?? ""}`.trim() : undefined} />
+                <Field label="Weight"       value={job.weight  != null ? `${job.weight} kg`  : undefined} />
+                <Field label="Volume"       value={job.volume  != null ? `${job.volume} m³`  : undefined} />
+                <Field label="Dimensions"   value={job.dimensions} />
+                {job.tempControlled && <Field label="Temperature" value={job.tempRange || "Temp-controlled"} />}
+                {job.hazardClass    && <Field label="ADR class"   value={job.hazardClass} />}
+                {job.fragile        && <Field label="Fragile"     value="Yes" />}
+                {job.stackable      && <Field label="Stackable"   value="Yes" />}
+                {job.weighbridgeRequired && <Field label="Weighbridge" value="Required" />}
+              </div>
+              {(job.securingRequirements as string[] | null)?.length ? (
+                <ChipRow label="Securing" items={job.securingRequirements as string[]} className="mt-3" />
+              ) : null}
+              {(job.specialRequirements as string[] | null)?.length ? (
+                <ChipRow label="Special requirements" items={job.specialRequirements as string[]} className="mt-2" />
+              ) : null}
+            </Card>
+          )}
+
+          {/* Vehicle requirements */}
+          {hasVehicle && (
+            <Card title="Vehicle requirements">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                <Field label="Category"   value={job.vehicleCategory} />
+                <Field label="Min GVW"    value={job.minGvwClass} />
+                <Field label="Access"     value={job.vehicleAccessNotes} />
+              </div>
+              {(job.bodyTypes as string[] | null)?.length ? (
+                <ChipRow label="Body types" items={job.bodyTypes as string[]} className="mt-3" />
+              ) : null}
+              {(job.equipment as string[] | null)?.length ? (
+                <ChipRow label="Equipment" items={job.equipment as string[]} className="mt-2" />
+              ) : null}
+              {(job.trailersAllowed as string[] | null)?.length ? (
+                <ChipRow label="Trailers allowed" items={job.trailersAllowed as string[]} className="mt-2" />
+              ) : null}
+            </Card>
+          )}
+
+          {/* Stops */}
+          <Card title={`Stops (${stops.length})`}>
+            {stops.length === 0 ? (
+              <p className="text-sm" style={{ color: "#9ca3af" }}>No stops added yet.</p>
+            ) : (
+              <div className="space-y-0">
+                {stops.map((s, i) => (
+                  <StopRow key={s.id ?? i} stop={s} isLast={i === stops.length - 1} />
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Notes */}
+          {hasNotes && (
+            <Card title="Notes">
+              {job.plannerNotes && (
+                <div className="text-sm bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2 mb-3">
+                  <span className="font-semibold text-yellow-800">Planner: </span>
+                  <span className="text-yellow-900">{job.plannerNotes}</span>
+                </div>
+              )}
+              {job.driverVisibleNotes && (
+                <div className="text-sm bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-3">
+                  <span className="font-semibold text-blue-800">Driver notes: </span>
+                  <span className="text-blue-900">{job.driverVisibleNotes}</span>
+                </div>
+              )}
+              {job.safetyInstructions && (
+                <div className="text-sm bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">
+                  <span className="font-semibold text-red-800">⚠ Safety: </span>
+                  <span className="text-red-900">{job.safetyInstructions}</span>
+                </div>
+              )}
+              {(job.driverNoteChips as string[] | null)?.length ? (
+                <ChipRow label="Driver chips" items={job.driverNoteChips as string[]} />
+              ) : null}
+            </Card>
+          )}
+
+          {/* Exception policy */}
+          {hasException && (
+            <Card title="Exception policy">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                <Field label="Failure action"  value={job.failureAction?.replace(/_/g, " ")} />
+                <Field label="Assistance phone" value={job.assistancePhone} />
+                <Field label="Approval contact" value={job.approvalContactName} />
+                <Field label="Approval phone"   value={job.approvalContactPhone} />
+                <Field label="Alt return"       value={job.alternativeReturnAddress} />
+                <Field label="Alt postcode"     value={job.alternativeReturnPostcode} />
+                <Field label="Alt contact"      value={job.alternativeReturnContactName} />
+                <Field label="Alt phone"        value={job.alternativeReturnContactPhone} />
+              </div>
+            </Card>
+          )}
+
+          {/* Activity / events */}
+          {job.events && job.events.length > 0 && (
+            <Card title="Activity">
+              <div className="space-y-2">
+                {job.events.map(ev => (
+                  <div key={ev.id} className="flex gap-3 text-sm">
+                    <div className="text-xs w-28 flex-shrink-0 pt-0.5" style={{ color: "#9ca3af" }}>
+                      {fmtDateTime(ev.createdAt)}
+                    </div>
+                    <div>
+                      <span className="font-semibold" style={{ color: "#0f172a" }}>{ev.eventType.replace(/_/g, " ")}</span>
+                      {ev.note && <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{ev.note}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* ── Sidebar ── */}
+        <div className="space-y-4">
+
+          {/* Planning / run assignment */}
+          <div className="card p-4 space-y-3">
+            <h2 className="font-bold text-sm" style={{ color: "#0f172a" }}>Planning</h2>
+            <div className={`text-sm font-semibold ${planningInfo.colour}`}>
+              {planningInfo.label}
+            </div>
+            <p className="text-xs" style={{ color: "#6b7280" }}>
+              Stops are assigned to Runs. Open the Runs board to create or manage driver assignments.
+            </p>
+            <button
+              className="btn btn-secondary text-sm w-full"
+              onClick={() => navigate("/app/runs")}
+            >
+              Go to Runs →
+            </button>
+          </div>
+
+          {/* Status update */}
+          <StatusPanel job={job} onSaved={() => { showToast("Status updated ✓"); load(); }} />
+
+          {/* Billing */}
+          {(job.billingReference || job.declaredGoodsValue || job.billingNotes) && (
+            <div className="card p-4 space-y-2">
+              <h2 className="font-bold text-sm" style={{ color: "#0f172a" }}>Billing</h2>
+              <div className="space-y-1.5 text-sm">
+                {job.billingReference   && <Row label="Reference"      value={job.billingReference} />}
+                {job.declaredGoodsValue && <Row label="Goods value"    value={`£${job.declaredGoodsValue}`} />}
+                {job.billingNotes       && <Row label="Billing notes"  value={job.billingNotes} />}
+              </div>
+            </div>
+          )}
+
+          {/* Metadata */}
+          <div className="card p-4 text-xs space-y-1.5" style={{ color: "#9ca3af" }}>
+            <div>Created: {fmtDateTime(job.createdAt)}</div>
+            <div>Updated: {fmtDateTime(job.updatedAt)}</div>
+            <div className="font-mono">ID: #{job.id}</div>
+            {job.templateId && <div>Template: #{job.templateId}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Stop row ─────────────────────────────────────────────────────────────────
+
+function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${
+          STOP_DOT_COLOUR[s.type] ?? "bg-slate-400"
+        }`}>
+          {s.sequenceNumber}
+        </div>
+        {!isLast && <div className="w-0.5 bg-slate-200 flex-1 my-1 min-h-4" />}
+      </div>
+
+      <div className="flex-1 pb-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#94a3b8" }}>
+            {STOP_TYPE_LABEL[s.type] ?? s.type}
+          </span>
+          {s.referenceNumber && (
+            <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+              {s.referenceNumber}
+            </span>
+          )}
+          {s.status && s.status !== "pending" && (
+            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
+              s.status === "completed" ? "bg-green-100 text-green-700"
+              : s.status === "skipped"  ? "bg-slate-100 text-slate-500"
+              : "bg-amber-100 text-amber-700"
+            }`}>
+              {s.status}
+            </span>
+          )}
+        </div>
+
+        <div className="text-sm font-semibold mt-0.5" style={{ color: "#0f172a" }}>
+          {s.siteName || s.locationTextSnapshot || "—"}
+        </div>
+        {s.siteName && s.street && (
+          <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
+            {[s.street, s.town, s.postcode].filter(Boolean).join(", ")}
+          </div>
+        )}
+
+        {(s.timeWindowStart || s.bookedTime) && (
+          <div className="text-xs mt-1" style={{ color: "#6b7280" }}>
+            {s.bookedTime
+              ? `🕐 Booked ${new Date(s.bookedTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
+              : `🕐 ${fmtWindow(s.timeWindowStart, s.timeWindowEnd)}`}
+          </div>
+        )}
+
+        {s.unloadingAllowanceMinutes != null && s.unloadingAllowanceMinutes > 0 && (
+          <div className="text-xs" style={{ color: "#9ca3af" }}>{s.unloadingAllowanceMinutes} min on site</div>
+        )}
+
+        {(s.quantityRequired != null) && (
+          <div className="text-xs mt-0.5" style={{ color: "#374151" }}>
+            {s.quantityRequired} {s.quantityUnit ?? ""}
+          </div>
+        )}
+
+        {s.contactName && (
+          <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
+            {s.contactName}{s.contactPhone ? ` · ${s.contactPhone}` : ""}
+          </div>
+        )}
+
+        {s.bookingRequired && (
+          <div className="text-xs mt-0.5 text-amber-600 font-medium">
+            Booking required{s.bookingRef ? ` · ${s.bookingRef}` : ""}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Status panel ─────────────────────────────────────────────────────────────
+
+function StatusPanel({ job, onSaved }: { job: Job; onSaved: () => void }) {
   const [status,  setStatus]  = useState<string>(job.status);
   const [note,    setNote]    = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,258 +446,113 @@ function StatusOverridePanel({ job, onSaved }: { job: PlannedJob; onSaved: () =>
     setLoading(true); setError("");
     try {
       await jobsApi.updateStatus(job.id, status, note.trim() || undefined);
+      setNote("");
       onSaved();
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+    } catch (err: unknown) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
+  const unchanged = status === job.status && !note.trim();
+
   return (
-    <div className="card p-4">
-      <h2 className="font-bold text-primary mb-3">Status Override</h2>
-      {error && <Alert type="error" message={error} />}
-      <label className="block text-sm font-semibold mb-1">Status</label>
-      <select className="input w-full mb-3" value={status} onChange={e => setStatus(e.target.value)}>
-        {STATUS_FLOW.map(s => (
-          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+    <div className="card p-4 space-y-3">
+      <h2 className="font-bold text-sm" style={{ color: "#0f172a" }}>Status</h2>
+
+      {error && (
+        <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
+      )}
+
+      <select
+        className="input text-sm"
+        value={status}
+        onChange={e => setStatus(e.target.value)}
+      >
+        {JOB_STATUSES.map(s => (
+          <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
         ))}
-        <option value="cancelled">Cancelled</option>
       </select>
-      <label className="block text-sm font-semibold mb-1">Override note (optional)</label>
-      <textarea className="input w-full min-h-16 mb-3" value={note} onChange={e => setNote(e.target.value)}
-        placeholder="Reason for manual override..." />
-      <Button className="w-full" onClick={save} loading={loading}
-        disabled={status === job.status && !note.trim()}>
-        Apply Override
-      </Button>
+
+      <textarea
+        className="input text-sm"
+        rows={2}
+        value={note}
+        onChange={e => setNote(e.target.value)}
+        placeholder="Override reason (optional)"
+      />
+
+      <button
+        className="btn btn-primary text-sm w-full"
+        onClick={save}
+        disabled={unchanged || loading}
+      >
+        {loading ? "Saving…" : "Update status"}
+      </button>
     </div>
   );
 }
 
-export default function JobDetailPage() {
-  const { id }      = useParams<{ id: string }>();
-  const navigate    = useNavigate();
-  const [job,       setJob]     = useState<PlannedJob | null>(null);
-  const [loading,   setLoading] = useState(true);
-  const [error,     setError]   = useState("");
-  const [success,   setSuccess] = useState("");
+// ── Card / field helpers ──────────────────────────────────────────────────────
 
-  async function load() {
-    setLoading(true); setError("");
-    try {
-      const j = await jobsApi.get(parseInt(id!, 10));
-      setJob(j);
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
-  }
-
-  useEffect(() => { load(); }, [id]);
-
-  function onSaved(msg = "Saved ✓") {
-    setSuccess(msg);
-    setTimeout(() => setSuccess(""), 3000);
-    load();
-  }
-
-  if (loading) return <div className="p-6 text-center text-muted">Loading...</div>;
-  if (error)   return <div className="p-6"><Alert type="error" message={error} /></div>;
-  if (!job)    return null;
-
-  const plannedQty  = job.quantity;
-  const plannedUnit = job.quantityUnit;
-  const stops       = [...(job.stops ?? [])].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <button onClick={() => navigate("/app/jobs")}
-            className="text-xs text-muted hover:text-primary mb-2 block">← Back to Jobs</button>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl font-black text-primary">
-              {job.jobReference || `Job #${job.id}`}
-            </h1>
-            <Badge status={job.status} />
-          </div>
-          {job.plannedDate && (
-            <p className="text-sm text-muted mt-1">{fmtDate(job.plannedDate)}</p>
-          )}
-        </div>
-        <Button variant="outline" onClick={() => navigate(`/app/jobs/${job.id}/edit`)}>Edit Job</Button>
+    <div className="card p-4">
+      <h2 className="font-bold mb-3 text-sm" style={{ color: "#0f172a" }}>{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono,
+}: {
+  label:  string;
+  value:  React.ReactNode;
+  mono?:  boolean;
+}) {
+  if (value === null || value === undefined || value === "" || value === "—") return null;
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide" style={{ color: "#9ca3af" }}>{label}</div>
+      <div className={`font-medium text-sm mt-0.5 ${mono ? "font-mono" : ""}`} style={{ color: "#0f172a" }}>
+        {value}
       </div>
+    </div>
+  );
+}
 
-      {success && <Alert type="success" message={success} />}
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2 text-xs">
+      <span className="shrink-0 w-28 font-medium" style={{ color: "#6b7280" }}>{label}</span>
+      <span style={{ color: "#374151" }}>{value}</span>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left — main info */}
-        <div className="lg:col-span-2 space-y-5">
-
-          {/* Route & load summary */}
-          <div className="card p-4 space-y-3">
-            <h2 className="font-bold text-primary">Job Summary</h2>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              <div>
-                <span className="text-muted text-xs uppercase tracking-wide">Customer</span>
-                <div className="font-medium">{job.customerName || job.customer?.name || "—"}</div>
-              </div>
-              <div>
-                <span className="text-muted text-xs uppercase tracking-wide">Job Type</span>
-                <div className="font-medium">{job.jobType || job.serviceType || "—"}</div>
-              </div>
-              <div>
-                <span className="text-muted text-xs uppercase tracking-wide">Cust. Ref</span>
-                <div className="font-medium font-mono">{job.customerRef || "—"}</div>
-              </div>
-              <div>
-                <span className="text-muted text-xs uppercase tracking-wide">Priority</span>
-                <div className="font-medium capitalize">{job.priority || "Normal"}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Load — planned vs actual */}
-          <div className="card p-4">
-            <h2 className="font-bold text-primary mb-3">Load</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="text-muted text-xs uppercase tracking-wide">Material</span>
-                <div className="font-medium">
-                  {job.goodsDescription || job.goodsType || "—"}
-                </div>
-              </div>
-              <div>
-                <span className="text-muted text-xs uppercase tracking-wide">Planned Qty</span>
-                <div className="font-medium">
-                  {plannedQty ? `${plannedQty} ${plannedUnit || ""}`.trim() : "—"}
-                </div>
-              </div>
-              {job.weight != null && (
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Weight</span>
-                  <div className="font-medium">{job.weight} t</div>
-                </div>
-              )}
-            </div>
-            {job.plannerNotes && (
-              <div className="mt-3 text-sm bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <span className="font-semibold text-yellow-800">Planner notes: </span>
-                <span className="text-yellow-900">{job.plannerNotes}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Stops */}
-          {stops.length > 0 && (
-            <div className="card p-4">
-              <h2 className="font-bold text-primary mb-3">Stops</h2>
-              <div className="space-y-3">
-                {stops.map((stop, i) => (
-                  <div key={stop.id ?? i} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${
-                        stop.type === "pickup" || stop.type === "collection" ? "bg-blue-500"
-                        : stop.type === "dropoff" || stop.type === "delivery" ? "bg-green-500"
-                        : "bg-slate-400"
-                      }`}>
-                        {stop.sequenceNumber}
-                      </div>
-                      {i < stops.length - 1 && <div className="w-0.5 bg-slate-200 flex-1 my-1" />}
-                    </div>
-                    <div className="flex-1 pb-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                          {stop.type}
-                        </span>
-                        {stop.referenceNumber && (
-                          <span className="text-xs font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
-                            {stop.referenceNumber}
-                          </span>
-                        )}
-                        {stop.status && (
-                          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                            stop.status === "completed" ? "bg-green-100 text-green-700"
-                            : "bg-slate-100 text-slate-600"
-                          }`}>
-                            {stop.status}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm font-medium text-primary mt-0.5">
-                        {stop.siteName || stop.locationTextSnapshot}
-                      </div>
-                      {stop.siteName && stop.locationTextSnapshot !== stop.siteName && (
-                        <div className="text-xs text-muted">{stop.locationTextSnapshot}</div>
-                      )}
-                      {(stop.timeWindowStart || stop.bookedTime) && (
-                        <div className="text-xs text-slate-500 mt-1">
-                          {stop.bookedTime && <span>Booked: {stop.bookedTime}</span>}
-                          {stop.timeWindowStart && !stop.bookedTime && (
-                            <span>Window: {stop.timeWindowStart}{stop.timeWindowEnd ? ` – ${stop.timeWindowEnd}` : ""}</span>
-                          )}
-                        </div>
-                      )}
-                      {stop.contactName && (
-                        <div className="text-xs text-muted mt-0.5">{stop.contactName} {stop.contactPhone && `· ${stop.contactPhone}`}</div>
-                      )}
-                      {stop.numPallets != null && (
-                        <div className="text-xs text-slate-600 mt-0.5">Pallets: {stop.numPallets}</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Events timeline */}
-          {job.events && job.events.length > 0 && (
-            <div className="card p-4">
-              <h2 className="font-bold text-primary mb-3">Activity</h2>
-              <div className="space-y-2">
-                {job.events.map(ev => (
-                  <div key={ev.id} className="flex gap-3 text-sm">
-                    <div className="text-xs text-muted w-28 flex-shrink-0 pt-0.5">
-                      {fmt(ev.createdAt)}
-                    </div>
-                    <div>
-                      <span className="font-semibold">
-                        {EVENT_LABELS[ev.eventType] ?? ev.eventType}
-                      </span>
-                      {ev.note && <div className="text-muted text-xs mt-0.5">{ev.note}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right sidebar */}
-        <div className="space-y-4">
-          {/* Driver & Vehicle card */}
-          <div className="card p-4">
-            <h2 className="font-bold text-primary mb-2">Driver & Vehicle</h2>
-            <p className="text-sm text-muted mb-3">
-              Driver and vehicle assignment is managed via Runs.
-            </p>
-            <button
-              type="button"
-              onClick={() => navigate("/app/runs")}
-              className="btn btn-outline w-full text-sm"
-            >
-              Go to Runs →
-            </button>
-          </div>
-
-          <StatusOverridePanel job={job} onSaved={() => onSaved("Status updated ✓")} />
-
-          {/* Metadata */}
-          <div className="card p-4 text-xs text-muted space-y-1">
-            <div>Created: {fmt(job.createdAt)}</div>
-            <div>Updated: {fmt(job.updatedAt)}</div>
-            <div>Job ID: #{job.id}</div>
-          </div>
-        </div>
+function ChipRow({
+  label,
+  items,
+  className,
+}: {
+  label:     string;
+  items:     string[];
+  className?: string;
+}) {
+  if (!items?.length) return null;
+  return (
+    <div className={className}>
+      <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>{label}</div>
+      <div className="flex gap-1 flex-wrap">
+        {items.map(item => (
+          <span key={item} className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+            {item.replace(/_/g, " ")}
+          </span>
+        ))}
       </div>
     </div>
   );
