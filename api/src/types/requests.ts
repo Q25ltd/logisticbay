@@ -354,9 +354,12 @@ export interface CreateJobBody {
   assistancePhone?:           string;
   assistanceNote?:            string;
   // Canonical exception / return fields
-  alternativeReturnAddress?:  string;
-  approvalContactName?:       string;
-  approvalContactPhone?:      string;
+  alternativeReturnAddress?:      string;
+  alternativeReturnPostcode?:     string;
+  alternativeReturnContactName?:  string;
+  alternativeReturnContactPhone?: string;
+  approvalContactName?:           string;
+  approvalContactPhone?:          string;
   // Legacy exception field names (still accepted)
   returnDestination?:         string;   // → alternativeReturnAddress
   altAddress?:                Record<string, unknown> | null;
@@ -451,9 +454,12 @@ export interface PatchJobBody {
   assistancePhone?:           string;
   assistanceNote?:            string;
   // Canonical exception / return fields
-  alternativeReturnAddress?:  string;
-  approvalContactName?:       string;
-  approvalContactPhone?:      string;
+  alternativeReturnAddress?:      string;
+  alternativeReturnPostcode?:     string;
+  alternativeReturnContactName?:  string;
+  alternativeReturnContactPhone?: string;
+  approvalContactName?:           string;
+  approvalContactPhone?:          string;
   // Legacy exception field names (still accepted)
   returnDestination?:         string;   // → alternativeReturnAddress
   altAddress?:                Record<string, unknown> | null;

@@ -29,7 +29,6 @@ import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES, EVENT_TYPE_MAP } from "../s
 import { generateJobReference } from "../lib/jobReference.js";
 import { checkDayFeasibility, type ScheduleStop } from "../lib/driverSchedule.js";
 import { toNullableNumber, toNullableDate } from "../lib/coerce.js";
-import { legacyVehicleToRequirement, normalizeEquipment } from "../lib/vehicleCompat.js";
 import { hasLoadDetailsInput, appendPlannerReason, buildStopData } from "../lib/jobUtils.js";
 
 // Standard include for job detail views
@@ -418,48 +417,25 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           ];
         })();
 
-    // Accept load fields from the new flat layout (goodsDescription, quantity, quantityUnit…)
-    // or from the legacy nested body.loadDetails object
-    const loadDetails: StructuredLoadDetailsInput | null = body.loadDetails ?? (
-      body.goodsDescription || body.quantity != null || body.goodsType ||
-      body.quantityExpected || body.quantityUnit || body.materialType
-        ? {
-            goodsType:    body.goodsType ?? "",
-            materialType: body.goodsDescription ?? body.materialType ?? "",
-            quantity:     body.quantity ?? body.quantityExpected ?? null,
-            unit:         body.quantityUnit ?? "",
-            weight:       body.weight ?? null,
-            volume:       body.volume ?? null,
-            dimensions:   body.dimensions ?? "",
-            fragile:      body.fragile ?? false,
-            stackable:    body.stackable ?? false,
-            tempControlled:  body.tempControlled ?? false,
-            tempRange:       body.tempRange ?? "",
-            hazardClass:     body.hazardClass ?? "",
-            photosRequired:  body.photosRequired ?? false,
-            weighbridgeRequired: body.weighbridgeRequired ?? false,
-            securingRequirements: body.securingRequirements ?? null,
-            specialRequirements:  body.specialRequirements ?? null,
-          }
-        : null
-    );
+    const vehicleCategory   = body.vehicleCategory   ?? "";
+    const minGvwClass       = body.minGvwClass       ?? "";
+    const bodyTypes: string[] = Array.isArray(body.bodyTypes) ? body.bodyTypes : body.bodyType ? [body.bodyType] : [];
+    const equipment: string[] = Array.isArray(body.equipment) ? body.equipment.map(String) : [];
+    const trailersAllowed: string[] = Array.isArray(body.trailersAllowed) ? body.trailersAllowed.map(String) : [];
 
-    const legacyRequirement = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
-    // Accept new canonical names OR old req* names for backward compat with the CJP form
-    const vehicleCategory   = body.vehicleCategory ?? body.reqBodyCategory ?? legacyRequirement.bodyCategory;
-    const minGvwClass       = body.minGvwClass ?? body.reqGvwMin ?? "";
-    // bodyTypes is a Json[] array — accept body.bodyTypes[] or legacy scalar body.bodyType/body.reqBodyType
-    const bodyTypes: string[] = Array.isArray(body.bodyTypes)
-      ? body.bodyTypes
-      : body.bodyType    ? [body.bodyType]
-      : body.reqBodyType ? [body.reqBodyType]
-      : legacyRequirement.bodyType ? [legacyRequirement.bodyType]
-      : [];
-    const equipment         = normalizeEquipment(body.equipment ?? body.reqEquipment, [
-      ...normalizeEquipment(body.equipmentRequired),
-      ...legacyRequirement.equipment,
-    ]);
-    const reqLicenceClass   = body.reqLicenceClass ?? legacyRequirement.licenceClass;
+    const loadDetailsForValidation: StructuredLoadDetailsInput = {
+      quantity:        body.quantity,
+      unit:            body.quantityUnit,
+      weight:          body.weight,
+      materialType:    body.goodsDescription,
+      hazardClass:     body.hazardClass,
+      goodsType:       body.goodsType,
+      fragile:         body.fragile,
+      stackable:       body.stackable,
+      tempControlled:  body.tempControlled,
+      securingRequirements: Array.isArray(body.securingRequirements) ? body.securingRequirements : null,
+      specialRequirements:  Array.isArray(body.specialRequirements)  ? body.specialRequirements  : null,
+    };
 
     let customerId   = body.customerId ?? null;
     let customerName = body.customerName ?? "";
@@ -473,16 +449,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       saveMode,
       customerId,
       customerName,
-      plannedDate:          body.plannedDate,
-      vehicleClassRequired: body.vehicleClassRequired,
-      reqBodyCategory:      vehicleCategory,
-      reqGvwMin:            minGvwClass,
-      reqBodyType:          bodyTypes[0] ?? "",
-      reqEquipment:         equipment,
-      reqLicenceClass,
-      trailerTypesAllowed:  body.trailerTypesAllowed,
+      plannedDate:         body.plannedDate,
+      reqBodyCategory:     vehicleCategory,
+      reqGvwMin:           minGvwClass,
+      reqBodyType:         bodyTypes[0] ?? "",
+      reqEquipment:        equipment,
+      trailerTypesAllowed: trailersAllowed,
       stops,
-      loadDetails,
+      loadDetails:         loadDetailsForValidation,
     });
 
     if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
@@ -493,7 +467,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
-    const quality = scoreStructuredJob({ stops, loadDetails });
+    const quality = scoreStructuredJob({ stops, loadDetails: loadDetailsForValidation });
 
     const invalidStopLocationId = await findInvalidStopLocationId(prisma, companyId, stops);
     if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
@@ -515,7 +489,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           minGvwClass,
           bodyTypes:           bodyTypes.length > 0 ? (bodyTypes as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           equipment,
-          trailersAllowed:     body.trailersAllowed ?? body.trailerTypesAllowed ?? [],
+          trailersAllowed:     trailersAllowed.length > 0 ? (trailersAllowed as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           priority:            body.priority ?? "normal",
           serviceType:         body.serviceType ?? "",
           customerRef:         body.customerRef ?? "",
@@ -530,6 +504,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           failureAction:       body.failureAction ?? "call_assistance",
           assistancePhone:     body.assistancePhone ?? "",
           assistanceNote:      body.assistanceNote ?? "",
+          approvalContactName:           body.approvalContactName ?? null,
+          approvalContactPhone:          body.approvalContactPhone ?? null,
+          alternativeReturnAddress:      body.alternativeReturnAddress ?? null,
+          alternativeReturnPostcode:     body.alternativeReturnPostcode ?? null,
+          alternativeReturnContactName:  body.alternativeReturnContactName ?? null,
+          alternativeReturnContactPhone: body.alternativeReturnContactPhone ?? null,
           internalNotes:       body.internalNotes ?? "",
           billingData:         body.billingData ? body.billingData as Prisma.InputJsonValue : undefined,
           validationStatus:    structuredValidation.validationStatus,
@@ -537,23 +517,27 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           requirePOD:          body.requirePOD ?? false,
           canSplitShipment:    body.canSplitShipment ?? "must_stay_together",
           status:              "draft",
-          // Load details — now columns directly on Job
-          goodsType:           loadDetails?.goodsType?.toString() ?? "",
-          goodsDescription:    loadDetails?.materialType?.toString() ?? "",
-          quantity:            toNullableNumber(loadDetails?.quantity),
-          quantityUnit:        loadDetails?.unit?.toString() ?? "",
-          weight:              toNullableNumber(loadDetails?.weight),
-          volume:              toNullableNumber(loadDetails?.volume),
-          dimensions:          loadDetails?.dimensions?.toString() ?? "",
-          fragile:             loadDetails?.fragile ?? false,
-          stackable:           loadDetails?.stackable ?? false,
-          tempControlled:      loadDetails?.tempControlled ?? false,
-          tempRange:           loadDetails?.tempRange?.toString() ?? "",
-          hazardClass:         loadDetails?.hazardClass?.toString() ?? "",
-          photosRequired:      loadDetails?.photosRequired ?? false,
-          weighbridgeRequired: loadDetails?.weighbridgeRequired ?? false,
-          securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
-          specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
+          // Load details — flat columns directly on Job
+          goodsDescription:    body.goodsDescription ?? "",
+          goodsType:           body.goodsType ?? "",
+          quantity:            toNullableNumber(body.quantity),
+          quantityUnit:        body.quantityUnit ?? "",
+          weight:              toNullableNumber(body.weight),
+          volume:              toNullableNumber(body.volume),
+          dimensions:          body.dimensions ?? "",
+          fragile:             body.fragile ?? false,
+          stackable:           body.stackable ?? false,
+          tempControlled:      body.tempControlled ?? false,
+          tempRange:           body.tempRange ?? "",
+          hazardClass:         body.hazardClass ?? "",
+          photosRequired:      body.photosRequired ?? false,
+          weighbridgeRequired: body.weighbridgeRequired ?? false,
+          securingRequirements: Array.isArray(body.securingRequirements) ? (body.securingRequirements as Prisma.InputJsonValue) : Prisma.DbNull,
+          specialRequirements:  Array.isArray(body.specialRequirements)  ? (body.specialRequirements  as Prisma.InputJsonValue) : Prisma.DbNull,
+          driverNoteChips:     Array.isArray(body.driverNoteChips) && body.driverNoteChips.length
+                                 ? (body.driverNoteChips as Prisma.InputJsonValue) : Prisma.DbNull,
+          driverVisibleNotes:  body.driverVisibleNotes ?? null,
+          safetyInstructions:  body.safetyInstructions ?? null,
           stops: {
             create: stops.map(s => buildStopData(s, companyId)),
           },
@@ -596,34 +580,18 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           priority:        body.priority      ?? "normal",
           billingNotes:    body.billingNotes  ?? "",
           custInstructions: body.customerInstructions ?? "",
-          custRefRequired: body.custRefRequired ?? false,
-          poRequired:      body.poRequired     ?? false,
-          materialDesc:    loadDetails?.materialType?.toString() ?? "",
-          totalQty:        loadDetails?.quantity != null ? String(loadDetails.quantity) : "",
-          qtyUnit:         loadDetails?.unit     ?? "",
-          totalWeight:     loadDetails?.weight   != null ? String(loadDetails.weight)   : "",
-          volume:          loadDetails?.volume   != null ? String(loadDetails.volume)   : "",
-          dimensions:      loadDetails?.dimensions ?? "",
-          adrClass:        loadDetails?.hazardClass ?? "",
-          fragile:         loadDetails?.fragile    ?? false,
-          stackable:       loadDetails?.stackable  ?? false,
-          tempControlled:  loadDetails?.tempControlled ?? false,
-          tempRange:       loadDetails?.tempRange  ?? "",
-          forkliftReq:     loadDetails?.forkliftRequired  ?? false,
-          tailLiftReq:     loadDetails?.tailLiftRequired  ?? false,
-          craneReq:        loadDetails?.craneRequired     ?? false,
-          loadingMethod:   loadDetails?.loadingMethod     ?? "",
-          unloadingMethod: loadDetails?.unloadingMethod   ?? "",
-          loadNotes:       loadDetails?.notes            ?? "",
-          photosRequired:  loadDetails?.photosRequired   ?? false,
-          weighbridgeReq:  loadDetails?.weighbridgeRequired ?? false,
-          podRequired:     body.requirePOD ?? true,
+          custRefRequired:  body.custRefRequired ?? false,
+          poRequired:       body.poRequired     ?? false,
+          goodsDescription: body.goodsDescription ?? "",
+          quantity:         body.quantity != null ? String(body.quantity) : "",
+          quantityUnit:     body.quantityUnit ?? "",
+          hazardClass:      body.hazardClass ?? "",
+          podRequired:      body.requirePOD ?? true,
           vehicleCategory,
           minGvwClass,
           bodyTypes,
           equipment,
-          reqLicenceClass,
-          trailersAllowed:  body.trailersAllowed ?? body.trailerTypesAllowed ?? [],
+          trailersAllowed,
           lengthRestriction: body.lengthRestriction  ?? "",
           accessNotes:       body.vehicleAccessNotes ?? "",
           failureAction:     body.failureAction       ?? "call_assistance",
@@ -645,10 +613,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
             dropoffTextSnapshot: typeof lastDropoff?.locationTextSnapshot === "string" ? lastDropoff.locationTextSnapshot.trim() : "",
             defaultReference:    "",
             defaultNotes:        body.plannerNotes ?? "",
-            defaultMaterialType: loadDetails?.materialType?.toString() ?? "",
-            trailerTypesAllowed: body.trailerTypesAllowed ?? [],
+            defaultMaterialType: body.goodsDescription ?? "",
+            trailerTypesAllowed: trailersAllowed,
             defaultStops:        JSON.parse(JSON.stringify(templateStops)),
-            defaultLoadDetails:  JSON.parse(JSON.stringify(loadDetails ?? {})),
+            defaultLoadDetails:  JSON.parse(JSON.stringify(loadDetailsForValidation)),
             defaultJobData:      JSON.parse(JSON.stringify(defaultJobData)),
             qualityScore:        quality.score,
             status:              "active",
@@ -705,48 +673,31 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const stops: StructuredJobPartInput[] = Array.isArray(body.stops) ? body.stops : existingStops;
 
-    const existingLoadDetails: StructuredLoadDetailsInput = {
-      quantity:     job.quantity,
-      unit:         job.quantityUnit ?? "",
-      weight:       job.weight,
-      volume:       job.volume,
-      materialType: job.goodsDescription ?? "",
-      hazardClass:  job.hazardClass ?? "",
-      dimensions:   job.dimensions ?? "",
-      fragile:      job.fragile,
-      stackable:    job.stackable,
-      tempControlled: job.tempControlled,
-      tempRange:    job.tempRange ?? "",
-      photosRequired: job.photosRequired,
-      weighbridgeRequired: job.weighbridgeRequired,
-      goodsType:    job.goodsType ?? "",
-    };
-
-    const loadDetails: StructuredLoadDetailsInput | null =
-      body.loadDetails !== undefined
-        ? body.loadDetails
-        : existingLoadDetails;
-
     const saveMode = body.saveMode ?? (job.validationStatus === "ready_to_plan" ? "ready_to_plan" : "draft");
-    const existingEquipment  = Array.isArray(job.equipment)  ? job.equipment.map(String)  : [];
-    const existingBodyTypes  = Array.isArray(job.bodyTypes)  ? job.bodyTypes.map(String)   : [];
-    const legacyRequirement  = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
-    // Accept new canonical names OR old req* names for backward compat with the CJP form
-    const vehicleCategory    = body.vehicleCategory ?? body.reqBodyCategory ?? job.vehicleCategory ?? legacyRequirement.bodyCategory;
-    const minGvwClass        = body.minGvwClass ?? body.reqGvwMin ?? job.minGvwClass ?? "";
-    // bodyTypes is a Json[] array — accept body.bodyTypes[] or legacy scalar body.bodyType/body.reqBodyType
+    const vehicleCategory = body.vehicleCategory !== undefined ? body.vehicleCategory : job.vehicleCategory ?? "";
+    const minGvwClass     = body.minGvwClass     !== undefined ? body.minGvwClass     : job.minGvwClass ?? "";
     const bodyTypes: string[] = Array.isArray(body.bodyTypes)
       ? body.bodyTypes
-      : body.bodyType    ? [body.bodyType]
-      : body.reqBodyType ? [body.reqBodyType]
-      : existingBodyTypes.length > 0 ? existingBodyTypes
-      : legacyRequirement.bodyType ? [legacyRequirement.bodyType]
-      : [];
-    const equipment          = normalizeEquipment(body.equipment ?? body.reqEquipment, [
-      ...(existingEquipment.length > 0 ? existingEquipment : normalizeEquipment(body.equipmentRequired)),
-      ...legacyRequirement.equipment,
-    ]);
-    const reqLicenceClass    = body.reqLicenceClass ?? legacyRequirement.licenceClass;
+      : body.bodyType ? [body.bodyType]
+      : (Array.isArray(job.bodyTypes) ? job.bodyTypes.map(String) : []);
+    const equipment: string[] = Array.isArray(body.equipment)
+      ? body.equipment.map(String)
+      : (Array.isArray(job.equipment) ? job.equipment.map(String) : []);
+    const trailersAllowed: string[] = Array.isArray(body.trailersAllowed)
+      ? body.trailersAllowed.map(String)
+      : (Array.isArray(job.trailersAllowed) ? job.trailersAllowed.map(String) : []);
+
+    const loadDetailsForValidation: StructuredLoadDetailsInput = {
+      quantity:       body.quantity       !== undefined ? body.quantity       : job.quantity,
+      unit:           body.quantityUnit   !== undefined ? body.quantityUnit   : job.quantityUnit,
+      weight:         body.weight         !== undefined ? body.weight         : job.weight,
+      materialType:   body.goodsDescription !== undefined ? body.goodsDescription : job.goodsDescription,
+      hazardClass:    body.hazardClass    !== undefined ? body.hazardClass    : job.hazardClass,
+      goodsType:      body.goodsType      !== undefined ? body.goodsType      : job.goodsType,
+      fragile:        body.fragile        !== undefined ? body.fragile        : job.fragile,
+      stackable:      body.stackable      !== undefined ? body.stackable      : job.stackable,
+      tempControlled: body.tempControlled !== undefined ? body.tempControlled : job.tempControlled,
+    };
 
     const effectiveCustomerId = body.customerId !== undefined ? body.customerId : job.customerId;
 
@@ -763,18 +714,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const structuredValidation = validateStructuredJob({
       saveMode,
-      customerId:           effectiveCustomerId,
-      customerName:         patchCustomerName,
-      plannedDate:          body.plannedDate ?? job.plannedDate ?? undefined,
-      vehicleClassRequired: body.vehicleClassRequired,
-      reqBodyCategory:      vehicleCategory,
-      reqGvwMin:            minGvwClass,
-      reqBodyType:          bodyTypes[0] ?? "",
-      reqEquipment:         equipment,
-      reqLicenceClass,
-      trailerTypesAllowed:  body.trailersAllowed ?? body.trailerTypesAllowed ?? (Array.isArray(job.trailersAllowed) ? job.trailersAllowed : []),
+      customerId:          effectiveCustomerId,
+      customerName:        patchCustomerName,
+      plannedDate:         body.plannedDate ?? job.plannedDate ?? undefined,
+      reqBodyCategory:     vehicleCategory,
+      reqGvwMin:           minGvwClass,
+      reqBodyType:         bodyTypes[0] ?? "",
+      reqEquipment:        equipment,
+      trailerTypesAllowed: trailersAllowed,
       stops,
-      loadDetails,
+      loadDetails:         loadDetailsForValidation,
     });
 
     if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
@@ -785,7 +734,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
-    const quality = scoreStructuredJob({ stops, loadDetails });
+    const quality = scoreStructuredJob({ stops, loadDetails: loadDetailsForValidation });
 
     const invalidStopLocationId = await findInvalidStopLocationId(prisma, companyId, stops);
     if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
@@ -826,7 +775,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           minGvwClass,
           bodyTypes:           bodyTypes.length > 0 ? (bodyTypes as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           equipment,
-          trailersAllowed:     body.trailersAllowed ?? body.trailerTypesAllowed ?? JSON.parse(JSON.stringify(job.trailersAllowed ?? [])),
+          trailersAllowed:     trailersAllowed.length > 0 ? (trailersAllowed as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           priority:            body.priority ?? job.priority,
           serviceType:         body.serviceType ?? job.serviceType,
           customerRef:         body.customerRef ?? job.customerRef,
@@ -841,6 +790,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           failureAction:       body.failureAction ?? job.failureAction,
           assistancePhone:     body.assistancePhone ?? job.assistancePhone,
           assistanceNote:      body.assistanceNote ?? job.assistanceNote,
+          approvalContactName:           body.approvalContactName           !== undefined ? body.approvalContactName           : job.approvalContactName,
+          approvalContactPhone:          body.approvalContactPhone          !== undefined ? body.approvalContactPhone          : job.approvalContactPhone,
+          alternativeReturnAddress:      body.alternativeReturnAddress      !== undefined ? body.alternativeReturnAddress      : job.alternativeReturnAddress,
+          alternativeReturnPostcode:     body.alternativeReturnPostcode     !== undefined ? body.alternativeReturnPostcode     : job.alternativeReturnPostcode,
+          alternativeReturnContactName:  body.alternativeReturnContactName  !== undefined ? body.alternativeReturnContactName  : job.alternativeReturnContactName,
+          alternativeReturnContactPhone: body.alternativeReturnContactPhone !== undefined ? body.alternativeReturnContactPhone : job.alternativeReturnContactPhone,
           internalNotes:       body.internalNotes ?? job.internalNotes,
           ...(body.billingData !== undefined ? { billingData: body.billingData as Prisma.InputJsonValue } : {}),
           validationStatus:    structuredValidation.validationStatus,
@@ -848,23 +803,32 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           requirePOD:          body.requirePOD ?? job.requirePOD,
           canSplitShipment:    body.canSplitShipment ?? job.canSplitShipment,
           plannedDate:         body.plannedDate ? new Date(body.plannedDate) : job.plannedDate,
-          // Load details — now columns directly on Job
-          goodsType:           loadDetails?.goodsType?.toString() ?? job.goodsType ?? "",
-          goodsDescription:    loadDetails?.materialType?.toString() ?? job.goodsDescription ?? "",
-          quantity:            toNullableNumber(loadDetails?.quantity) ?? job.quantity,
-          quantityUnit:        loadDetails?.unit?.toString() ?? job.quantityUnit ?? "",
-          weight:              toNullableNumber(loadDetails?.weight) ?? job.weight,
-          volume:              toNullableNumber(loadDetails?.volume) ?? job.volume,
-          dimensions:          loadDetails?.dimensions?.toString() ?? job.dimensions ?? "",
-          fragile:             loadDetails?.fragile ?? job.fragile,
-          stackable:           loadDetails?.stackable ?? job.stackable,
-          tempControlled:      loadDetails?.tempControlled ?? job.tempControlled,
-          tempRange:           loadDetails?.tempRange?.toString() ?? job.tempRange ?? "",
-          hazardClass:         loadDetails?.hazardClass?.toString() ?? job.hazardClass ?? "",
-          photosRequired:      loadDetails?.photosRequired ?? job.photosRequired,
-          weighbridgeRequired: loadDetails?.weighbridgeRequired ?? job.weighbridgeRequired,
-          ...(loadDetails?.securingRequirements !== undefined ? { securingRequirements: Array.isArray(loadDetails.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined } : {}),
-          ...(loadDetails?.specialRequirements !== undefined  ? { specialRequirements:  Array.isArray(loadDetails.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined } : {}),
+          // Load details — flat columns directly on Job
+          goodsDescription:    body.goodsDescription    !== undefined ? body.goodsDescription    : job.goodsDescription ?? "",
+          goodsType:           body.goodsType           !== undefined ? body.goodsType           : job.goodsType ?? "",
+          quantity:            body.quantity            !== undefined ? toNullableNumber(body.quantity) : job.quantity,
+          quantityUnit:        body.quantityUnit        !== undefined ? body.quantityUnit        : job.quantityUnit ?? "",
+          weight:              body.weight              !== undefined ? toNullableNumber(body.weight) : job.weight,
+          volume:              body.volume              !== undefined ? toNullableNumber(body.volume) : job.volume,
+          dimensions:          body.dimensions          !== undefined ? body.dimensions          : job.dimensions ?? "",
+          fragile:             body.fragile             !== undefined ? body.fragile             : job.fragile,
+          stackable:           body.stackable           !== undefined ? body.stackable           : job.stackable,
+          tempControlled:      body.tempControlled      !== undefined ? body.tempControlled      : job.tempControlled,
+          tempRange:           body.tempRange           !== undefined ? body.tempRange           : job.tempRange ?? "",
+          hazardClass:         body.hazardClass         !== undefined ? body.hazardClass         : job.hazardClass ?? "",
+          photosRequired:      body.photosRequired      !== undefined ? body.photosRequired      : job.photosRequired,
+          weighbridgeRequired: body.weighbridgeRequired !== undefined ? body.weighbridgeRequired : job.weighbridgeRequired,
+          driverNoteChips:     body.driverNoteChips !== undefined
+            ? (Array.isArray(body.driverNoteChips) && body.driverNoteChips.length ? (body.driverNoteChips as Prisma.InputJsonValue) : Prisma.DbNull)
+            : (Array.isArray(job.driverNoteChips) && (job.driverNoteChips as string[]).length ? (job.driverNoteChips as unknown as Prisma.InputJsonValue) : Prisma.DbNull),
+          driverVisibleNotes:  body.driverVisibleNotes  !== undefined ? (body.driverVisibleNotes || null)  : job.driverVisibleNotes,
+          safetyInstructions:  body.safetyInstructions  !== undefined ? (body.safetyInstructions || null)  : job.safetyInstructions,
+          securingRequirements: body.securingRequirements !== undefined
+            ? (Array.isArray(body.securingRequirements) ? (body.securingRequirements as Prisma.InputJsonValue) : Prisma.DbNull)
+            : (Array.isArray(job.securingRequirements) ? (job.securingRequirements as unknown as Prisma.InputJsonValue) : Prisma.DbNull),
+          specialRequirements: body.specialRequirements !== undefined
+            ? (Array.isArray(body.specialRequirements) ? (body.specialRequirements as Prisma.InputJsonValue) : Prisma.DbNull)
+            : (Array.isArray(job.specialRequirements) ? (job.specialRequirements as unknown as Prisma.InputJsonValue) : Prisma.DbNull),
         },
         include: {
           stops:  { orderBy: { sequenceNumber: "asc" } },
