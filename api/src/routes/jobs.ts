@@ -638,8 +638,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           assistanceNote:    body.assistanceNote      ?? "",
         };
 
-        const firstPickup  = [...stops].sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0)).find(s => s.type === "pickup");
-        const lastDropoff  = [...stops].sort((a, b) => (b.sequenceNumber ?? 0) - (a.sequenceNumber ?? 0)).find(s => s.type === "dropoff");
+        const sortedStops = [...stops].sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
+        const firstPickup = sortedStops.find(s => s.type === "collection" || s.type === "pickup");
+        const lastDropoff = [...sortedStops].reverse().find(s => s.type === "delivery" || s.type === "dropoff");
 
         await tx.jobTemplate.create({
           data: {

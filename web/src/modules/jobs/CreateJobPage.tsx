@@ -17,15 +17,18 @@ import {
   REJECTION_ACTIONS,
   COUNTRIES, POSTCODE_META,
 } from "./createJobConstants";
-import type { StopState } from "./createJobTypes";
-import { today, makeStop, jobPartToStopState, stopComplete, toMins } from "./createJobUtils";
+import { today } from "./createJobUtils";
+import SharedStopCard, {
+  type SharedStopState,
+  blankSharedStop,
+  sharedStopComplete,
+  jobPartToSharedStopState,
+} from "./SharedStopCard";
 import {
   FieldLabel, SectionHeader, SectionFooter,
   OptionalToggle, Toggle, MultiCheck, TextField,
 } from "./CreateJobFormComponents";
 import CustomerSearch from "./CustomerSearch";
-import StopCard from "./StopCard";
-import { LocationSearch } from "./StopCard";
 import {
   BODY_CATEGORIES,
   BODY_TYPES,
@@ -215,12 +218,12 @@ export default function CreateJobPage() {
   }
 
   // ── Section 02 — Stops ──────────────────────────────────────────────────────
-  const [stops, setStops] = useState<StopState[]>([makeStop()]);
+  const [stops, setStops] = useState<SharedStopState[]>([blankSharedStop("collection"), blankSharedStop("delivery")]);
 
-  function updateStop(id: string, patch: Partial<StopState>) {
+  function updateStop(id: string, patch: Partial<SharedStopState>) {
     setStops(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
   }
-  function addStop() { setStops(prev => [...prev, makeStop()]); }
+  function addStop() { setStops(prev => [...prev, blankSharedStop("delivery")]); }
   function removeStop(id: string) { setStops(prev => prev.filter(s => s.id !== id)); }
 
   // ── Section 03 — Load details ────────────────────────────────────────────────
@@ -329,7 +332,7 @@ export default function CreateJobPage() {
 
   // ── Completeness ──────────────────────────────────────────────────────────────
   const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim());
-  const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
+  const sec2Complete = stops.length > 0 && stops.every(sharedStopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
   const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
@@ -396,24 +399,18 @@ export default function CreateJobPage() {
     const ds = Array.isArray(t.defaultStops) ? t.defaultStops : [];
     if (ds.length > 0) {
       setStops(ds.map((s: Record<string, unknown>) => ({
-        ...makeStop(),
-        id:              Math.random().toString(36).slice(2),
+        ...blankSharedStop((() => { const v = (s.type as string) || (s.stopType as string) || ""; return (v === "pickup" || v === "collection") ? "collection" : "delivery"; })()),
         collapsed:       true,
-        type:            (() => { const v = (s.type as string) || (s.stopType as string) || ""; return (v === "pickup" || v === "collection") ? "collection" : "delivery"; })() as "collection" | "delivery",
         savedLocationId: (s.savedLocationId as number) ?? null,
         locationQuery:   (s.locationQuery as string) || (s.siteName as string) || "",
         siteName:        (s.siteName as string) || "",
         street:          (s.street as string) || "",
         town:            (s.town as string) || "",
         postcode:        (s.postcode as string) || "",
-        country:         (s.country as string) || "United Kingdom",
+        country:         (s.country as string) || "GB",
         lat:             s.lat != null ? String(s.lat) : "",
         lng:             s.lng != null ? String(s.lng) : "",
         date:            today(),
-        timeType:        "anytime" as const,
-        exactTime:       "",
-        windowStart:     "",
-        windowEnd:       "",
         referenceNumber: "",
         bookingRef:      "",
       })));
@@ -445,7 +442,7 @@ export default function CreateJobPage() {
       if (job.plannerNotes) setPlannerNotes(job.plannerNotes);
 
       if (job.stops && job.stops.length > 0) {
-        setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobPartToStopState));
+        setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobPartToSharedStopState));
       }
 
       const ld = job.loadDetails;
@@ -669,62 +666,62 @@ export default function CreateJobPage() {
       rejectionNotes:                           rejectionNotes.trim()          || undefined,
     } : undefined;
 
+    const toISO = (date: string, time: string) =>
+      (date && time) ? `${date}T${time}:00.000Z` : null;
+
     const mappedStops = stops.map((stop, i) => {
-      const locationTextSnapshot = [stop.siteName, stop.street, stop.town, stop.postcode].filter(Boolean).join(", ");
-      const base: Record<string, unknown> = {
-        sequenceNumber:        i + 1,
-        type:                  stop.type,
-        savedLocationId:       stop.savedLocationId,
-        siteName:              stop.siteName,
-        unitName:              stop.unitName,
-        street:                stop.street,
-        town:                  stop.town,
-        postcode:              stop.postcode,
-        country:               stop.country,
-        addressLine2:          stop.addressLine2,
-        countyRegion:          stop.countyRegion,
-        locationTextSnapshot,
-        lat:                   stop.lat ? parseFloat(stop.lat) : null,
-        lng:                   stop.lng ? parseFloat(stop.lng) : null,
-        contactName:           stop.contactName,
-        contactPhone:          stop.contactPhone,
-        contactEmail:          stop.contactEmail,
-        referenceNumber:       stop.referenceNumber,
-        instructions:          stop.instructions,
-        navigationInstructions: stop.navigationInstructions,
-        bookingRequired:       stop.bookingRequired,
-        bookingRef:            stop.bookingRef,
-        openingHours:          stop.openingHours,
-        locationType:          stop.locationType,
-        numPallets:            stop.numPallets ? parseInt(stop.numPallets, 10) : null,
-        internalNotes:         stop.internalNotes,
-        quantityRequired:      stop.stopQuantity ? parseFloat(stop.stopQuantity) : null,
-        quantityUnit:          stop.stopQuantity ? stop.stopQuantityUnit : null,
-        exchangeDropQty:       stop.exchangeDropQty   ? parseFloat(stop.exchangeDropQty)   : null,
-        exchangeCollectQty:    stop.exchangeCollectQty ? parseFloat(stop.exchangeCollectQty) : null,
-        exchangeUnit:          (stop.exchangeDropQty || stop.exchangeCollectQty) ? stop.exchangeUnit : null,
-        handlingMethods:       stop.handlingMethods.length
+      const customMin = Math.max(0, parseInt(stop.serviceTimeCustom, 10) || 0);
+      const svcMins = stop.serviceTime === "custom" ? (customMin > 0 ? customMin : 30) : parseInt(stop.serviceTime, 10);
+      return {
+        sequenceNumber:          i + 1,
+        type:                    stop.type,
+        savedLocationId:         stop.savedLocationId,
+        siteName:                stop.siteName,
+        unitName:                stop.unitName || undefined,
+        street:                  stop.street,
+        town:                    stop.town,
+        postcode:                stop.postcode,
+        country:                 stop.country || undefined,
+        addressLine2:            stop.addressLine2 || undefined,
+        countyRegion:            stop.countyRegion || undefined,
+        locationTextSnapshot:    [stop.siteName, stop.street, stop.town, stop.postcode].filter(Boolean).join(", "),
+        lat:                     stop.lat ? parseFloat(stop.lat) : null,
+        lng:                     stop.lng ? parseFloat(stop.lng) : null,
+        navigationInstructions:  stop.navigationInstructions,
+        referenceNumber:         stop.referenceNumber || undefined,
+        contactName:             stop.contactName || undefined,
+        contactPhone:            stop.contactPhone || undefined,
+        contactEmail:            stop.contactEmail || undefined,
+        bookingRequired:         stop.bookingRequired || undefined,
+        bookingRef:              stop.bookingRef || undefined,
+        openingHours:            stop.openingHours || undefined,
+        locationType:            stop.locationType || undefined,
+        instructions:            stop.instructions || undefined,
+        internalNotes:           stop.internalNotes || undefined,
+        // Timing: date + HH:MM → ISO datetime strings
+        timeWindowStart:         toISO(stop.date, stop.earliestArrivalTime),
+        timeWindowEnd:           toISO(stop.date, stop.latestArrivalTime),
+        bookedTime:              toISO(stop.date, stop.bookedTime),
+        unloadingAllowanceMinutes: svcMins,
+        // Parity fields
+        quantityRequired:        stop.quantityRequired ? parseFloat(stop.quantityRequired) : null,
+        quantityUnit:            stop.quantityRequired ? stop.quantityUnit : undefined,
+        exchangeDropQty:         stop.exchangeDropQty    ? parseFloat(stop.exchangeDropQty)    : null,
+        exchangeCollectQty:      stop.exchangeCollectQty ? parseFloat(stop.exchangeCollectQty) : null,
+        exchangeUnit:            (stop.exchangeDropQty || stop.exchangeCollectQty) ? stop.exchangeUnit : undefined,
+        handlingMethods:         stop.handlingMethods.length
           ? stop.handlingMethods.map(m => m === "other" && stop.handlingMethodOther?.trim() ? `other: ${stop.handlingMethodOther.trim()}` : m)
           : null,
-        accessRequirements:    [...stop.accessRequirements, ...stop.ppeItems].length ? [...stop.accessRequirements, ...stop.ppeItems] : null,
-        heightRestriction:     stop.heightRestrictionValue || null,
-        weightRestriction:     stop.weightRestrictionValue || null,
-        lengthRestriction:     stop.lengthRestrictionValue || null,
-        proofRequirements:     stop.proofRequirements.length ? stop.proofRequirements : null,
-        loadReadiness:         stop.loadReadiness || null,
-        stopNotes:             stop.stopNotes || null,
+        accessRequirements:      [...stop.accessRequirements, ...stop.ppeItems].length
+          ? [...stop.accessRequirements, ...stop.ppeItems]
+          : null,
+        heightRestriction:       stop.heightRestriction || undefined,
+        weightRestriction:       stop.weightRestriction || undefined,
+        lengthRestriction:       stop.lengthRestriction || undefined,
+        proofRequirements:       stop.proofRequirements.length ? stop.proofRequirements : null,
+        loadReadiness:           stop.loadReadiness || undefined,
+        stopNotes:               stop.stopNotes || undefined,
       };
-
-      base.earliestArrivalMinutes    = toMins(stop.earliestArrival);
-      base.unloadingAllowanceMinutes = toMins(stop.unloadingTime);
-
-      if (stop.timeType === "exact" && stop.exactTime) {
-        base.bookedTime = `${stop.date}T${stop.exactTime}:00.000Z`;
-      } else if (stop.timeType === "window" && stop.windowStart && stop.windowEnd) {
-        base.timeWindowStart = `${stop.date}T${stop.windowStart}:00.000Z`;
-        base.timeWindowEnd   = `${stop.date}T${stop.windowEnd}:00.000Z`;
-      }
-      return base;
     });
 
     return {
@@ -840,13 +837,14 @@ export default function CreateJobPage() {
       const payload = buildPayload("ready_to_plan");
       const stopData = (payload.stops as any[]).map((s: Record<string, unknown>) => ({
         ...s,
-        date:            undefined,
-        timeType:        "anytime",
-        bookedTime:      undefined,
-        timeWindowStart: undefined,
-        timeWindowEnd:   undefined,
-        referenceNumber: undefined,
-        bookingRef:      undefined,
+        date:                undefined,
+        earliestArrivalTime: undefined,
+        latestArrivalTime:   undefined,
+        bookedTime:          undefined,
+        timeWindowStart:     undefined,
+        timeWindowEnd:       undefined,
+        referenceNumber:     undefined,
+        bookingRef:          undefined,
       }));
       const patchBody = {
         name:               templateName.trim(),
@@ -1036,11 +1034,10 @@ export default function CreateJobPage() {
           {!s2 && (
             <div className="p-4 space-y-3">
               {stops.map((stop, idx) => (
-                <StopCard key={stop.id} stop={stop} index={idx} total={stops.length}
-                  locations={locations}
+                <SharedStopCard key={stop.id} stop={stop} index={idx} total={stops.length}
+                  savedLocations={locations}
                   onChange={patch => updateStop(stop.id, patch)}
-                  onRemove={() => removeStop(stop.id)}
-                  triedSave={triedSave} />
+                  onRemove={() => removeStop(stop.id)} />
               ))}
               <button type="button" onClick={addStop}
                 className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
