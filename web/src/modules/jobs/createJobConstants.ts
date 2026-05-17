@@ -68,20 +68,23 @@ export const LOAD_UNITS: [string, string][] = [
 ];
 
 export const HANDLING_METHODS: [string, string][] = [
-  ["forklift",          "Forklift"],
-  ["handball",          "Handball"],
-  ["crane",             "Crane / HIAB"],
-  ["moffett",           "Moffett / vehicle forklift"],
-  ["tail_lift",         "Tail lift"],
-  ["pump_truck",        "Pump truck / pallet jack"],
-  ["tipper_discharge",  "Tipper discharge"],
-  ["grab",              "Grab"],
-  ["pump_discharge",    "Pump discharge (tanker)"],
-  ["loading_bay",       "Loading bay"],
-  ["roro",              "RORO (drive on/off)"],
-  ["customer_loads",    "Customer loads / unloads"],
-  ["driver_loads",      "Driver loads / unloads"],
-  ["other",             "Other"],
+  ["forklift",         "Forklift"],
+  ["loading_bay",      "Loading bay"],
+  ["hiab",             "HIAB / truck crane"],
+  ["moffett",          "Moffett / vehicle forklift"],
+  ["tail_lift",        "Tail lift"],
+  ["pump_truck",       "Pump truck / pallet jack"],
+  ["handball",         "Handball (manual)"],
+  ["overhead_crane",   "Overhead / gantry crane"],
+  ["magnetic_crane",   "Magnetic overhead crane"],
+  ["side_loading",     "Side loading"],
+  ["roro",             "RORO (drive on / drive off)"],
+  ["tipper_discharge", "Tipper discharge"],
+  ["grab",             "Grab (aggregate / scrap)"],
+  ["pump_discharge",   "Pump discharge (tanker)"],
+  ["walking_floor",    "Walking floor"],
+  ["conveyor",         "Conveyor"],
+  ["other",            "Other"],
 ];
 
 export const EXCHANGE_UNITS: [string, string][] = [
@@ -129,7 +132,7 @@ export const SECURING_REQUIREMENTS: [string, string][] = [
   ["edge_protection_required",        "Edge protection"],
   ["sheets_required",                 "Sheets"],
   ["curtains_must_not_touch_load",    "Curtains must not touch load"],
-  ["stanchions_required",             "Stanchions / stake poles"],
+  ["stanchions_required",             "Stanchions / stake poles (flatbed)"],
   ["temperature_monitoring_required", "Temperature monitoring"],
 ];
 

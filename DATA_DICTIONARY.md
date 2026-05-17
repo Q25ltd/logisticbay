@@ -656,7 +656,7 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | exchangeDropQty | Number? | No | Positive integer | Number of full units (pallets, cages, etc.) to drop at this stop as part of an exchange |
 | exchangeCollectQty | Number? | No | Positive integer | Number of empty units to collect back from this stop as part of an exchange |
 | exchangeUnit | String? | No | `pallets` \| `roll_cages` \| `stillages` \| `ibc_tanks` \| `other` | Type of equipment being exchanged (only present when exchangeDropQty or exchangeCollectQty is set) |
-| handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `site_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
+| handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `overhead_crane` \| `magnetic_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
 | handlingMethodOther | String? | No | Free text | Description of the handling method when `other` is selected in handlingMethods. Substituted into the array as `other: <value>` on submission |
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
 | accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints the driver needs to know |
@@ -716,7 +716,7 @@ Stored in `JobRequest.loadData` (Json column, default `{}`).
 | containerNumber | String? | No | Free text (e.g. `MSCU1234567`) | Container identification number |
 | loadNotes | String? | No | Free text | Additional load-specific notes for the driver and planner |
 | canSplitShipment | String? | No | `must_stay_together` \| `can_split_partially` \| `can_split_freely` | Whether the shipment can be split across multiple vehicles |
-| securingRequirements | String[]? | No | `straps_required` \| `chains_required` \| `edge_protection_required` \| `sheets_required` \| `curtains_must_not_touch_load` \| `uprights_required` \| `temperature_monitoring_required` | Load securing equipment or methods required |
+| securingRequirements | String[]? | No | `straps_required` \| `chains_required` \| `edge_protection_required` \| `sheets_required` \| `curtains_must_not_touch_load` \| `stanchions_required` \| `temperature_monitoring_required` | Load securing equipment or methods required |
 
 ---
 
