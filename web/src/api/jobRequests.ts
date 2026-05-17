@@ -179,14 +179,50 @@ export interface ExceptionPolicyData {
 }
 
 export interface SubmitRequestBody {
-  requesterData:             RequesterData;
-  stops:                     RequestStop[];
-  loadData:                  LoadData;
-  specialRequirementsData?:  SpecialRequirementsData;
-  transportRequirementsData?: TransportRequirementsData;
-  billingData?:              BillingData;
-  notesData?:                NotesData;
-  exceptionPolicyData?:      ExceptionPolicyData;
+  // Customer
+  customerName:         string;
+  bookingContactName?:  string;
+  bookingContactPhone?: string;
+  bookingContactEmail?: string;
+  customerRef?:         string;
+  // Stops
+  stops: RequestStop[];
+  // Load
+  goodsType?:              string;
+  goodsDescription?:       string;
+  quantity?:               number;
+  quantityUnit?:           string;
+  weight?:                 number;
+  stackable?:              boolean;
+  tempControlled?:         boolean;
+  tempRange?:              string;
+  fragile?:                boolean;
+  hazardClass?:            string;
+  securingRequirements?:   string[];
+  specialRequirements?:    string[];
+  dimensions?:             string;
+  canSplitShipment?:       string;
+  // Vehicle requirements
+  vehicleCategory?:        string;
+  bodyTypes?:              string[];
+  equipment?:              string[];
+  trailersAllowed?:        string[];
+  // Billing
+  declaredGoodsValue?:     string;
+  purchaseOrderNumber?:    string;
+  billingReference?:       string;
+  // Notes
+  driverVisibleNotes?:     string;
+  driverNoteChips?:        string[];
+  safetyInstructions?:     string;
+  // Exception policy
+  failureAction?:               string;
+  approvalContactName?:         string;
+  approvalContactPhone?:        string;
+  alternativeReturnAddress?:    string;
+  alternativeReturnPostcode?:   string;
+  alternativeReturnContactName?:  string;
+  alternativeReturnContactPhone?: string;
 }
 
 export interface JobRequest {

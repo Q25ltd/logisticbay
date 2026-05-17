@@ -1329,107 +1329,62 @@ export default function PublicRequestForm() {
       photosRequiredOnRejection || rejectionSignatureRequired || rejectionNotes
     );
 
+    // Derive boolean / computed fields before building the flat payload
+    const resolvedTempRange    = tempRange.trim() || (goodsType === "bulk_material" ? wetDry : tempType) || undefined;
+    const isTempControlled     = !!(resolvedTempRange);
+    const isFragile            = specialItems.includes("fragile");
+
     const body: SubmitRequestBody = {
-      requesterData: {
-        customerCompanyName: customerCompanyName.trim(),
-        contactName:         contactName.trim(),
-        contactPhone:        contactPhone.trim(),
-        contactEmail:        contactEmail.trim(),
-        customerRef:         customerRef.trim() || undefined,
-      },
+      // Customer
+      customerName:         customerCompanyName.trim(),
+      bookingContactName:   contactName.trim()  || undefined,
+      bookingContactPhone:  contactPhone.trim() || undefined,
+      bookingContactEmail:  contactEmail.trim() || undefined,
+      customerRef:          customerRef.trim()  || undefined,
+
+      // Stops
       stops: stops.map((s, i) => stopToRequestStop(s, i + 1)),
-      loadData: {
-        goodsType:            goodsType === "other" ? "other" : goodsType,
-        goodsTypeOther:       goodsType === "other" ? goodsTypeOther.trim() || undefined : undefined,
-        goodsDescription:     goodsDesc.trim(),
-        quantity:             parseFloat(quantity),
-        unit:                 unit === "other" ? (otherUnit.trim() || "other") : unit,
-        estimatedWeight:      estWeight     ? parseFloat(estWeight)     : undefined,
-        palletCount:          palletCount   ? parseInt(palletCount, 10) : undefined,
-        palletType:           palletType    || undefined,
-        palletTypeOther:      palletType === "other" ? palletTypeOther.trim() || undefined : undefined,
-        stackable:            stackable     || undefined,
-        cageCount:            cageCount     ? parseInt(cageCount, 10)  : undefined,
-        cageFolded:           cageFolded    || undefined,
-        buildingMaterialType:            buildingMaterialType            || undefined,
-        buildingMaterialPalletised:      buildingMaterialPalletised      || undefined,
-        buildingMaterialLongestItem:     buildingMaterialLongestItem.trim() || undefined,
-        buildingMaterialWeatherSensitive: buildingMaterialWeatherSensitive || undefined,
-        liquidProductType:    liquidProductType.trim() || undefined,
-        liquidVolumeLitres:   liquidVolumeLitres ? parseFloat(liquidVolumeLitres) : undefined,
-        liquidFoodGrade:      liquidFoodGrade           || undefined,
-        generalPackagingType: generalPackagingType      || undefined,
-        generalPieceCount:    generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
-        loadHeight:           loadHeight.trim()          || undefined,
-        dimensions:           dimensions.trim()    || undefined,
-        machineryPieceWeight: machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
-        machineryLiftingPoints: machineryLiftingPoints || undefined,
-        machinerySkidMounted: machinerySkidMounted  || undefined,
-        craneRequired:        craneRequired  || undefined,
-        steelPieceCount:      steelPieceCount ? parseInt(steelPieceCount, 10) : undefined,
-        steelWidth:           steelWidth.trim()    || undefined,
-        tippingRequired:      tippingReq     || undefined,
-        temperatureRange:     tempRange.trim()     || undefined,
-        chilledFrozenAmbient: (goodsType === "bulk_material" ? wetDry : tempType) || undefined,
-        foodPreCooled:        foodPreCooled   || undefined,
-        vehicleCount:         vehicleCount  ? parseInt(vehicleCount, 10)  : undefined,
-        vehicleMakeModel:     vehicleMakeModel.trim()  || undefined,
-        vehicleKeysWithVehicle: vehicleKeysWithVehicle || undefined,
-        driveable:            driveable      || undefined,
-        containerSize:        containerSize  || undefined,
-        containerSizeOther:   containerSize === "other" ? containerSizeOther.trim() || undefined : undefined,
-        loadedOrEmpty:        loadedOrEmpty  || undefined,
-        containerNumber:      containerNum.trim()   || undefined,
-        loadNotes:            loadNotes.trim()      || undefined,
-        canSplitShipment:     canSplitShipment      || undefined,
-        securingRequirements: securingRequirements.length ? securingRequirements : undefined,
-      },
-      specialRequirementsData: specialItems.length ? {
-        items:                      specialItems,
-        adrClass:                   adrClass.trim()       || undefined,
-        unNumber:                   unNumber.trim()        || undefined,
-        packingGroup:               packingGroup.trim()    || undefined,
-        hazardousQuantityKg:        hazardousQuantityKg ? parseFloat(hazardousQuantityKg) : undefined,
-        hazardousPaperworkAvailable: hazardousPaperworkAvailable || undefined,
-        oversizedWidth:             oversizedWidth.trim()  || undefined,
-        oversizedHeight:            oversizedHeight.trim() || undefined,
-        oversizedLength:            oversizedLength.trim() || undefined,
-      } : undefined,
-      transportRequirementsData: {
-        plannerDecides,
-        reqBodyCategory:     plannerDecides ? undefined : reqBodyCategory || undefined,
-        reqBodyTypes:        plannerDecides ? undefined : reqBodyTypes.length ? reqBodyTypes : undefined,
-        reqEquipment:        plannerDecides ? undefined : reqEquipment.length ? reqEquipment : undefined,
-        trailerTypesAllowed: plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
-      },
-      billingData: {
-        declaredGoodsValue:  declaredValue ? parseFloat(declaredValue) : undefined,
-        purchaseOrderNumber: poNumber.trim()   || undefined,
-        billingReference:    billingRef.trim() || undefined,
-      },
-      notesData: customerNotes.trim() ? {
-        customerNotes: customerNotes.trim(),
-      } : undefined,
-      exceptionPolicyData: hasExceptionPolicy ? {
-        rejectionAction:               rejectionAction               || undefined,
-        alternativeReturnSiteName:     alternativeReturnSiteName.trim()     || undefined,
-        alternativeReturnAddress:      alternativeReturnAddress.trim()      || undefined,
-        alternativeReturnAddressLine2: alternativeReturnAddressLine2.trim() || undefined,
-        alternativeReturnTown:         alternativeReturnTown.trim()         || undefined,
-        alternativeReturnCounty:       alternativeReturnCounty.trim()       || undefined,
-        alternativeReturnPostcode:     alternativeReturnPostcode.trim()     || undefined,
-        alternativeReturnCountry:      alternativeReturnCountry             || undefined,
-        alternativeReturnLat:          alternativeReturnLat  ? parseFloat(alternativeReturnLat)  : undefined,
-        alternativeReturnLng:          alternativeReturnLng  ? parseFloat(alternativeReturnLng)  : undefined,
-        alternativeReturnNavigationInstructions: alternativeReturnNavInstructions.trim() || undefined,
-        alternativeReturnContactName:  alternativeReturnContactName.trim()  || undefined,
-        alternativeReturnContactPhone: alternativeReturnContactPhone.trim() || undefined,
-        approvalContactName:           approvalContactName.trim()           || undefined,
-        approvalContactPhone:          approvalContactPhone.trim()          || undefined,
-        photosRequiredOnRejection:     photosRequiredOnRejection            || undefined,
-        rejectionSignatureRequired:    rejectionSignatureRequired           || undefined,
-        rejectionNotes:                rejectionNotes.trim()                || undefined,
-      } : undefined,
+
+      // Load
+      goodsType:            goodsType || undefined,
+      goodsDescription:     goodsDesc.trim() || undefined,
+      quantity:             quantity ? parseFloat(quantity) : undefined,
+      quantityUnit:         unit === "other" ? (otherUnit.trim() || "other") : unit || undefined,
+      weight:               estWeight ? parseFloat(estWeight) : undefined,
+      stackable:            stackable || undefined,
+      tempControlled:       isTempControlled || undefined,
+      tempRange:            resolvedTempRange,
+      fragile:              isFragile || undefined,
+      hazardClass:          adrClass.trim() || undefined,
+      securingRequirements: securingRequirements.length ? securingRequirements : undefined,
+      specialRequirements:  specialItems.length ? specialItems : undefined,
+      dimensions:           dimensions.trim() || undefined,
+      canSplitShipment:     canSplitShipment || undefined,
+
+      // Vehicle requirements
+      vehicleCategory:      plannerDecides ? undefined : reqBodyCategory || undefined,
+      bodyTypes:            plannerDecides ? undefined : reqBodyTypes.length ? reqBodyTypes : undefined,
+      equipment:            plannerDecides ? undefined : reqEquipment.length ? reqEquipment : undefined,
+      trailersAllowed:      plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
+
+      // Billing
+      declaredGoodsValue:   declaredValue ? String(parseFloat(declaredValue)) : undefined,
+      purchaseOrderNumber:  poNumber.trim()   || undefined,
+      billingReference:     billingRef.trim() || undefined,
+
+      // Notes
+      driverVisibleNotes:   customerNotes.trim() || undefined,
+      driverNoteChips:      undefined,
+      safetyInstructions:   undefined,
+
+      // Exception policy
+      failureAction:                    hasExceptionPolicy ? (rejectionAction || undefined) : undefined,
+      approvalContactName:              approvalContactName.trim()           || undefined,
+      approvalContactPhone:             approvalContactPhone.trim()          || undefined,
+      alternativeReturnAddress:         alternativeReturnAddress.trim()      || undefined,
+      alternativeReturnPostcode:        alternativeReturnPostcode.trim()     || undefined,
+      alternativeReturnContactName:     alternativeReturnContactName.trim()  || undefined,
+      alternativeReturnContactPhone:    alternativeReturnContactPhone.trim() || undefined,
     };
 
     setSubmitting(true);
