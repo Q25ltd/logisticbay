@@ -38,8 +38,8 @@ export interface RequestStop {
   latestArrivalTime:   string;   // HH:MM
   bookedTime?:         string;
   unloadingAllowanceMinutes: number;
-  stopQuantity?:           number;
-  stopQuantityUnit?:       string;
+  quantityRequired?:       number;
+  quantityUnit?:           string;
   stopNotes?:              string;
   exchangeDropQty?:        number;
   exchangeCollectQty?:     number;
@@ -48,9 +48,9 @@ export interface RequestStop {
   proofRequirements?:      string[];
   accessRequirements?:     string[];
   loadReadiness?:          string;
-  heightRestrictionValue?: string;
-  weightRestrictionValue?: string;
-  lengthRestrictionValue?: string;
+  heightRestriction?:      string;
+  weightRestriction?:      string;
+  lengthRestriction?:      string;
   // Set server-side after postcode validation:
   entranceDistanceFromPostcode?: number | null;
   entranceWarningLevel?: "ok" | "warn" | "danger";

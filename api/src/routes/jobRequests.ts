@@ -106,11 +106,13 @@ interface StopBlob {
   handlingMethods?: string[];
   proofRequirements?: string[];
   accessRequirements?: string[];
+  quantityRequired?: number;
+  quantityUnit?: string;
   loadReadiness?: string;
   typicalWaitingTime?: string;
-  heightRestrictionValue?: string;
-  weightRestrictionValue?: string;
-  lengthRestrictionValue?: string;
+  heightRestriction?: string;
+  weightRestriction?: string;
+  lengthRestriction?: string;
   entranceDistanceFromPostcode?: number | null;
   entranceWarningLevel?: string;
 }
@@ -570,11 +572,15 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
               bookedTime: s.date && s.bookedTime
                 ? new Date(`${s.date}T${s.bookedTime}:00`) : null,
               unloadingAllowanceMinutes: s.unloadingAllowanceMinutes ?? 30,
+              quantityRequired:  s.quantityRequired  ?? null,
+              quantityUnit:      s.quantityUnit      ?? "",
               handlingMethods:   s.handlingMethods   ? s.handlingMethods   : undefined,
               proofRequirements: s.proofRequirements ? s.proofRequirements : undefined,
               accessRequirements: s.accessRequirements ? s.accessRequirements : undefined,
-              heightRestriction: s.heightRestrictionValue ?? "",
-              weightRestriction: s.weightRestrictionValue ?? "",
+              loadReadiness:     s.loadReadiness     ?? "",
+              heightRestriction: s.heightRestriction ?? "",
+              weightRestriction: s.weightRestriction ?? "",
+              lengthRestriction: s.lengthRestriction ?? "",
             },
           });
         }

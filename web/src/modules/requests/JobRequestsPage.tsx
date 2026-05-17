@@ -660,8 +660,8 @@ function DetailedStopBlock({ title, stop: s }: { title: string; stop: RequestSto
       {s.openingHours && <Field label="Opening hours" value={s.openingHours} />}
 
       {/* Quantity at stop */}
-      {s.stopQuantity != null && (
-        <Field label="Stop quantity" value={`${s.stopQuantity} ${s.stopQuantityUnit ?? ""}`} />
+      {s.quantityRequired != null && (
+        <Field label="Stop quantity" value={`${s.quantityRequired} ${s.quantityUnit ?? ""}`} />
       )}
 
       {/* Exchange */}
@@ -707,9 +707,9 @@ function DetailedStopBlock({ title, stop: s }: { title: string; stop: RequestSto
       )}
 
       {/* Restrictions */}
-      {s.heightRestrictionValue && <Field label="Height restriction" value={s.heightRestrictionValue} />}
-      {s.weightRestrictionValue && <Field label="Weight restriction" value={s.weightRestrictionValue} />}
-      {s.lengthRestrictionValue && <Field label="Length restriction" value={s.lengthRestrictionValue} />}
+      {s.heightRestriction && <Field label="Height restriction" value={s.heightRestriction} />}
+      {s.weightRestriction && <Field label="Weight restriction" value={s.weightRestriction} />}
+      {s.lengthRestriction && <Field label="Length restriction" value={s.lengthRestriction} />}
 
       {/* Site contact */}
       {s.contactName && <Field label="Site contact" value={s.contactName} />}

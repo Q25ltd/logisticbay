@@ -361,8 +361,8 @@ interface StopState {
   latestArrivalTime: string;
   serviceTime: string;
   serviceTimeCustom: string;
-  stopQuantity: string;
-  stopQuantityUnit: string;
+  quantityRequired: string;
+  quantityUnit: string;
   stopNotes: string;
   // Equipment exchange
   exchangeDropQty: string;
@@ -373,9 +373,9 @@ interface StopState {
   accessRequirements: string[];
   ppeItems: string[];
   // Restriction values
-  heightRestrictionValue: string;
-  weightRestrictionValue: string;
-  lengthRestrictionValue: string;
+  heightRestriction: string;
+  weightRestriction: string;
+  lengthRestriction: string;
   // Optional
   unitName: string;
   addressLine2: string;
@@ -403,10 +403,10 @@ function blankStop(type: string): StopState {
     referenceNumber: "",
     date: "", earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "0",
-    stopQuantity: "", stopQuantityUnit: "pallets", stopNotes: "",
+    quantityRequired: "", quantityUnit: "pallets", stopNotes: "",
     exchangeDropQty: "", exchangeCollectQty: "", exchangeUnit: "pallets",
     handlingMethods: [], handlingMethodOther: "", accessRequirements: [], ppeItems: [],
-    heightRestrictionValue: "", weightRestrictionValue: "", lengthRestrictionValue: "",
+    heightRestriction: "", weightRestriction: "", lengthRestriction: "",
     unitName: "", addressLine2: "", countyRegion: "",
     contactName: "", contactPhone: "", contactEmail: "",
     bookingRequired: false, bookingRef: "", openingHours: "",
@@ -478,8 +478,8 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
     latestArrivalTime:   s.latestArrivalTime,
     bookedTime:          s.bookedTime || undefined,
     unloadingAllowanceMinutes: svcMin,
-    stopQuantity:        s.stopQuantity ? parseFloat(s.stopQuantity) : undefined,
-    stopQuantityUnit:    s.stopQuantity ? s.stopQuantityUnit : undefined,
+    quantityRequired:    s.quantityRequired ? parseFloat(s.quantityRequired) : undefined,
+    quantityUnit:        s.quantityRequired ? s.quantityUnit : undefined,
     stopNotes:           s.stopNotes.trim() || undefined,
     exchangeDropQty:     s.exchangeDropQty     ? parseFloat(s.exchangeDropQty)     : undefined,
     exchangeCollectQty:  s.exchangeCollectQty  ? parseFloat(s.exchangeCollectQty)  : undefined,
@@ -492,9 +492,9 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
       : undefined,
     proofRequirements:   s.proofRequirements.length ? s.proofRequirements : undefined,
     loadReadiness:       s.loadReadiness || undefined,
-    heightRestrictionValue: s.heightRestrictionValue || undefined,
-    weightRestrictionValue: s.weightRestrictionValue || undefined,
-    lengthRestrictionValue: s.lengthRestrictionValue || undefined,
+    heightRestriction:   s.heightRestriction || undefined,
+    weightRestriction:   s.weightRestriction || undefined,
+    lengthRestriction:   s.lengthRestriction || undefined,
   };
 }
 
@@ -646,14 +646,14 @@ function StopCard({
                 className="input flex-1 font-mono"
                 type="number" min="0" step="1"
                 placeholder="0"
-                value={stop.stopQuantity}
+                value={stop.quantityRequired}
                 onKeyDown={e => { if (e.key === "-" || e.key === "e" || e.key === "E" || e.key === ".") e.preventDefault(); }}
-                onChange={e => onChange({ stopQuantity: e.target.value })} />
+                onChange={e => onChange({ quantityRequired: e.target.value })} />
               <div className="relative min-w-[11rem]">
                 <select
                   className="input w-full appearance-none pr-8"
-                  value={stop.stopQuantityUnit}
-                  onChange={e => onChange({ stopQuantityUnit: e.target.value })}>
+                  value={stop.quantityUnit}
+                  onChange={e => onChange({ quantityUnit: e.target.value })}>
                   {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
@@ -921,18 +921,18 @@ function StopCard({
             </div>
             {stop.accessRequirements.includes("height_restriction") && (
               <input className="input mt-2 max-w-xs" type="text" placeholder="Height restriction (e.g. 4.2m)"
-                value={stop.heightRestrictionValue}
-                onChange={e => onChange({ heightRestrictionValue: e.target.value })} />
+                value={stop.heightRestriction}
+                onChange={e => onChange({ heightRestriction: e.target.value })} />
             )}
             {stop.accessRequirements.includes("weight_restriction") && (
               <input className="input mt-2 max-w-xs" type="text" placeholder="Weight restriction (e.g. 7.5t)"
-                value={stop.weightRestrictionValue}
-                onChange={e => onChange({ weightRestrictionValue: e.target.value })} />
+                value={stop.weightRestriction}
+                onChange={e => onChange({ weightRestriction: e.target.value })} />
             )}
             {stop.accessRequirements.includes("length_restriction") && (
               <input className="input mt-2 max-w-xs" type="text" placeholder="Length restriction (e.g. 18m)"
-                value={stop.lengthRestrictionValue}
-                onChange={e => onChange({ lengthRestrictionValue: e.target.value })} />
+                value={stop.lengthRestriction}
+                onChange={e => onChange({ lengthRestriction: e.target.value })} />
             )}
           </div>
 

@@ -459,6 +459,7 @@ One row per physical piece of work on a job (collection, delivery, etc.). Multip
 | oversized | Boolean | Yes | Default: `false` | Whether the load at this stop is oversized |
 | heightRestriction | String | Yes | Free text (e.g. `4.2m`), default `""` | Height restriction at this specific stop |
 | weightRestriction | String | Yes | Free text (e.g. `7.5t`), default `""` | Weight restriction at this specific stop |
+| lengthRestriction | String | Yes | Free text (e.g. `18m`), default `""` | Length restriction at this specific stop (maximum vehicle length) |
 | internalNotes | String | Yes | Free text, default `""` | Internal notes not shown to the driver |
 | stopNotes | String | Yes | Free text, default `""` | Notes specific to this stop visible to the driver (e.g. partial loads, bay numbers, wait instructions) |
 | status | String | Yes | `pending` \| `arrived` \| `completed` \| `skipped`, default `pending` | Execution status of this stop |
@@ -896,8 +897,8 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | latestArrivalTime | String | Yes | `HH:MM` | Latest acceptable arrival time |
 | bookedTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
 | unloadingAllowanceMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
-| stopQuantity | Number? | No | Positive integer | Number of items/units being collected or delivered at this specific stop (not the total job quantity) |
-| stopQuantityUnit | String? | No | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity |
+| quantityRequired | Number? | No | Positive integer | Number of items/units being collected or delivered at this specific stop (not the total job quantity). Maps to `JobPart.quantityRequired`. |
+| quantityUnit | String? | No | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity. Maps to `JobPart.quantityUnit`. |
 | stopNotes | String? | No | Free text | Free-text notes specific to this stop — anything not covered by other fields (e.g. partial loads, bay numbers, wait instructions) |
 | exchangeDropQty | Number? | No | Positive integer | Number of full units (pallets, cages, etc.) to drop at this stop as part of an exchange |
 | exchangeCollectQty | Number? | No | Positive integer | Number of empty units to collect back from this stop as part of an exchange |
@@ -907,9 +908,9 @@ Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the ar
 | proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
 | accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `ppe_safety_boots` \| `ppe_hi_vis` \| `ppe_hard_hat` \| `ppe_gloves` \| `ppe_glasses` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints. `ppe_required` is the top-level flag; `ppe_*` sub-items record specific PPE needed. |
 | loadReadiness | String? | No | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure` | Whether the load will be ready when the driver arrives (collection stops only) |
-| heightRestrictionValue | String? | No | Free text (e.g. `4.2m`) | Numeric or descriptive height restriction value (only present when `height_restriction` is in accessRequirements) |
-| weightRestrictionValue | String? | No | Free text (e.g. `7.5t`) | Numeric or descriptive weight restriction value (only present when `weight_restriction` is in accessRequirements) |
-| lengthRestrictionValue | String? | No | Free text (e.g. `18m`) | Numeric or descriptive length restriction value (only present when `length_restriction` is in accessRequirements) |
+| heightRestriction | String? | No | Free text (e.g. `4.2m`) | Height restriction value (only present when `height_restriction` is in accessRequirements). Maps to `JobPart.heightRestriction`. |
+| weightRestriction | String? | No | Free text (e.g. `7.5t`) | Weight restriction value (only present when `weight_restriction` is in accessRequirements). Maps to `JobPart.weightRestriction`. |
+| lengthRestriction | String? | No | Free text (e.g. `18m`) | Length restriction value (only present when `length_restriction` is in accessRequirements). Maps to `JobPart.lengthRestriction`. |
 | entranceDistanceFromPostcode | Number? | Set server-side | Decimal miles or `null` | Distance in miles between the submitted entrance pin and the centroid of the given postcode (calculated on submission) |
 | entranceWarningLevel | String? | Set server-side | `ok` \| `warn` \| `danger` | Server-computed flag: `warn` if pin is >1 mile from postcode; `danger` if >3 miles |
 
@@ -1106,8 +1107,8 @@ Both the internal `CreateJobPage` form and the public `PublicRequestForm` now sh
 | **Your details (optional)** | Notes for the planner | `PlannedJob.plannerNotes` | `JobRequest.notesData.customerNotes` |
 | **Stops (per stop)** | Stop type | `JobPart.type` | `JobRequest.stops[n].type` |
 | **Stops (per stop)** | Collection / delivery reference | `JobPart.referenceNumber` | `JobRequest.stops[n].referenceNumber` |
-| **Stops (per stop)** | Quantity at this stop | `JobPart.quantityRequired` | `JobRequest.stops[n].stopQuantity` |
-| **Stops (per stop)** | Unit (per-stop quantity) | `JobPart.quantityUnit` | `JobRequest.stops[n].stopQuantityUnit` |
+| **Stops (per stop)** | Quantity at this stop | `JobPart.quantityRequired` | `JobRequest.stops[n].quantityRequired` |
+| **Stops (per stop)** | Unit (per-stop quantity) | `JobPart.quantityUnit` | `JobRequest.stops[n].quantityUnit` |
 | **Stops (per stop)** | Site name | `JobPart.siteName` | `JobRequest.stops[n].siteName` |
 | **Stops (per stop)** | Address line 1 | `JobPart.street` | `JobRequest.stops[n].street` |
 | **Stops (per stop)** | Address line 2 | `JobPart.addressLine2` | `JobRequest.stops[n].addressLine2` |
@@ -1126,9 +1127,9 @@ Both the internal `CreateJobPage` form and the public `PublicRequestForm` now sh
 | **Stops (per stop)** | How will this be loaded / unloaded? | `JobPart.handlingMethods` | `JobRequest.stops[n].handlingMethods[]` |
 | **Stops (per stop)** | Other handling method — describe | `JobPart.handlingMethods` (serialised as `other: <text>`) | `JobRequest.stops[n].handlingMethodOther` → serialised into `handlingMethods[]` |
 | **Stops (per stop)** | Site access requirements | `JobPart.accessRequirements` | `JobRequest.stops[n].accessRequirements[]` |
-| **Stops (per stop)** | Height restriction value | `JobPart.heightRestriction` | `JobRequest.stops[n].heightRestrictionValue` |
-| **Stops (per stop)** | Weight restriction value | `JobPart.weightRestriction` | `JobRequest.stops[n].weightRestrictionValue` |
-| **Stops (per stop)** | Length restriction value | n/a (not on internal stop form) | `JobRequest.stops[n].lengthRestrictionValue` |
+| **Stops (per stop)** | Height restriction value | `JobPart.heightRestriction` | `JobRequest.stops[n].heightRestriction` |
+| **Stops (per stop)** | Weight restriction value | `JobPart.weightRestriction` | `JobRequest.stops[n].weightRestriction` |
+| **Stops (per stop)** | Length restriction value | `JobPart.lengthRestriction` | `JobRequest.stops[n].lengthRestriction` |
 | **Stops (per stop)** | Will the load be ready? | `JobPart.loadReadiness` | `JobRequest.stops[n].loadReadiness` |
 | **Stops (per stop)** | Stop notes | `JobPart.stopNotes` | `JobRequest.stops[n].stopNotes` |
 | **Stops (per stop)** | Equipment exchange — Drop (full) | `JobPart.exchangeDropQty` | `JobRequest.stops[n].exchangeDropQty` |

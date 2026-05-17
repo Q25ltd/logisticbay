@@ -419,6 +419,7 @@ model JobPart {
 
   heightRestriction String @default("")
   weightRestriction String @default("")
+  lengthRestriction String @default("")
   internalNotes     String @default("")
   stopNotes         String @default("")
   addressLine2      String @default("")
