@@ -1,105 +1,141 @@
+/**
+ * Internal job creation page — mirrors the 7-section structure of PublicRequestForm.
+ * Sections: Customer details → Stops → Load details → Special requirements →
+ *           Transport requirements → Billing → Rejection & return policy
+ *
+ * Planner-only fields (driver assignment, agreed rate, planner notes) go in a separate view.
+ */
+
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import { driversApi, type DayScheduleResult } from "../../api/drivers";
 import { api } from "../../api/client";
-import { useAuth } from "../../hooks/useAuth";
-import type { Customer, Driver, JobTemplate, PlannedJob, SavedLocation } from "../../types";
+import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
 
 import {
-  SERVICE_TYPES, JOB_TYPES, PRIORITY_OPTS,
-  BODY_CATEGORY_OPTS, BODY_TYPE_OPTS, GVW_CLASS_OPTS,
-  DRIVER_LICENCE_OPTS, DRIVER_ENDORSEMENT_OPTS,
-  TRAILER_LENGTH_OPTS, LOAD_UNITS, HANDLING_METHODS,
-  TRAILER_BODY_TYPE_VALUES, equipmentForBodyType,
   GOODS_TYPES, SECURING_REQUIREMENTS, SPECIAL_REQUIREMENTS_OPTS,
-  REJECTION_ACTIONS, DRIVER_NOTE_CHIPS,
+  REJECTION_ACTIONS,
+  COUNTRIES, POSTCODE_META,
 } from "./createJobConstants";
 import type { StopState } from "./createJobTypes";
-import { today, nowDisplay, makeStop, jobPartToStopState, stopComplete } from "./createJobUtils";
+import { today, makeStop, jobPartToStopState, stopComplete, toMins } from "./createJobUtils";
 import {
-  FieldLabel, ReadOnlyField, SectionHeader, SectionFooter,
+  FieldLabel, SectionHeader, SectionFooter,
   OptionalToggle, Toggle, MultiCheck, TextField,
 } from "./CreateJobFormComponents";
 import CustomerSearch from "./CustomerSearch";
 import StopCard from "./StopCard";
 import { LocationSearch } from "./StopCard";
-import { buildBody } from "./createJobPayload";
-import type { CreateJobPayload } from "./createJobPayload";
 import {
-  BODY_TYPES_BY_CATEGORY,
+  BODY_CATEGORIES,
+  BODY_TYPES,
   bodyCategoryNeedsTrailer,
-  gvwForCategory,
-  licencesThatCanDrive,
+  TRAILER_BODY_TYPE_VALUES as TRAILER_BODY_TYPE_VALUES_FULL,
+  BODY_TYPES_BY_CATEGORY as BODY_TYPES_BY_CATEGORY_FULL,
   type BodyCategory,
-  type BodyType,
-  type DriverEndorsement,
-  type DriverLicenceClass,
-  type GvwClass,
-  type OnboardEquipment,
 } from "../../constants/vehicleTaxonomy";
 
-function legacyVehicleToRequirement(value: string | undefined | null) {
-  const v = (value ?? "").trim().toLowerCase();
-  if (v === "artic" || /^class\s*1$/.test(v)) return { bodyCategory: "tractor", bodyType: "", equipment: [] as string[], licenceClass: "CE" };
-  if (v === "van") return { bodyCategory: "van", bodyType: "panel", equipment: [] as string[], licenceClass: "B" };
-  if (v === "rigid" || /^class\s*2$/.test(v)) return { bodyCategory: "rigid", bodyType: "", equipment: [] as string[], licenceClass: "C" };
-  if (v === "tipper") return { bodyCategory: "rigid", bodyType: "tipper", equipment: [] as string[], licenceClass: "C" };
-  if (v === "grab") return { bodyCategory: "rigid", bodyType: "tipper", equipment: ["hiab_crane"], licenceClass: "C" };
-  if (v === "mixer") return { bodyCategory: "rigid", bodyType: "mixer", equipment: [] as string[], licenceClass: "C" };
-  if (v === "hiab") return { bodyCategory: "rigid", bodyType: "flatbed", equipment: ["hiab_crane"], licenceClass: "C" };
-  if (v === "refrigerated") return { bodyCategory: "rigid", bodyType: "fridge", equipment: ["fridge_unit"], licenceClass: "C" };
-  if (v === "other" || v.startsWith("other:")) return { bodyCategory: "rigid", bodyType: "other", equipment: [] as string[], licenceClass: "C" };
-  return { bodyCategory: "", bodyType: "", equipment: [] as string[], licenceClass: "" };
-}
+// ── Local constants ────────────────────────────────────────────────────────────
 
-function optionLabel(options: [string, string][], value: string) {
-  return options.find(([v]) => v === value)?.[1] ?? value;
-}
+const LOAD_TYPES: [string, string][] = GOODS_TYPES;
 
-// ── Driver schedule feasibility banner ────────────────────────────────────────
+const LOAD_UNITS: [string, string][] = [
+  ["pallets",     "Pallets"],
+  ["roll_cages",  "Roll cages"],
+  ["tonnes",      "Tonnes"],
+  ["kg",          "Kilograms"],
+  ["bags",        "Bags"],
+  ["items",       "Items"],
+  ["loads",       "Loads"],
+  ["litres",      "Litres"],
+  ["cubic_metres","Cubic metres"],
+  ["other",       "Other"],
+];
 
-function DriverScheduleWarning({ schedule }: { schedule: import("../../api/drivers").DayScheduleResult }) {
-  const { overallStatus, stops, totalDriveMin, warnings } = schedule;
+const SPLIT_OPTIONS: [string, string][] = [
+  ["must_stay_together",  "Must stay together"],
+  ["can_split_partially", "Can split partially"],
+  ["can_split_freely",    "Can split freely"],
+];
 
-  if (overallStatus === "ok") {
-    return (
-      <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-green-50 border border-green-200 text-sm text-green-800">
-        <span className="mt-0.5">✓</span>
-        <div>
-          <span className="font-semibold">Driver schedule looks feasible</span>
-          {" — "}{stops.length} stop{stops.length !== 1 ? "s" : ""} already assigned,{" "}
-          {Math.round(totalDriveMin / 6) / 10}h total drive time.
-        </div>
-      </div>
-    );
-  }
+const BUILDING_MATERIAL_TYPES: [string, string][] = [
+  ["bricks_blocks",  "Bricks / blocks"],
+  ["timber",         "Timber"],
+  ["aggregates",     "Aggregates / gravel / sand"],
+  ["plasterboard",   "Plasterboard / drywall"],
+  ["roofing",        "Roofing materials"],
+  ["glass",          "Glass / glazing"],
+  ["insulation",     "Insulation"],
+  ["pipes_ducting",  "Pipes / ducting"],
+  ["other",          "Other"],
+];
 
-  const impossibleStops = stops.filter(s => s.status === "impossible");
-  const tightStops      = stops.filter(s => s.status === "tight");
-  const bgCls  = overallStatus === "impossible" ? "bg-red-50 border-red-300 text-red-800"   : "bg-amber-50 border-amber-300 text-amber-800";
-  const icon   = overallStatus === "impossible" ? "⛔" : "⚠️";
-  const label  = overallStatus === "impossible" ? "Schedule conflict — driver may miss a delivery" : "Tight schedule — check times carefully";
+const GENERAL_PACKAGING: [string, string][] = [
+  ["palletised",    "Palletised"],
+  ["boxed",         "Boxed / cartons"],
+  ["loose",         "Loose"],
+  ["shrink_wrapped","Shrink-wrapped"],
+  ["other",         "Other"],
+];
 
+const TEMP_TYPE_OPTIONS: [string, string][] = [
+  ["chilled", "Chilled"],
+  ["frozen",  "Frozen"],
+  ["ambient", "Ambient"],
+];
+
+const WET_DRY_OPTIONS: [string, string][] = [
+  ["dry", "Dry"],
+  ["wet", "Wet"],
+];
+
+const LOADED_EMPTY_OPTIONS: [string, string][] = [
+  ["loaded", "Loaded"],
+  ["empty",  "Empty"],
+];
+
+const BODY_TYPE_GROUP_LABELS: Record<string, string> = {
+  general:    "General / enclosed",
+  flat:       "Flat / open",
+  bulk:       "Bulk & tipping",
+  tanker:     "Tanker",
+  temp:       "Temperature controlled",
+  container:  "Container / skeletal",
+  heavy:      "Heavy haulage",
+  specialist: "Specialist",
+  other:      "Other",
+};
+
+const REQ_BODY_TYPES_BY_CATEGORY: Record<string, readonly string[]> = {
+  van:           BODY_TYPES_BY_CATEGORY_FULL.van          ?? [],
+  luton_van:     BODY_TYPES_BY_CATEGORY_FULL.luton_van    ?? [],
+  pickup:        BODY_TYPES_BY_CATEGORY_FULL.pickup       ?? [],
+  rigid:         BODY_TYPES_BY_CATEGORY_FULL.rigid        ?? [],
+  tractor:       TRAILER_BODY_TYPE_VALUES_FULL,
+  drawbar:       TRAILER_BODY_TYPE_VALUES_FULL,
+  heavy_haulage: ["low_loader", "low_loader_extending", "modular_heavy", "girder_frame", "other"],
+  spmt:          BODY_TYPES_BY_CATEGORY_FULL.spmt         ?? [],
+  plant:         ["other"],
+};
+
+// ── Inline chip button (single-select) ────────────────────────────────────────
+
+function Chips({ options, value, onChange }: {
+  options: [string, string][];
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <div className={`px-3 py-2 rounded-xl border text-sm ${bgCls}`}>
-      <div className="font-semibold mb-1">{icon} {label}</div>
-      {impossibleStops.map(s => (
-        <div key={s.stopIdx} className="text-xs ml-4">
-          Stop {s.stopIdx + 1} ({s.jobReference ?? `Job ${s.jobId}`} — {s.postcode ?? s.type}): {s.issue}
-        </div>
+    <div className="flex flex-wrap gap-2">
+      {options.map(([v, l]) => (
+        <button key={v} type="button" onClick={() => onChange(value === v ? "" : v)}
+          className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+            (value === v
+              ? "bg-accent text-white border-accent"
+              : "bg-white text-muted border-border hover:border-gray-400")}>
+          {l}
+        </button>
       ))}
-      {tightStops.map(s => (
-        <div key={s.stopIdx} className="text-xs ml-4">
-          Stop {s.stopIdx + 1} ({s.jobReference ?? `Job ${s.jobId}`} — {s.postcode ?? s.type}): {s.issue}
-        </div>
-      ))}
-      {warnings.map((w, i) => (
-        <div key={i} className="text-xs ml-4 mt-0.5">{w}</div>
-      ))}
-      <div className="text-xs mt-1 opacity-70">
-        {stops.length} stop{stops.length !== 1 ? "s" : ""} · {Math.round(totalDriveMin / 6) / 10}h drive on this date
-      </div>
     </div>
   );
 }
@@ -108,7 +144,6 @@ function DriverScheduleWarning({ schedule }: { schedule: import("../../api/drive
 
 export default function CreateJobPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { id: jobIdParam } = useParams<{ id?: string }>();
   const editJobId = jobIdParam ? parseInt(jobIdParam, 10) : null;
   const isEditMode = !!editJobId;
@@ -121,22 +156,17 @@ export default function CreateJobPage() {
 
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
-  const [loadingJob, setLoadingJob] = useState(isEditMode);
-  const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
+  const [loadingJob, setLoadingJob] = useState(isEditMode || isTemplateMode);
   const [triedSave, setTriedSave] = useState(false);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
   // Saved locations (loaded once)
-  const [locations,     setLocations]     = useState<SavedLocation[]>([]);
-  const [templates,     setTemplates]     = useState<JobTemplate[]>([]);
-  const [tplQuery,      setTplQuery]      = useState("");
-  const [companyTicker,    setCompanyTicker]    = useState<string | null>(null);
-  const [jobReference,     setJobReference]     = useState<string | null>(null);
-  const [drivers,          setDrivers]          = useState<Driver[]>([]);
-  const [assignedDriverId, setAssignedDriverId] = useState<number | null>(null);
-  const [driverSchedule,   setDriverSchedule]   = useState<DayScheduleResult | null>(null);
-  const [scheduleLoading,  setScheduleLoading]  = useState(false);
+  const [locations, setLocations] = useState<SavedLocation[]>([]);
+  const [templates, setTemplates] = useState<JobTemplate[]>([]);
+  const [tplQuery, setTplQuery] = useState("");
+  const [companyTicker, setCompanyTicker] = useState<string | null>(null);
+  const [jobReference, setJobReference] = useState<string | null>(null);
 
   // templateId in URL = open blank job pre-filled with template (Use → button)
   const preloadTemplateId = searchParams.get("templateId");
@@ -144,12 +174,11 @@ export default function CreateJobPage() {
   useEffect(() => {
     jobsApi.locations().then(r => setLocations(r.data)).catch(() => {});
     api.get<{ ticker?: string | null }>("/company").then(c => setCompanyTicker(c.ticker ?? null)).catch(() => {});
-    driversApi.list("active").then(r => setDrivers(r.data)).catch(() => {});
   }, []);
+
   useEffect(() => {
     jobsApi.templates().then(r => {
       setTemplates(r.data);
-      // Auto-apply if ?templateId= in URL
       if (preloadTemplateId) {
         const t = r.data.find((t: JobTemplate) => t.id === parseInt(preloadTemplateId, 10));
         if (t) applyTemplate(t);
@@ -158,123 +187,214 @@ export default function CreateJobPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Section collapse state ───────────────────────────────────────────────────
+  const [s1, setS1] = useState(true);
+  const [s2, setS2] = useState(true);
+  const [s3, setS3] = useState(true);
+  const [s4, setS4] = useState(true);
+  const [s5, setS5] = useState(true);
+  const [s6, setS6] = useState(true);
+
+  // ── Section 01 — Customer details ───────────────────────────────────────────
+  const [customerName,    setCustomerName]    = useState("");
+  const [customerId,      setCustomerId]      = useState<number | null>(null);
+  const [plannedDate,     setPlannedDate]     = useState(today());
+  const [contactName,     setContactName]     = useState("");
+  const [contactPhone,    setContactPhone]    = useState("");
+  const [contactEmail,    setContactEmail]    = useState("");
+  const [customerRef,     setCustomerRef]     = useState("");
+
+  function handleCustomerChange(name: string, id: number | null, customer?: Customer) {
+    setCustomerName(name);
+    setCustomerId(id);
+    if (customer) {
+      setContactName(customer.contactName   || "");
+      setContactPhone(customer.contactPhone || "");
+      setContactEmail(customer.contactEmail || "");
+    }
+  }
+
+  // ── Section 02 — Stops ──────────────────────────────────────────────────────
+  const [stops, setStops] = useState<StopState[]>([makeStop()]);
+
+  function updateStop(id: string, patch: Partial<StopState>) {
+    setStops(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  }
+  function addStop() { setStops(prev => [...prev, makeStop()]); }
+  function removeStop(id: string) { setStops(prev => prev.filter(s => s.id !== id)); }
+
+  // ── Section 03 — Load details ────────────────────────────────────────────────
+  const [goodsType,         setGoodsType]        = useState("");
+  const [goodsTypeOther,    setGoodsTypeOther]   = useState("");
+  const [goodsDesc,         setGoodsDesc]        = useState("");
+  const [quantity,          setQuantity]         = useState("");
+  const [unit,              setUnit]             = useState("pallets");
+  const [otherUnit,         setOtherUnit]        = useState("");
+  const [estWeight,         setEstWeight]        = useState("");
+  const [loadHeight,        setLoadHeight]       = useState("");
+  const [canSplitShipment,  setCanSplitShipment] = useState("must_stay_together");
+  const [securingRequirements, setSecuringRequirements] = useState<string[]>([]);
+  const [loadNotes,         setLoadNotes]        = useState("");
+
+  // Pallets
+  const [palletCount,       setPalletCount]      = useState("");
+  const [palletType,        setPalletType]       = useState("");
+  const [palletTypeOther,   setPalletTypeOther]  = useState("");
+  const [stackable,         setStackable]        = useState(false);
+  // Roll cages
+  const [cageCount,         setCageCount]        = useState("");
+  const [cageFolded,        setCageFolded]       = useState(false);
+  // Machinery
+  const [dimensions,        setDimensions]       = useState("");
+  const [machineryPieceWeight, setMachineryPieceWeight] = useState("");
+  const [machineryLiftingPoints, setMachineryLiftingPoints] = useState(false);
+  const [machinerySkidMounted,  setMachinerySkidMounted]  = useState(false);
+  const [craneRequired,     setCraneRequired]    = useState(false);
+  // Building materials
+  const [buildingMaterialType,            setBuildingMaterialType]            = useState("");
+  const [buildingMaterialPalletised,      setBuildingMaterialPalletised]      = useState(false);
+  const [buildingMaterialLongestItem,     setBuildingMaterialLongestItem]     = useState("");
+  const [buildingMaterialWeatherSensitive, setBuildingMaterialWeatherSensitive] = useState(false);
+  // Food / refrigerated
+  const [tempType,          setTempType]         = useState("");
+  const [tempRange,         setTempRange]        = useState("");
+  const [foodPreCooled,     setFoodPreCooled]    = useState(false);
+  // Bulk material
+  const [tippingReq,        setTippingReq]       = useState(false);
+  const [wetDry,            setWetDry]           = useState("");
+  // Liquid / tanker
+  const [liquidProductType, setLiquidProductType] = useState("");
+  const [liquidVolumeLitres, setLiquidVolumeLitres] = useState("");
+  const [liquidFoodGrade,   setLiquidFoodGrade]  = useState(false);
+  // Steel / long loads
+  const [steelPieceCount,   setSteelPieceCount]  = useState("");
+  const [steelWidth,        setSteelWidth]       = useState("");
+  // Vehicles
+  const [vehicleCount,      setVehicleCount]     = useState("");
+  const [vehicleMakeModel,  setVehicleMakeModel] = useState("");
+  const [vehicleKeysWithVehicle, setVehicleKeysWithVehicle] = useState(false);
+  const [vehicleDriveable,  setVehicleDriveable] = useState(false);
+  // Containers
+  const [containerSize,     setContainerSize]    = useState("");
+  const [containerSizeOther, setContainerSizeOther] = useState("");
+  const [loadedOrEmpty,     setLoadedOrEmpty]    = useState("");
+  const [containerNum,      setContainerNum]     = useState("");
+  // General
+  const [generalPackagingType, setGeneralPackagingType] = useState("");
+  const [generalPieceCount, setGeneralPieceCount] = useState("");
+
+  // ── Section 04 — Special requirements ───────────────────────────────────────
+  const [specialItems,       setSpecialItems]      = useState<string[]>([]);
+  const [adrClass,           setAdrClass]          = useState("");
+  const [unNumber,           setUnNumber]          = useState("");
+  const [packingGroup,       setPackingGroup]      = useState("");
+  const [hazardousQtyKg,     setHazardousQtyKg]    = useState("");
+  const [hazardousPaperwork, setHazardousPaperwork] = useState(false);
+  const [oversizedWidth,     setOversizedWidth]    = useState("");
+  const [oversizedHeight,    setOversizedHeight]   = useState("");
+  const [oversizedLength,    setOversizedLength]   = useState("");
+
+  // ── Section 05 — Transport requirements ─────────────────────────────────────
+  const [plannerDecides,     setPlannerDecides]    = useState(true);
+  const [reqBodyCategory,    setReqBodyCategory]   = useState("");
+  const [reqBodyTypes,       setReqBodyTypes]      = useState<string[]>([]);
+  const [reqEquipment,       setReqEquipment]      = useState<string[]>([]);
+  const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
+
+  // ── Section 06 — Billing ─────────────────────────────────────────────────────
+  const [declaredValue,       setDeclaredValue]      = useState("");
+  const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
+  const [billingRef,          setBillingRef]          = useState("");
+  const [vatRegistered,       setVatRegistered]       = useState(false);
+  const [vatNumber,           setVatNumber]           = useState("");
+
+  // ── Section 07 — Rejection & return policy ───────────────────────────────────
+  const [showExceptionPolicy, setShowExceptionPolicy] = useState(false);
+  const [rejectionAction,              setRejectionAction]              = useState("");
+  const [altReturnSiteName,            setAltReturnSiteName]            = useState("");
+  const [altReturnAddress,             setAltReturnAddress]             = useState("");
+  const [altReturnAddressLine2,        setAltReturnAddressLine2]        = useState("");
+  const [altReturnTown,                setAltReturnTown]                = useState("");
+  const [altReturnCounty,              setAltReturnCounty]              = useState("");
+  const [altReturnPostcode,            setAltReturnPostcode]            = useState("");
+  const [altReturnCountry,             setAltReturnCountry]             = useState("GB");
+  const [altReturnLat,                 setAltReturnLat]                 = useState("");
+  const [altReturnLng,                 setAltReturnLng]                 = useState("");
+  const [altReturnNavInstructions,     setAltReturnNavInstructions]     = useState("");
+  const [altReturnContactName,         setAltReturnContactName]         = useState("");
+  const [altReturnContactPhone,        setAltReturnContactPhone]        = useState("");
+  const [approvalContactName,          setApprovalContactName]          = useState("");
+  const [approvalContactPhone,         setApprovalContactPhone]         = useState("");
+  const [photosOnRejection,            setPhotosOnRejection]            = useState(false);
+  const [signatureOnRejection,         setSignatureOnRejection]         = useState(false);
+  const [rejectionNotes,               setRejectionNotes]               = useState("");
+
+  // ── Completeness ──────────────────────────────────────────────────────────────
+  const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim());
+  const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
+    stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
+  const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 5 && quantity && unit && parseFloat(estWeight) > 0);
+  const sec6Complete = !!(parseFloat(declaredValue) > 0);
+
+  const sec1Started = !!(customerName || contactName);
+  const sec2Started = stops.some(s => s.siteName || s.street);
+  const sec3Started = !!(goodsType || goodsDesc);
+  const sec4Started = specialItems.length > 0;
+  const sec5Started = !!(reqBodyCategory || reqBodyTypes.length);
+  const sec6Started = !!(declaredValue || purchaseOrderNumber);
+  const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started || sec6Started;
+
+  const collectionCount = stops.filter(s => s.type === "collection").length;
+  const deliveryCount   = stops.filter(s => s.type === "delivery").length;
+  const sec2Summary = [
+    collectionCount > 0 && `${collectionCount} collection${collectionCount > 1 ? "s" : ""}`,
+    deliveryCount   > 0 && `${deliveryCount} deliver${deliveryCount > 1 ? "ies" : "y"}`,
+  ].filter(Boolean).join(", ");
+
+  const sec1Missing: string[] = [
+    !customerName.trim()  ? "customer"        : "",
+    !contactName.trim()   ? "contact name"    : "",
+    !contactPhone.trim()  ? "contact phone"   : "",
+  ].filter(Boolean) as string[];
+
+  const sec3Missing: string[] = [
+    !goodsType                    ? "goods type"                            : "",
+    goodsDesc.trim().length < 5   ? "goods description (min 5 chars)"       : "",
+    !quantity                     ? "quantity"                               : "",
+    !unit                         ? "unit"                                   : "",
+    !(parseFloat(estWeight) > 0)  ? "estimated weight"                       : "",
+  ].filter(Boolean) as string[];
+
+  const sec6Missing: string[] = [
+    !(parseFloat(declaredValue) > 0) ? "declared goods value" : "",
+  ].filter(Boolean) as string[];
+
+  const MISSING: string[] = [
+    !sec1Complete && "Customer details",
+    !sec2Complete && "Stops",
+    !sec3Complete && "Load details",
+    !sec6Complete && "Billing",
+  ].filter(Boolean) as string[];
+
+  // ── Template apply ───────────────────────────────────────────────────────────
   function applyTemplate(t: JobTemplate) {
-    const jd = t.defaultJobData;
+    const jd = t.defaultJobData as Record<string, unknown> | null | undefined;
+    if (jd?.customerName) { setCustomerName(String(jd.customerName)); setCustomerId((jd.customerId as number) ?? null); }
+    if (jd?.contactName)  setContactName(String(jd.contactName));
+    if (jd?.contactPhone) setContactPhone(String(jd.contactPhone));
+    if (jd?.contactEmail) setContactEmail(String(jd.contactEmail));
+    if (jd?.customerRef)  setCustomerRef(String(jd.customerRef));
 
-    // ── Job basics ──────────────────────────────────────────────────────────
-    if (jd?.customerName) { setCustomerName(jd.customerName); setCustomerId(jd.customerId ?? null); }
-    if (jd?.serviceType)  setServiceType(jd.serviceType);
-    if (jd?.jobType)      setJobType(jd.jobType);
-    if (jd?.jobTitle)     setJobTitle(jd.jobTitle);
-    if (jd?.priority)     setPriority(jd.priority);
+    const dl = t.defaultLoadDetails as Record<string, unknown> | null | undefined;
+    const materialTypeVal = (jd?.materialDesc ?? jd?.materialType ?? dl?.materialType ?? t.defaultMaterialType ?? "") as string;
+    if (materialTypeVal) setGoodsDesc(materialTypeVal);
+    const qty = ((jd?.totalQty ?? jd?.quantity ?? (dl?.quantity != null ? String(dl.quantity) : "")) as string);
+    if (qty) setQuantity(qty);
+    const unitVal = ((jd?.qtyUnit ?? jd?.unit ?? dl?.unit ?? "") as string);
+    if (unitVal) setUnit(unitVal);
+    const weightVal = ((jd?.totalWeight ?? jd?.weight ?? (dl?.weight != null ? String(dl.weight) : "")) as string);
+    if (weightVal) setEstWeight(weightVal);
 
-    // ── Customer details ────────────────────────────────────────────────────
-    if (jd?.contactName)     setContactName(jd.contactName);
-    if (jd?.contactPhone)    setContactPhone(jd.contactPhone);
-    if (jd?.contactEmail)    setContactEmail(jd.contactEmail);
-    if (jd?.billingNotes)    setBillingNotes(jd.billingNotes);
-    if (jd?.customerInstructions) setCustomerInstructions(jd.customerInstructions);
-    if (jd?.custRefRequired !== undefined) setCustRefRequired(jd.custRefRequired);
-    if (jd?.poRequired      !== undefined) setPoRequired(jd.poRequired);
-
-    // ── Load details ────────────────────────────────────────────────────────
-    const dl = t.defaultLoadDetails;
-    const materialTypeVal = jd?.materialDesc || jd?.materialType || dl?.materialType || t.defaultMaterialType || "";
-    if (materialTypeVal)     setMaterialType(materialTypeVal);
-    const qty = jd?.totalQty ?? jd?.quantity ?? (dl?.quantity != null ? String(dl.quantity) : "");
-    if (qty)                 setQuantity(qty);
-    const unitVal = jd?.qtyUnit ?? jd?.unit ?? dl?.unit ?? "";
-    if (unitVal)             setUnit(unitVal);
-    if (jd?.unitOther ?? jd?.qtyUnitOther) setUnitOther(jd?.unitOther ?? jd?.qtyUnitOther ?? "");
-    const weightVal = jd?.totalWeight ?? jd?.weight ?? (dl?.weight != null ? String(dl.weight) : "");
-    if (weightVal)           setWeight(weightVal);
-    const vol = jd?.volume   ?? (dl?.volume  != null ? String(dl.volume)  : "");
-    if (vol)                 setVolume(vol);
-    if (jd?.dimensions   ?? dl?.dimensions)   setDimensions(jd?.dimensions   ?? dl?.dimensions   ?? "");
-    if (jd?.adrClass     ?? dl?.hazardClass)  setAdrClass(jd?.adrClass     ?? dl?.hazardClass   ?? "");
-    if (jd?.fragile         !== undefined) setFragile(jd.fragile);
-    else if (dl?.fragile    !== undefined) setFragile(dl.fragile);
-    if (jd?.stackable       !== undefined) setStackable(jd.stackable);
-    else if (dl?.stackable  !== undefined) setStackable(dl.stackable);
-    if (jd?.tempControlled  !== undefined) setTempControlled(jd.tempControlled);
-    else if (dl?.tempControlled !== undefined) setTempControlled(dl.tempControlled);
-    if (jd?.tempRange ?? dl?.tempRange) setTempRange(jd?.tempRange ?? dl?.tempRange ?? "");
-    if (jd?.forkliftRequired !== undefined) setForkliftRequired(jd.forkliftRequired);
-    else if (dl?.forkliftRequired !== undefined) setForkliftRequired(dl.forkliftRequired);
-    if (jd?.tailLiftRequired !== undefined) setTailLiftRequired(jd.tailLiftRequired);
-    else if (dl?.tailLiftRequired !== undefined) setTailLiftRequired(dl.tailLiftRequired);
-    if (jd?.craneRequired !== undefined) setCraneRequired(jd.craneRequired);
-    else if (dl?.craneRequired !== undefined) setCraneRequired(dl.craneRequired);
-    if (jd?.loadingMethod   ?? dl?.loadingMethod)   setLoadingMethod(jd?.loadingMethod   ?? dl?.loadingMethod   ?? "");
-    if (jd?.unloadingMethod ?? dl?.unloadingMethod) setUnloadingMethod(jd?.unloadingMethod ?? dl?.unloadingMethod ?? "");
-    if (jd?.loadNotes ?? dl?.notes ?? t.defaultNotes) setLoadNotes(jd?.loadNotes ?? dl?.notes ?? t.defaultNotes ?? "");
-    if (jd?.photosRequired  !== undefined) setPhotosRequired(jd.photosRequired);
-    else if (dl?.photosRequired !== undefined) setPhotosRequired(dl.photosRequired);
-    if (jd?.weighbridgeRequired  !== undefined) setWeighbridgeRequired(jd.weighbridgeRequired);
-    else if (dl?.weighbridgeRequired !== undefined) setWeighbridgeRequired(dl.weighbridgeRequired);
-    if (jd?.requirePOD     !== undefined) setRequirePOD(jd.requirePOD);
-
-    // ── Vehicle requirements ────────────────────────────────────────────────
-    const vClass = jd?.vehicleType ?? "";
-    const legacyReq = legacyVehicleToRequirement(vClass);
-    const nextReqBodyCategory = jd?.reqBodyCategory ?? legacyReq.bodyCategory;
-    if (nextReqBodyCategory) setReqBodyCategory(nextReqBodyCategory as BodyCategory);
-    if (jd?.reqGvwMin) setReqGvwMin(jd.reqGvwMin as GvwClass);
-    else if (jd?.minSize) setReqGvwMin(jd.minSize as GvwClass);
-    const nextReqBodyType = jd?.reqBodyType ?? legacyReq.bodyType;
-    if (nextReqBodyType) setReqBodyType(nextReqBodyType as BodyType);
-    if (jd?.reqEquipment?.length) setReqEquipment(jd.reqEquipment as OnboardEquipment[]);
-    else if (jd?.equipmentReq?.length) setReqEquipment(jd.equipmentReq as OnboardEquipment[]);
-    else if (legacyReq.equipment.length) setReqEquipment(legacyReq.equipment as OnboardEquipment[]);
-    const nextReqLicence = jd?.reqLicenceClass ?? legacyReq.licenceClass;
-    if (nextReqLicence) setReqLicenceClass(nextReqLicence as DriverLicenceClass);
-    if (jd?.reqEndorsements?.length) setReqEndorsements(jd.reqEndorsements as DriverEndorsement[]);
-    else if (jd?.driverQuals?.length) setReqEndorsements(jd.driverQuals as DriverEndorsement[]);
-    if (jd?.trailerLength) setTrailerLength(jd.trailerLength);
-    if (vClass) {
-      if (vClass.startsWith("other:")) {
-        setVehicleClass("other");
-        setVehicleClassOther(vClass.replace("other:", "").trim());
-      } else {
-        setVehicleClass(vClass);
-      }
-    }
-    if (jd?.vehicleTypeOther) setVehicleClassOther(jd.vehicleTypeOther);
-    if (jd?.trailerTypesAllowed?.length ?? jd?.trailersAllowed?.length) setTrailerTypesAllowed(jd?.trailerTypesAllowed ?? jd?.trailersAllowed ?? []);
-    else if (t.trailerTypesAllowed?.length) setTrailerTypesAllowed(t.trailerTypesAllowed);
-    if (jd?.heightRestriction) setHeightRestriction(jd.heightRestriction);
-    if (jd?.weightRestriction) setWeightRestriction(jd.weightRestriction);
-    if (jd?.lengthRestriction) setLengthRestriction(jd.lengthRestriction);
-    if (jd?.vehicleAccessNotes)       setVehicleAccessNotes(jd.vehicleAccessNotes);
-    if (jd?.assignedTruck)     setAssignedTruck(jd.assignedTruck);
-    if (jd?.assignedTrailer)   setAssignedTrailer(jd.assignedTrailer);
-
-    // ── Failure / return ────────────────────────────────────────────────────
-    if (jd?.failureAction)     setFailureAction(jd.failureAction);
-    if (jd?.assistancePhone)   setAssistancePhone(jd.assistancePhone);
-    if (jd?.assistanceNote)    setAssistanceNote(jd.assistanceNote);
-    if (jd?.returnDestination) setReturnDestination(jd.returnDestination);
-    const alt = jd?.altAddress as Record<string, unknown> | null | undefined;
-    if (alt) {
-      if (alt.siteName ?? alt.companyName)    setAltSiteName(String(alt.siteName ?? alt.companyName));
-      if (alt.street)                          setAltStreet(String(alt.street));
-      if (alt.town)                            setAltTown(String(alt.town));
-      if (alt.postcode)                        setAltPostcode(String(alt.postcode));
-      if (alt.country)                         setAltCountry(String(alt.country));
-      if (alt.lat)                             setAltLat(String(alt.lat));
-      if (alt.lng)                             setAltLng(String(alt.lng));
-      if (alt.unitName ?? alt.unit)            setAltUnitName(String(alt.unitName ?? alt.unit));
-      if (alt.addressLine2)                    setAltAddressLine2(String(alt.addressLine2));
-      if (alt.countyRegion ?? alt.county)      setAltCountyRegion(String(alt.countyRegion ?? alt.county));
-      if (alt.contactName)                     setAltContactName(String(alt.contactName));
-      if (alt.contactPhone)                    setAltContactPhone(String(alt.contactPhone));
-      if (alt.contactEmail)                    setAltContactEmail(String(alt.contactEmail));
-      if (alt.navigationInstructions ?? alt.navNotes) setAltNavigationInstructions(String(alt.navigationInstructions ?? alt.navNotes));
-      if (alt.instructions ?? alt.driverNotes) setAltInstructions(String(alt.instructions ?? alt.driverNotes));
-      if (alt.savedLocationId)                 setAltSavedLocationId(Number(alt.savedLocationId));
-    }
-
-    // ── Stops — restore all fields, clear per-run variables ────────────────
     const ds = Array.isArray(t.defaultStops) ? t.defaultStops : [];
     if (ds.length > 0) {
       setStops(ds.map((s: Record<string, unknown>) => ({
@@ -291,22 +411,6 @@ export default function CreateJobPage() {
         country:         (s.country as string) || "United Kingdom",
         lat:             s.lat != null ? String(s.lat) : "",
         lng:             s.lng != null ? String(s.lng) : "",
-        unitName:        (s.unitName as string) || (s.unitBuilding as string) || "",
-        addressLine2:    (s.addressLine2 as string) || "",
-        countyRegion:    (s.countyRegion as string) || "",
-        contactName:     (s.contactName as string) || "",
-        contactPhone:    (s.contactPhone as string) || "",
-        contactEmail:    (s.contactEmail as string) || "",
-        instructions:    (s.instructions as string) || (s.driverNotes as string) || "",
-        navigationInstructions: (s.navigationInstructions as string) || "",
-        openingHours:    (s.openingHours as string) || "",
-        locationType:    (s.locationType as string) || "",
-        internalNotes:   (s.internalNotes as string) || "",
-        numPallets:      s.numPallets != null ? String(s.numPallets) : "",
-        earliestArrival: (s.earliestArrival as string) || "",
-        unloadingTime:   (s.unloadingTime as string) || "",
-        bookingRequired: (s.bookingRequired as boolean) ?? false,
-        // Per-run variables reset to blank
         date:            today(),
         timeType:        "anytime" as const,
         exactTime:       "",
@@ -318,245 +422,15 @@ export default function CreateJobPage() {
     }
 
     setTplQuery(t.name);
-    // Expand all sections so user sees what was loaded
-    setSec1Collapsed(false);
-    setSec2Collapsed(false);
-    setSec3Collapsed(false);
-    setSec4Collapsed(false);
-    setSec4bCollapsed(false);
-    setSec5Collapsed(false);
-    setSec6Collapsed(false);
+    setS1(false);
+    setS2(false);
+    setS3(false);
+    setS4(false);
+    setS5(false);
+    setS6(false);
   }
 
-  // ── Section collapse state ───────────────────────────────────────────────
-  const [sec1Collapsed,  setSec1Collapsed]  = useState(true);
-  const [sec2Collapsed,  setSec2Collapsed]  = useState(true);
-  const [sec3Collapsed,  setSec3Collapsed]  = useState(true);
-  const [sec4Collapsed,  setSec4Collapsed]  = useState(true);
-  const [sec4bCollapsed, setSec4bCollapsed] = useState(true);
-
-  // ── Section 01 — Job Basics ──────────────────────────────────────────────
-  const [showBasicsOpts,      setShowBasicsOpts]      = useState(false);
-  const [customerName,        setCustomerName]        = useState("");
-  const [customerId,          setCustomerId]          = useState<number | null>(null);
-  const [plannedDate,         setPlannedDate]         = useState(today());
-  const [serviceType,         setServiceType]         = useState("");
-  const [jobType,             setJobType]             = useState("");
-  const [jobTitle,            setJobTitle]            = useState("");
-  const [referenceNumber,     setReferenceNumber]     = useState("");
-  const [customerRef,         setCustomerRef]         = useState("");
-  const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
-  const [priority,            setPriority]            = useState("normal");
-
-  // ── Section 02 — Customer Details ───────────────────────────────────────
-  const [showCustOpts,    setShowCustOpts]    = useState(false);
-  const [contactName,     setContactName]     = useState("");
-  const [contactPhone,    setContactPhone]    = useState("");
-  const [contactEmail,    setContactEmail]    = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
-  const [billingNotes,    setBillingNotes]    = useState("");
-  const [customerInstructions,  setCustomerInstructions]  = useState("");
-  const [custRefRequired,   setCustRefRequired]   = useState(false);
-  const [poRequired,        setPoRequired]        = useState(false);
-
-  function handleCustomerChange(name: string, id: number | null, customer?: Customer) {
-    setCustomerName(name);
-    setCustomerId(id);
-    if (customer) {
-      setContactName(customer.contactName   || "");
-      setContactPhone(customer.contactPhone || "");
-      setContactEmail(customer.contactEmail || "");
-    }
-  }
-
-  // ── Section 03 — Stops ───────────────────────────────────────────────────
-  const [stops, setStops] = useState<StopState[]>([makeStop()]);
-
-  function updateStop(id: string, patch: Partial<StopState>) {
-    setStops(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
-  }
-  function addStop() { setStops(prev => [...prev, makeStop()]); }
-  function removeStop(id: string) { setStops(prev => prev.filter(s => s.id !== id)); }
-
-  // ── Section 04 — Load Details ────────────────────────────────────────────
-  const [showLoadOpts,     setShowLoadOpts]     = useState(false);
-  const [goodsType,        setGoodsType]        = useState("");
-  const [canSplitShipment, setCanSplitShipment] = useState("must_stay_together");
-  const [securingRequirements, setSecuringRequirements] = useState<string[]>([]);
-  const [specialRequirements,  setSpecialRequirements]  = useState<string[]>([]);
-  const [adrUnNumber,      setAdrUnNumber]      = useState("");
-  const [adrPackingGroup,  setAdrPackingGroup]  = useState("");
-  const [oversizedDimensions, setOversizedDimensions] = useState("");
-  const [materialType,     setMaterialType]     = useState("");
-  const [quantity,         setQuantity]         = useState("");
-  const [unit,             setUnit]             = useState("");
-  const [unitOther,     setUnitOther]     = useState("");
-  const [weight,           setWeight]           = useState("");
-  const [requirePOD,      setRequirePOD]      = useState(true);
-  // Optional — physical
-  const [volume,           setVolume]           = useState("");
-  const [dimensions,       setDimensions]       = useState("");
-  // Optional — conditions
-  const [hazardous,        setHazardous]        = useState(false);
-  const [adrClass,         setAdrClass]         = useState("");
-  const [tempControlled,   setTempControlled]   = useState(false);
-  const [tempRange,        setTempRange]        = useState("");
-  const [fragile,          setFragile]          = useState(false);
-  const [stackable,        setStackable]        = useState(false);
-  // Optional — equipment
-  const [forkliftRequired,      setForkliftRequired]      = useState(false);
-  const [tailLiftRequired,      setTailLiftRequired]      = useState(false);
-  const [craneRequired,         setCraneRequired]         = useState(false);
-  // Optional — handling methods
-  const [loadingMethod,    setLoadingMethod]    = useState("");
-  const [unloadingMethod,  setUnloadingMethod]  = useState("");
-  // Optional — extra
-  const [loadNotes,        setLoadNotes]        = useState("");
-  const [photosRequired,   setPhotosRequired]   = useState(false);
-  const [weighbridgeRequired,   setWeighbridgeRequired]   = useState(false);
-
-  // ── Section 05 — Vehicle Requirements ───────────────────────────────────
-  const [sec5Collapsed,    setSec5Collapsed]    = useState(true);
-  const [reqBodyCategory,  setReqBodyCategory]  = useState<BodyCategory | "">("");
-  const [reqGvwMin,        setReqGvwMin]        = useState<GvwClass | "">("");
-  const [reqBodyType,      setReqBodyType]      = useState<BodyType | "">("");
-  const [reqEquipment,     setReqEquipment]     = useState<OnboardEquipment[]>([]);
-  const [reqLicenceClass,  setReqLicenceClass]  = useState<DriverLicenceClass | "">("");
-  const [reqEndorsements,  setReqEndorsements]  = useState<DriverEndorsement[]>([]);
-  const [trailerLength,    setTrailerLength]    = useState("");
-  const [vehicleClass,      setVehicleClass]      = useState("");
-  const [vehicleClassOther, setVehicleClassOther] = useState("");
-  const [assignedTruck,    setAssignedTruck]    = useState("");
-  const [assignedTrailer,  setAssignedTrailer]  = useState("");
-  // Optional
-  const [showVehicleOpts,  setShowVehicleOpts]  = useState(false);
-  const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
-  const [heightRestriction,setHeightRestriction]= useState("");
-  const [weightRestriction,setWeightRestriction]= useState("");
-  const [lengthRestriction,setLengthRestriction]= useState("");
-  const [vehicleAccessNotes,      setVehicleAccessNotes]      = useState("");
-
-  // ── Section 06 — Return Instructions ────────────────────────────────────
-  const [sec6Collapsed,      setSec6Collapsed]      = useState(true);
-
-  // ── Section 07 — Planner Details ────────────────────────────────────────
-  const [sec7Collapsed,      setSec7Collapsed]      = useState(true);
-  const [agreedRate,         setAgreedRate]         = useState("");
-  const [plannerNotes,       setPlannerNotes]       = useState("");
-
-  // ── Driver instructions card ─────────────────────────────────────────────
-  const [showDriverNotes,    setShowDriverNotes]    = useState(false);
-  const [driverNoteChips,    setDriverNoteChips]    = useState<string[]>([]);
-  const [driverVisibleNotes, setDriverVisibleNotes] = useState("");
-  const [safetyInstructions, setSafetyInstructions] = useState("");
-
-  // ── Rejection & return policy card ──────────────────────────────────────
-  const [showRejectionPolicy,           setShowRejectionPolicy]           = useState(false);
-  const [rejectionAction,               setRejectionAction]               = useState("");
-  const [alternativeReturnAddress,      setAlternativeReturnAddress]      = useState("");
-  const [alternativeReturnPostcode,     setAlternativeReturnPostcode]     = useState("");
-  const [alternativeReturnContactName,  setAlternativeReturnContactName]  = useState("");
-  const [alternativeReturnContactPhone, setAlternativeReturnContactPhone] = useState("");
-  const [approvalContactName,           setApprovalContactName]           = useState("");
-  const [approvalContactPhone,          setApprovalContactPhone]          = useState("");
-  const [photosRequiredOnRejection,     setPhotosRequiredOnRejection]     = useState(false);
-  const [rejectionSignatureRequired,    setRejectionSignatureRequired]    = useState(false);
-  const [rejectionNotes,                setRejectionNotes]                = useState("");
-  const [failureAction,      setFailureAction]      = useState("call_assistance");
-  // call_assistance
-  const [assistancePhone,    setAssistancePhone]    = useState("");
-  const [assistanceNote,     setAssistanceNote]     = useState("");
-  // finish_then_return
-  const [returnDestination,  setReturnDestination]  = useState("");
-  // alternative address (shared by deliver_alternative and finish_then_return→alternative)
-  const [altSavedLocationId, setAltSavedLocationId] = useState<number | null>(null);
-  const [altLocationQuery,   setAltLocationQuery]   = useState("");
-  const [altSiteName,     setAltSiteName]     = useState("");
-  const [altStreet,          setAltStreet]          = useState("");
-  const [altTown,            setAltTown]            = useState("");
-  const [altPostcode,        setAltPostcode]        = useState("");
-  const [altCountry,         setAltCountry]         = useState("United Kingdom");
-  const [altLat,             setAltLat]             = useState("");
-  const [altLng,             setAltLng]             = useState("");
-  const [altUnitName,            setAltUnitName]            = useState("");
-  const [altAddressLine2,    setAltAddressLine2]    = useState("");
-  const [altCountyRegion,          setAltCountyRegion]          = useState("");
-  const [altContactName,     setAltContactName]     = useState("");
-  const [altContactPhone,    setAltContactPhone]    = useState("");
-  const [altContactEmail,    setAltContactEmail]    = useState("");
-  const [altNavigationInstructions,        setAltNavigationInstructions]        = useState("");
-  const [altInstructions,     setAltInstructions]     = useState("");
-  const [showAltOpts,        setShowAltOpts]        = useState(false);
-
-  const needsAltAddress =
-    failureAction === "deliver_alternative" ||
-    (failureAction === "finish_then_return" && returnDestination === "alternative");
-
-  useEffect(() => {
-    if (!reqBodyCategory) return;
-    const candidates = licencesThatCanDrive(reqBodyCategory);
-    if (candidates.length > 0 && !reqLicenceClass) {
-      setReqLicenceClass(candidates[0].value);
-    }
-  }, [reqBodyCategory, reqGvwMin, reqLicenceClass]);
-
-  useEffect(() => {
-    if (!reqBodyCategory) return;
-    const allowed = gvwForCategory(reqBodyCategory).map(g => g.value);
-    if (reqGvwMin && !allowed.includes(reqGvwMin)) setReqGvwMin("");
-    const bodyTypes = BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? [];
-    if (reqBodyType && !bodyTypes.includes(reqBodyType)) setReqBodyType("");
-  }, [reqBodyCategory, reqGvwMin, reqBodyType]);
-
-  // ── Quality / missing fields ─────────────────────────────────────────────
-  const basicsComplete   = !!(customerName.trim() && plannedDate && serviceType && jobType);
-  const customerComplete = !!(contactName.trim() && contactPhone.trim());
-  const stopsComplete    = stops.length > 0 && stops.every(stopComplete);
-  const loadComplete     = !!(materialType.trim() && quantity.trim() && unit && weight.trim());
-  const selectedBodyTypes = reqBodyCategory ? (BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []) : [];
-  const visibleBodyTypeOptions = selectedBodyTypes.length > 0
-    ? BODY_TYPE_OPTS.filter(([value]) => selectedBodyTypes.includes(value as BodyType))
-    : BODY_TYPE_OPTS;
-  const trailerBodyTypeOpts = BODY_TYPE_OPTS.filter(([value]) =>
-    (TRAILER_BODY_TYPE_VALUES as readonly string[]).includes(value),
-  );
-  const visibleGvwOptions = reqBodyCategory
-    ? gvwForCategory(reqBodyCategory).map(g => [g.value, g.label] as [string, string])
-    : GVW_CLASS_OPTS;
-  const trailerRequired = reqBodyCategory ? bodyCategoryNeedsTrailer(reqBodyCategory) : false;
-  const bodyTypeRequired = !!reqBodyCategory && selectedBodyTypes.length > 0 && !trailerRequired;
-  const visibleEquipmentOpts = equipmentForBodyType(reqBodyType, reqBodyCategory)
-    .map(e => [e.value, e.label] as [string, string]);
-  const vehicleComplete  =
-    !!reqBodyCategory &&
-    (!trailerRequired || trailerTypesAllowed.length > 0) &&
-    (!bodyTypeRequired || !!reqBodyType);
-
-  const altAddressComplete = !needsAltAddress || !!(
-    altSiteName.trim() && altStreet.trim() && altTown.trim() && altPostcode.trim() && altCountry.trim()
-  );
-  const returnComplete =
-    failureAction !== "finish_then_return" || (
-      !!returnDestination && altAddressComplete
-    );
-  const assistanceComplete =
-    failureAction !== "call_assistance" || !!assistancePhone.trim();
-  const sec6Complete = !!failureAction && assistanceComplete && returnComplete && altAddressComplete;
-
-  // ── "Started" flags (for status dots) ───────────────────────────────────
-  const sec1Started = !!(customerName || (serviceType || jobType));
-  const sec2Started = !!(contactName || contactPhone);
-  const sec3Started = stops.some(s => s.siteName || s.street);
-  const sec4Started = !!(materialType || quantity || weight);
-  const sec5Started = !!(reqBodyCategory || reqGvwMin || reqBodyType || reqEquipment.length || reqLicenceClass || trailerTypesAllowed.length);
-  const sec6Started = failureAction !== "call_assistance" || !!assistancePhone;
-  const sec7Started = !!(assignedDriverId || assignedTruck || assignedTrailer || agreedRate || plannerNotes);
-  const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started;
-
-  // Auto-collapse removed — sections stay open until the user manually closes them.
-  // The section headers already show a green checkmark when complete.
-
-  // ── Edit mode: load job and populate all state ───────────────────────────
+  // ── Edit mode: load job and populate all state ───────────────────────────────
   useEffect(() => {
     if (!editJobId) return;
     setLoadingJob(true);
@@ -564,101 +438,110 @@ export default function CreateJobPage() {
       setCustomerName(job.customerName || job.customer?.name || "");
       setCustomerId(job.customerId ?? null);
       setPlannedDate(job.plannedDate ? job.plannedDate.slice(0, 10) : today());
-      setServiceType(job.serviceType || "");
-      setJobType(job.jobType || "");
-      setJobTitle(job.jobTitle || "");
       setJobReference(job.jobReference ?? null);
-      setAssignedDriverId(job.assignedDriverId ?? null);
-      setReferenceNumber(job.referenceNumber || "");
-      setCustomerRef(job.customerRef || "");
-      setPurchaseOrderNumber(job.purchaseOrderNumber || "");
-      setPriority(job.priority || "normal");
       setContactName(job.bookingContactName || "");
       setContactPhone(job.bookingContactPhone || "");
       setContactEmail(job.bookingContactEmail || "");
-      setCustomerInstructions(job.customerInstructions || "");
+      setCustomerRef(job.customerRef || "");
+      setPurchaseOrderNumber(job.purchaseOrderNumber || "");
+
       if (job.stops && job.stops.length > 0) {
         setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobPartToStopState));
       }
+
       const ld = job.loadDetails;
-      setMaterialType(ld?.materialType || job.materialType || "");
+      setGoodsDesc(ld?.materialType || job.materialType || "");
       setQuantity(ld?.quantity != null ? String(ld.quantity) : job.quantityExpected || "");
-      setUnit(ld?.unit || job.quantityUnit || "");
-      setWeight(ld?.weight != null ? String(ld.weight) : "");
-      setVolume(ld?.volume != null ? String(ld.volume) : "");
-      setDimensions(ld?.dimensions || "");
-      setAdrClass(ld?.hazardClass || "");
-      setTempControlled(ld?.tempControlled ?? false);
-      setTempRange(ld?.tempRange || "");
-      setFragile(ld?.fragile ?? false);
-      setStackable(ld?.stackable ?? false);
-      setForkliftRequired(ld?.forkliftRequired ?? false);
-      setTailLiftRequired(ld?.tailLiftRequired ?? false);
-      setCraneRequired(ld?.craneRequired ?? false);
-      setLoadingMethod(ld?.loadingMethod || "");
-      setUnloadingMethod(ld?.unloadingMethod || "");
+      setUnit(ld?.unit || job.quantityUnit || "pallets");
+      setEstWeight(ld?.weight != null ? String(ld.weight) : "");
       setLoadNotes(ld?.notes || "");
-      setPhotosRequired(ld?.photosRequired ?? false);
-      setWeighbridgeRequired(ld?.weighbridgeRequired ?? false);
-      setRequirePOD(job.requirePOD ?? true);
-      const vClass = job.vehicleClassRequired || job.vehicleClass || "";
-      const legacyReq = legacyVehicleToRequirement(vClass);
-      setReqBodyCategory((job.reqBodyCategory || legacyReq.bodyCategory || "") as BodyCategory | "");
-      setReqGvwMin((job.reqGvwMin || job.minVehicleSize || "") as GvwClass | "");
-      setReqBodyType((job.reqBodyType || legacyReq.bodyType || "") as BodyType | "");
-      setReqEquipment(Array.isArray(job.reqEquipment)
-        ? job.reqEquipment as OnboardEquipment[]
-        : legacyReq.equipment as OnboardEquipment[]);
-      setReqLicenceClass((job.reqLicenceClass || legacyReq.licenceClass || "") as DriverLicenceClass | "");
-      setReqEndorsements(Array.isArray(job.driverQualificationsReq) ? job.driverQualificationsReq as DriverEndorsement[] : []);
-      if (vClass.startsWith("other:")) {
-        setVehicleClass("other");
-        setVehicleClassOther(vClass.replace("other:", "").trim());
-      } else {
-        setVehicleClass(vClass);
+      if (ld?.goodsType) setGoodsType(ld.goodsType);
+      if (Array.isArray(ld?.securingRequirements)) setSecuringRequirements(ld.securingRequirements as string[]);
+      if (Array.isArray(ld?.specialRequirements))  setSpecialItems(ld.specialRequirements as string[]);
+
+      // Restore loadData blob (type-specific sub-fields)
+      const ldb = (job as any).loadData as Record<string, unknown> | null;
+      if (ldb) {
+        if (ldb.palletCount)                setPalletCount(String(ldb.palletCount));
+        if (ldb.palletType)                 setPalletType(String(ldb.palletType));
+        if (ldb.palletTypeOther)            setPalletTypeOther(String(ldb.palletTypeOther));
+        if (ldb.stackable  !== undefined)   setStackable(Boolean(ldb.stackable));
+        if (ldb.cageCount)                  setCageCount(String(ldb.cageCount));
+        if (ldb.cageFolded !== undefined)   setCageFolded(Boolean(ldb.cageFolded));
+        if (ldb.dimensions)                 setDimensions(String(ldb.dimensions));
+        if (ldb.machineryPieceWeight)       setMachineryPieceWeight(String(ldb.machineryPieceWeight));
+        if (ldb.liftingPoints !== undefined) setMachineryLiftingPoints(Boolean(ldb.liftingPoints));
+        if (ldb.skidMounted !== undefined)  setMachinerySkidMounted(Boolean(ldb.skidMounted));
+        if (ldb.craneRequired !== undefined) setCraneRequired(Boolean(ldb.craneRequired));
+        if (ldb.buildingMaterialType)       setBuildingMaterialType(String(ldb.buildingMaterialType));
+        if (ldb.buildingPalletised !== undefined) setBuildingMaterialPalletised(Boolean(ldb.buildingPalletised));
+        if (ldb.longestItem)               setBuildingMaterialLongestItem(String(ldb.longestItem));
+        if (ldb.weatherSensitive !== undefined) setBuildingMaterialWeatherSensitive(Boolean(ldb.weatherSensitive));
+        if (ldb.chilledFrozenAmbient)      setTempType(String(ldb.chilledFrozenAmbient));
+        if (ldb.temperatureRange)          setTempRange(String(ldb.temperatureRange));
+        if (ldb.foodPreCooled !== undefined) setFoodPreCooled(Boolean(ldb.foodPreCooled));
+        if (ldb.tippingRequired !== undefined) setTippingReq(Boolean(ldb.tippingRequired));
+        if (ldb.wetDry)                    setWetDry(String(ldb.wetDry));
+        if (ldb.liquidProductType)         setLiquidProductType(String(ldb.liquidProductType));
+        if (ldb.liquidVolumeLitres)        setLiquidVolumeLitres(String(ldb.liquidVolumeLitres));
+        if (ldb.liquidFoodGrade !== undefined) setLiquidFoodGrade(Boolean(ldb.liquidFoodGrade));
+        if (ldb.steelPieceCount)           setSteelPieceCount(String(ldb.steelPieceCount));
+        if (ldb.steelWidth)               setSteelWidth(String(ldb.steelWidth));
+        if (ldb.vehicleCount)             setVehicleCount(String(ldb.vehicleCount));
+        if (ldb.vehicleMakeModel)         setVehicleMakeModel(String(ldb.vehicleMakeModel));
+        if (ldb.vehicleKeysWithVehicle !== undefined) setVehicleKeysWithVehicle(Boolean(ldb.vehicleKeysWithVehicle));
+        if (ldb.vehicleDriveable !== undefined) setVehicleDriveable(Boolean(ldb.vehicleDriveable));
+        if (ldb.containerSize)            setContainerSize(String(ldb.containerSize));
+        if (ldb.containerSizeOther)       setContainerSizeOther(String(ldb.containerSizeOther));
+        if (ldb.loadedOrEmpty)            setLoadedOrEmpty(String(ldb.loadedOrEmpty));
+        if (ldb.containerNum)             setContainerNum(String(ldb.containerNum));
+        if (ldb.generalPackagingType)     setGeneralPackagingType(String(ldb.generalPackagingType));
+        if (ldb.generalPieceCount)        setGeneralPieceCount(String(ldb.generalPieceCount));
+        if (ldb.loadHeight)               setLoadHeight(String(ldb.loadHeight));
+        if (ldb.canSplitShipment)         setCanSplitShipment(String(ldb.canSplitShipment));
       }
-      setTrailerTypesAllowed(Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []);
-      setAssignedTruck(job.assignedTruck || "");
-      setAssignedTrailer(job.assignedTrailer || "");
-      setHeightRestriction(job.heightRestriction || "");
-      setWeightRestriction(job.weightRestriction || "");
-      setLengthRestriction(job.lengthRestriction || "");
-      setVehicleAccessNotes(job.vehicleAccessNotes || "");
-      setFailureAction(job.failureAction || "call_assistance");
-      setAssistancePhone(job.assistancePhone || "");
-      setAssistanceNote(job.assistanceNote || "");
-      setReturnDestination(job.returnDestination || "");
-      // Driver notes
-      const nd = (job as any).notesData as { driverNoteChips?: string[]; driverVisibleNotes?: string; safetyInstructions?: string } | null;
-      if (nd) {
-        if (nd.driverNoteChips?.length)  setDriverNoteChips(nd.driverNoteChips);
-        if (nd.driverVisibleNotes)       setDriverVisibleNotes(nd.driverVisibleNotes);
-        if (nd.safetyInstructions)       setSafetyInstructions(nd.safetyInstructions);
-        if (nd.driverNoteChips?.length || nd.driverVisibleNotes || nd.safetyInstructions) setShowDriverNotes(true);
+
+      // Restore billingData blob
+      const bdb = (job as any).billingData as Record<string, unknown> | null;
+      if (bdb) {
+        if (bdb.declaredGoodsValue)  setDeclaredValue(String(bdb.declaredGoodsValue));
+        if (bdb.billingReference)    setBillingRef(String(bdb.billingReference));
+        if (bdb.vatRegistered !== undefined) setVatRegistered(Boolean(bdb.vatRegistered));
+        if (bdb.vatNumber)           setVatNumber(String(bdb.vatNumber));
       }
-      // Rejection policy
-      const ep = (job as any).exceptionPolicyData as { rejectionAction?: string; alternativeReturnAddress?: string; alternativeReturnPostcode?: string; alternativeReturnContactName?: string; alternativeReturnContactPhone?: string; approvalContactName?: string; approvalContactPhone?: string; photosRequiredOnRejection?: boolean; rejectionSignatureRequired?: boolean; rejectionNotes?: string } | null;
+      if (job.purchaseOrderNumber) setPurchaseOrderNumber(job.purchaseOrderNumber);
+
+      // Transport requirements
+      if (job.reqBodyCategory) setReqBodyCategory(job.reqBodyCategory);
+      if (Array.isArray(job.trailerTypesAllowed)) setTrailerTypesAllowed(job.trailerTypesAllowed as string[]);
+      if (Array.isArray((job as any).reqBodyTypes)) setReqBodyTypes((job as any).reqBodyTypes as string[]);
+
+      // Rejection / exception policy
+      const ep = (job as any).exceptionPolicyData as Record<string, unknown> | null;
       if (ep?.rejectionAction) {
-        setRejectionAction(ep.rejectionAction);
-        setAlternativeReturnAddress(ep.alternativeReturnAddress || "");
-        setAlternativeReturnPostcode(ep.alternativeReturnPostcode || "");
-        setAlternativeReturnContactName(ep.alternativeReturnContactName || "");
-        setAlternativeReturnContactPhone(ep.alternativeReturnContactPhone || "");
-        setApprovalContactName(ep.approvalContactName || "");
-        setApprovalContactPhone(ep.approvalContactPhone || "");
-        setPhotosRequiredOnRejection(ep.photosRequiredOnRejection ?? false);
-        setRejectionSignatureRequired(ep.rejectionSignatureRequired ?? false);
-        setRejectionNotes(ep.rejectionNotes || "");
-        setShowRejectionPolicy(true);
+        setRejectionAction(ep.rejectionAction as string);
+        setAltReturnSiteName((ep.alternativeReturnSiteName as string) || "");
+        setAltReturnAddress((ep.alternativeReturnAddress as string) || "");
+        setAltReturnAddressLine2((ep.alternativeReturnAddressLine2 as string) || "");
+        setAltReturnTown((ep.alternativeReturnTown as string) || "");
+        setAltReturnCounty((ep.alternativeReturnCounty as string) || "");
+        setAltReturnPostcode((ep.alternativeReturnPostcode as string) || "");
+        setAltReturnCountry((ep.alternativeReturnCountry as string) || "GB");
+        setAltReturnLat((ep.alternativeReturnLat as string) || "");
+        setAltReturnLng((ep.alternativeReturnLng as string) || "");
+        setAltReturnNavInstructions((ep.alternativeReturnNavigationInstructions as string) || "");
+        setAltReturnContactName((ep.alternativeReturnContactName as string) || "");
+        setAltReturnContactPhone((ep.alternativeReturnContactPhone as string) || "");
+        setApprovalContactName((ep.approvalContactName as string) || "");
+        setApprovalContactPhone((ep.approvalContactPhone as string) || "");
+        setPhotosOnRejection((ep.photosRequiredOnRejection as boolean) ?? false);
+        setSignatureOnRejection((ep.rejectionSignatureRequired as boolean) ?? false);
+        setRejectionNotes((ep.rejectionNotes as string) || "");
+        setShowExceptionPolicy(true);
       }
-      // Expand all sections so the user sees filled data
-      setSec1Collapsed(false);
-      setSec2Collapsed(false);
-      setSec3Collapsed(false);
-      setSec4Collapsed(false);
-      setSec4bCollapsed(false);
-      setSec5Collapsed(false);
-      setSec6Collapsed(false);
+
+      setS1(false); setS2(false); setS3(false);
+      setS4(false); setS5(false); setS6(false);
     }).catch(() => {
       setError("Could not load job for editing.");
     }).finally(() => {
@@ -667,18 +550,7 @@ export default function CreateJobPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editJobId]);
 
-  // ── Fetch driver day schedule when driver or date changes ───────────────────
-  useEffect(() => {
-    setDriverSchedule(null);
-    if (!assignedDriverId || !plannedDate) return;
-    setScheduleLoading(true);
-    driversApi.getSchedule(assignedDriverId, plannedDate)
-      .then(r => setDriverSchedule(r))
-      .catch(() => setDriverSchedule(null))
-      .finally(() => setScheduleLoading(false));
-  }, [assignedDriverId, plannedDate]);
-
-  // ── Template-edit mode: load template and populate all state ────────────────
+  // ── Template-edit mode ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!editTemplateId) return;
     setLoadingJob(true);
@@ -686,7 +558,6 @@ export default function CreateJobPage() {
       const t = r.data.find((t: JobTemplate) => t.id === editTemplateId);
       if (!t) { setError("Template not found."); return; }
       applyTemplate(t);
-      // Restore template name for editing
       setTemplateName(t.name);
     }).catch(() => {
       setError("Could not load template for editing.");
@@ -696,322 +567,210 @@ export default function CreateJobPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editTemplateId]);
 
-  // ── Save template (template-edit mode) ───────────────────────────────────
-  async function handleSaveTemplate() {
-    if (!templateName.trim()) {
-      setError("Enter a template name");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    setSaving("ready");
-    setError("");
-    try {
-      const [params] = makePayloadParams("ready_to_plan");
-      const stopData = params.stops.map(s => ({
-        type:            s.type,
-        savedLocationId: s.savedLocationId,
-        locationQuery:   s.locationQuery,
-        siteName:        s.siteName,
-        street:          s.street,
-        town:            s.town,
-        postcode:        s.postcode,
-        country:         s.country,
-        lat:             s.lat,
-        lng:             s.lng,
-        unitName:        s.unitName,
-        addressLine2:    s.addressLine2,
-        countyRegion:    s.countyRegion,
-        contactName:     s.contactName,
-        contactPhone:    s.contactPhone,
-        contactEmail:    s.contactEmail,
-        instructions:    s.instructions,
-        navigationInstructions: s.navigationInstructions,
-        openingHours:    s.openingHours,
-        locationType:    s.locationType,
-        internalNotes:   s.internalNotes,
-        numPallets:      s.numPallets,
-        earliestArrival: s.earliestArrival,
-        unloadingTime:   s.unloadingTime,
-        bookingRequired: s.bookingRequired,
-        // Per-run variables NOT stored
-      }));
-      const defaultJobData = {
-        customerId:       params.customerId,
-        customerName:     params.customerName,
-        serviceType:      params.serviceType,
-        jobType:          params.jobType,
-        jobTitle:         params.jobTitle,
-        priority:         params.priority,
-        contactName:      params.contactName,
-        contactPhone:     params.contactPhone,
-        contactEmail:     params.contactEmail,
-        billingNotes:     params.billingNotes,
-        customerInstructions: params.customerInstructions,
-        custRefRequired:  params.custRefRequired,
-        poRequired:       params.poRequired,
-        materialType:     params.materialType,
-        quantity:         params.quantity,
-        unit:             params.unit,
-        unitOther:        params.unitOther,
-        weight:           params.weight,
-        volume:           params.volume,
-        dimensions:       params.dimensions,
-        adrClass:         params.adrClass,
-        fragile:          params.fragile,
-        stackable:        params.stackable,
-        tempControlled:   params.tempControlled,
-        tempRange:        params.tempRange,
-        forkliftRequired:      params.forkliftRequired,
-        tailLiftRequired:      params.tailLiftRequired,
-        craneRequired:         params.craneRequired,
-        loadingMethod:    params.loadingMethod,
-        unloadingMethod:  params.unloadingMethod,
-        loadNotes:        params.loadNotes,
-        photosRequired:   params.photosRequired,
-        weighbridgeRequired:   params.weighbridgeRequired,
-        requirePOD:      params.requirePOD,
-        vehicleClass:      params.vehicleClass,
-        vehicleClassOther: params.vehicleClassOther,
-        reqBodyCategory:  params.reqBodyCategory,
-        reqGvwMin:        params.reqGvwMin,
-        reqBodyType:      params.reqBodyType,
-        reqEquipment:     params.reqEquipment,
-        reqLicenceClass:  params.reqLicenceClass,
-        reqEndorsements:  params.reqEndorsements,
-        trailerLength:    trailerLength,
-        trailerTypesAllowed: params.trailerTypesAllowed,
-        heightRestriction: params.heightRestriction,
-        weightRestriction: params.weightRestriction,
-        lengthRestriction: params.lengthRestriction,
-        vehicleAccessNotes:      params.vehicleAccessNotes,
-        assignedTruck:    params.assignedTruck,
-        assignedTrailer:  params.assignedTrailer,
-        failureAction:    params.failureAction,
-        assistancePhone:  params.assistancePhone,
-        assistanceNote:   params.assistanceNote,
-        returnDestination: params.returnDestination,
-        altAddress:       params.needsAltAddress ? {
-          savedLocationId:      params.altSavedLocationId,
-          siteName:             params.altSiteName,
-          street:               params.altStreet,
-          town:                 params.altTown,
-          postcode:             params.altPostcode,
-          country:              params.altCountry,
-          lat:                  params.altLat,
-          lng:                  params.altLng,
-          unitName:             params.altUnitName,
-          addressLine2:         params.altAddressLine2,
-          countyRegion:         params.altCountyRegion,
-          contactName:          params.altContactName,
-          contactPhone:         params.altContactPhone,
-          contactEmail:         params.altContactEmail,
-          navigationInstructions: params.altNavigationInstructions,
-          instructions:         params.altInstructions,
-        } : null,
-      };
-      const patchBody = {
-        name:               templateName.trim(),
-        defaultMaterialType: params.materialType,
-        defaultStops:       stopData,
-        defaultJobData,
-      };
-      if (editTemplateId) {
-        await jobsApi.updateTemplate(editTemplateId, patchBody);
-      } else {
-        await jobsApi.createTemplate(patchBody);
-      }
-      navigate("/app/templates");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save template");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } finally {
-      setSaving(null);
-    }
-  }
+  // ── Build payload ────────────────────────────────────────────────────────────
+  function buildPayload(saveMode: "draft" | "ready_to_plan"): Record<string, unknown> {
+    const effectiveUnit = unit === "other" ? otherUnit : unit;
 
-  // ── Auto-save indicator (localStorage snapshot every 30 s) ────────────────
-  useEffect(() => {
-    const started = customerName || serviceType || stops[0].siteName || materialType;
-    if (!started) return;
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem("lb_job_draft_ts", new Date().toISOString());
-      } catch {}
-      setLastAutoSaved(new Date());
-    }, 30_000);
-    return () => clearTimeout(t);
-  });
-
-  const MISSING = [
-    !customerName.trim()   && "Customer",
-    !plannedDate           && "Planned date",
-    !serviceType           && "Service type",
-    !jobType               && "Job type",
-    !contactName.trim()    && "Contact name",
-    !contactPhone.trim()   && "Contact phone",
-    !stopsComplete         && "Stop addresses / timing",
-    !materialType.trim()   && "Goods description",
-    !quantity.trim()       && "Total quantity",
-    !unit                  && "Unit",
-    !weight.trim()         && "Total weight",
-    !vehicleComplete       && "Vehicle requirements",
-    !sec6Complete          && "Return / failure instruction",
-  ].filter(Boolean) as string[];
-
-  // ── Score calculation ────────────────────────────────────────────────────
-  // Required fields scale to 65 pts; optional fields scale to 35 pts.
-  // Points within each group are relative weights — totals are normalised.
-  const SCORE_REQ = [
-    { pts: 8,  ok: !!customerName.trim() },
-    { pts: 5,  ok: !!plannedDate },
-    { pts: 7,  ok: !!serviceType },
-    { pts: 7,  ok: !!jobType },
-    { pts: 6,  ok: !!contactName.trim() },
-    { pts: 6,  ok: !!contactPhone.trim() },
-    { pts: 12, ok: stopsComplete },
-    { pts: 6,  ok: !!materialType.trim() },
-    { pts: 4,  ok: !!(quantity.trim() && unit) },
-    { pts: 4,  ok: !!weight.trim() },
-    { pts: 7,  ok: vehicleComplete },
-    { pts: 5,  ok: sec6Complete },
-  ];
-  const SCORE_OPT: { label: string; pts: number; ok: boolean }[] = [
-    { label: "Reference number",      pts: 3, ok: !!referenceNumber.trim() },
-    { label: "Customer / PO ref",     pts: 2, ok: !!(customerRef.trim() || purchaseOrderNumber.trim()) },
-    { label: "Contact email",         pts: 2, ok: !!contactEmail.trim() },
-    { label: "Stop contacts",         pts: 4, ok: stops.every(s => !!s.contactName.trim()) },
-    { label: "Booking references",    pts: 2, ok: stops.some(s => s.bookingRequired && !!s.bookingRef.trim()) },
-    { label: "Driver stop notes",     pts: 2, ok: stops.some(s => !!s.instructions.trim()) },
-    { label: "Volume / dimensions",   pts: 2, ok: !!(volume.trim() || dimensions.trim()) },
-    { label: "Equipment required",    pts: 4, ok: reqEquipment.length > 0 },
-    { label: "Driver endorsements",   pts: 4, ok: reqEndorsements.length > 0 },
-    { label: "Trailer types",          pts: 2, ok: !trailerRequired || trailerTypesAllowed.length > 0 },
-    { label: "Vehicle restrictions",  pts: 2, ok: !!(heightRestriction.trim() || weightRestriction.trim() || lengthRestriction.trim()) },
-    { label: "Access notes",          pts: 3, ok: !!vehicleAccessNotes.trim() },
-    { label: "Min vehicle size",      pts: 2, ok: !!reqGvwMin },
-    { label: "Load notes",            pts: 1, ok: !!loadNotes.trim() },
-  ];
-
-  const reqTotal   = SCORE_REQ.reduce((s, x) => s + x.pts, 0);
-  const reqEarned  = SCORE_REQ.filter(x => x.ok).reduce((s, x) => s + x.pts, 0);
-  const optTotal   = SCORE_OPT.reduce((s, x) => s + x.pts, 0);
-  const optEarned  = SCORE_OPT.filter(x => x.ok).reduce((s, x) => s + x.pts, 0);
-  const reqScore   = Math.round((reqEarned / reqTotal) * 65);
-  const optScore   = Math.round((optEarned / optTotal) * 35);
-  const totalScore = reqScore + optScore;
-
-  const scoreColor =
-    totalScore >= 80 ? "text-green-600" :
-    totalScore >= 40 ? "text-amber-600" :
-    totalScore >= 10 ? "text-red-500" : "text-slate-400";
-  const barReqColor  = "bg-slate-600";
-  const barOptColor  = "bg-green-500";
-  const OPT_MISSING  = SCORE_OPT.filter(x => !x.ok).map(x => x.label);
-
-  function makePayloadParams(saveMode: "draft" | "ready_to_plan"): [CreateJobPayload, "draft" | "ready_to_plan"] {
-    const params: CreateJobPayload = {
-      stops,
-      canSplitShipment,
+    const loadData: Record<string, unknown> = {
       goodsType,
-      securingRequirements,
-      specialRequirements,
-      unit,
-      unitOther,
-      materialType,
-      quantity,
-      weight,
-      volume,
-      adrClass,
-      loadNotes,
-      dimensions,
-      fragile,
-      stackable,
-      tempControlled,
-      tempRange,
-      photosRequired,
-      weighbridgeRequired,
-      forkliftRequired,
-      tailLiftRequired,
-      craneRequired,
-      loadingMethod,
-      unloadingMethod,
-      vehicleClass,
-      vehicleClassOther,
-      reqBodyCategory,
-      reqGvwMin,
-      reqBodyType,
-      reqEquipment,
-      reqLicenceClass,
-      reqEndorsements,
-      assignedDriverId,
+      goodsTypeOther:    goodsType === "other" ? goodsTypeOther || undefined : undefined,
+      loadHeight:        loadHeight || undefined,
+      canSplitShipment,
+      // pallets
+      palletCount:       palletCount  ? parseInt(palletCount, 10)  : undefined,
+      palletType:        palletType   || undefined,
+      palletTypeOther:   palletType === "other" ? palletTypeOther || undefined : undefined,
+      stackable:         stackable    || undefined,
+      // roll_cages
+      cageCount:         cageCount    ? parseInt(cageCount, 10)    : undefined,
+      cageFolded:        cageFolded   || undefined,
+      // machinery
+      dimensions:        dimensions   || undefined,
+      machineryPieceWeight: machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
+      liftingPoints:     machineryLiftingPoints  || undefined,
+      skidMounted:       machinerySkidMounted    || undefined,
+      craneRequired:     craneRequired           || undefined,
+      // building_materials
+      buildingMaterialType:       buildingMaterialType       || undefined,
+      buildingPalletised:         buildingMaterialPalletised || undefined,
+      longestItem:                buildingMaterialLongestItem || undefined,
+      weatherSensitive:           buildingMaterialWeatherSensitive || undefined,
+      // food_refrigerated
+      chilledFrozenAmbient:       tempType    || undefined,
+      temperatureRange:           tempRange   || undefined,
+      foodPreCooled:              foodPreCooled || undefined,
+      // bulk_material
+      tippingRequired:            tippingReq  || undefined,
+      wetDry:                     wetDry      || undefined,
+      // liquid_bulk
+      liquidProductType:          liquidProductType || undefined,
+      liquidVolumeLitres:         liquidVolumeLitres ? parseFloat(liquidVolumeLitres) : undefined,
+      liquidFoodGrade:            liquidFoodGrade   || undefined,
+      // steel_long
+      steelPieceCount:            steelPieceCount ? parseInt(steelPieceCount, 10) : undefined,
+      steelWidth:                 steelWidth || undefined,
+      // vehicles
+      vehicleCount:               vehicleCount ? parseInt(vehicleCount, 10) : undefined,
+      vehicleMakeModel:           vehicleMakeModel || undefined,
+      vehicleKeysWithVehicle:     vehicleKeysWithVehicle || undefined,
+      vehicleDriveable:           vehicleDriveable || undefined,
+      // containers
+      containerSize:              containerSize     || undefined,
+      containerSizeOther:         containerSize === "other" ? containerSizeOther || undefined : undefined,
+      loadedOrEmpty:              loadedOrEmpty     || undefined,
+      containerNum:               containerNum      || undefined,
+      // general
+      generalPackagingType:       generalPackagingType || undefined,
+      generalPieceCount:          generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
+    };
+
+    const billingData: Record<string, unknown> = {
+      declaredGoodsValue:  declaredValue ? parseFloat(declaredValue) : undefined,
+      purchaseOrderNumber: purchaseOrderNumber.trim() || undefined,
+      billingReference:    billingRef.trim() || undefined,
+      vatRegistered:       vatRegistered || undefined,
+      vatNumber:           vatRegistered ? vatNumber.trim() || undefined : undefined,
+    };
+
+    const specialRequirementsData = specialItems.length ? {
+      items:                       specialItems,
+      adrClass:                    adrClass.trim()         || undefined,
+      unNumber:                    unNumber.trim()          || undefined,
+      packingGroup:                packingGroup.trim()      || undefined,
+      hazardousQuantityKg:         hazardousQtyKg ? parseFloat(hazardousQtyKg) : undefined,
+      hazardousPaperworkAvailable: hazardousPaperwork || undefined,
+      oversizedWidth:              oversizedWidth.trim()   || undefined,
+      oversizedHeight:             oversizedHeight.trim()  || undefined,
+      oversizedLength:             oversizedLength.trim()  || undefined,
+    } : undefined;
+
+    const transportRequirementsData = {
+      plannerDecides,
+      reqBodyCategory:     plannerDecides ? undefined : reqBodyCategory || undefined,
+      reqBodyTypes:        plannerDecides ? undefined : reqBodyTypes.length ? reqBodyTypes : undefined,
+      reqEquipment:        plannerDecides ? undefined : reqEquipment.length ? reqEquipment : undefined,
+      trailerTypesAllowed: plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
+    };
+
+    const hasExceptionPolicy = !!(rejectionAction || altReturnAddress || approvalContactName || photosOnRejection || signatureOnRejection || rejectionNotes);
+    const exceptionPolicyData = hasExceptionPolicy ? {
+      rejectionAction:                          rejectionAction || undefined,
+      alternativeReturnSiteName:                altReturnSiteName.trim()       || undefined,
+      alternativeReturnAddress:                 altReturnAddress.trim()        || undefined,
+      alternativeReturnAddressLine2:            altReturnAddressLine2.trim()   || undefined,
+      alternativeReturnTown:                    altReturnTown.trim()           || undefined,
+      alternativeReturnCounty:                  altReturnCounty.trim()         || undefined,
+      alternativeReturnPostcode:                altReturnPostcode.trim()       || undefined,
+      alternativeReturnCountry:                 altReturnCountry               || undefined,
+      alternativeReturnLat:                     altReturnLat ? parseFloat(altReturnLat) : undefined,
+      alternativeReturnLng:                     altReturnLng ? parseFloat(altReturnLng) : undefined,
+      alternativeReturnNavigationInstructions:  altReturnNavInstructions.trim() || undefined,
+      alternativeReturnContactName:             altReturnContactName.trim()    || undefined,
+      alternativeReturnContactPhone:            altReturnContactPhone.trim()   || undefined,
+      approvalContactName:                      approvalContactName.trim()     || undefined,
+      approvalContactPhone:                     approvalContactPhone.trim()    || undefined,
+      photosRequiredOnRejection:                photosOnRejection              || undefined,
+      rejectionSignatureRequired:               signatureOnRejection           || undefined,
+      rejectionNotes:                           rejectionNotes.trim()          || undefined,
+    } : undefined;
+
+    const mappedStops = stops.map((stop, i) => {
+      const locationTextSnapshot = [stop.siteName, stop.street, stop.town, stop.postcode].filter(Boolean).join(", ");
+      const base: Record<string, unknown> = {
+        sequenceNumber:        i + 1,
+        type:                  stop.type,
+        savedLocationId:       stop.savedLocationId,
+        siteName:              stop.siteName,
+        unitName:              stop.unitName,
+        street:                stop.street,
+        town:                  stop.town,
+        postcode:              stop.postcode,
+        country:               stop.country,
+        addressLine2:          stop.addressLine2,
+        countyRegion:          stop.countyRegion,
+        locationTextSnapshot,
+        lat:                   stop.lat ? parseFloat(stop.lat) : null,
+        lng:                   stop.lng ? parseFloat(stop.lng) : null,
+        contactName:           stop.contactName,
+        contactPhone:          stop.contactPhone,
+        contactEmail:          stop.contactEmail,
+        referenceNumber:       stop.referenceNumber,
+        instructions:          stop.instructions,
+        navigationInstructions: stop.navigationInstructions,
+        bookingRequired:       stop.bookingRequired,
+        bookingRef:            stop.bookingRef,
+        openingHours:          stop.openingHours,
+        locationType:          stop.locationType,
+        numPallets:            stop.numPallets ? parseInt(stop.numPallets, 10) : null,
+        internalNotes:         stop.internalNotes,
+        quantityRequired:      stop.stopQuantity ? parseFloat(stop.stopQuantity) : null,
+        quantityUnit:          stop.stopQuantity ? stop.stopQuantityUnit : null,
+        exchangeDropQty:       stop.exchangeDropQty   ? parseFloat(stop.exchangeDropQty)   : null,
+        exchangeCollectQty:    stop.exchangeCollectQty ? parseFloat(stop.exchangeCollectQty) : null,
+        exchangeUnit:          (stop.exchangeDropQty || stop.exchangeCollectQty) ? stop.exchangeUnit : null,
+        handlingMethods:       stop.handlingMethods.length
+          ? stop.handlingMethods.map(m => m === "other" && stop.handlingMethodOther?.trim() ? `other: ${stop.handlingMethodOther.trim()}` : m)
+          : null,
+        accessRequirements:    [...stop.accessRequirements, ...stop.ppeItems].length ? [...stop.accessRequirements, ...stop.ppeItems] : null,
+        heightRestriction:     stop.heightRestrictionValue || null,
+        weightRestriction:     stop.weightRestrictionValue || null,
+        lengthRestriction:     stop.lengthRestrictionValue || null,
+        proofRequirements:     stop.proofRequirements.length ? stop.proofRequirements : null,
+        loadReadiness:         stop.loadReadiness || null,
+        stopNotes:             stop.stopNotes || null,
+      };
+
+      base.earliestArrivalMinutes    = toMins(stop.earliestArrival);
+      base.unloadingAllowanceMinutes = toMins(stop.unloadingTime);
+
+      if (stop.timeType === "exact" && stop.exactTime) {
+        base.bookedTime = `${stop.date}T${stop.exactTime}:00.000Z`;
+      } else if (stop.timeType === "window" && stop.windowStart && stop.windowEnd) {
+        base.timeWindowStart = `${stop.date}T${stop.windowStart}:00.000Z`;
+        base.timeWindowEnd   = `${stop.date}T${stop.windowEnd}:00.000Z`;
+      }
+      return base;
+    });
+
+    return {
+      saveMode,
       customerId,
       customerName,
-      plannedDate,
-      serviceType,
-      jobType,
-      jobTitle,
-      referenceNumber,
+      plannedDate:         plannedDate || undefined,
+      bookingContactName:  contactName,
+      bookingContactPhone: contactPhone,
+      bookingContactEmail: contactEmail,
       customerRef,
       purchaseOrderNumber,
-      priority,
-      contactName,
-      contactPhone,
-      contactEmail,
-      billingNotes,
-      customerInstructions,
-      custRefRequired,
-      poRequired,
-      assignedTruck,
-      assignedTrailer,
-      trailerTypesAllowed,
-      heightRestriction,
-      weightRestriction,
-      lengthRestriction,
-      vehicleAccessNotes,
-      requirePOD,
-      failureAction,
-      assistancePhone,
-      assistanceNote,
-      returnDestination,
-      needsAltAddress,
-      altSavedLocationId,
-      altSiteName,
-      altStreet,
-      altTown,
-      altPostcode,
-      altCountry,
-      altLat,
-      altLng,
-      altUnitName,
-      altAddressLine2,
-      altCountyRegion,
-      altContactName,
-      altContactPhone,
-      altContactEmail,
-      altNavigationInstructions,
-      altInstructions,
-      isEditMode,
-      saveAsTemplate,
-      templateName,
-      agreedRate,
-      plannerNotes,
-      driverNoteChips,
-      driverVisibleNotes,
-      safetyInstructions,
-      rejectionAction,
-      alternativeReturnAddress,
-      alternativeReturnPostcode,
-      alternativeReturnContactName,
-      alternativeReturnContactPhone,
-      approvalContactName,
-      approvalContactPhone,
-      photosRequiredOnRejection,
-      rejectionSignatureRequired,
-      rejectionNotes,
+      serviceType:         stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery") ? "multi_drop" : stops.some(s => s.type === "collection") ? "collection" : "delivery",
+      priority:            "normal" as const,
+      reqBodyCategory:     plannerDecides ? "" : reqBodyCategory,
+      reqEquipment:        plannerDecides ? [] : reqEquipment,
+      trailerTypesAllowed: plannerDecides ? [] : trailerTypesAllowed,
+      requirePOD:          false,
+      canSplitShipment,
+      stops:               mappedStops,
+      loadDetails: {
+        goodsType,
+        materialType:  goodsDesc.trim(),
+        quantity:      quantity ? parseFloat(quantity) : null,
+        unit:          effectiveUnit,
+        weight:        estWeight ? parseFloat(estWeight) : null,
+        notes:         loadNotes.trim(),
+        securingRequirements: securingRequirements.length ? securingRequirements : null,
+        specialRequirements:  specialItems.length ? specialItems : null,
+      },
+      loadData,
+      billingData,
+      specialRequirementsData,
+      transportRequirementsData,
+      exceptionPolicyData,
+      saveAsTemplate:  !isEditMode && saveAsTemplate,
+      templateName:    !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
     };
-    return [params, saveMode];
   }
 
+  // ── Save handlers ────────────────────────────────────────────────────────────
   async function handleSaveDraft() {
     if (!isEditMode && saveAsTemplate && !templateName.trim()) {
       setError("Enter a template name, or uncheck 'Save as template'");
@@ -1021,7 +780,7 @@ export default function CreateJobPage() {
     setSaving("draft");
     setError("");
     try {
-      const body = buildBody(...makePayloadParams("draft"));
+      const body = buildPayload("draft");
       if (editJobId) {
         await jobsApi.update(editJobId, body);
       } else {
@@ -1043,12 +802,10 @@ export default function CreateJobPage() {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    // If required fields are missing, just reveal the pills — don't call API
     if (MISSING.length > 0) {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    // Duplicate stop detection — warn if two stops share the same postcode on the same date
     const stopKeys = stops.map(s => `${s.postcode.trim().toUpperCase()}|${s.date}`);
     const dupIdx = stopKeys.findIndex((k, i) => k !== "|" && stopKeys.indexOf(k) !== i);
     if (dupIdx !== -1) {
@@ -1060,7 +817,7 @@ export default function CreateJobPage() {
     setSaving("ready");
     setError("");
     try {
-      const body = buildBody(...makePayloadParams("ready_to_plan"));
+      const body = buildPayload("ready_to_plan");
       if (editJobId) {
         await jobsApi.update(editJobId, body);
       } else {
@@ -1075,14 +832,63 @@ export default function CreateJobPage() {
     }
   }
 
+  async function handleSaveTemplate() {
+    if (!templateName.trim()) {
+      setError("Enter a template name");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setSaving("ready");
+    setError("");
+    try {
+      const payload = buildPayload("ready_to_plan");
+      const stopData = (payload.stops as any[]).map((s: Record<string, unknown>) => ({
+        ...s,
+        date:            undefined,
+        timeType:        "anytime",
+        bookedTime:      undefined,
+        timeWindowStart: undefined,
+        timeWindowEnd:   undefined,
+        referenceNumber: undefined,
+        bookingRef:      undefined,
+      }));
+      const patchBody = {
+        name:               templateName.trim(),
+        defaultMaterialType: goodsDesc.trim(),
+        defaultStops:       stopData,
+        defaultJobData: {
+          customerId,
+          customerName,
+          contactName,
+          contactPhone,
+          contactEmail,
+          customerRef,
+          purchaseOrderNumber,
+        },
+      };
+      if (editTemplateId) {
+        await jobsApi.updateTemplate(editTemplateId, patchBody);
+      } else {
+        await jobsApi.createTemplate(patchBody);
+      }
+      navigate("/app/templates");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save template");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setSaving(null);
+    }
+  }
+
   if (loadingJob) {
     return <div className="flex h-64 items-center justify-center text-muted">{isTemplateMode ? "Loading template…" : "Loading job…"}</div>;
   }
 
+  // ── JSX ───────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-surface pb-40">
 
-      {/* ── Page header ────────────────────────────────────────────────────────── */}
+      {/* Page header */}
       <div className="bg-white border-b border-slate-200 px-6 py-5" style={{boxShadow: '0 1px 4px rgba(15,23,42,0.06)'}}>
         <div className="max-w-3xl mx-auto flex items-center gap-4">
           <button onClick={() => navigate(-1)}
@@ -1104,44 +910,31 @@ export default function CreateJobPage() {
 
       {error && <div className="px-4 sm:px-6 pt-4"><div className="bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 text-sm font-medium">{error}</div></div>}
 
-      <div className="px-4 sm:px-6 py-6 space-y-4">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4">
 
-        {/* ── Template name input (template-edit mode) ──────────────────────── */}
+        {/* Template name input (template-edit mode) */}
         {isTemplateMode && (
           <div className="card px-5 py-4 border-l-4 border-l-blue-500">
             <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">Template Name</label>
-            <input
-              type="text"
-              className="input"
-              placeholder="e.g. Tesco Luton Daily Run"
-              value={templateName}
-              onChange={e => setTemplateName(e.target.value)}
-            />
+            <input type="text" className="input" placeholder="e.g. Tesco Luton Daily Run"
+              value={templateName} onChange={e => setTemplateName(e.target.value)} />
             <p className="text-xs text-muted mt-1.5">
-              ⚡ Dates, time slots and reference numbers are <strong>not stored</strong> — fill them in when creating a job from this template.
+              Dates, time slots and reference numbers are <strong>not stored</strong> — fill them in when creating a job from this template.
             </p>
           </div>
         )}
 
-        {/* ── Template picker ────────────────────────────────────────────────── */}
+        {/* Template picker */}
         {!isEditMode && !isTemplateMode && templates.length > 0 && (
           <div className="card px-5 py-4">
             <div className="flex items-center gap-3">
               <div className="flex-1">
-                <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">
-                  Start from a template
-                </label>
+                <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">Start from a template</label>
                 <div className="relative">
-                  <input
-                    type="text"
-                    className="input pr-8"
-                    placeholder="Type to search templates…"
-                    value={tplQuery}
-                    onChange={e => setTplQuery(e.target.value)}
-                  />
+                  <input type="text" className="input pr-8" placeholder="Type to search templates…"
+                    value={tplQuery} onChange={e => setTplQuery(e.target.value)} />
                   {tplQuery && (
-                    <button type="button"
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary text-lg leading-none"
+                    <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary text-lg leading-none"
                       onClick={() => setTplQuery("")}>×</button>
                   )}
                 </div>
@@ -1149,1054 +942,603 @@ export default function CreateJobPage() {
                   const matches = templates.filter(t =>
                     t.name.toLowerCase().includes(tplQuery.toLowerCase()) && t.status === "active"
                   );
-                  if (!matches.length) return (
-                    <p className="text-xs text-muted mt-2">No templates match "{tplQuery}"</p>
-                  );
+                  if (!matches.length) return <p className="text-xs text-muted mt-2">No templates match "{tplQuery}"</p>;
                   return (
                     <div className="mt-1.5 border border-border rounded-xl overflow-hidden shadow-sm">
                       {matches.slice(0, 6).map(t => (
-                        <button key={t.id} type="button"
-                          onClick={() => applyTemplate(t)}
+                        <button key={t.id} type="button" onClick={() => applyTemplate(t)}
                           className="w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 border-b border-border last:border-0 flex items-center justify-between gap-2">
                           <span className="font-medium text-primary">{t.name}</span>
-                          {t.defaultMaterialType && (
-                            <span className="text-xs text-muted">{t.defaultMaterialType}</span>
-                          )}
+                          {t.defaultMaterialType && <span className="text-xs text-muted">{t.defaultMaterialType}</span>}
                         </button>
                       ))}
                     </div>
                   );
                 })()}
               </div>
-              <p className="text-xs text-muted hidden sm:block flex-shrink-0 max-w-32 text-right leading-relaxed">
-                Fills stops, cargo and references automatically
-              </p>
             </div>
           </div>
         )}
 
-        {/* ── Quality score ──────────────────────────────────────────────────── */}
+        {/* Missing required fields indicator */}
+        {triedSave && MISSING.length > 0 && (
+          <div className="card border-red-300 bg-red-50 p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 text-white text-xs font-black">!</span>
+              <span className="font-bold text-red-800 text-sm">
+                {MISSING.length} thing{MISSING.length !== 1 ? "s" : ""} still need{MISSING.length === 1 ? "s" : ""} attention:
+              </span>
+            </div>
+            <ul className="ml-7 space-y-1">
+              {MISSING.map((e, i) => (
+                <li key={i} className="text-sm text-red-700 flex items-start gap-1.5">
+                  <span className="flex-shrink-0 mt-0.5">•</span><span>{e}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* ── Sec 1: Customer details ───────────────────────────────────────── */}
         <div className="card overflow-hidden">
-          {/* Gradient top bar */}
-          <div className="h-1.5 w-full flex">
-            <div className="h-full bg-slate-600 transition-all duration-700 ease-out" style={{ width: hasStarted ? `${reqScore}%` : "0%" }} />
-            <div className="h-full bg-green-500 transition-all duration-700 ease-out" style={{ width: hasStarted ? `${optScore}%` : "0%" }} />
-            <div className="h-full flex-1 bg-slate-100" />
-          </div>
-          <div className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Job Completeness</div>
-              <div className={"text-5xl font-black leading-none " + (hasStarted ? scoreColor : "text-slate-300")}>
-                {hasStarted ? totalScore : "—"}<span className="text-2xl">{hasStarted ? "%" : ""}</span>
-              </div>
-              <div className="text-xs text-muted mt-1.5 flex items-center gap-3">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Required <strong className="text-slate-700">{hasStarted ? `${reqScore}/65` : "0/65"}</strong></span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Optional <strong className="text-green-700">{hasStarted ? `${optScore}/35` : "0/35"}</strong></span>
-              </div>
-            </div>
-            <div className={`w-16 h-16 rounded-2xl border-2 flex items-center justify-center flex-shrink-0 ${
-              !hasStarted ? "border-slate-100 bg-slate-50" :
-              totalScore >= 80 ? "border-green-200 bg-green-50" : totalScore >= 40 ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50"}`}>
-              <span className={"text-xl font-black " + (hasStarted ? scoreColor : "text-slate-300")}>{hasStarted ? `${totalScore}%` : "—"}</span>
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4 flex">
-            <div className={"h-full bg-slate-600 transition-all duration-700 ease-out rounded-full"} style={{ width: hasStarted ? `${reqScore}%` : "0%" }} />
-            <div className={"h-full bg-green-500 transition-all duration-700 ease-out"} style={{ width: hasStarted ? `${optScore}%` : "0%", borderRadius: reqScore > 0 ? "0 9999px 9999px 0" : "9999px" }} />
-          </div>
-
-          {/* Missing required */}
-          {triedSave && MISSING.length > 0 && (
-            <div className="border-t border-slate-100 pt-3 mb-3">
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2.5">
-                {MISSING.length} still needed
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {MISSING.map(f => (
-                  <span key={f} className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded-full font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" /> {f}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Optional fields to improve score */}
-          {MISSING.length === 0 && OPT_MISSING.length > 0 && (
-            <div className="border-t border-slate-100 pt-3">
-              <div className="text-xs font-bold text-muted uppercase tracking-widest mb-2.5">
-                Add these to boost your score
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {OPT_MISSING.map(f => (
-                  <span key={f} className="inline-flex items-center gap-1.5 text-xs bg-slate-50 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors cursor-default">
-                    + {f}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {MISSING.length === 0 && OPT_MISSING.length === 0 && (
-            <div className="border-t border-green-200 pt-3 bg-green-50 -mx-5 px-5 -mb-5 pb-5 rounded-b-xl">
-              <span className="text-sm text-green-700 font-semibold">✓ All fields complete — this job is ready to plan</span>
-            </div>
-          )}
-          </div>{/* end p-5 */}
-        </div>
-
-        {/* ── Section 01 — Job Basics ────────────────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={1} icon="📋" title="Job Basics" subtitle="Date, service type and job type" active
-            collapsed={sec1Collapsed} onToggle={() => setSec1Collapsed(o => !o)}
-            summary={[customerName, plannedDate, serviceType].filter(Boolean).join(" · ")}
-            complete={basicsComplete} started={sec1Started} />
-          {!sec1Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-            <div>
-              <FieldLabel required>Customer</FieldLabel>
-              <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
-            </div>
-            <div>
-              <FieldLabel required>Planned Date</FieldLabel>
-              <input type="date" className="input mt-1" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <SectionHeader num={1} icon="🏢" title="Customer details" subtitle="Customer account, contact name, phone and email" active
+            collapsed={s1} onToggle={() => setS1(o => !o)}
+            complete={sec1Complete} started={sec1Started}
+            summary={customerName || contactName}
+            missingCount={sec1Missing.length} />
+          {!s1 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
               <div>
-                <FieldLabel required>Service Type</FieldLabel>
-                <select className="input" value={serviceType} onChange={e => setServiceType(e.target.value)}>
-                  <option value="">— Select —</option>
-                  {SERVICE_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                <FieldLabel required>Customer</FieldLabel>
+                <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
               </div>
               <div>
-                <FieldLabel required>Job Type</FieldLabel>
-                <select className="input" value={jobType} onChange={e => setJobType(e.target.value)}>
-                  <option value="">— Select —</option>
-                  {JOB_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                <FieldLabel required>Planned date</FieldLabel>
+                <input type="date" className="input mt-1" value={plannedDate}
+                  onChange={e => setPlannedDate(e.target.value)} />
               </div>
-            </div>
-            <OptionalToggle open={showBasicsOpts} onToggle={() => setShowBasicsOpts(o => !o)} label="optional job details" />
-            {showBasicsOpts && (
-              <div className="space-y-4 pt-1 border-t border-border">
-                <TextField
-                  label="Job Title / Short Description"
-                  value={jobTitle}
-                  onChange={setJobTitle}
-                  placeholder="e.g. Overnight trunking — North to South depot"
-                  caseRule="proper_name"
-                />
-                {/* Auto-generated job reference */}
+              {jobReference && (
                 <div className="flex items-center gap-3 py-2 px-3 rounded-xl border bg-slate-50">
                   <div className="flex-1">
-                    <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-0.5">Job Reference No.</div>
-                    {jobReference ? (
-                      <div className="font-mono font-bold text-green-700 text-base">{jobReference}</div>
-                    ) : (
-                      <div className="text-sm text-muted italic">
-                        {companyTicker
-                          ? `${companyTicker}-${String(new Date().getFullYear()).slice(-2)}-XXXXXX — auto-assigned on save`
-                          : "Auto-assigned on save (set company ticker in Settings first)"}
+                    <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-0.5">Job Reference</div>
+                    <div className="font-mono font-bold text-green-700 text-base">{jobReference}</div>
+                  </div>
+                  <div className="text-green-600 text-lg">✓</div>
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TextField label="Contact name" required value={contactName} onChange={setContactName}
+                  placeholder="Jane Smith" caseRule="proper_name" />
+                <TextField label="Contact phone" required type="tel" value={contactPhone}
+                  onChange={setContactPhone} placeholder="+44 7700 900123" />
+              </div>
+              <TextField label="Contact email" type="email" value={contactEmail}
+                onChange={setContactEmail} placeholder="jane@acme.com" caseRule="lower" />
+              <TextField label="Customer reference / order number" value={customerRef}
+                onChange={setCustomerRef} placeholder="ORD-2026-1234"
+                hint="Your internal reference for this job, if you have one." />
+              <SectionFooter complete={sec1Complete} label="Customer details" onCollapse={() => setS1(true)} missing={sec1Missing} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Sec 2: Stops ─────────────────────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={2} icon="🗺️"
+            title={sec2Summary ? `Stops — ${sec2Summary}` : "Collection & delivery stops"}
+            subtitle="Where to collect from and deliver to" active
+            collapsed={s2} onToggle={() => setS2(o => !o)}
+            complete={sec2Complete} started={sec2Started}
+            summary={sec2Summary || undefined} />
+          {!s2 && (
+            <div className="p-4 space-y-3">
+              {stops.map((stop, idx) => (
+                <StopCard key={stop.id} stop={stop} index={idx} total={stops.length}
+                  locations={locations}
+                  onChange={patch => updateStop(stop.id, patch)}
+                  onRemove={() => removeStop(stop.id)}
+                  triedSave={triedSave} />
+              ))}
+              <button type="button" onClick={addStop}
+                className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
+                + Add another stop
+              </button>
+              {!sec2Complete && sec2Started && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  {!stops.some(s => s.type === "collection") && "⚠ Add at least one collection stop. "}
+                  {!stops.some(s => s.type === "delivery")   && "⚠ Add at least one delivery stop."}
+                </div>
+              )}
+              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => setS2(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Sec 3: Load details ───────────────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={3} icon="🏗️" title="Load details" subtitle="What is being transported" active
+            collapsed={s3} onToggle={() => setS3(o => !o)}
+            complete={sec3Complete} started={sec3Started}
+            summary={goodsType
+              ? `${LOAD_TYPES.find(([v]) => v === goodsType)?.[1] ?? goodsType}${goodsDesc ? ` · ${goodsDesc.slice(0, 30)}` : ""}`
+              : undefined}
+            missingCount={sec3Missing.length} />
+          {!s3 && (
+            <div className="px-5 pt-5 pb-4 space-y-5">
+
+              {/* Goods type */}
+              <div>
+                <FieldLabel required>What are you moving?</FieldLabel>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {LOAD_TYPES.map(([v, l]) => (
+                    <button key={v} type="button"
+                      onClick={() => setGoodsType(goodsType === v ? "" : v)}
+                      className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+                        (goodsType === v
+                          ? "bg-accent text-white border-accent"
+                          : "bg-white text-muted border-border hover:border-gray-400")}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {goodsType === "other" && (
+                  <input className="input mt-2 w-full" type="text"
+                    placeholder="Describe what you are moving"
+                    value={goodsTypeOther} onChange={e => setGoodsTypeOther(e.target.value)} />
+                )}
+              </div>
+
+              {/* Goods description */}
+              <div>
+                <FieldLabel required>Description of goods</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={2}
+                  value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
+                  placeholder="Describe exactly what is being transported — be specific" />
+                <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 5 ? "text-muted" : "text-amber-600 font-medium"}`}>
+                  {goodsDesc.trim().length} / 5 characters minimum
+                </div>
+              </div>
+
+              {/* Quantity + unit */}
+              <div className="grid grid-cols-2 gap-3">
+                <TextField label="Quantity" required type="number" min="0" step="1" value={quantity}
+                  onChange={setQuantity} placeholder="24" />
+                <div>
+                  <FieldLabel required>Unit</FieldLabel>
+                  <select className="input mt-1 w-full" value={unit} onChange={e => setUnit(e.target.value)}>
+                    {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              {unit === "other" && (
+                <TextField label="Describe unit" value={otherUnit} onChange={setOtherUnit} placeholder="e.g. rolls" />
+              )}
+
+              {/* Estimated weight */}
+              <TextField label="Estimated total weight (kg)" required type="number" min="0" step="1"
+                value={estWeight} onChange={setEstWeight} placeholder="14000"
+                hint="Approximate is fine, but do not leave blank." />
+
+              {/* Overall load height */}
+              <TextField label="Overall load height (m)" type="number" min="0"
+                value={loadHeight} onChange={setLoadHeight} placeholder="2.4"
+                hint="Helps the planner choose the right trailer. Leave blank if unsure." />
+
+              {/* ── Pallets ── */}
+              {goodsType === "pallets" && (
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
+                      onChange={setPalletCount} placeholder="24" />
+                    <div>
+                      <FieldLabel>Pallet type</FieldLabel>
+                      <select className="input mt-1 w-full" value={palletType} onChange={e => setPalletType(e.target.value)}>
+                        <option value="">Not specified</option>
+                        <option value="euro">Euro pallets (800×1200mm)</option>
+                        <option value="uk">UK pallets (1000×1200mm)</option>
+                        <option value="half">Half pallets</option>
+                        <option value="chep">CHEP pallets</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  {palletType === "other" && (
+                    <input className="input w-full" type="text" placeholder="Describe pallet type"
+                      value={palletTypeOther} onChange={e => setPalletTypeOther(e.target.value)} />
+                  )}
+                  <Toggle value={stackable} onChange={setStackable} label="Pallets are stackable" />
+                </div>
+              )}
+
+              {/* ── Roll cages ── */}
+              {goodsType === "roll_cages" && (
+                <div className="space-y-4 pt-1">
+                  <TextField label="Number of cages" type="number" min="0" step="1"
+                    value={cageCount} onChange={setCageCount} placeholder="48" />
+                  <Toggle value={cageFolded} onChange={setCageFolded}
+                    label="Cages are folded / nested (not assembled)" />
+                </div>
+              )}
+
+              {/* ── Building materials ── */}
+              {goodsType === "building_materials" && (
+                <div className="space-y-4 pt-1">
+                  <div>
+                    <FieldLabel>Material type</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={BUILDING_MATERIAL_TYPES} value={buildingMaterialType}
+                        onChange={setBuildingMaterialType} />
+                    </div>
+                  </div>
+                  <Toggle value={buildingMaterialPalletised} onChange={setBuildingMaterialPalletised}
+                    label="Load is palletised (not loose)" />
+                  <TextField label="Longest single item (m)" type="number" min="0"
+                    value={buildingMaterialLongestItem} onChange={setBuildingMaterialLongestItem} placeholder="6"
+                    hint="Timber, pipes and sheet materials may overhang — enter the longest piece." />
+                  <Toggle value={buildingMaterialWeatherSensitive} onChange={setBuildingMaterialWeatherSensitive}
+                    label="Load is weather sensitive (needs sheeting / covered vehicle)" />
+                </div>
+              )}
+
+              {/* ── Food / refrigerated ── */}
+              {goodsType === "food_refrigerated" && (
+                <div className="space-y-4 pt-1">
+                  <div>
+                    <FieldLabel>Chilled, frozen or ambient?</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={TEMP_TYPE_OPTIONS} value={tempType} onChange={setTempType} />
+                    </div>
+                  </div>
+                  <TextField label="Required temperature range" value={tempRange}
+                    onChange={setTempRange} placeholder="2°C – 8°C" />
+                  <Toggle value={foodPreCooled} onChange={setFoodPreCooled}
+                    label="Vehicle must be pre-cooled before arrival at collection" />
+                </div>
+              )}
+
+              {/* ── Bulk material ── */}
+              {goodsType === "bulk_material" && (
+                <div className="space-y-4 pt-1">
+                  <Toggle value={tippingReq} onChange={setTippingReq} label="Tipping required at delivery" />
+                  <div>
+                    <FieldLabel>Wet or dry</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={WET_DRY_OPTIONS} value={wetDry} onChange={setWetDry} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Liquid / tanker ── */}
+              {goodsType === "liquid_bulk" && (
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <TextField label="Product" value={liquidProductType} onChange={setLiquidProductType}
+                        placeholder="Vegetable oil, diesel, milk, wastewater…"
+                        hint="Be specific — determines tanker certification and any ADR requirements." />
+                    </div>
+                    <TextField label="Volume (litres)" type="number" min="0" step="1"
+                      value={liquidVolumeLitres} onChange={setLiquidVolumeLitres} placeholder="24000" />
+                  </div>
+                  <Toggle value={liquidFoodGrade} onChange={setLiquidFoodGrade}
+                    label="Food-grade product (requires food-safe tanker)" />
+                </div>
+              )}
+
+              {/* ── Machinery ── */}
+              {goodsType === "machinery" && (
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <TextField label="Dimensions (L × W × H)" value={dimensions}
+                      onChange={setDimensions} placeholder="4.5m × 2.2m × 3.1m" />
+                    <TextField label="Piece weight (kg)" type="number" min="0" step="1"
+                      value={machineryPieceWeight} onChange={setMachineryPieceWeight} placeholder="4200"
+                      hint="Weight of one item — for crane and HIAB planning." />
+                  </div>
+                  <Toggle value={machineryLiftingPoints} onChange={setMachineryLiftingPoints}
+                    label="Machine has lifting points / lifting eyes" />
+                  <Toggle value={machinerySkidMounted} onChange={setMachinerySkidMounted}
+                    label="Machine is skid-mounted" />
+                  <Toggle value={craneRequired} onChange={setCraneRequired} label="Crane required on site" />
+                </div>
+              )}
+
+              {/* ── Steel / long loads ── */}
+              {goodsType === "steel_long" && (
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="Longest item (m)" type="number" min="0"
+                      value={dimensions} onChange={setDimensions} placeholder="25" />
+                    <TextField label="Number of pieces" type="number" min="0" step="1"
+                      value={steelPieceCount} onChange={setSteelPieceCount} placeholder="6" />
+                  </div>
+                  <div>
+                    <TextField label="Width of widest piece (m)" value={steelWidth}
+                      onChange={setSteelWidth} placeholder="2.4" />
+                    {steelWidth && parseFloat(steelWidth) > 2.9 && (
+                      <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                        <span className="text-amber-500 flex-shrink-0">⚠</span>
+                        <p className="text-xs font-semibold text-amber-800">Over 2.9m — this may require an abnormal load permit.</p>
                       </div>
                     )}
                   </div>
-                  {jobReference && <div className="text-green-600 text-lg">✓</div>}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <TextField label="Customer Reference No." value={referenceNumber} onChange={setReferenceNumber} placeholder="CUST-REF-456" />
-                  <TextField label="Purchase Order No." value={purchaseOrderNumber} onChange={setPurchaseOrderNumber} placeholder="PO-789" />
-                </div>
-                <div className="max-w-xs">
-                  <FieldLabel>Priority</FieldLabel>
-                  <select className="input" value={priority} onChange={e => setPriority(e.target.value)}>
-                    {PRIORITY_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <ReadOnlyField label="Created By" value={user?.name ?? "—"} />
-                  <ReadOnlyField label="Created At" value={nowDisplay()} />
-                </div>
-              </div>
-            )}
-          </div>}
-          {!sec1Collapsed && <SectionFooter complete={basicsComplete} label="Job basics" onCollapse={() => setSec1Collapsed(true)} />}
-        </div>
+              )}
 
-        {/* ── Section 02 — Customer Details ──────────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={2} icon="🏢" title="Customer Details" subtitle="Operational contact for this job" active
-            collapsed={sec2Collapsed} onToggle={() => setSec2Collapsed(o => !o)}
-            summary={[contactName, contactPhone].filter(Boolean).join(" · ")}
-            complete={customerComplete} started={sec2Started} />
-          {!sec2Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-            {customerId && (
-              <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                <span>✓</span>
-                <span>Linked to <strong>{customerName}</strong> — contact details autofilled. Edit below if different for this job.</span>
-              </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <TextField label="Contact Name" value={contactName} onChange={setContactName} placeholder="Jane Smith" caseRule="proper_name" required />
-              <div>
-                <FieldLabel required>Contact Phone</FieldLabel>
-                <input type="tel" className="input" placeholder="07700 900123"
-                  value={contactPhone} onChange={e => setContactPhone(e.target.value)} />
-              </div>
-            </div>
-            <OptionalToggle open={showCustOpts} onToggle={() => setShowCustOpts(o => !o)} label="customer details" />
-            {showCustOpts && (
-              <div className="space-y-4 pt-1 border-t border-border">
-                <TextField label="Customer Address" value={customerAddress} onChange={setCustomerAddress} placeholder="1 Example Road, Sampletown, EX1 1AA" caseRule="address_line" />
-                <TextField label="Contact Email" type="email" value={contactEmail} onChange={setContactEmail} placeholder="jane@example.com" caseRule="lower" />
-                <div>
-                  <FieldLabel>Billing Notes</FieldLabel>
-                  <textarea className="input min-h-16 resize-none" placeholder="e.g. Invoice to head office, attn: Accounts Payable…"
-                    value={billingNotes} onChange={e => setBillingNotes(e.target.value)} />
+              {/* ── Vehicles ── */}
+              {goodsType === "vehicles" && (
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <TextField label="Number of vehicles" type="number" min="0" step="1"
+                      value={vehicleCount} onChange={setVehicleCount} placeholder="2" />
+                    <div className="sm:col-span-2">
+                      <TextField label="Make and model" value={vehicleMakeModel}
+                        onChange={setVehicleMakeModel} placeholder="2019 Ford Transit Custom"
+                        hint="Year, make and model helps us select the right transporter." />
+                    </div>
+                  </div>
+                  <Toggle value={vehicleDriveable} onChange={setVehicleDriveable} label="Vehicles are driveable (RORO)" />
+                  <Toggle value={vehicleKeysWithVehicle} onChange={setVehicleKeysWithVehicle}
+                    label="Keys will be with the vehicle" />
                 </div>
-                <div>
-                  <FieldLabel>Customer-Specific Instructions</FieldLabel>
-                  <textarea className="input min-h-16 resize-none" placeholder="e.g. Always call 30 min before arrival, do not use rear entrance…"
-                    value={customerInstructions} onChange={e => setCustomerInstructions(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              )}
+
+              {/* ── Containers ── */}
+              {goodsType === "containers" && (
+                <div className="space-y-4 pt-1">
                   <div>
-                    <Toggle value={custRefRequired} onChange={setCustRefRequired} label="Customer reference required" />
-                    <p className="text-xs text-muted mt-1.5">Driver must enter customer ref before completing job</p>
+                    <FieldLabel>Container size</FieldLabel>
+                    <div className="flex gap-2 mt-1">
+                      {[["20ft","20ft"],["40ft","40ft"],["45ft","45ft"],["other","Other"]].map(([v, l]) => (
+                        <button key={v} type="button" onClick={() => setContainerSize(v)}
+                          className={"px-3 py-2 rounded-full border text-sm font-medium transition-colors " +
+                            (containerSize === v ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    {containerSize === "other" && (
+                      <input className="input mt-2 w-full" type="text" placeholder="Describe container size"
+                        value={containerSizeOther} onChange={e => setContainerSizeOther(e.target.value)} />
+                    )}
                   </div>
                   <div>
-                    <Toggle value={poRequired} onChange={setPoRequired} label="Purchase order required" />
-                    <p className="text-xs text-muted mt-1.5">Driver must enter PO number before completing job</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>}
-          {!sec2Collapsed && <SectionFooter complete={customerComplete} label="Customer details" onCollapse={() => setSec2Collapsed(true)} />}
-        </div>
-
-        {/* ── Section 03 — Collection / Delivery ─────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={3} icon="🔄" title="Collection / Delivery" subtitle="Add all pickup and dropoff stops for this job" active
-            collapsed={sec3Collapsed} onToggle={() => setSec3Collapsed(o => !o)}
-            summary={`${stops.length} stop${stops.length !== 1 ? "s" : ""} · ${stops.filter(stopComplete).length} complete`}
-            complete={stopsComplete} started={sec3Started} />
-
-          {!sec3Collapsed && <div className="p-4 space-y-3">
-            {stops.map((stop, i) => (
-              <StopCard
-                key={stop.id}
-                stop={stop}
-                index={i}
-                total={stops.length}
-                locations={locations}
-                onChange={patch => updateStop(stop.id, patch)}
-                onRemove={() => removeStop(stop.id)}
-                triedSave={triedSave}
-              />
-            ))}
-
-            <button type="button" onClick={addStop}
-              className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
-              + Add another stop
-            </button>
-          </div>}
-
-          {!sec3Collapsed && <SectionFooter complete={stopsComplete} label="All stops" onCollapse={() => setSec3Collapsed(true)} />}
-        </div>
-
-        {/* ── Section 04 — Load Details ───────────────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={4} icon="⚖️" title="Load Details" subtitle="Total job load, weight, conditions and handling" active
-            collapsed={sec4Collapsed} onToggle={() => setSec4Collapsed(o => !o)}
-            summary={[materialType, weight ? weight + "t" : ""].filter(Boolean).join(" · ")}
-            complete={loadComplete} started={sec4Started} />
-          {!sec4Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-
-            {/* Goods type */}
-            <div>
-              <FieldLabel>Goods Type</FieldLabel>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {GOODS_TYPES.map(([v, l]) => (
-                  <button key={v} type="button"
-                    onClick={() => setGoodsType(goodsType === v ? "" : v)}
-                    className={
-                      "text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (goodsType === v
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-white text-muted border-border hover:border-gray-400")
-                    }>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Goods description */}
-            <div>
-              <FieldLabel required>Goods / Material Description</FieldLabel>
-              <input type="text" className="input" placeholder="e.g. Construction aggregate, frozen poultry, retail fixtures"
-                value={materialType} onChange={e => setMaterialType(e.target.value)} />
-            </div>
-
-            {/* Can split shipment */}
-            <div>
-              <FieldLabel>Can this shipment be split?</FieldLabel>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {([
-                  ["must_stay_together",  "Must stay together"],
-                  ["can_split_partially", "Can split partially"],
-                  ["can_split_freely",    "Can split freely"],
-                ] as [string, string][]).map(([v, l]) => (
-                  <button key={v} type="button"
-                    onClick={() => setCanSplitShipment(v)}
-                    className={
-                      "text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (canSplitShipment === v
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-white text-muted border-border hover:border-gray-400")
-                    }>
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted mt-1.5">Determines if runs can be assigned to different stops independently.</p>
-            </div>
-
-            {/* Qty + unit */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <FieldLabel required>Total Quantity</FieldLabel>
-                <input type="text" inputMode="decimal" className="input" placeholder="e.g. 24"
-                  value={quantity} onChange={e => setQuantity(e.target.value)} />
-              </div>
-              <div>
-                <FieldLabel required>Unit</FieldLabel>
-                <select className="input" value={unit} onChange={e => setUnit(e.target.value)}>
-                  <option value="">— Select unit —</option>
-                  {LOAD_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-            </div>
-            {unit === "other" && (
-              <div>
-                <FieldLabel required>Unit Description</FieldLabel>
-                <input type="text" className="input" placeholder="e.g. Rolls, coils, drums…"
-                  value={unitOther} onChange={e => setUnitOther(e.target.value)} />
-              </div>
-            )}
-
-            {/* Total weight */}
-            <div className="max-w-xs">
-              <FieldLabel required>Total Weight / Estimated Weight</FieldLabel>
-              <div className="relative">
-                <input type="text" inputMode="decimal" className="input pr-12" placeholder="e.g. 24.0"
-                  value={weight} onChange={e => setWeight(e.target.value)} />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">tonnes</span>
-              </div>
-            </div>
-
-            {/* POD required */}
-            <div>
-              <Toggle value={requirePOD} onChange={setRequirePOD} label="Proof of delivery required" />
-              <p className="text-xs text-muted mt-1.5">Driver must confirm delivery and capture POD before completing the job</p>
-            </div>
-
-            <OptionalToggle open={showLoadOpts} onToggle={() => setShowLoadOpts(o => !o)} label="load details" />
-
-            {showLoadOpts && (
-              <div className="space-y-5 pt-1 border-t border-border">
-
-                {/* Physical */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Physical</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <FieldLabel>Volume</FieldLabel>
-                      <div className="relative">
-                        <input type="text" className="input pr-8" placeholder="e.g. 36"
-                          value={volume} onChange={e => setVolume(e.target.value)} />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m³</span>
-                      </div>
-                    </div>
-                    <div>
-                      <FieldLabel>Dimensions (L × W × H)</FieldLabel>
-                      <input type="text" className="input" placeholder="e.g. 2.4 × 1.2 × 1.8 m"
-                        value={dimensions} onChange={e => setDimensions(e.target.value)} />
+                    <FieldLabel>Loaded or empty?</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={LOADED_EMPTY_OPTIONS} value={loadedOrEmpty} onChange={setLoadedOrEmpty} />
                     </div>
                   </div>
+                  <TextField label="Container number (optional)" value={containerNum}
+                    onChange={setContainerNum} placeholder="MSCU1234567" />
                 </div>
+              )}
 
-                {/* Conditions */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Conditions</div>
-                  <div className="space-y-3">
-                    <div>
-                      <Toggle value={hazardous} onChange={setHazardous} label="Hazardous goods (ADR)" />
-                      {hazardous && (
-                        <div className="mt-2 max-w-xs">
-                          <FieldLabel>ADR Class</FieldLabel>
-                          <input type="text" className="input" placeholder="e.g. Class 3 — Flammable liquids"
-                            value={adrClass} onChange={e => setAdrClass(e.target.value)} />
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <Toggle value={tempControlled} onChange={setTempControlled} label="Temperature controlled" />
-                      {tempControlled && (
-                        <div className="mt-2 max-w-xs">
-                          <FieldLabel>Temperature Range</FieldLabel>
-                          <input type="text" className="input" placeholder="e.g. 2°C – 8°C"
-                            value={tempRange} onChange={e => setTempRange(e.target.value)} />
-                        </div>
-                      )}
-                    </div>
-                    <Toggle value={fragile}   onChange={setFragile}   label="Fragile" />
-                    <Toggle value={stackable} onChange={setStackable} label="Stackable" />
-                  </div>
-                </div>
-
-                {/* Handling / equipment */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling Equipment Required</div>
-                  <div className="space-y-3">
-                    <Toggle value={forkliftRequired} onChange={setForkliftRequired} label="Forklift required" />
-                    <Toggle value={tailLiftRequired} onChange={setTailLiftRequired} label="Tail lift required" />
-                    <Toggle value={craneRequired}    onChange={setCraneRequired}    label="Crane required" />
-                  </div>
-                </div>
-
-                {/* Handling methods */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Handling Methods</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <FieldLabel>Loading Method</FieldLabel>
-                      <select className="input" value={loadingMethod} onChange={e => setLoadingMethod(e.target.value)}>
-                        <option value="">— Select —</option>
-                        {HANDLING_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <FieldLabel>Unloading Method</FieldLabel>
-                      <select className="input" value={unloadingMethod} onChange={e => setUnloadingMethod(e.target.value)}>
-                        <option value="">— Select —</option>
-                        {HANDLING_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Securing requirements */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Securing Requirements</div>
-                  <div className="flex flex-wrap gap-2">
-                    {SECURING_REQUIREMENTS.map(([v, l]) => (
-                      <button key={v} type="button"
-                        onClick={() => setSecuringRequirements(prev =>
-                          prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
-                        )}
-                        className={
-                          "text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                          (securingRequirements.includes(v)
-                            ? "bg-slate-700 text-white border-slate-700"
-                            : "bg-white text-muted border-border hover:border-gray-400")
-                        }>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Extra */}
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Extra</div>
-                  <div className="space-y-3">
-                    <div>
-                      <FieldLabel>Load Notes</FieldLabel>
-                      <textarea className="input min-h-16 resize-none" placeholder="Any additional load information for the driver or planner…"
-                        value={loadNotes} onChange={e => setLoadNotes(e.target.value)} />
-                    </div>
-                    <Toggle value={photosRequired}  onChange={setPhotosRequired}  label="Photos / documents required" />
-                    <Toggle value={weighbridgeRequired}  onChange={setWeighbridgeRequired}  label="Weighbridge ticket required" />
-                  </div>
-                </div>
-
-              </div>
-            )}
-          </div>}
-          {!sec4Collapsed && <SectionFooter complete={loadComplete} label="Load details" onCollapse={() => setSec4Collapsed(true)} />}
-        </div>
-
-        {/* ── Section 04b — Special Requirements ─────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={4} icon="⚠️" title="Special Requirements" subtitle="ADR, fragile, high-value, oversized or secure goods" active
-            collapsed={sec4bCollapsed} onToggle={() => setSec4bCollapsed(o => !o)}
-            summary={specialRequirements.length > 0 ? `${specialRequirements.length} selected` : undefined}
-            complete={true} started={specialRequirements.length > 0} />
-          {!sec4bCollapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-            <p className="text-sm text-muted">Select any special characteristics that affect vehicle choice, insurance or driver qualifications.</p>
-
-            {/* Special requirement chips */}
-            <div className="flex flex-wrap gap-2">
-              {SPECIAL_REQUIREMENTS_OPTS.map(([v, l]) => (
-                <button key={v} type="button"
-                  onClick={() => setSpecialRequirements(prev =>
-                    prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
-                  )}
-                  className={
-                    "text-sm px-3 py-2 rounded-xl border font-medium transition-colors " +
-                    (specialRequirements.includes(v)
-                      ? "bg-amber-600 text-white border-amber-600"
-                      : "bg-white text-muted border-border hover:border-amber-400")
-                  }>
-                  {l}
-                </button>
-              ))}
-            </div>
-
-            {/* ADR sub-fields */}
-            {specialRequirements.includes("dangerous_goods") && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
-                <div className="text-sm font-bold text-amber-800">Dangerous Goods Details</div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* ── General goods ── */}
+              {goodsType === "general" && (
+                <div className="space-y-4 pt-1">
                   <div>
-                    <FieldLabel>ADR Class</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. Class 3"
-                      value={adrClass} onChange={e => setAdrClass(e.target.value)} />
+                    <FieldLabel>Packaging type</FieldLabel>
+                    <div className="mt-1">
+                      <Chips options={GENERAL_PACKAGING} value={generalPackagingType}
+                        onChange={setGeneralPackagingType} />
+                    </div>
                   </div>
-                  <div>
-                    <FieldLabel>UN Number</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. UN1203"
-                      value={adrUnNumber} onChange={e => setAdrUnNumber(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Packing Group</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. II"
-                      value={adrPackingGroup} onChange={e => setAdrPackingGroup(e.target.value)} />
-                  </div>
+                  <TextField label="Total number of pieces" type="number" min="0" step="1"
+                    value={generalPieceCount} onChange={setGeneralPieceCount} placeholder="48"
+                    hint="Used for manifest and driver count verification on delivery." />
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Oversized sub-fields */}
-            {specialRequirements.includes("oversized") && (
-              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
-                <div className="text-sm font-bold text-orange-800 mb-2">Oversized Load Dimensions</div>
-                <input type="text" className="input" placeholder="e.g. 6.2m × 2.8m × 3.5m"
-                  value={oversizedDimensions} onChange={e => setOversizedDimensions(e.target.value)} />
-                <p className="text-xs text-orange-700 mt-1.5">Length × Width × Height</p>
-              </div>
-            )}
-
-          </div>}
-        </div>
-
-        {/* ── Section 05 — Vehicle Requirements ─────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={5} icon="🚛" title="Vehicle Requirements" subtitle="Body category, trailer, equipment and licence" active
-            collapsed={sec5Collapsed} onToggle={() => setSec5Collapsed(o => !o)}
-            summary={reqBodyCategory ? [
-              optionLabel(BODY_CATEGORY_OPTS, reqBodyCategory),
-              reqGvwMin,
-              reqBodyType ? optionLabel(BODY_TYPE_OPTS, reqBodyType) : "",
-            ].filter(Boolean).join(" · ") : undefined}
-            complete={vehicleComplete} started={sec5Started} />
-
-          {!sec5Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-
-            <div>
-              <FieldLabel required>Body Category</FieldLabel>
-              <div className="flex flex-wrap gap-2">
-                {BODY_CATEGORY_OPTS.map(([key, label]) => (
-                  <button key={key} type="button" onClick={() => {
-                      const next = key as BodyCategory;
-                      setReqBodyCategory(next);
-                      setVehicleClass(key);
-                      if (!bodyCategoryNeedsTrailer(next)) setTrailerTypesAllowed([]);
-                    }}
-                    className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                      (reqBodyCategory === key
-                        ? "bg-slate-700 text-white border-slate-700"
-                        : "bg-white text-muted border-border hover:border-gray-400")}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {visibleGvwOptions.length > 0 && (
+              {/* Can split */}
               <div>
-                <FieldLabel>Minimum GVW</FieldLabel>
-                <div className="flex flex-wrap gap-2">
-                  {visibleGvwOptions.map(([key, label]) => (
-                    <button key={key} type="button" onClick={() => setReqGvwMin(key as GvwClass)}
-                      className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                        (reqGvwMin === key
-                          ? "bg-slate-700 text-white border-slate-700"
-                          : "bg-white text-muted border-border hover:border-gray-400")}>
-                      {label}
+                <FieldLabel>Can this shipment be split between vehicles?</FieldLabel>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {SPLIT_OPTIONS.map(([v, l]) => (
+                    <button key={v} type="button" onClick={() => setCanSplitShipment(v)}
+                      className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+                        (canSplitShipment === v ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
+                      {l}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
 
-            {bodyTypeRequired && (
+              {/* Securing requirements */}
               <div>
-                <FieldLabel required>Body Type</FieldLabel>
-                <select className="input max-w-xl" value={reqBodyType} onChange={e => setReqBodyType(e.target.value as BodyType | "")}>
-                  <option value="">— Select body type —</option>
-                  {visibleBodyTypeOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-            )}
-
-            {trailerRequired && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-blue-700 text-sm font-bold">Trailer required</span>
-                  <span className="text-blue-500 text-xs">— select acceptable trailer body types</span>
-                </div>
-                <div>
-                  <FieldLabel required>Trailer Body Type</FieldLabel>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {trailerBodyTypeOpts.map(([key, label]) => (
-                      <button key={key} type="button"
-                        onClick={() => setTrailerTypesAllowed(prev =>
-                          prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]
-                        )}
-                        className={"text-sm px-3 py-1.5 rounded-full border font-medium transition-colors " +
-                          (trailerTypesAllowed.includes(key)
-                            ? "bg-blue-700 text-white border-blue-700"
-                            : "bg-white text-muted border-border hover:border-blue-400")}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {trailerTypesAllowed.length === 0 && (
-                    <p className="mt-1.5 text-xs text-red-500">Select at least one trailer type</p>
-                  )}
-                </div>
-                <div className="max-w-xs">
-                  <FieldLabel>Trailer Length</FieldLabel>
-                  <select className="input" value={trailerLength} onChange={e => setTrailerLength(e.target.value)}>
-                    <option value="">— No length preference —</option>
-                    {TRAILER_LENGTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <FieldLabel>Onboard Equipment</FieldLabel>
-              <MultiCheck options={visibleEquipmentOpts} value={reqEquipment} onChange={v => setReqEquipment(v as OnboardEquipment[])} />
-            </div>
-
-            <div>
-              <FieldLabel>Minimum Driver Licence</FieldLabel>
-              <select className="input max-w-xl" value={reqLicenceClass} onChange={e => setReqLicenceClass(e.target.value as DriverLicenceClass | "")}>
-                <option value="">— Select licence —</option>
-                {DRIVER_LICENCE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <FieldLabel>Driver Endorsements</FieldLabel>
-              <MultiCheck options={DRIVER_ENDORSEMENT_OPTS} value={reqEndorsements} onChange={v => setReqEndorsements(v as DriverEndorsement[])} />
-            </div>
-
-            <OptionalToggle open={showVehicleOpts} onToggle={() => setShowVehicleOpts(o => !o)} label="vehicle details" />
-
-            {showVehicleOpts && (
-              <div className="space-y-6 pt-1 border-t border-border">
-
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Restrictions</div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <FieldLabel>Height</FieldLabel>
-                      <div className="relative">
-                        <input type="text" inputMode="decimal" className="input pr-6" placeholder="e.g. 4.0"
-                          value={heightRestriction} onChange={e => setHeightRestriction(e.target.value)} />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m</span>
-                      </div>
-                    </div>
-                    <div>
-                      <FieldLabel>Weight</FieldLabel>
-                      <div className="relative">
-                        <input type="text" inputMode="decimal" className="input pr-6" placeholder="e.g. 7.5"
-                          value={weightRestriction} onChange={e => setWeightRestriction(e.target.value)} />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">t</span>
-                      </div>
-                    </div>
-                    <div>
-                      <FieldLabel>Length</FieldLabel>
-                      <div className="relative">
-                        <input type="text" inputMode="decimal" className="input pr-6" placeholder="e.g. 9.0"
-                          value={lengthRestriction} onChange={e => setLengthRestriction(e.target.value)} />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">m</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Access / Vehicle Notes</div>
-                  <textarea className="input min-h-16 resize-none"
-                    placeholder="e.g. Tight access — no artic. Residential road. Low bridge at 3.8m on approach."
-                    value={vehicleAccessNotes} onChange={e => setVehicleAccessNotes(e.target.value)} />
-                </div>
-
-              </div>
-            )}
-          </div>}
-          {!sec5Collapsed && <SectionFooter complete={vehicleComplete} label="Vehicle requirements" onCollapse={() => setSec5Collapsed(true)} />}
-        </div>
-
-        {/* ── Section 06 — Return Instructions ───────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={6} icon="↩️" title="Return / Failure Instructions" subtitle="What the driver does if a delivery cannot be completed"
-            active collapsed={sec6Collapsed} onToggle={() => setSec6Collapsed(o => !o)}
-            complete={sec6Complete} started={sec6Started}            summary={failureAction ? (
-              failureAction === "call_assistance"      ? `Call for assistance${assistancePhone ? ` · ${assistancePhone}` : ""}` :
-              failureAction === "next_delivery"        ? "Proceed to next delivery" :
-              failureAction === "return_depot"         ? "Return to depot" :
-              failureAction === "return_collection"    ? "Return to collection address" :
-              failureAction === "deliver_alternative"  ? "Deliver to alternative address" :
-              failureAction === "finish_then_return"   ? `Finish deliveries, then return${returnDestination ? ` to ${returnDestination}` : ""}` : ""
-            ) : undefined} />
-
-          {!sec6Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-
-            {/* Main dropdown */}
-            <div>
-              <FieldLabel required>What should the driver do if delivery fails?</FieldLabel>
-              <select className="input" value={failureAction} onChange={e => { setFailureAction(e.target.value); setReturnDestination(""); }}>
-                <option value="call_assistance">Call for assistance</option>
-                <option value="next_delivery">Proceed to next delivery</option>
-                <option value="return_depot">Return to depot</option>
-                <option value="return_collection">Return to collection address</option>
-                <option value="deliver_alternative">Deliver to alternative address</option>
-                <option value="finish_then_return">Finish remaining deliveries, then return</option>
-              </select>
-              <p className="text-xs text-muted mt-1.5">
-                {failureAction === "next_delivery"     && "Driver will proceed to the next stop on the job."}
-                {failureAction === "return_depot"      && "System uses the driver's assigned depot / yard. No address needed."}
-                {failureAction === "return_collection" && "System uses the original collection stop address. No address needed."}
-                {failureAction === "call_assistance"   && "Driver will call the number below before taking any other action."}
-                {failureAction === "deliver_alternative" && "Driver will deliver to the alternative address below."}
-                {failureAction === "finish_then_return"  && "Driver will complete any remaining stops, then return as specified."}
-              </p>
-            </div>
-
-            {/* Call for assistance */}
-            {failureAction === "call_assistance" && (
-              <div className="space-y-3 pt-1 border-t border-border">
-                <div>
-                  <FieldLabel required>Assistance Phone Number</FieldLabel>
-                  <input type="tel" className="input" placeholder="e.g. 07700 900123"
-                    value={assistancePhone} onChange={e => setAssistancePhone(e.target.value)} />
-                </div>
-                <div>
-                  <FieldLabel>Assistance Instruction / Note</FieldLabel>
-                  <textarea className="input min-h-16 resize-none"
-                    placeholder="e.g. Call dispatcher before returning. Quote job reference."
-                    value={assistanceNote} onChange={e => setAssistanceNote(e.target.value)} />
-                </div>
-              </div>
-            )}
-
-            {/* Finish then return — destination picker */}
-            {failureAction === "finish_then_return" && (
-              <div className="pt-1 border-t border-border">
-                <FieldLabel required>Return Destination</FieldLabel>
-                <div className="flex gap-2 flex-wrap">
-                  {[["depot","Depot"],["collection","Collection address"],["alternative","Alternative address"]].map(([val, label]) => (
-                    <button key={val} type="button" onClick={() => setReturnDestination(val)}
-                      className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors " +
-                        (returnDestination === val
-                          ? "bg-slate-700 text-white border-slate-700"
-                          : "bg-white text-muted border-border hover:border-gray-400")}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {returnDestination === "depot"      && <p className="text-xs text-muted mt-2">Uses driver's assigned depot. No address needed.</p>}
-                {returnDestination === "collection" && <p className="text-xs text-muted mt-2">Uses the original collection stop address. No address needed.</p>}
-              </div>
-            )}
-
-            {/* Alternative address block — shared */}
-            {needsAltAddress && (
-              <div className="space-y-4 pt-1 border-t border-border">
-                <div className="text-xs font-bold text-muted uppercase tracking-widest">Alternative Address</div>
-
-                {/* Saved location search */}
-                <div>
-                  <FieldLabel>Search saved locations</FieldLabel>
-                  <LocationSearch
-                    value={altLocationQuery}
-                    linkedId={altSavedLocationId}
-                    locations={locations}
-                    onSelect={loc => {
-                      setAltSavedLocationId(loc.id);
-                      setAltLocationQuery(loc.name);
-                      setAltSiteName(loc.siteName || loc.name);
-                      setAltStreet(loc.street);
-                      setAltTown(loc.town);
-                      setAltPostcode(loc.postcode);
-                      setAltLat(loc.lat != null ? String(loc.lat) : "");
-                      setAltLng(loc.lng != null ? String(loc.lng) : "");
-                      setAltContactName(loc.contactName || "");
-                      setAltContactPhone(loc.contactPhone || "");
-                    }}
-                    onClear={() => {
-                      setAltSavedLocationId(null);
-                      setAltLocationQuery("");
-                    }}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <FieldLabel required>Company / Site Name</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. Acme Logistics Ltd"
-                      value={altSiteName} onChange={e => setAltSiteName(e.target.value)} />
-                  </div>
-                  <div className="col-span-2">
-                    <FieldLabel required>Street / Address Line 1</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. 12 Sample Road"
-                      value={altStreet} onChange={e => setAltStreet(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel required>Town / City</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. Sampletown"
-                      value={altTown} onChange={e => setAltTown(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel required>Postcode</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. EX1 1AA"
-                      value={altPostcode} onChange={e => setAltPostcode(e.target.value.toUpperCase())} />
-                  </div>
-                  <div className="col-span-2">
-                    <FieldLabel required>Country</FieldLabel>
-                    <input type="text" className="input" placeholder="United Kingdom"
-                      value={altCountry} onChange={e => setAltCountry(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <FieldLabel>Latitude</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. 51.5074"
-                      value={altLat} onChange={e => setAltLat(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Longitude</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. -0.1278"
-                      value={altLng} onChange={e => setAltLng(e.target.value)} />
-                  </div>
-                </div>
-
-                <OptionalToggle open={showAltOpts} onToggle={() => setShowAltOpts(o => !o)} label="optional address details" />
-
-                {showAltOpts && <div className="space-y-3">
-                  <div>
-                    <FieldLabel>Unit / Building</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. Unit 4B"
-                      value={altUnitName} onChange={e => setAltUnitName(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Address Line 2</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. Exampleshire Industrial Estate"
-                      value={altAddressLine2} onChange={e => setAltAddressLine2(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>County / Region</FieldLabel>
-                    <input type="text" className="input" placeholder="e.g. Exampleshire"
-                      value={altCountyRegion} onChange={e => setAltCountyRegion(e.target.value)} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <FieldLabel>Contact Name</FieldLabel>
-                      <input type="text" className="input" placeholder="e.g. J. Smith"
-                        value={altContactName} onChange={e => setAltContactName(e.target.value)} />
-                    </div>
-                    <div>
-                      <FieldLabel>Contact Phone</FieldLabel>
-                      <input type="tel" className="input" placeholder="e.g. 07700 900456"
-                        value={altContactPhone} onChange={e => setAltContactPhone(e.target.value)} />
-                    </div>
-                  </div>
-                  <div>
-                    <FieldLabel>Contact Email</FieldLabel>
-                    <input type="email" className="input" placeholder="e.g. goods@example.com"
-                      value={altContactEmail} onChange={e => setAltContactEmail(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Navigation Instructions</FieldLabel>
-                    <textarea className="input min-h-16 resize-none"
-                      placeholder="e.g. Enter via rear gate on Example Lane"
-                      value={altNavigationInstructions} onChange={e => setAltNavigationInstructions(e.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>Driver Notes</FieldLabel>
-                    <textarea className="input min-h-16 resize-none"
-                      placeholder="e.g. Call ahead 30 mins before arrival"
-                      value={altInstructions} onChange={e => setAltInstructions(e.target.value)} />
-                  </div>
-                </div>}
-              </div>
-            )}
-
-          </div>}
-          {!sec6Collapsed && <SectionFooter complete={sec6Complete} label="Return instructions" onCollapse={() => setSec6Collapsed(true)} />}
-        </div>
-
-        {/* ── Section 07 — Planner Details ────────────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <SectionHeader num={7} icon="🗂️" title="Planner details" subtitle="Driver, vehicle and internal planning notes" optional
-            collapsed={sec7Collapsed} onToggle={() => setSec7Collapsed(o => !o)}
-            complete={sec7Started} started={sec7Started} />
-          {!sec7Collapsed && <div className="px-5 pt-5 pb-4 space-y-4">
-
-            {/* Driver assignment */}
-            <div>
-              <FieldLabel>Assign Driver</FieldLabel>
-              <select className="input mt-1" value={assignedDriverId ?? ""} onChange={e => {
-                const id = e.target.value ? parseInt(e.target.value, 10) : null;
-                setAssignedDriverId(id);
-                const d = drivers.find(dr => dr.id === id);
-                if (d) {
-                  if (d.defaultTruckReg)   setAssignedTruck(d.defaultTruckReg);
-                  if (d.defaultTrailerReg) setAssignedTrailer(d.defaultTrailerReg);
-                }
-              }}>
-                <option value="">Unassigned</option>
-                {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
-              </select>
-            </div>
-
-            {/* Driver schedule feasibility warning */}
-            {scheduleLoading && (
-              <div className="text-sm text-muted px-3 py-2 rounded-xl bg-slate-50 border">
-                Checking driver schedule...
-              </div>
-            )}
-            {!scheduleLoading && driverSchedule && driverSchedule.stops.length > 0 && (
-              <DriverScheduleWarning schedule={driverSchedule} />
-            )}
-
-            {/* Truck / Trailer */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>Assigned Truck</FieldLabel>
-                <input
-                  type="text"
-                  className="input mt-1"
-                  placeholder="e.g. AB12 CDE"
-                  value={assignedTruck}
-                  onChange={e => setAssignedTruck(e.target.value.toUpperCase())}
-                />
-              </div>
-              <div>
-                <FieldLabel>Assigned Trailer</FieldLabel>
-                <input
-                  type="text"
-                  className="input mt-1"
-                  placeholder="e.g. TR45 XYZ"
-                  value={assignedTrailer}
-                  onChange={e => setAssignedTrailer(e.target.value.toUpperCase())}
-                />
-              </div>
-            </div>
-
-            {/* Agreed rate */}
-            <div className="max-w-xs">
-              <FieldLabel>Agreed rate (£)</FieldLabel>
-              <input
-                type="number"
-                step="0.01"
-                className="input mt-1"
-                placeholder="0.00"
-                value={agreedRate}
-                onChange={e => setAgreedRate(e.target.value)}
-              />
-            </div>
-
-            {/* Internal planner notes */}
-            <div>
-              <FieldLabel>Internal planner notes</FieldLabel>
-              <textarea
-                className="input mt-1 min-h-20 resize-none"
-                placeholder="Allocated to North route. Driver briefed. Check axle weights at site."
-                value={plannerNotes}
-                onChange={e => setPlannerNotes(e.target.value)}
-              />
-            </div>
-
-          </div>}
-          {!sec7Collapsed && <SectionFooter complete={sec7Started} label="Planner details" onCollapse={() => setSec7Collapsed(true)} />}
-        </div>
-
-        {/* ── Driver instructions card ──────────────────────────────────────── */}
-        <div className="card overflow-hidden">
-          <button type="button" onClick={() => setShowDriverNotes(o => !o)}
-            className="w-full flex items-center gap-3 px-5 py-4 border-b border-border text-left hover:bg-slate-50/60 transition-colors">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 border ${showDriverNotes ? "bg-blue-50 border-blue-200" : "bg-white border-slate-200 shadow-sm"}`}>
-              🚛
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-black text-primary">Driver instructions</h2>
-                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
-              </div>
-              <p className="text-xs text-muted mt-0.5">
-                {driverNoteChips.length > 0 || driverVisibleNotes || safetyInstructions
-                  ? `${driverNoteChips.length} chip${driverNoteChips.length !== 1 ? "s" : ""}${driverVisibleNotes ? " · notes added" : ""}${safetyInstructions ? " · safety info added" : ""}`
-                  : "Quick-select chips, free-text notes and safety info for the driver"}
-              </p>
-            </div>
-            <span className={`text-xl font-bold flex-shrink-0 ml-1 transition-transform duration-200 ${showDriverNotes ? "text-accent" : "text-muted"}`}>
-              {showDriverNotes ? "⌄" : "›"}
-            </span>
-          </button>
-          {showDriverNotes && (
-            <div className="px-5 pt-5 pb-4 space-y-4">
-              <div>
-                <FieldLabel>Quick-select instructions</FieldLabel>
+                <FieldLabel>Load securing requirements</FieldLabel>
                 <div className="mt-1">
-                  <MultiCheck options={DRIVER_NOTE_CHIPS} value={driverNoteChips} onChange={setDriverNoteChips} />
+                  <MultiCheck options={SECURING_REQUIREMENTS} value={securingRequirements}
+                    onChange={setSecuringRequirements} />
                 </div>
               </div>
+
+              {/* Load notes */}
               <div>
-                <FieldLabel>Driver-visible notes</FieldLabel>
-                <textarea className="input mt-1 w-full min-h-20 resize-none"
-                  placeholder="e.g. Call site contact 30 mins before arrival. Use rear entrance on Warehouse Lane."
-                  value={driverVisibleNotes}
-                  onChange={e => setDriverVisibleNotes(e.target.value)} />
-                <p className="text-xs text-muted mt-1">Shown to the driver before they start the job.</p>
+                <FieldLabel>Additional load notes</FieldLabel>
+                <textarea className="input mt-1 w-full" rows={2}
+                  value={loadNotes} onChange={e => setLoadNotes(e.target.value)}
+                  placeholder="Stacked 3 high. Do not tip. Handle with care near top." />
               </div>
-              <div>
-                <FieldLabel>Safety instructions</FieldLabel>
-                <textarea className="input mt-1 w-full min-h-20 resize-none"
-                  placeholder="e.g. COSHH: corrosive liquid — wear acid-resistant gloves. Hard hat required on site at all times."
-                  value={safetyInstructions}
-                  onChange={e => setSafetyInstructions(e.target.value)} />
-                <p className="text-xs text-muted mt-1">PPE requirements, COSHH notices, site hazards.</p>
-              </div>
+
+              <SectionFooter complete={sec3Complete} label="Load details" onCollapse={() => setS3(true)} missing={sec3Missing} />
             </div>
           )}
         </div>
 
-        {/* ── Rejection & return policy card ───────────────────────────────── */}
+        {/* ── Sec 4: Special requirements ───────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <button type="button" onClick={() => setShowRejectionPolicy(o => !o)}
+          <SectionHeader num={4} icon="⚠️" title="Special requirements" subtitle="ADR, fragile, high value, oversized, secure transport" active
+            collapsed={s4} onToggle={() => setS4(o => !o)}
+            complete optional
+            summary={specialItems.length > 0
+              ? specialItems.map(i => SPECIAL_REQUIREMENTS_OPTS.find(([v]) => v === i)?.[1]?.replace(/^.+\s/, "") ?? i).join(", ")
+              : undefined} />
+          {!s4 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <MultiCheck options={SPECIAL_REQUIREMENTS_OPTS} value={specialItems} onChange={setSpecialItems} />
+
+              {specialItems.includes("dangerous_goods") && (
+                <div className="space-y-3 border-l-2 border-red-200 pl-4">
+                  <TextField label="ADR class" value={adrClass} onChange={setAdrClass}
+                    placeholder="Class 3 — Flammable liquids" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="UN number" value={unNumber} onChange={setUnNumber} placeholder="UN 1993" />
+                    <TextField label="Packing group" value={packingGroup} onChange={setPackingGroup} placeholder="I, II or III" />
+                  </div>
+                  <TextField label="Total hazardous quantity (kg or litres)" type="number" min="0"
+                    value={hazardousQtyKg} onChange={setHazardousQtyKg} placeholder="500"
+                    hint="Used to determine LQ / EQ exemption thresholds." />
+                  <Toggle value={hazardousPaperwork} onChange={setHazardousPaperwork}
+                    label="Hazardous paperwork available / will be provided" />
+                </div>
+              )}
+
+              {specialItems.includes("oversized") && (
+                <div className="space-y-3 border-l-2 border-amber-300 pl-4">
+                  <div className="text-xs text-slate-500 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    Overall dimensions including the load on the vehicle — not just the item itself.
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <TextField label="Overall width (m)" type="number" min="0"
+                      value={oversizedWidth} onChange={setOversizedWidth} placeholder="3.2" />
+                    <TextField label="Overall height (m)" type="number" min="0"
+                      value={oversizedHeight} onChange={setOversizedHeight} placeholder="4.8" />
+                    <TextField label="Overall length (m)" type="number" min="0"
+                      value={oversizedLength} onChange={setOversizedLength} placeholder="18.5" />
+                  </div>
+                  {oversizedWidth && parseFloat(oversizedWidth) > 2.5 && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                      <span className="text-amber-500 flex-shrink-0">⚠</span>
+                      <p className="text-xs font-semibold text-amber-800">Over 2.5m wide — likely requires an abnormal load permit.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <SectionFooter complete label="Special requirements" onCollapse={() => setS4(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Sec 5: Transport requirements ─────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={5} icon="🚛" title="Transport requirements" subtitle="Vehicle and trailer preferences" active
+            collapsed={s5} onToggle={() => setS5(o => !o)}
+            complete optional
+            summary={plannerDecides ? "Planner will decide" : (
+              [
+                BODY_CATEGORIES.find(c => c.value === reqBodyCategory)?.label,
+                reqBodyTypes.map(t => BODY_TYPES.find(b => b.value === t)?.label).filter(Boolean).join(", "),
+              ].filter(Boolean).join(" · ") || undefined
+            )} />
+          {!s5 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <Toggle value={plannerDecides} onChange={v => { setPlannerDecides(v); }}
+                label="Let the planner choose the best transport for this load" />
+
+              {!plannerDecides && (
+                <div className="space-y-4 border-l-2 border-blue-100 pl-4">
+                  <div className="text-xs text-muted bg-blue-50 rounded-lg px-3 py-2">
+                    Only fill this in if you know exactly what transport you need.
+                  </div>
+
+                  <div>
+                    <FieldLabel>Vehicle body category</FieldLabel>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {BODY_CATEGORIES.map(({ value, label }) => (
+                        <button key={value} type="button"
+                          onClick={() => { setReqBodyCategory(value); setReqBodyTypes([]); }}
+                          className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+                            (reqBodyCategory === value
+                              ? "bg-accent text-white border-accent"
+                              : "bg-white text-muted border-border hover:border-gray-400")}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {reqBodyCategory && (() => {
+                    const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []);
+                    const grouped: Record<string, { value: string; label: string }[]> = {};
+                    BODY_TYPES.forEach(bt => {
+                      if (!allowed.has(bt.value)) return;
+                      if (!grouped[bt.group]) grouped[bt.group] = [];
+                      grouped[bt.group].push({ value: bt.value, label: bt.label });
+                    });
+                    const groups = Object.keys(grouped);
+                    function toggleType(v: string) {
+                      setReqBodyTypes(prev =>
+                        prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
+                      );
+                    }
+                    return (
+                      <div className="space-y-3">
+                        <FieldLabel>Body type — select all that work</FieldLabel>
+                        {groups.map(g => (
+                          <div key={g}>
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                              {BODY_TYPE_GROUP_LABELS[g] ?? g}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {grouped[g].map(bt => {
+                                const on = reqBodyTypes.includes(bt.value);
+                                return (
+                                  <button key={bt.value} type="button" onClick={() => toggleType(bt.value)}
+                                    className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+                                      (on ? "bg-accent text-white border-accent" : "bg-white text-muted border-border hover:border-gray-400")}>
+                                    {bt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <SectionFooter complete label="Transport requirements" onCollapse={() => setS5(true)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Sec 6: Billing ────────────────────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <SectionHeader num={6} icon="📄" title="Billing" subtitle="Declared goods value and reference numbers" active
+            collapsed={s6} onToggle={() => setS6(o => !o)}
+            complete={sec6Complete} started={sec6Started}
+            summary={declaredValue ? `£${declaredValue}${purchaseOrderNumber ? ` · PO: ${purchaseOrderNumber}` : ""}` : undefined}
+            missingCount={sec6Missing.length} />
+          {!s6 && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <TextField label="Declared value of goods (£)" required type="number" min="0"
+                value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
+                hint="For insurance and liability purposes — not the transport price." />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TextField label="Purchase order number" value={purchaseOrderNumber}
+                  onChange={setPurchaseOrderNumber} placeholder="PO-2026-12345"
+                  hint="Required on your invoice by your finance team." />
+                <TextField label="Billing reference / cost code" value={billingRef}
+                  onChange={setBillingRef} placeholder="COST-CENTRE-123" />
+              </div>
+              <Toggle value={vatRegistered} onChange={setVatRegistered} label="Customer is VAT registered" />
+              {vatRegistered && (
+                <TextField label="VAT number" value={vatNumber} onChange={setVatNumber} placeholder="GB123456789" />
+              )}
+              <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} missing={sec6Missing} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Sec 7: Rejection & return policy ──────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <button type="button" onClick={() => setShowExceptionPolicy(o => !o)}
             className="w-full flex items-center gap-3 px-5 py-4 border-b border-border text-left hover:bg-slate-50/60 transition-colors">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 border ${showRejectionPolicy ? "bg-orange-50 border-orange-200" : "bg-white border-slate-200 shadow-sm"}`}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 border ${showExceptionPolicy ? "bg-orange-50 border-orange-200" : "bg-white border-slate-200 shadow-sm"}`}>
               🔄
             </div>
             <div className="flex-1 min-w-0">
@@ -2210,37 +1552,104 @@ export default function CreateJobPage() {
                   : "What should the driver do if goods are refused at the door?"}
               </p>
             </div>
-            <span className={`text-xl font-bold flex-shrink-0 ml-1 transition-transform duration-200 ${showRejectionPolicy ? "text-accent" : "text-muted"}`}>
-              {showRejectionPolicy ? "⌄" : "›"}
+            <span className={`text-xl font-bold flex-shrink-0 ml-1 transition-transform duration-200 ${showExceptionPolicy ? "text-accent" : "text-muted"}`}>
+              {showExceptionPolicy ? "⌄" : "›"}
             </span>
           </button>
-          {showRejectionPolicy && (
+
+          {showExceptionPolicy && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               <div className="text-xs text-slate-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 leading-relaxed">
-                Specifying this avoids the driver having to call the office when a delivery is refused — they know exactly what to do.
+                Fill this in so the driver knows exactly what to do without having to call the office.
               </div>
+
               <div>
                 <FieldLabel>If delivery is rejected at the door, what should the driver do?</FieldLabel>
                 <div className="mt-1">
-                  <MultiCheck options={REJECTION_ACTIONS} value={rejectionAction ? [rejectionAction] : []}
-                    onChange={vals => setRejectionAction(vals[vals.length - 1] ?? "")} />
+                  <Chips options={REJECTION_ACTIONS} value={rejectionAction} onChange={setRejectionAction} />
                 </div>
               </div>
+
               {rejectionAction === "deliver_to_alternative_address" && (
                 <div className="space-y-3 border-l-2 border-orange-200 pl-4">
-                  <TextField label="Alternative delivery address" value={alternativeReturnAddress}
-                    onChange={setAlternativeReturnAddress} placeholder="12 Returns Lane, Manchester" />
-                  <TextField label="Alternative delivery postcode" value={alternativeReturnPostcode}
-                    onChange={v => setAlternativeReturnPostcode(v.toUpperCase())} placeholder="M1 1AA" />
+                  <TextField label="Site name" value={altReturnSiteName}
+                    onChange={setAltReturnSiteName} placeholder="Acme Returns Depot — Unit 3" caseRule="proper_name" />
+                  <TextField label="Address line 1" value={altReturnAddress}
+                    onChange={setAltReturnAddress} placeholder="12 Warehouse Lane" caseRule="proper_name" />
+                  <TextField label="Address line 2" value={altReturnAddressLine2}
+                    onChange={setAltReturnAddressLine2} placeholder="Industrial Estate" caseRule="proper_name" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <TextField label="Town / city" value={altReturnTown}
+                        onChange={setAltReturnTown} placeholder="Manchester" caseRule="proper_name" />
+                    </div>
+                    <label className="block">
+                      <FieldLabel>{POSTCODE_META[altReturnCountry]?.label ?? "Postcode"}</FieldLabel>
+                      <input className="input mt-1 w-full" type="text"
+                        value={altReturnPostcode}
+                        placeholder={POSTCODE_META[altReturnCountry]?.placeholder ?? "Postcode"}
+                        onChange={e => setAltReturnPostcode(e.target.value.toUpperCase())} />
+                    </label>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <TextField label="Contact name" value={alternativeReturnContactName}
-                      onChange={setAlternativeReturnContactName} placeholder="Jane Smith" caseRule="proper_name" />
-                    <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
-                      onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
+                    <TextField label="County / region" value={altReturnCounty}
+                      onChange={setAltReturnCounty} placeholder="Greater Manchester" caseRule="proper_name" />
+                    <label className="block">
+                      <FieldLabel>Country</FieldLabel>
+                      <div className="relative mt-1">
+                        <select className="input w-full appearance-none pr-9"
+                          value={altReturnCountry}
+                          onChange={e => setAltReturnCountry(e.target.value)}>
+                          {COUNTRIES.map(([code, name]) => (
+                            <option key={code} value={code}>{name}</option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                          <svg className="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                  <div>
+                    <FieldLabel>Exact entrance pin — latitude / longitude</FieldLabel>
+                    <div className="grid grid-cols-2 gap-3 mt-1">
+                      <div>
+                        <FieldLabel>Latitude</FieldLabel>
+                        <input className="input font-mono" type="number" step="0.000001"
+                          placeholder="e.g. 53.483959"
+                          value={altReturnLat} onChange={e => setAltReturnLat(e.target.value)} />
+                      </div>
+                      <div>
+                        <FieldLabel>Longitude</FieldLabel>
+                        <input className="input font-mono" type="number" step="0.000001"
+                          placeholder="e.g. -2.244644"
+                          value={altReturnLng} onChange={e => setAltReturnLng(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
+                      <span className="text-amber-500 text-base leading-none mt-px flex-shrink-0">⚠</span>
+                      <p className="text-xs font-semibold text-amber-800 leading-snug">Must be the truck gate, not the building centre.</p>
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Entrance instructions</FieldLabel>
+                    <textarea className="input mt-1 w-full" rows={2}
+                      value={altReturnNavInstructions}
+                      onChange={e => setAltReturnNavInstructions(e.target.value)}
+                      placeholder="Enter via Gate B on the left. Intercom code 1234." />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <TextField label="Contact name" value={altReturnContactName}
+                      onChange={setAltReturnContactName} placeholder="Jane Smith" caseRule="proper_name" />
+                    <TextField label="Contact phone" type="tel" value={altReturnContactPhone}
+                      onChange={setAltReturnContactPhone} placeholder="+44 7700 900123" />
                   </div>
                 </div>
               )}
-              {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval") && (
+
+              {rejectionAction === "call_office_before_leaving" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-l-2 border-orange-200 pl-4">
                   <TextField label="Approval contact name" value={approvalContactName}
                     onChange={setApprovalContactName} placeholder="Jane Smith" />
@@ -2248,13 +1657,15 @@ export default function CreateJobPage() {
                     onChange={setApprovalContactPhone} placeholder="+44 7700 900123" />
                 </div>
               )}
-              <Toggle value={photosRequiredOnRejection} onChange={setPhotosRequiredOnRejection}
+
+              <Toggle value={photosOnRejection} onChange={setPhotosOnRejection}
                 label="Photos required on rejection" />
-              <Toggle value={rejectionSignatureRequired} onChange={setRejectionSignatureRequired}
+              <Toggle value={signatureOnRejection} onChange={setSignatureOnRejection}
                 label="Rejection signature required" />
+
               <div>
                 <FieldLabel>Additional rejection / return notes</FieldLabel>
-                <textarea className="input mt-1 w-full min-h-16 resize-none"
+                <textarea className="input mt-1 w-full" rows={2}
                   value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)}
                   placeholder="Do not leave goods unattended. Call depot before returning." />
               </div>
@@ -2264,15 +1675,10 @@ export default function CreateJobPage() {
 
       </div>
 
-      {/* ── Sticky save bar ───────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40" style={{background: 'white', borderTop: '1px solid #e2e8f0', boxShadow: '0 -4px 24px rgba(15,23,42,0.08)'}}>
-        {/* Progress strip */}
-        <div className="w-full h-1 flex">
-          <div className="h-full bg-slate-500 transition-all duration-700" style={{ width: `${reqScore}%` }} />
-          <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${optScore}%` }} />
-        </div>
+      {/* ── Sticky save bar ──────────────────────────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40"
+        style={{background: 'white', borderTop: '1px solid #e2e8f0', boxShadow: '0 -4px 24px rgba(15,23,42,0.08)'}}>
         <div className="max-w-3xl mx-auto px-5 py-3">
-          {/* Inline error / missing hint */}
           {triedSave && MISSING.length > 0 && (
             <div className="flex items-center gap-2 mb-2 text-xs text-red-600 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
@@ -2286,14 +1692,12 @@ export default function CreateJobPage() {
             </div>
           )}
           <div className="flex items-center gap-3">
-            {/* Cancel — quiet, left */}
             <button onClick={() => navigate(-1)}
               className="text-sm font-medium text-slate-400 hover:text-slate-700 transition-colors px-1 flex-shrink-0">
               Cancel
             </button>
             <div className="flex-1" />
 
-            {/* Template mode: just one Save Template button */}
             {isTemplateMode ? (
               <button onClick={handleSaveTemplate} disabled={saving !== null}
                 className="btn bg-blue-600 hover:bg-blue-700 text-white text-sm px-6 py-2.5 font-bold flex-shrink-0">
@@ -2304,11 +1708,8 @@ export default function CreateJobPage() {
                 {!isEditMode && (
                   <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 space-y-1.5">
                     <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={saveAsTemplate}
-                        onChange={e => setSaveAsTemplate(e.target.checked)}
-                      />
+                      <input type="checkbox" checked={saveAsTemplate}
+                        onChange={e => setSaveAsTemplate(e.target.checked)} />
                       Also save as new template
                     </label>
                     {saveAsTemplate && (
@@ -2327,25 +1728,16 @@ export default function CreateJobPage() {
                     )}
                   </div>
                 )}
-                {/* Quality score — centre-right */}
-                <div className={"hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border flex-shrink-0 " +
-                  (totalScore >= 80 ? "text-green-700 bg-green-50 border-green-200" :
-                   totalScore >= 40 ? "text-amber-700 bg-amber-50 border-amber-200" :
-                   "text-slate-400 bg-slate-50 border-slate-200")}>
-                  {hasStarted ? `${totalScore}%` : "—"}
-                </div>
-                {/* Save Draft */}
                 <button onClick={handleSaveDraft} disabled={saving !== null}
                   className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
                   {saving === "draft" ? "Saving…" : isEditMode ? "Save as draft" : "Save Draft"}
                 </button>
-                {/* Save Ready */}
                 <button onClick={handleSaveReady} disabled={saving !== null}
                   className={"btn text-sm px-6 py-2.5 font-bold flex-shrink-0 " +
                     (MISSING.length === 0
                       ? "bg-green-600 hover:bg-green-700 text-white"
                       : "btn-primary")}>
-                  {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Update & mark ready") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
+                  {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Save changes") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
                 </button>
               </>
             )}

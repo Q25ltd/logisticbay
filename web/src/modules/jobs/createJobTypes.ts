@@ -44,7 +44,11 @@ export interface StopState {
   exchangeCollectQty: string;
   exchangeUnit: string;
   handlingMethods: string[];
+  handlingMethodOther: string;
   accessRequirements: string[];
+  heightRestrictionValue: string;
+  weightRestrictionValue: string;
+  lengthRestrictionValue: string;
   ppeItems: string[];
   proofRequirements: string[];
   loadReadiness: string;

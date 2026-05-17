@@ -247,8 +247,13 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
       exchangeDropQty:       stop.exchangeDropQty ? parseFloat(stop.exchangeDropQty) : null,
       exchangeCollectQty:    stop.exchangeCollectQty ? parseFloat(stop.exchangeCollectQty) : null,
       exchangeUnit:          (stop.exchangeDropQty || stop.exchangeCollectQty) ? stop.exchangeUnit : null,
-      handlingMethods:       stop.handlingMethods.length ? stop.handlingMethods : null,
+      handlingMethods:       stop.handlingMethods.length
+        ? stop.handlingMethods.map(m => m === "other" && stop.handlingMethodOther?.trim() ? `other: ${stop.handlingMethodOther.trim()}` : m)
+        : null,
       accessRequirements:    [...stop.accessRequirements, ...stop.ppeItems].length ? [...stop.accessRequirements, ...stop.ppeItems] : null,
+      heightRestriction:     stop.heightRestrictionValue || null,
+      weightRestriction:     stop.weightRestrictionValue || null,
+      lengthRestriction:     stop.lengthRestrictionValue || null,
       proofRequirements:     stop.proofRequirements.length ? stop.proofRequirements : null,
       loadReadiness:         stop.loadReadiness || null,
       stopNotes:             stop.stopNotes || null,

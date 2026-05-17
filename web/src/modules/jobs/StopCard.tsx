@@ -3,7 +3,7 @@ import type { SavedLocation } from "../../types";
 import type { StopState } from "./createJobTypes";
 import { stopComplete, toMins, fmtMins } from "./createJobUtils";
 import { FieldLabel, OptionalToggle, Toggle } from "./CreateJobFormComponents";
-import { LOCATION_TYPES, EXCHANGE_UNITS, HANDLING_METHODS, PROOF_REQUIREMENTS, LOAD_READINESS, LOAD_UNITS } from "./createJobConstants";
+import { LOCATION_TYPES, EXCHANGE_UNITS, HANDLING_METHODS, PROOF_REQUIREMENTS, LOAD_READINESS, LOAD_UNITS, ACCESS_REQUIREMENTS, PPE_ITEMS } from "./createJobConstants";
 import { applyCase, type CaseRule } from "../../lib/textCase";
 
 // ── Location typeahead (per stop) ─────────────────────────────────────────────
@@ -757,6 +757,70 @@ export default function StopCard({ stop, index, total, locations, onChange, onRe
                     ))}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Access requirements */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">Site Access Requirements</div>
+              <div className="flex flex-wrap gap-2">
+                {ACCESS_REQUIREMENTS.map(([v, l]) => (
+                  <button key={v} type="button"
+                    onClick={() => {
+                      const next = stop.accessRequirements.includes(v)
+                        ? stop.accessRequirements.filter(x => x !== v)
+                        : [...stop.accessRequirements, v];
+                      onChange({ accessRequirements: next });
+                    }}
+                    className={
+                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (stop.accessRequirements.includes(v)
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")
+                    }>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              {stop.accessRequirements.includes("height_restriction") && (
+                <input className="input mt-2 max-w-xs" type="text" placeholder="Height restriction (e.g. 4.2m)"
+                  value={stop.heightRestrictionValue}
+                  onChange={e => onChange({ heightRestrictionValue: e.target.value })} />
+              )}
+              {stop.accessRequirements.includes("weight_restriction") && (
+                <input className="input mt-2 max-w-xs" type="text" placeholder="Weight restriction (e.g. 7.5t)"
+                  value={stop.weightRestrictionValue}
+                  onChange={e => onChange({ weightRestrictionValue: e.target.value })} />
+              )}
+              {stop.accessRequirements.includes("length_restriction") && (
+                <input className="input mt-2 max-w-xs" type="text" placeholder="Length restriction (e.g. 18m)"
+                  value={stop.lengthRestrictionValue}
+                  onChange={e => onChange({ lengthRestrictionValue: e.target.value })} />
+              )}
+            </div>
+
+            {/* PPE required */}
+            <div>
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2 before:content-[''] before:w-3 before:h-px before:bg-slate-300">PPE Required at This Site</div>
+              <p className="text-xs text-muted mb-2">Select everything the driver must wear on site.</p>
+              <div className="flex flex-wrap gap-2">
+                {PPE_ITEMS.map(([v, l]) => (
+                  <button key={v} type="button"
+                    onClick={() => {
+                      const next = stop.ppeItems.includes(v)
+                        ? stop.ppeItems.filter(x => x !== v)
+                        : [...stop.ppeItems, v];
+                      onChange({ ppeItems: next });
+                    }}
+                    className={
+                      "text-xs px-3 py-1.5 rounded-full border font-medium transition-colors " +
+                      (stop.ppeItems.includes(v)
+                        ? "bg-slate-700 text-white border-slate-700"
+                        : "bg-white text-muted border-border hover:border-gray-400")
+                    }>
+                    {l}
+                  </button>
+                ))}
               </div>
             </div>
 

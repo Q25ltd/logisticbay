@@ -333,6 +333,8 @@ export interface CreateJobBody {
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
+  loadData?:                  Record<string, unknown> | null;
+  billingData?:               Record<string, unknown> | null;
 }
 
 export interface PatchJobBody {
@@ -393,6 +395,8 @@ export interface PatchJobBody {
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
+  loadData?:                  Record<string, unknown> | null;
+  billingData?:               Record<string, unknown> | null;
 }
 
 export interface UpdateJobStatusBody {

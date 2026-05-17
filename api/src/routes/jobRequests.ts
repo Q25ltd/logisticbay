@@ -524,6 +524,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             assistanceNote:      exceptBlob?.rejectionNotes ?? "",
             notesData:           notesBlob ? notesBlob as unknown as Prisma.InputJsonValue : undefined,
             exceptionPolicyData: exceptBlob ? exceptBlob as unknown as Prisma.InputJsonValue : undefined,
+            loadData:            jobRequest.loadData    ? jobRequest.loadData    as Prisma.InputJsonValue : undefined,
+            billingData:         jobRequest.billingData ? jobRequest.billingData as Prisma.InputJsonValue : undefined,
           },
         });
 

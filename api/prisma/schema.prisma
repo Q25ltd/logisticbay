@@ -296,6 +296,8 @@ model PlannedJob {
   internalNotes        String    @default("")
   notesData            Json?     // driverNoteChips[], driverVisibleNotes, safetyInstructions
   exceptionPolicyData  Json?     // rejectionAction, alternativeReturnAddress, approvalContactName, etc.
+  loadData             Json?     // type-specific goods sub-fields (pallet type/count, cage count, etc.)
+  billingData          Json?     // declaredGoodsValue, billingReference, vatRegistered, vatNumber
   validationStatus     String    @default("draft")
   qualityScore         Int       @default(0)
   status               String    @default("draft")

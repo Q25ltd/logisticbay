@@ -168,6 +168,16 @@ export const DRIVER_NOTE_CHIPS: [string, string][] = [
   ["do_not_arrive_early",  "Do not arrive early"],
 ];
 
+// ── PPE items (matches PublicRequestForm) ─────────────────────────────────────
+
+export const PPE_ITEMS: [string, string][] = [
+  ["ppe_safety_boots", "Safety boots"],
+  ["ppe_hi_vis",       "Hi-vis vest"],
+  ["ppe_hard_hat",     "Hard hat"],
+  ["ppe_gloves",       "Gloves"],
+  ["ppe_glasses",      "Safety glasses"],
+];
+
 // ── Site access requirements (matches PublicRequestForm) ──────────────────────
 
 export const ACCESS_REQUIREMENTS: [string, string][] = [

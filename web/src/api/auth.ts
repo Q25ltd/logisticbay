@@ -1,4 +1,4 @@
-import { api, setToken, clearToken } from "./client";
+import { api, setAuthTokens, clearToken } from "./client";
 import type { User } from "../types";
 
 type AuthResponse = {
@@ -8,8 +8,7 @@ type AuthResponse = {
 };
 
 function storeAuthSession(data: AuthResponse) {
-  setToken(data.accessToken);
-  localStorage.setItem("lb_refresh_token", data.refreshToken);
+  setAuthTokens(data.accessToken, data.refreshToken);
 }
 
 export async function login(email: string, password: string) {
