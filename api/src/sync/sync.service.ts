@@ -148,7 +148,7 @@ export async function processSyncEvents(
       continue;
     }
 
-    const job = await prisma.plannedJob.findFirst({
+    const job = await prisma.job.findFirst({
       where: { id: event.jobId, companyId },
     });
 
@@ -214,7 +214,7 @@ export async function processSyncEvents(
           },
         });
 
-        await tx.plannedJob.update({
+        await tx.job.update({
           where: { id: event.jobId },
           data: buildJobUpdate(event),
         });

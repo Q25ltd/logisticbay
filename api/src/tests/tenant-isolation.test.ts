@@ -67,8 +67,7 @@ async function cleanup(companyIds: number[], userIds: number[]) {
   await prisma.jobExecutionEvent.deleteMany({ where: cWhere });
   await prisma.syncEventLog.deleteMany({ where: cWhere });
   await prisma.jobPart.deleteMany({ where: cWhere });
-  await prisma.loadDetails.deleteMany({ where: cWhere });
-  await prisma.plannedJob.deleteMany({ where: cWhere });
+  await prisma.job.deleteMany({ where: cWhere });
   await prisma.driverProfile.deleteMany({ where: cWhere });
   await prisma.refreshToken.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.companyMembership.deleteMany({ where: { userId: { in: userIds } } });
@@ -100,7 +99,7 @@ test("Tenant isolation — full suite", async (t) => {
   const templateB = await prisma.jobTemplate.create({
     data: { companyId: compB.id, name: `${PREFIX}TplB_${TS}` },
   });
-  const jobB = await prisma.plannedJob.create({
+  const jobB = await prisma.job.create({
     data: { companyId: compB.id, createdByUserId: userB.id, customerName: `${PREFIX}JobB`, status: "draft" },
   });
   const shiftB = await prisma.shift.create({

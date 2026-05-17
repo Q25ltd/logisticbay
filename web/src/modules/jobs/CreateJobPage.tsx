@@ -445,15 +445,13 @@ export default function CreateJobPage() {
         setStops([...job.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(jobPartToSharedStopState));
       }
 
-      const ld = job.loadDetails;
-      setGoodsDesc(ld?.materialType || job.materialType || "");
-      setQuantity(ld?.quantity != null ? String(ld.quantity) : job.quantityExpected || "");
-      setUnit(ld?.unit || job.quantityUnit || "pallets");
-      setEstWeight(ld?.weight != null ? String(ld.weight) : "");
-      setLoadNotes(ld?.notes || "");
-      if (ld?.goodsType) setGoodsType(ld.goodsType);
-      if (Array.isArray(ld?.securingRequirements)) setSecuringRequirements(ld.securingRequirements as string[]);
-      if (Array.isArray(ld?.specialRequirements))  setSpecialItems(ld.specialRequirements as string[]);
+      setGoodsDesc(job.goodsDescription || job.goodsType || "");
+      setQuantity(job.quantity != null ? String(job.quantity) : "");
+      setUnit(job.quantityUnit || "pallets");
+      setEstWeight(job.weight != null ? String(job.weight) : "");
+      if (job.goodsType) setGoodsType(job.goodsType);
+      if (Array.isArray(job.securingRequirements)) setSecuringRequirements(job.securingRequirements as string[]);
+      if (Array.isArray(job.specialRequirements))  setSpecialItems(job.specialRequirements as string[]);
 
       // Restore loadData blob (type-specific sub-fields)
       const ldb = (job as any).loadData as Record<string, unknown> | null;
@@ -506,8 +504,8 @@ export default function CreateJobPage() {
       if (job.purchaseOrderNumber) setPurchaseOrderNumber(job.purchaseOrderNumber);
 
       // Transport requirements
-      if (job.reqBodyCategory) setReqBodyCategory(job.reqBodyCategory);
-      if (Array.isArray(job.trailerTypesAllowed)) setTrailerTypesAllowed(job.trailerTypesAllowed as string[]);
+      if (job.vehicleCategory) setReqBodyCategory(job.vehicleCategory);
+      if (Array.isArray(job.trailersAllowed)) setTrailerTypesAllowed(job.trailersAllowed as string[]);
       if (Array.isArray((job as any).reqBodyTypes)) setReqBodyTypes((job as any).reqBodyTypes as string[]);
 
       // Rejection / exception policy

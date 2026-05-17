@@ -38,7 +38,7 @@ model Company {
   savedLocations   SavedLocation[]
   customers        Customer[]
   jobTemplates     JobTemplate[]
-  plannedJobs      PlannedJob[]
+  jobs             Job[]
   jobEvents        JobExecutionEvent[]
   shifts           Shift[]
   shiftSegments    ShiftSegment[]
@@ -49,13 +49,11 @@ model Company {
   workingSummaries DriverWorkingTimeSummary[]
   syncEventLogs    SyncEventLog[]
   jobParts         JobPart[]
-  loadDetails      LoadDetails[]
   jobAudits        JobAudit[]
   auditLogs        AuditLog[]
   fleetUnits       FleetUnit[]
   fleetTrailers    FleetTrailer[]
   requestLinks     ClientRequestLink[]
-  jobRequests      JobRequest[]
   runs             Run[]
   runAssignments   RunAssignment[]
   loadTracks       LoadTrack[]
@@ -74,9 +72,8 @@ model Customer {
   updatedAt    DateTime @updatedAt
 
   company      Company             @relation(fields: [companyId], references: [id])
-  plannedJobs  PlannedJob[]
+  jobs         Job[]
   requestLinks ClientRequestLink[]
-  jobRequests  JobRequest[]
 
   @@unique([companyId, name])
   @@index([companyId, status])
@@ -91,16 +88,15 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships          CompanyMembership[]
-  driverProfile        DriverProfile?
-  shifts               Shift[]
-  createdJobs          PlannedJob[]        @relation("JobCreatedBy")
-  jobEvents            JobExecutionEvent[]
-  jobAudits            JobAudit[]
-  auditLogs            AuditLog[]
-  refreshTokens        RefreshToken[]
-  createdRequestLinks  ClientRequestLink[]
-  reviewedJobRequests  JobRequest[]        @relation("JobRequestReviewedBy")
+  memberships         CompanyMembership[]
+  driverProfile       DriverProfile?
+  shifts              Shift[]
+  createdJobs         Job[]               @relation("JobCreatedBy")
+  jobEvents           JobExecutionEvent[]
+  jobAudits           JobAudit[]
+  auditLogs           AuditLog[]
+  refreshTokens       RefreshToken[]
+  createdRequestLinks ClientRequestLink[]
 }
 
 model RefreshToken {
@@ -249,79 +245,115 @@ model JobTemplate {
   company         Company        @relation(fields: [companyId], references: [id])
   pickupLocation  SavedLocation? @relation("PickupLocation", fields: [pickupLocationId], references: [id])
   dropoffLocation SavedLocation? @relation("DropoffLocation", fields: [dropoffLocationId], references: [id])
-  plannedJobs     PlannedJob[]
+  jobs            Job[]
 
   @@index([companyId, status])
 }
 
-model PlannedJob {
+// ── Job — the single record for all transport jobs ───────────────────────────
+// Both PRF (customer request) and CJP (planner direct create) write here.
+// PRF creates with status=pending_review; CJP creates with status=draft or ready_to_plan.
+// Accept step: sets plannedDate + plannerNotes, flips status to ready_to_plan.
+//
+// Status flow:
+//   pending_review → ready_to_plan (PRF accepted)
+//   draft          → ready_to_plan (CJP confirmed)
+//   ready_to_plan  → in_planning   → planned → in_progress → completed
+//   any            → cancelled
+model Job {
   id              Int       @id @default(autoincrement())
   companyId       Int
   customerId      Int?
-  customerName    String    @default("")
   templateId      Int?
   createdByUserId Int
-  plannedDate     DateTime?
-  jobReference    String?
-  materialType    String    @default("")
-  quantityExpected     String    @default("")
-  quantityUnit         String    @default("")
-  plannerNotes         String    @default("")
-  reqBodyCategory      String    @default("")
-  reqGvwMin            String    @default("")
-  reqBodyType          String    @default("")
-  reqEquipment         Json?
-  reqLicenceClass      String    @default("")
-  trailerTypesAllowed  Json?
-  priority             String    @default("normal")
-  serviceType          String    @default("")
-  customerRef          String    @default("")
-  purchaseOrderNumber  String    @default("")
-  billingNotes         String    @default("")
-  customerInstructions String    @default("")
-  bookingContactName   String    @default("")
-  bookingContactPhone  String    @default("")
-  bookingContactEmail  String    @default("")
-  custRefRequired      Boolean   @default(false)
-  poRequired           Boolean   @default(false)
-  minVehicleSize          String    @default("")
-  trailerTypesForbidden   Json?
-  equipmentRequired       Json?
-  driverQualificationsReq Json?
-  lengthRestriction       String    @default("")
-  vehicleAccessNotes      String    @default("")
-  failureAction        String    @default("call_assistance")
-  assistancePhone      String    @default("")
-  assistanceNote       String    @default("")
-  internalNotes        String    @default("")
-  notesData            Json?     // driverNoteChips[], driverVisibleNotes, safetyInstructions
-  exceptionPolicyData  Json?     // rejectionAction, alternativeReturnAddress, approvalContactName, etc.
-  loadData             Json?     // type-specific goods sub-fields (pallet type/count, cage count, etc.)
-  billingData          Json?     // declaredGoodsValue, billingReference, vatRegistered, vatNumber
-  validationStatus     String    @default("draft")
-  qualityScore         Int       @default(0)
-  status               String    @default("draft")
-  requirePOD           Boolean   @default(false)
-  canSplitShipment     String    @default("must_stay_together")
+  parentJobId     Int?      // self-relation — set when job is split from a parent
 
-  // Override close fields — set only when planner confirms a quantity mismatch
-  overrideClosed            Boolean   @default(false)
+  // ── identity ──────────────────────────────────────────────────────────────
+  jobReference    String?
+  status          String    @default("draft")
+  priority        String    @default("normal")
+  jobTitle        String?
+
+  // ── scheduling ────────────────────────────────────────────────────────────
+  plannedDate      DateTime?
+  serviceType      String    @default("")
+  jobType          String    @default("")
+  canSplitShipment String    @default("must_stay_together")
+
+  // ── customer ──────────────────────────────────────────────────────────────
+  customerName        String  @default("")
+  customerRef         String  @default("")
+  purchaseOrderNumber String  @default("")
+  billingReference    String?
+  declaredGoodsValue  String?
+  billingNotes        String  @default("")
+  billingData         Json?   // vatRegistered, vatNumber (kept as blob for now)
+
+  bookingContactName  String  @default("")
+  bookingContactPhone String  @default("")
+  bookingContactEmail String  @default("")
+  custRefRequired     Boolean @default(false)
+  poRequired          Boolean @default(false)
+
+  // ── planner ───────────────────────────────────────────────────────────────
+  plannerNotes       String  @default("")
+  internalNotes      String  @default("")
+  driverNoteChips    Json?   // string[] — chips shown to driver on mobile
+  driverVisibleNotes String?
+  safetyInstructions String?
+
+  // ── load (merged from LoadDetails) ────────────────────────────────────────
+  goodsType            String  @default("")
+  goodsDescription     String  @default("")
+  quantity             Float?
+  quantityUnit         String  @default("")
+  weight               Float?
+  volume               Float?
+  dimensions           String  @default("")
+  fragile              Boolean @default(false)
+  stackable            Boolean @default(false)
+  tempControlled       Boolean @default(false)
+  tempRange            String  @default("")
+  hazardClass          String  @default("")
+  photosRequired       Boolean @default(false)
+  weighbridgeRequired  Boolean @default(false)
+  securingRequirements Json?   // string[]
+  specialRequirements  Json?   // string[]
+  loadData             Json?   // goods sub-type detail only (pallet type/count, cage count, etc.)
+
+  // ── vehicle requirements ──────────────────────────────────────────────────
+  // What the job NEEDS — system checks against fleet/driver at assignment time.
+  vehicleCategory    String  @default("")   // matches FleetUnit.bodyCategory
+  bodyType           String  @default("")   // matches FleetUnit.bodyType
+  minGvwClass        String  @default("")   // matches FleetUnit.gvwClass
+  equipment          Json?                  // string[] — matches FleetUnit.onboardEquipment
+  trailersAllowed    Json?                  // string[] — matches FleetTrailer.bodyType
+  vehicleAccessNotes String  @default("")
+
+  // ── exception policy ──────────────────────────────────────────────────────
+  failureAction                 String  @default("call_assistance")
+  assistancePhone               String  @default("")
+  assistanceNote                String  @default("")
+  approvalContactName           String?
+  approvalContactPhone          String?
+  alternativeReturnAddress      String?
+  alternativeReturnPostcode     String?
+  alternativeReturnContactName  String?
+  alternativeReturnContactPhone String?
+
+  // ── proof / quality ───────────────────────────────────────────────────────
+  requirePOD       Boolean @default(false)
+  validationStatus String  @default("draft")
+  qualityScore     Int     @default(0)
+
+  // ── override close ────────────────────────────────────────────────────────
+  overrideClosed            Boolean  @default(false)
   overrideReason            String?
   overrideNotes             String?
   overrideQuantityDelivered Decimal?
   overrideQuantityShortfall Decimal?
   closedAt                  DateTime?
   closedBy                  Int?
-
-  // Vehicle/trailer requirement sources
-  vehicleRequirementSource String    @default("not_specified")
-  trailerRequirementSource String    @default("not_specified")
-  customerVehicleType      String?
-  customerTrailerTypes     Json?
-  derivedVehicleType       String?
-  derivedTrailerTypes      Json?
-  finalVehicleType         String?
-  finalTrailerTypes        Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -330,11 +362,11 @@ model PlannedJob {
   customer       Customer?           @relation(fields: [customerId], references: [id])
   template       JobTemplate?        @relation(fields: [templateId], references: [id])
   createdBy      User                @relation("JobCreatedBy", fields: [createdByUserId], references: [id])
-  events         JobExecutionEvent[]
+  parent         Job?                @relation("JobChildren", fields: [parentJobId], references: [id])
+  children       Job[]               @relation("JobChildren")
   stops          JobPart[]
-  loadDetails    LoadDetails?
+  events         JobExecutionEvent[]
   audits         JobAudit[]
-  fromRequest    JobRequest?
   runAssignments RunAssignment[]
   loadTracks     LoadTrack[]
 
@@ -343,7 +375,6 @@ model PlannedJob {
   @@index([companyId, status])
   @@index([companyId, customerId])
   @@index([companyId, updatedAt])
-  @@index([companyId, validationStatus])
   @@index([companyId, jobReference])
 }
 
@@ -431,52 +462,16 @@ model JobPart {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company         Company         @relation(fields: [companyId], references: [id])
-  job             PlannedJob      @relation(fields: [jobId], references: [id])
-  savedLocation   SavedLocation?  @relation(fields: [savedLocationId], references: [id])
-  runAssignments  RunAssignment[]
-  loadTracks      LoadTrack[]
+  company        Company         @relation(fields: [companyId], references: [id])
+  job            Job             @relation(fields: [jobId], references: [id])
+  savedLocation  SavedLocation?  @relation(fields: [savedLocationId], references: [id])
+  runAssignments RunAssignment[]
+  loadTracks     LoadTrack[]
 
   @@map("JobPart")
   @@unique([jobId, sequenceNumber])
   @@index([companyId, jobId])
   @@index([companyId, savedLocationId])
-}
-
-model LoadDetails {
-  id        Int @id @default(autoincrement())
-  companyId Int
-  jobId     Int @unique
-
-  quantity Float?
-  unit     String @default("")
-  weight   Float?
-  volume   Float?
-
-  materialType String  @default("")
-  hazardClass  String  @default("")
-  notes        String  @default("")
-  dimensions   String  @default("")
-  fragile      Boolean @default(false)
-  stackable    Boolean @default(false)
-  tempControlled       Boolean @default(false)
-  tempRange            String  @default("")
-  goodsType            String  @default("")
-  securingRequirements Json?
-  specialRequirements  Json?
-  photosRequired       Boolean @default(false)
-  weighbridgeRequired  Boolean @default(false)
-  forkliftRequired     Boolean @default(false)
-  tailLiftRequired     Boolean @default(false)
-  craneRequired        Boolean @default(false)
-  loadingMethod        String  @default("")
-  unloadingMethod      String  @default("")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  company Company    @relation(fields: [companyId], references: [id])
-  job     PlannedJob @relation(fields: [jobId], references: [id])
 }
 
 model JobAudit {
@@ -492,9 +487,9 @@ model JobAudit {
 
   createdAt DateTime @default(now())
 
-  company Company    @relation(fields: [companyId], references: [id])
-  job     PlannedJob @relation(fields: [jobId], references: [id])
-  user    User?      @relation(fields: [changedBy], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+  job     Job     @relation(fields: [jobId], references: [id])
+  user    User?   @relation(fields: [changedBy], references: [id])
 
   @@index([companyId, jobId])
   @@index([createdAt])
@@ -525,11 +520,11 @@ model JobExecutionEvent {
   fromCustody       String?
   toCustody         String?
 
-  job           PlannedJob     @relation(fields: [jobId], references: [id])
-  company       Company        @relation(fields: [companyId], references: [id])
-  driver        User           @relation(fields: [driverId], references: [id])
-  run           Run?           @relation(fields: [runId], references: [id])
-  loadTracks    LoadTrack[]
+  job        Job            @relation(fields: [jobId], references: [id])
+  company    Company        @relation(fields: [companyId], references: [id])
+  driver     User           @relation(fields: [driverId], references: [id])
+  run        Run?           @relation(fields: [runId], references: [id])
+  loadTracks LoadTrack[]
 
   @@unique([companyId, clientEventId])
   @@index([companyId, createdAt])
@@ -610,7 +605,7 @@ model RunAssignment {
   company    Company    @relation(fields: [companyId], references: [id])
   run        Run        @relation(fields: [runId], references: [id])
   jobPart    JobPart    @relation(fields: [jobPartId], references: [id])
-  job        PlannedJob @relation(fields: [jobId], references: [id])
+  job        Job        @relation(fields: [jobId], references: [id])
   loadTracks LoadTrack[]
 
   @@unique([runId, sequenceNumber])
@@ -643,7 +638,7 @@ model LoadTrack {
   notes            String?
 
   company       Company           @relation(fields: [companyId], references: [id])
-  job           PlannedJob        @relation(fields: [jobId], references: [id])
+  job           Job               @relation(fields: [jobId], references: [id])
   jobPart       JobPart           @relation(fields: [jobPartId], references: [id])
   run           Run?              @relation(fields: [runId], references: [id])
   runAssignment RunAssignment?    @relation(fields: [runAssignmentId], references: [id])
@@ -918,7 +913,7 @@ model FleetTrailer {
 }
 
 // ── Append-only audit log ─────────────────────────────────────────────────────
-// Every sensitive create/update/delete/read action is recorded here.
+// Every sensitive create/update/update/delete/read action is recorded here.
 // Rows are NEVER updated or deleted — only appended.
 // For job-specific audit use JobAudit; this table covers everything else.
 model AuditLog {
@@ -947,7 +942,8 @@ model AuditLog {
 }
 
 // ── Customer Request Intake ────────────────────────────────────────────────────
-
+// ClientRequestLink — sharable token link for the PRF (customer request) form.
+// On PRF submit the handler validates the token then writes directly to Job (status=pending_review).
 model ClientRequestLink {
   id          Int       @id @default(autoincrement())
   companyId   Int
@@ -966,61 +962,7 @@ model ClientRequestLink {
   company       Company      @relation(fields: [companyId], references: [id])
   customer      Customer?    @relation(fields: [customerId], references: [id])
   createdByUser User         @relation(fields: [createdBy], references: [id])
-  requests      JobRequest[]
 
   @@index([companyId])
   @@index([tokenHash])
-}
-
-model JobRequest {
-  id            Int  @id @default(autoincrement())
-  companyId     Int
-  requestLinkId Int?
-  customerId    Int? // matched/linked after review
-
-  source String @default("client_request_link") // internal_manual | client_request_link
-  status String @default("pending_review")       // pending_review | accepted | rejected | cancelled
-
-  // Denormalized summary fields for list views and filtering (duplicated from requesterData)
-  customerName String @default("")
-  contactName  String @default("")
-  contactPhone String @default("")
-  contactEmail String @default("")
-  pricingType  String @default("quote_required") // quote_required | agreed_rate_exists | contract_rate_exists | to_be_confirmed
-
-  // JSON blobs — all operational data
-  requesterData             Json @default("{}") // customerCompanyName, contactName/Phone/Email, customerReference
-  stops                     Json @default("[]") // array of stop objects (see stop shape in routes/jobRequests.ts)
-  loadData                  Json @default("{}") // goodsType, description, quantity, unit, weight, conditional fields
-  specialRequirementsData   Json @default("{}") // items[], adrClass, unNumber, temperatureRange
-  transportRequirementsData Json @default("{}") // plannerDecides, reqBodyCategory, reqBodyType, reqEquipment, trailerTypesAllowed
-  billingData               Json @default("{}") // pricingType, declaredGoodsValue, currency, purchaseOrderNumber, billingReference, vatRegistered, vatNumber
-  notesData                 Json @default("{}") // driverNoteChips[], driverVisibleNotes, safetyInstructions, customerNotes
-  exceptionPolicyData       Json @default("{}") // rejectionAction, alternativeReturnAddress, approvalContactName, etc.
-  reviewData                Json? // populated when reviewed: notes, plannerNotes
-
-  // Internal use only (never on public form)
-  internalOfficeNotes String?
-
-  // Review outcome
-  reviewedAt      DateTime?
-  reviewedBy      Int?
-  rejectionReason String? // no_capacity | outside_service_area | incomplete_information | pricing_issue | duplicate_request | other
-  reviewNotes     String?
-
-  // Linked PlannedJob created on accept (one-to-one)
-  convertedJobId Int? @unique
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  company        Company            @relation(fields: [companyId], references: [id])
-  requestLink    ClientRequestLink? @relation(fields: [requestLinkId], references: [id])
-  customer       Customer?          @relation(fields: [customerId], references: [id])
-  reviewedByUser User?              @relation("JobRequestReviewedBy", fields: [reviewedBy], references: [id])
-  convertedJob   PlannedJob?        @relation(fields: [convertedJobId], references: [id])
-
-  @@index([companyId, status])
-  @@index([companyId, createdAt])
-  @@index([requestLinkId])
 }

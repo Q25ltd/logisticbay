@@ -118,6 +118,7 @@ export interface JobPart {
   country?: string;
 }
 
+// LoadDetails is now merged into Job — this interface is kept only for legacy template blobs
 export interface LoadDetails {
   id?: number;
   quantity?: number | string | null;
@@ -144,7 +145,7 @@ export interface LoadDetails {
   specialRequirements?: string[] | null;
 }
 
-export interface PlannedJob {
+export interface Job {
   id:          number;
   companyId:   number;
   customerId?: number | null;
@@ -152,85 +153,104 @@ export interface PlannedJob {
   customer?:   Customer | null;
   jobReference?: string | null;
   templateId?: number | null;
-  plannedDate: string | null;
-  materialType:    string;
-  quantityExpected: string;
-  quantityUnit:    string;
-  plannerNotes:    string;
-  reqBodyCategory?: string;
-  reqGvwMin?:       string;
-  reqBodyType?:     string;
-  reqEquipment?:    string[];
-  reqLicenceClass?: string;
-  trailerTypesAllowed?: string[];
-  equipmentRequired?:   string[];
-  driverQualificationsReq?: string[];
-  priority?:           "low" | "normal" | "high" | "urgent";
-  serviceType?:        string;
+  parentJobId?: number | null;
+
+  // identity
+  status: "draft" | "pending_review" | "ready_to_plan" | "in_planning" | "planned" | "in_progress" | "completed" | "cancelled";
+  priority?: "low" | "normal" | "high" | "urgent";
+  jobTitle?: string | null;
+
+  // scheduling
+  plannedDate?: string | null;
+  serviceType?: string;
+  jobType?:     string;
+  canSplitShipment?: string;
+
+  // customer
   customerRef?:        string;
   purchaseOrderNumber?: string;
+  billingReference?:   string | null;
+  declaredGoodsValue?: string | null;
   billingNotes?:       string;
-  customerInstructions?: string;
+  bookingContactName?:  string;
+  bookingContactPhone?: string;
+  bookingContactEmail?: string;
   custRefRequired?: boolean;
   poRequired?:      boolean;
-  minVehicleSize?:  string;
-  lengthRestriction?: string;
+
+  // planner
+  plannerNotes?:       string;
+  internalNotes?:      string;
+  driverNoteChips?:    string[] | null;
+  driverVisibleNotes?: string | null;
+  safetyInstructions?: string | null;
+
+  // load (merged from LoadDetails)
+  goodsType?:           string;
+  goodsDescription?:    string;
+  quantity?:            number | null;
+  quantityUnit?:        string;
+  weight?:              number | null;
+  volume?:              number | null;
+  dimensions?:          string;
+  fragile?:             boolean;
+  stackable?:           boolean;
+  tempControlled?:      boolean;
+  tempRange?:           string;
+  hazardClass?:         string;
+  photosRequired?:      boolean;
+  weighbridgeRequired?: boolean;
+  securingRequirements?: string[] | null;
+  specialRequirements?:  string[] | null;
+  loadData?:            Record<string, unknown> | null;
+
+  // vehicle requirements (what the job NEEDS — matched against fleet at assignment)
+  vehicleCategory?:    string;
+  bodyType?:           string;
+  minGvwClass?:        string;
+  equipment?:          string[] | null;
+  trailersAllowed?:    string[] | null;
   vehicleAccessNotes?: string;
-  failureAction?:   string;
-  assistancePhone?: string;
-  assistanceNote?:  string;
-  internalNotes?:   string;
-  requirePOD?:      boolean;
-  canSplitShipment?: string;
-  validationStatus?: "draft" | "needs_info" | "ready_to_plan" | "ready_for_planner" | "planned";
-  qualityScore?:    number;
-  // Vehicle/trailer requirement sources
-  vehicleRequirementSource?: string;
-  trailerRequirementSource?: string;
-  customerVehicleType?:      string | null;
-  customerTrailerTypes?:     string[] | null;
-  derivedVehicleType?:       string | null;
-  derivedTrailerTypes?:      string[] | null;
-  finalVehicleType?:         string | null;
-  finalTrailerTypes?:        string[] | null;
-  // Override close
+
+  // exception policy
+  failureAction?:                 string;
+  assistancePhone?:               string;
+  assistanceNote?:                string;
+  approvalContactName?:           string | null;
+  approvalContactPhone?:          string | null;
+  alternativeReturnAddress?:      string | null;
+  alternativeReturnPostcode?:     string | null;
+  alternativeReturnContactName?:  string | null;
+  alternativeReturnContactPhone?: string | null;
+
+  // proof / quality
+  requirePOD?:       boolean;
+  validationStatus?: string;
+  qualityScore?:     number;
+
+  // override close
   overrideClosed?:              boolean;
   overrideReason?:              string | null;
   overrideQuantityDelivered?:   number | null;
   closedAt?:                    string | null;
-  stops?:       JobPart[];
-  loadDetails?: LoadDetails | null;
-  events?:      JobEvent[];
-  status: "draft" | "accepted" | "in_progress" | "arrived_pickup" | "collected" | "arrived_dropoff" | "completed" | "cancelled";
+
+  stops?:  JobPart[];
+  events?: JobEvent[];
   createdAt: string;
   updatedAt: string;
 
   // Planning status — computed from RunAssignments, not stored
   planningStatus?: "no_stops" | "not_planned" | "partially_planned" | "planned" | "partially_done" | "done";
 
-  // ── Fields removed from DB (Phase 1) — kept here so web UI compiles ──────
-  // These are no longer returned by the API. UI components should migrate to
-  // reading assignedDriverId/assignedTruck/assignedTrailer from Run instead.
-  /** @deprecated Use Run.assignedDriverId */       assignedDriverId?: number | null;
-  /** @deprecated Use Run.assignedDriverId */       assignedDriver?:   Driver | null;
-  /** @deprecated Use Run.assignedTruckId */        assignedTruck?:    string;
-  /** @deprecated Use Run.assignedTrailerId */      assignedTrailer?:  string;
-  /** @deprecated Field removed */                  vehicleClass?:     string;
-  /** @deprecated Use reqBodyCategory */            vehicleClassRequired?: string;
-  /** @deprecated Removed — use JobPart.referenceNumber */ referenceNumber?: string;
-  bookingContactName?:  string;
-  bookingContactPhone?: string;
-  bookingContactEmail?: string;
-  /** @deprecated Removed */                        jobType?:            string;
-  /** @deprecated Removed */                        jobTitle?:           string;
-  /** @deprecated Removed */                        heightRestriction?:  string;
-  /** @deprecated Removed */                        weightRestriction?:  string;
-  /** @deprecated Removed */                        returnDestination?:  string;
-  /** @deprecated Removed */                        requireCollection?:  boolean;
-  /** @deprecated Removed */                        requireDeliveryQty?: boolean;
-  /** @deprecated Removed — use first/last JobPart.locationTextSnapshot */ pickupTextSnapshot?:  string;
-  /** @deprecated Removed — use first/last JobPart.locationTextSnapshot */ dropoffTextSnapshot?: string;
+  // Kept for UI components that haven't migrated to Run yet
+  /** @deprecated Use Run.assignedDriverId */  assignedDriverId?: number | null;
+  /** @deprecated Use Run.assignedDriverId */  assignedDriver?:   Driver | null;
+  /** @deprecated Use Run.assignedTruckId */   assignedTruck?:    string;
+  /** @deprecated Use Run.assignedTrailerId */ assignedTrailer?:  string;
 }
+
+/** @deprecated Use Job */
+export type PlannedJob = Job;
 
 // ── Run — execution container (independent of Job) ────────────────────────────
 export interface Run {
@@ -293,7 +313,7 @@ export interface RunAssignment {
   notes?:           string | null;
   // Relations (included on detail views)
   jobPart?: JobPart;
-  job?: Pick<PlannedJob, "id" | "jobReference" | "customerName" | "plannedDate" | "status" | "materialType" | "plannerNotes">;
+  job?: Pick<Job, "id" | "jobReference" | "customerName" | "plannedDate" | "status" | "goodsDescription" | "plannerNotes">;
 }
 export interface FleetUnit {
   id: number;

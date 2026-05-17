@@ -37,13 +37,12 @@ const JOB_DETAIL_INCLUDE = {
   customer:    true,
   template:    true,
   stops:       { orderBy: { sequenceNumber: "asc" as const } },
-  loadDetails: true,
   events:      { orderBy: { createdAt: "asc" as const } },
   runAssignments: {
     where:  { removedAt: null },
     select: { id: true, jobPartId: true, status: true },
   },
-} satisfies Prisma.PlannedJobInclude;
+} satisfies Prisma.JobInclude;
 
 type PlanningStatus = "no_stops" | "not_planned" | "partially_planned" | "planned" | "partially_done" | "done";
 
@@ -252,7 +251,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const { companyId, role, userId } = request.user!;
     const q = request.query as { date?: string; dateFrom?: string; dateTo?: string; driverId?: string; status?: string; limit?: string; cursor?: string };
 
-    const where: Prisma.PlannedJobWhereInput = { companyId };
+    const where: Prisma.JobWhereInput = { companyId };
 
     // Driver filter: look up jobs via RunAssignment (driver is on Run, not Job)
     if (role === "driver") {
@@ -297,7 +296,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(400).send({ error: "cursor must be a valid job id" });
     }
 
-    const jobs = await prisma.plannedJob.findMany({
+    const jobs = await prisma.job.findMany({
       where,
       include: JOB_DETAIL_INCLUDE,
       orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
@@ -337,7 +336,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     const jobIds = assignments.map(a => a.jobId);
 
-    const jobs = await prisma.plannedJob.findMany({
+    const jobs = await prisma.job.findMany({
       where: {
         companyId,
         id:          { in: jobIds },
@@ -347,7 +346,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       include: {
         customer:    true,
         stops:       { orderBy: { sequenceNumber: "asc" } },
-        loadDetails: true,
         events:      { orderBy: { createdAt: "asc" } },
         runAssignments: {
           where:  { removedAt: null },
@@ -372,7 +370,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const id = parseInt((request.params as { id: string }).id, 10);
     const { companyId, userId, role } = request.user!;
 
-    const job = await prisma.plannedJob.findFirst({
+    const job = await prisma.job.findFirst({
       where:   { id, companyId },
       include: JOB_DETAIL_INCLUDE,
     });
@@ -431,10 +429,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     );
 
     const legacyRequirement = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
-    const reqBodyCategory   = body.reqBodyCategory ?? legacyRequirement.bodyCategory;
-    const reqGvwMin         = body.reqGvwMin ?? "";
-    const reqBodyType       = body.reqBodyType ?? legacyRequirement.bodyType;
-    const reqEquipment      = normalizeEquipment(body.reqEquipment, [
+    const vehicleCategory   = body.reqBodyCategory ?? legacyRequirement.bodyCategory;
+    const minGvwClass       = body.reqGvwMin ?? "";
+    const bodyType          = body.reqBodyType ?? legacyRequirement.bodyType;
+    const equipment         = normalizeEquipment(body.reqEquipment, [
       ...normalizeEquipment(body.equipmentRequired),
       ...legacyRequirement.equipment,
     ]);
@@ -454,10 +452,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       customerName,
       plannedDate:          body.plannedDate,
       vehicleClassRequired: body.vehicleClassRequired,
-      reqBodyCategory,
-      reqGvwMin,
-      reqBodyType,
-      reqEquipment,
+      reqBodyCategory:      vehicleCategory,
+      reqGvwMin:            minGvwClass,
+      reqBodyType:          bodyType,
+      reqEquipment:         equipment,
       reqLicenceClass,
       trailerTypesAllowed:  body.trailerTypesAllowed,
       stops,
@@ -480,7 +478,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.$transaction(async (tx) => {
       const jobReference = await generateJobReference(companyId, tx);
 
-      const created = await tx.plannedJob.create({
+      const created = await tx.job.create({
         data: {
           companyId,
           customerId,
@@ -489,77 +487,54 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           templateId:          body.templateId ?? null,
           createdByUserId:     userId,
           plannedDate:         body.plannedDate ? new Date(body.plannedDate) : null,
-          materialType:        loadDetails?.materialType?.toString() ?? "",
-          quantityExpected:    loadDetails?.quantity !== undefined && loadDetails?.quantity !== null ? String(loadDetails.quantity) : "",
-          quantityUnit:        loadDetails?.unit?.toString() ?? "",
           plannerNotes:        body.plannerNotes ?? "",
-          reqBodyCategory,
-          reqGvwMin,
-          reqBodyType,
-          reqEquipment,
-          reqLicenceClass,
-          trailerTypesAllowed: body.trailerTypesAllowed ?? [],
+          vehicleCategory,
+          minGvwClass,
+          bodyType,
+          equipment,
+          trailersAllowed:     body.trailerTypesAllowed ?? [],
           priority:            body.priority ?? "normal",
           serviceType:         body.serviceType ?? "",
           customerRef:         body.customerRef ?? "",
           purchaseOrderNumber: body.purchaseOrderNumber ?? "",
           billingNotes:        body.billingNotes ?? "",
-          customerInstructions: body.customerInstructions ?? "",
           bookingContactName:  body.bookingContactName ?? "",
           bookingContactPhone: body.bookingContactPhone ?? "",
           bookingContactEmail: body.bookingContactEmail ?? "",
           custRefRequired:     body.custRefRequired ?? false,
           poRequired:          body.poRequired ?? false,
-          minVehicleSize:      body.minVehicleSize ?? "",
-          equipmentRequired:   body.equipmentRequired ?? [],
-          driverQualificationsReq: body.driverQualificationsReq ?? [],
-          lengthRestriction:   body.lengthRestriction ?? "",
           vehicleAccessNotes:  body.vehicleAccessNotes ?? "",
           failureAction:       body.failureAction ?? "call_assistance",
           assistancePhone:     body.assistancePhone ?? "",
           assistanceNote:      body.assistanceNote ?? "",
           internalNotes:       body.internalNotes ?? "",
-          notesData:           body.notesData           ? body.notesData           as Prisma.InputJsonValue : undefined,
-          exceptionPolicyData: body.exceptionPolicyData ? body.exceptionPolicyData as Prisma.InputJsonValue : undefined,
-          loadData:            body.loadData            ? body.loadData            as Prisma.InputJsonValue : undefined,
-          billingData:         body.billingData         ? body.billingData         as Prisma.InputJsonValue : undefined,
+          loadData:            body.loadData   ? body.loadData   as Prisma.InputJsonValue : undefined,
+          billingData:         body.billingData ? body.billingData as Prisma.InputJsonValue : undefined,
           validationStatus:    structuredValidation.validationStatus,
           qualityScore:        quality.score,
           requirePOD:          body.requirePOD ?? false,
           canSplitShipment:    body.canSplitShipment ?? "must_stay_together",
           status:              "draft",
+          // Load details — now columns directly on Job
+          goodsType:           loadDetails?.goodsType?.toString() ?? "",
+          goodsDescription:    loadDetails?.materialType?.toString() ?? "",
+          quantity:            toNullableNumber(loadDetails?.quantity),
+          quantityUnit:        loadDetails?.unit?.toString() ?? "",
+          weight:              toNullableNumber(loadDetails?.weight),
+          volume:              toNullableNumber(loadDetails?.volume),
+          dimensions:          loadDetails?.dimensions?.toString() ?? "",
+          fragile:             loadDetails?.fragile ?? false,
+          stackable:           loadDetails?.stackable ?? false,
+          tempControlled:      loadDetails?.tempControlled ?? false,
+          tempRange:           loadDetails?.tempRange?.toString() ?? "",
+          hazardClass:         loadDetails?.hazardClass?.toString() ?? "",
+          photosRequired:      loadDetails?.photosRequired ?? false,
+          weighbridgeRequired: loadDetails?.weighbridgeRequired ?? false,
+          securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
+          specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
           stops: {
             create: stops.map(s => buildStopData(s, companyId)),
           },
-          ...(hasLoadDetailsInput(loadDetails) ? {
-            loadDetails: {
-              create: {
-                companyId,
-                quantity:        toNullableNumber(loadDetails?.quantity),
-                unit:            loadDetails?.unit?.toString() ?? "",
-                weight:          toNullableNumber(loadDetails?.weight),
-                volume:          toNullableNumber(loadDetails?.volume),
-                materialType:    loadDetails?.materialType?.toString() ?? "",
-                hazardClass:     loadDetails?.hazardClass?.toString() ?? "",
-                notes:           loadDetails?.notes?.toString() ?? "",
-                dimensions:      loadDetails?.dimensions?.toString() ?? "",
-                fragile:         loadDetails?.fragile ?? false,
-                stackable:       loadDetails?.stackable ?? false,
-                tempControlled:  loadDetails?.tempControlled ?? false,
-                tempRange:       loadDetails?.tempRange?.toString() ?? "",
-                photosRequired:  loadDetails?.photosRequired ?? false,
-                weighbridgeRequired: loadDetails?.weighbridgeRequired ?? false,
-                forkliftRequired:    loadDetails?.forkliftRequired ?? false,
-                tailLiftRequired:    loadDetails?.tailLiftRequired ?? false,
-                craneRequired:       loadDetails?.craneRequired ?? false,
-                loadingMethod:       loadDetails?.loadingMethod?.toString() ?? "",
-                unloadingMethod:     loadDetails?.unloadingMethod?.toString() ?? "",
-                goodsType:           loadDetails?.goodsType?.toString() ?? "",
-                securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
-                specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
-              },
-            },
-          } : {}),
           audits: {
             create: {
               companyId,
@@ -575,9 +550,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           },
         },
         include: {
-          stops:       { orderBy: { sequenceNumber: "asc" } },
-          loadDetails: true,
-          audits:      { orderBy: { createdAt: "desc" }, take: 5 },
+          stops:  { orderBy: { sequenceNumber: "asc" } },
+          audits: { orderBy: { createdAt: "desc" }, take: 5 },
         },
       });
 
@@ -622,15 +596,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           photosRequired:  loadDetails?.photosRequired   ?? false,
           weighbridgeReq:  loadDetails?.weighbridgeRequired ?? false,
           podRequired:     body.requirePOD ?? true,
-          reqBodyCategory,
-          reqGvwMin,
-          reqBodyType,
-          reqEquipment,
+          vehicleCategory,
+          minGvwClass,
+          bodyType,
+          equipment,
           reqLicenceClass,
-          minSize:          body.minVehicleSize     ?? "",
           trailersAllowed:  body.trailerTypesAllowed ?? [],
-          equipmentReq:     body.equipmentRequired   ?? [],
-          driverQuals:      body.driverQualificationsReq ?? [],
           lengthRestriction: body.lengthRestriction  ?? "",
           accessNotes:       body.vehicleAccessNotes ?? "",
           failureAction:     body.failureAction       ?? "call_assistance",
@@ -679,12 +650,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = request.body as PatchJobBody;
     const { companyId, userId } = request.user!;
 
-    const job = await prisma.plannedJob.findFirst({
+    const job = await prisma.job.findFirst({
       where:   { id, companyId },
       include: {
-        customer:    true,
-        stops:       { orderBy: { sequenceNumber: "asc" } },
-        loadDetails: true,
+        customer: true,
+        stops:    { orderBy: { sequenceNumber: "asc" } },
       },
     });
     if (!job) return reply.status(404).send({ error: "Job not found" });
@@ -713,43 +683,39 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const stops: StructuredJobPartInput[] = Array.isArray(body.stops) ? body.stops : existingStops;
 
-    const existingLoadDetails: StructuredLoadDetailsInput | null = job.loadDetails
-      ? {
-          quantity:     job.loadDetails.quantity,
-          unit:         job.loadDetails.unit,
-          weight:       job.loadDetails.weight,
-          volume:       job.loadDetails.volume,
-          materialType: job.loadDetails.materialType,
-          hazardClass:  job.loadDetails.hazardClass,
-          notes:        job.loadDetails.notes,
-        }
-      : null;
-
-    const legacyLoadDetails: StructuredLoadDetailsInput | null =
-      body.quantityExpected !== undefined || body.quantityUnit !== undefined || body.materialType !== undefined
-        ? {
-            quantity:     body.quantityExpected ?? job.quantityExpected,
-            unit:         body.quantityUnit ?? job.quantityUnit,
-            materialType: body.materialType ?? job.materialType,
-          }
-        : null;
+    const existingLoadDetails: StructuredLoadDetailsInput = {
+      quantity:     job.quantity,
+      unit:         job.quantityUnit ?? "",
+      weight:       job.weight,
+      volume:       job.volume,
+      materialType: job.goodsDescription ?? "",
+      hazardClass:  job.hazardClass ?? "",
+      dimensions:   job.dimensions ?? "",
+      fragile:      job.fragile,
+      stackable:    job.stackable,
+      tempControlled: job.tempControlled,
+      tempRange:    job.tempRange ?? "",
+      photosRequired: job.photosRequired,
+      weighbridgeRequired: job.weighbridgeRequired,
+      goodsType:    job.goodsType ?? "",
+    };
 
     const loadDetails: StructuredLoadDetailsInput | null =
       body.loadDetails !== undefined
         ? body.loadDetails
-        : legacyLoadDetails ?? existingLoadDetails;
+        : existingLoadDetails;
 
     const saveMode = body.saveMode ?? (job.validationStatus === "ready_to_plan" ? "ready_to_plan" : "draft");
-    const existingReqEquipment = Array.isArray(job.reqEquipment) ? job.reqEquipment.map(String) : [];
+    const existingEquipment = Array.isArray(job.equipment) ? job.equipment.map(String) : [];
     const legacyRequirement = legacyVehicleToRequirement(body.vehicleClassRequired ?? body.vehicleClass);
-    const reqBodyCategory   = body.reqBodyCategory ?? job.reqBodyCategory ?? legacyRequirement.bodyCategory;
-    const reqGvwMin         = body.reqGvwMin ?? job.reqGvwMin ?? "";
-    const reqBodyType       = body.reqBodyType ?? job.reqBodyType ?? legacyRequirement.bodyType;
-    const reqEquipment      = normalizeEquipment(body.reqEquipment, [
-      ...(existingReqEquipment.length > 0 ? existingReqEquipment : normalizeEquipment(body.equipmentRequired ?? job.equipmentRequired)),
+    const vehicleCategory   = body.reqBodyCategory ?? job.vehicleCategory ?? legacyRequirement.bodyCategory;
+    const minGvwClass       = body.reqGvwMin ?? job.minGvwClass ?? "";
+    const bodyType          = body.reqBodyType ?? job.bodyType ?? legacyRequirement.bodyType;
+    const equipment         = normalizeEquipment(body.reqEquipment, [
+      ...(existingEquipment.length > 0 ? existingEquipment : normalizeEquipment(body.equipmentRequired)),
       ...legacyRequirement.equipment,
     ]);
-    const reqLicenceClass   = body.reqLicenceClass ?? job.reqLicenceClass ?? legacyRequirement.licenceClass;
+    const reqLicenceClass   = body.reqLicenceClass ?? legacyRequirement.licenceClass;
 
     const effectiveCustomerId = body.customerId !== undefined ? body.customerId : job.customerId;
 
@@ -770,12 +736,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       customerName:         patchCustomerName,
       plannedDate:          body.plannedDate ?? job.plannedDate ?? undefined,
       vehicleClassRequired: body.vehicleClassRequired,
-      reqBodyCategory,
-      reqGvwMin,
-      reqBodyType,
-      reqEquipment,
+      reqBodyCategory:      vehicleCategory,
+      reqGvwMin:            minGvwClass,
+      reqBodyType:          bodyType,
+      reqEquipment:         equipment,
       reqLicenceClass,
-      trailerTypesAllowed:  body.trailerTypesAllowed ?? (Array.isArray(job.trailerTypesAllowed) ? job.trailerTypesAllowed : []),
+      trailerTypesAllowed:  body.trailerTypesAllowed ?? (Array.isArray(job.trailersAllowed) ? job.trailersAllowed : []),
       stops,
       loadDetails,
     });
@@ -806,64 +772,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         });
       }
 
-      if (body.loadDetails === null) {
-        await tx.loadDetails.deleteMany({ where: { jobId: id, companyId } });
-      } else if (hasLoadDetailsInput(loadDetails)) {
-        await tx.loadDetails.upsert({
-          where:  { jobId: id },
-          create: {
-            companyId,
-            jobId:           id,
-            quantity:        toNullableNumber(loadDetails?.quantity),
-            unit:            loadDetails?.unit?.toString() ?? "",
-            weight:          toNullableNumber(loadDetails?.weight),
-            volume:          toNullableNumber(loadDetails?.volume),
-            materialType:    loadDetails?.materialType?.toString() ?? "",
-            hazardClass:     loadDetails?.hazardClass?.toString() ?? "",
-            notes:           loadDetails?.notes?.toString() ?? "",
-            dimensions:      loadDetails?.dimensions?.toString() ?? "",
-            fragile:         loadDetails?.fragile ?? false,
-            stackable:       loadDetails?.stackable ?? false,
-            tempControlled:  loadDetails?.tempControlled ?? false,
-            tempRange:       loadDetails?.tempRange?.toString() ?? "",
-            photosRequired:  loadDetails?.photosRequired ?? false,
-            weighbridgeRequired: loadDetails?.weighbridgeRequired ?? false,
-            forkliftRequired:    loadDetails?.forkliftRequired ?? false,
-            tailLiftRequired:    loadDetails?.tailLiftRequired ?? false,
-            craneRequired:       loadDetails?.craneRequired ?? false,
-            loadingMethod:       loadDetails?.loadingMethod?.toString() ?? "",
-            unloadingMethod:     loadDetails?.unloadingMethod?.toString() ?? "",
-            goodsType:           loadDetails?.goodsType?.toString() ?? "",
-            securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
-            specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
-          },
-          update: {
-            quantity:        toNullableNumber(loadDetails?.quantity),
-            unit:            loadDetails?.unit?.toString() ?? "",
-            weight:          toNullableNumber(loadDetails?.weight),
-            volume:          toNullableNumber(loadDetails?.volume),
-            materialType:    loadDetails?.materialType?.toString() ?? "",
-            hazardClass:     loadDetails?.hazardClass?.toString() ?? "",
-            notes:           loadDetails?.notes?.toString() ?? "",
-            dimensions:      loadDetails?.dimensions?.toString() ?? "",
-            fragile:         loadDetails?.fragile ?? false,
-            stackable:       loadDetails?.stackable ?? false,
-            tempControlled:  loadDetails?.tempControlled ?? false,
-            tempRange:       loadDetails?.tempRange?.toString() ?? "",
-            photosRequired:  loadDetails?.photosRequired ?? false,
-            weighbridgeRequired: loadDetails?.weighbridgeRequired ?? false,
-            forkliftRequired:    loadDetails?.forkliftRequired ?? false,
-            tailLiftRequired:    loadDetails?.tailLiftRequired ?? false,
-            craneRequired:       loadDetails?.craneRequired ?? false,
-            loadingMethod:       loadDetails?.loadingMethod?.toString() ?? "",
-            unloadingMethod:     loadDetails?.unloadingMethod?.toString() ?? "",
-            goodsType:           loadDetails?.goodsType?.toString() ?? "",
-            securingRequirements: Array.isArray(loadDetails?.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined,
-            specialRequirements:  Array.isArray(loadDetails?.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined,
-          },
-        });
-      }
-
       await tx.jobAudit.create({
         data: {
           companyId,
@@ -876,56 +784,61 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         },
       });
 
-      return tx.plannedJob.update({
+      return tx.job.update({
         where: { id },
         data: {
           ...(jobReference !== undefined ? { jobReference } : {}),
           customerId:          effectiveCustomerId ?? null,
           customerName:        patchCustomerName,
-          materialType:        loadDetails?.materialType?.toString() ?? "",
-          quantityExpected:    loadDetails?.quantity !== undefined && loadDetails?.quantity !== null ? String(loadDetails.quantity) : "",
-          quantityUnit:        loadDetails?.unit?.toString() ?? "",
           plannerNotes:        body.plannerNotes ?? job.plannerNotes,
-          reqBodyCategory,
-          reqGvwMin,
-          reqBodyType,
-          reqEquipment,
-          reqLicenceClass,
-          trailerTypesAllowed: body.trailerTypesAllowed ?? JSON.parse(JSON.stringify(job.trailerTypesAllowed ?? [])),
+          vehicleCategory,
+          minGvwClass,
+          bodyType,
+          equipment,
+          trailersAllowed:     body.trailerTypesAllowed ?? JSON.parse(JSON.stringify(job.trailersAllowed ?? [])),
           priority:            body.priority ?? job.priority,
           serviceType:         body.serviceType ?? job.serviceType,
           customerRef:         body.customerRef ?? job.customerRef,
           purchaseOrderNumber: body.purchaseOrderNumber ?? job.purchaseOrderNumber,
           billingNotes:        body.billingNotes ?? job.billingNotes,
-          customerInstructions: body.customerInstructions ?? job.customerInstructions,
           bookingContactName:  body.bookingContactName ?? job.bookingContactName,
           bookingContactPhone: body.bookingContactPhone ?? job.bookingContactPhone,
           bookingContactEmail: body.bookingContactEmail ?? job.bookingContactEmail,
           custRefRequired:     body.custRefRequired ?? job.custRefRequired,
           poRequired:          body.poRequired ?? job.poRequired,
-          minVehicleSize:      body.minVehicleSize ?? job.minVehicleSize,
-          equipmentRequired:   body.equipmentRequired ?? JSON.parse(JSON.stringify(job.equipmentRequired ?? [])),
-          driverQualificationsReq: body.driverQualificationsReq ?? JSON.parse(JSON.stringify(job.driverQualificationsReq ?? [])),
-          lengthRestriction:   body.lengthRestriction ?? job.lengthRestriction,
           vehicleAccessNotes:  body.vehicleAccessNotes ?? job.vehicleAccessNotes,
           failureAction:       body.failureAction ?? job.failureAction,
           assistancePhone:     body.assistancePhone ?? job.assistancePhone,
           assistanceNote:      body.assistanceNote ?? job.assistanceNote,
           internalNotes:       body.internalNotes ?? job.internalNotes,
-          ...(body.notesData           !== undefined ? { notesData:           body.notesData           as Prisma.InputJsonValue } : {}),
-          ...(body.exceptionPolicyData !== undefined ? { exceptionPolicyData: body.exceptionPolicyData as Prisma.InputJsonValue } : {}),
-          ...(body.loadData            !== undefined ? { loadData:            body.loadData            as Prisma.InputJsonValue } : {}),
-          ...(body.billingData         !== undefined ? { billingData:         body.billingData         as Prisma.InputJsonValue } : {}),
+          ...(body.loadData    !== undefined ? { loadData:    body.loadData    as Prisma.InputJsonValue } : {}),
+          ...(body.billingData !== undefined ? { billingData: body.billingData as Prisma.InputJsonValue } : {}),
           validationStatus:    structuredValidation.validationStatus,
           qualityScore:        quality.score,
           requirePOD:          body.requirePOD ?? job.requirePOD,
           canSplitShipment:    body.canSplitShipment ?? job.canSplitShipment,
           plannedDate:         body.plannedDate ? new Date(body.plannedDate) : job.plannedDate,
+          // Load details — now columns directly on Job
+          goodsType:           loadDetails?.goodsType?.toString() ?? job.goodsType ?? "",
+          goodsDescription:    loadDetails?.materialType?.toString() ?? job.goodsDescription ?? "",
+          quantity:            toNullableNumber(loadDetails?.quantity) ?? job.quantity,
+          quantityUnit:        loadDetails?.unit?.toString() ?? job.quantityUnit ?? "",
+          weight:              toNullableNumber(loadDetails?.weight) ?? job.weight,
+          volume:              toNullableNumber(loadDetails?.volume) ?? job.volume,
+          dimensions:          loadDetails?.dimensions?.toString() ?? job.dimensions ?? "",
+          fragile:             loadDetails?.fragile ?? job.fragile,
+          stackable:           loadDetails?.stackable ?? job.stackable,
+          tempControlled:      loadDetails?.tempControlled ?? job.tempControlled,
+          tempRange:           loadDetails?.tempRange?.toString() ?? job.tempRange ?? "",
+          hazardClass:         loadDetails?.hazardClass?.toString() ?? job.hazardClass ?? "",
+          photosRequired:      loadDetails?.photosRequired ?? job.photosRequired,
+          weighbridgeRequired: loadDetails?.weighbridgeRequired ?? job.weighbridgeRequired,
+          ...(loadDetails?.securingRequirements !== undefined ? { securingRequirements: Array.isArray(loadDetails.securingRequirements) ? (loadDetails.securingRequirements as any) : undefined } : {}),
+          ...(loadDetails?.specialRequirements !== undefined  ? { specialRequirements:  Array.isArray(loadDetails.specialRequirements)  ? (loadDetails.specialRequirements  as any) : undefined } : {}),
         },
         include: {
-          stops:       { orderBy: { sequenceNumber: "asc" } },
-          loadDetails: true,
-          audits:      { orderBy: { createdAt: "desc" }, take: 5 },
+          stops:  { orderBy: { sequenceNumber: "asc" } },
+          audits: { orderBy: { createdAt: "desc" }, take: 5 },
         },
       });
     });
@@ -942,7 +855,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const id = parseInt((request.params as { id: string }).id, 10);
     const { companyId, userId } = request.user!;
 
-    const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
+    const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
     if (job.status === "cancelled") return reply.status(204).send();
 
@@ -962,7 +875,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { companyId, linkedJobId: id },
         data:  { linkedJobId: null },
       });
-      await tx.plannedJob.update({
+      await tx.job.update({
         where: { id },
         data: {
           status:       "cancelled",
@@ -1000,7 +913,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       }[];
     };
 
-    const job = await prisma.plannedJob.findFirst({ where: { id, companyId }, include: { stops: true } });
+    const job = await prisma.job.findFirst({ where: { id, companyId }, include: { stops: true } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
     if (Array.isArray(body.stopTimes) && body.stopTimes.length > 0) {
@@ -1030,9 +943,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
-    const updated = await prisma.plannedJob.findFirst({
+    const updated = await prisma.job.findFirst({
       where:   { id, companyId },
-      include: { stops: { orderBy: { sequenceNumber: "asc" } }, loadDetails: true },
+      include: { stops: { orderBy: { sequenceNumber: "asc" } } },
     });
 
     return reply.send(updated);
@@ -1047,7 +960,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const v = validateUpdateJobStatus(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
+    const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
     if (role === "driver") {
@@ -1104,7 +1017,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     await prisma.$transaction([
-      prisma.plannedJob.update({ where: { id }, data: { status: body.status } }),
+      prisma.job.update({ where: { id }, data: { status: body.status } }),
       prisma.jobExecutionEvent.create({
         data: {
           jobId:           id,
@@ -1132,7 +1045,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const v = validateAddJobNote(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    const job = await prisma.plannedJob.findFirst({ where: { id, companyId } });
+    const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
     await prisma.jobExecutionEvent.create({
@@ -1180,7 +1093,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
       const jobIds = assignments.map(a => a.jobId);
 
-      const jobs = await prisma.plannedJob.findMany({
+      const jobs = await prisma.job.findMany({
         where: {
           companyId,
           id:          { in: jobIds },

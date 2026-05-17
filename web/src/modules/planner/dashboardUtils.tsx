@@ -133,11 +133,11 @@ export function routeSummary(job: PlannedJob) {
   const stops = sortedStops(job);
   const pickups = stops.filter(isPickup);
   const dropoffs = stops.filter(isDropoff);
-  const pickup = shortLocation(pickups[0], job.pickupTextSnapshot ?? "");
+  const pickup = shortLocation(pickups[0], "");
 
-  if (dropoffs.length === 0) return `${pickup} -> ${compact(job.dropoffTextSnapshot ?? "")}`;
+  if (dropoffs.length === 0) return pickup || "Route unknown";
 
-  const dropLabels = dropoffs.map((stop) => shortLocation(stop, job.dropoffTextSnapshot ?? ""));
+  const dropLabels = dropoffs.map((stop) => shortLocation(stop, ""));
   const uniqueDropLabels = Array.from(new Set(dropLabels));
   if (dropoffs.length > 1 && uniqueDropLabels.length === 1) {
     return `${pickup} -> ${uniqueDropLabels[0]} (${dropoffs.length})`;
@@ -150,33 +150,30 @@ export function routeSummary(job: PlannedJob) {
 
 export function stopCountLabel(job: PlannedJob) {
   const stops = sortedStops(job);
-  const collections = stops.filter(isPickup).length || (job.pickupTextSnapshot ? 1 : 0);
-  const deliveries = stops.filter(isDropoff).length || (job.dropoffTextSnapshot ? 1 : 0);
+  const collections = stops.filter(isPickup).length;
+  const deliveries = stops.filter(isDropoff).length;
   return `${collections}C->${deliveries}D`;
 }
 
 export function loadSummary(job: PlannedJob) {
-  const quantity = job.loadDetails?.quantity ?? job.quantityExpected;
-  const unit = job.loadDetails?.unit ?? job.quantityUnit;
-  const material = job.loadDetails?.materialType || job.materialType;
-  const amount = quantity ? `${quantity} ${unit || ""}`.trim() : "";
+  const quantity = job.quantity;
+  const unit = job.quantityUnit;
+  const material = job.goodsDescription || job.goodsType;
+  const amount = quantity != null ? `${quantity} ${unit || ""}`.trim() : "";
   if (amount && material) return `${amount} ${material}`.trim();
   return amount || material || "Load not set";
 }
 
 export function vehicleRequirement(job: PlannedJob) {
-  const category = BODY_CATEGORIES.find(c => c.value === job.reqBodyCategory)?.label ?? job.reqBodyCategory;
-  const bodyType = BODY_TYPES.find(t => t.value === job.reqBodyType)?.label ?? job.reqBodyType;
-  return [category, job.reqGvwMin, bodyType].filter(Boolean).join(" / ")
-    || job.vehicleClassRequired
-    || job.vehicleClass
-    || job.minVehicleSize
+  const category = BODY_CATEGORIES.find(c => c.value === job.vehicleCategory)?.label ?? job.vehicleCategory;
+  const bt = BODY_TYPES.find(t => t.value === job.bodyType)?.label ?? job.bodyType;
+  return [category, job.minGvwClass, bt].filter(Boolean).join(" / ")
     || "Vehicle not set";
 }
 
 export function requiresTrailer(job: PlannedJob) {
-  return (isBodyCategory(job.reqBodyCategory) && bodyCategoryNeedsTrailer(job.reqBodyCategory))
-    || compactArray(job.trailerTypesAllowed).length > 0
+  return (isBodyCategory(job.vehicleCategory) && bodyCategoryNeedsTrailer(job.vehicleCategory))
+    || compactArray(job.trailersAllowed).length > 0
     || !!job.assignedTrailer;
 }
 
@@ -241,13 +238,13 @@ export function normalizeTrailer(value?: string | null) {
 }
 
 export function unitMatchesRequirement(job: PlannedJob, unit: FleetUnit | null) {
-  const required = job.reqBodyCategory || normalizeVehicle(vehicleRequirement(job));
+  const required = job.vehicleCategory || normalizeVehicle(vehicleRequirement(job));
   if (!required || !unit) return true;
   return (unit.bodyCategory || normalizeVehicle(unit.vehicleClass)) === required;
 }
 
 export function trailerMatchesRequirement(job: PlannedJob, trailer: FleetTrailer | null) {
-  const allowed = compactArray(job.trailerTypesAllowed).map(normalizeTrailer).filter(Boolean);
+  const allowed = compactArray(job.trailersAllowed).map(normalizeTrailer).filter(Boolean);
   if (!allowed.length || !trailer) return true;
   return allowed.includes(trailer.bodyType || normalizeTrailer(trailer.trailerType));
 }
@@ -327,11 +324,11 @@ export function buildWarnings(
     warnings.push({ level: "critical", type: "missing_stops", message: "Collection/drop-off stops are incomplete." });
   }
 
-  if (!job.reqBodyCategory && !job.vehicleClassRequired && !job.vehicleClass && !job.minVehicleSize) {
+  if (!job.vehicleCategory && !job.bodyType) {
     warnings.push({ level: "warning", type: "missing_vehicle", message: "Vehicle type requirement is missing." });
   }
 
-  if (!job.loadDetails?.quantity && !job.quantityExpected && !job.loadDetails?.materialType && !job.materialType) {
+  if (!job.quantity && !job.goodsDescription && !job.goodsType) {
     warnings.push({ level: "warning", type: "missing_load", message: "Load summary is missing." });
   }
 
@@ -388,7 +385,7 @@ export function buildWarnings(
         warnings.push({
           level: "warning",
           type: "trailer_mismatch",
-          message: `Job requires ${bodyTypeList(job.trailerTypesAllowed)} trailer. Selected trailer is ${trailerRequirementLabel(trailer) || trailer.registration}.`,
+          message: `Job requires ${bodyTypeList(job.trailersAllowed)} trailer. Selected trailer is ${trailerRequirementLabel(trailer) || trailer.registration}.`,
         });
       }
     }
@@ -424,7 +421,7 @@ export function buildWarnings(
     });
   }
 
-  const loadQty = asNumber(job.loadDetails?.quantity ?? job.quantityExpected);
+  const loadQty = asNumber(job.quantity);
   const allocatedPallets = stops.reduce((sum, stop) => sum + (asNumber(stop.numPallets) ?? 0), 0);
   if (dropoffStops.length > 1 && loadQty && allocatedPallets === 0) {
     warnings.push({ level: "warning", type: "load_split_missing", message: "Multi-drop job has no per-stop load split." });
@@ -432,7 +429,7 @@ export function buildWarnings(
     warnings.push({ level: "warning", type: "load_split_mismatch", message: "Stop quantities do not match total load." });
   }
 
-  if (job.failureAction === "finish_then_return" && !job.returnDestination) {
+  if (job.failureAction === "finish_then_return" && !job.alternativeReturnAddress) {
     warnings.push({
       level: "warning",
       type: "missing_return_instruction",

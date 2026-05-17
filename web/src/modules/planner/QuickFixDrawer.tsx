@@ -26,7 +26,7 @@ export default function QuickFixDrawer({
   const [value, setValue] = useState(() => {
     if (!selectedWarning?.fix) return "";
     if (selectedWarning.fix.kind === "stop_time") return dateTimeInput(selectedStop?.timeWindowStart ?? selectedStop?.bookedTime ?? null);
-    if (selectedWarning.fix.kind === "return_instruction") return context.job.returnDestination ?? "";
+    if (selectedWarning.fix.kind === "return_instruction") return context.job.alternativeReturnAddress ?? "";
     if (selectedWarning.fix.kind === "stop_reference") return selectedStop?.referenceNumber ?? "";
     return selectedStop?.contactPhone ?? "";
   });
@@ -39,7 +39,7 @@ export default function QuickFixDrawer({
     setSelectedType(type);
     if (!nextWarning?.fix) setValue("");
     else if (nextWarning.fix.kind === "stop_time") setValue(dateTimeInput(nextStop?.timeWindowStart ?? nextStop?.bookedTime ?? null));
-    else if (nextWarning.fix.kind === "return_instruction") setValue(context.job.returnDestination ?? "");
+    else if (nextWarning.fix.kind === "return_instruction") setValue(context.job.alternativeReturnAddress ?? "");
     else if (nextWarning.fix.kind === "stop_reference") setValue(nextStop?.referenceNumber ?? "");
     else setValue(nextStop?.contactPhone ?? "");
   }
@@ -51,7 +51,7 @@ export default function QuickFixDrawer({
     try {
       if (selectedWarning.fix.kind === "return_instruction") {
         await jobsApi.update(context.job.id, {
-          returnDestination: value,
+          alternativeReturnAddress: value,
           saveMode: "draft",
         });
       } else {

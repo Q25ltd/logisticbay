@@ -106,8 +106,8 @@ export default function JobDetailPage() {
   if (error)   return <div className="p-6"><Alert type="error" message={error} /></div>;
   if (!job)    return null;
 
-  const plannedQty  = job.loadDetails?.quantity ?? job.quantityExpected;
-  const plannedUnit = job.loadDetails?.unit     ?? job.quantityUnit;
+  const plannedQty  = job.quantity;
+  const plannedUnit = job.quantityUnit;
   const stops       = [...(job.stops ?? [])].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
   return (
@@ -166,7 +166,7 @@ export default function JobDetailPage() {
               <div>
                 <span className="text-muted text-xs uppercase tracking-wide">Material</span>
                 <div className="font-medium">
-                  {job.loadDetails?.materialType || job.materialType || "—"}
+                  {job.goodsDescription || job.goodsType || "—"}
                 </div>
               </div>
               <div>
@@ -175,10 +175,10 @@ export default function JobDetailPage() {
                   {plannedQty ? `${plannedQty} ${plannedUnit || ""}`.trim() : "—"}
                 </div>
               </div>
-              {job.loadDetails?.weight && (
+              {job.weight != null && (
                 <div>
                   <span className="text-muted text-xs uppercase tracking-wide">Weight</span>
-                  <div className="font-medium">{job.loadDetails.weight} t</div>
+                  <div className="font-medium">{job.weight} t</div>
                 </div>
               )}
             </div>

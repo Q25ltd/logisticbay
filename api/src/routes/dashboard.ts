@@ -8,9 +8,8 @@ const JOB_INCLUDE = {
   customer:    true,
   template:    true,
   stops:       { orderBy: { sequenceNumber: "asc" as const } },
-  loadDetails: true,
   events:      { orderBy: { createdAt: "asc" as const } },
-} satisfies Prisma.PlannedJobInclude;
+} satisfies Prisma.JobInclude;
 
 export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -35,7 +34,7 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
     const dateTo   = q.dateTo   ?? dateFrom;
 
     // Jobs in the requested date range
-    const rangeJobs = await prisma.plannedJob.findMany({
+    const rangeJobs = await prisma.job.findMany({
       where: {
         companyId,
         plannedDate: {
@@ -50,7 +49,7 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
 
     // Open carry-over jobs — non-closed jobs with no planned date or outside the range
     const rangeJobIds = new Set(rangeJobs.map(j => j.id));
-    const carryOverJobs = await prisma.plannedJob.findMany({
+    const carryOverJobs = await prisma.job.findMany({
       where: {
         companyId,
         status: { notIn: [...CLOSED_STATUSES] },

@@ -74,7 +74,7 @@ export default function JobDetailDrawer({
               <DetailRow label="Customer" value={context.customer} />
               <DetailRow label="Planning date" value={dayKey(job.plannedDate) || "Unplanned"} />
               <DetailRow label="Status" value={context.statusLabel} />
-              <DetailRow label="Reference" value={job.referenceNumber || job.customerRef} />
+              <DetailRow label="Reference" value={job.customerRef} />
               <DetailRow label="Service type" value={job.serviceType} />
               <DetailRow label="Job type" value={job.jobType} />
               <DetailRow label="Job title" value={job.jobTitle} />
@@ -108,20 +108,18 @@ export default function JobDetailDrawer({
 
           <DrawerSection title="Load">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <DetailRow label="Goods/material" value={job.loadDetails?.materialType || job.materialType} />
-              <DetailRow label="Total quantity" value={job.loadDetails?.quantity ? `${job.loadDetails.quantity} ${job.loadDetails.unit || ""}` : `${job.quantityExpected || ""} ${job.quantityUnit || ""}`.trim()} />
-              <DetailRow label="Total weight" value={job.loadDetails?.weight ? `${job.loadDetails.weight}` : ""} />
+              <DetailRow label="Goods/material" value={job.goodsDescription || job.goodsType} />
+              <DetailRow label="Total quantity" value={job.quantity != null ? `${job.quantity} ${job.quantityUnit || ""}`.trim() : ""} />
+              <DetailRow label="Total weight" value={job.weight != null ? `${job.weight}` : ""} />
               <DetailRow label="Per-stop allocation" value={sortedStops(job).some((stop) => stop.numPallets != null) ? "Present" : "Missing/unused"} />
               <DetailRow label="POD required" value={job.requirePOD ? "Yes" : "No"} />
-              <DetailRow label="Temperature" value={job.loadDetails?.tempControlled ? job.loadDetails.tempRange || "Controlled" : "No"} />
-              <DetailRow label="Tail lift" value={job.loadDetails?.tailLiftRequired ? "Required" : "No"} />
-              <DetailRow label="Forklift" value={job.loadDetails?.forkliftRequired ? "Required" : "No"} />
+              <DetailRow label="Temperature" value={job.tempControlled ? job.tempRange || "Controlled" : "No"} />
             </div>
           </DrawerSection>
 
           <DrawerSection title="Return instructions">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              <DetailRow label="Selected instruction" value={job.returnDestination || job.failureAction} />
+              <DetailRow label="Selected instruction" value={job.failureAction} />
               <DetailRow label="Assistance number" value={job.assistancePhone} />
               <DetailRow label="Assistance note" value={job.assistanceNote} />
             </div>
@@ -130,11 +128,8 @@ export default function JobDetailDrawer({
           <DrawerSection title="Vehicle/trailer requirements">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <DetailRow label="Vehicle type" value={context.vehicle} />
-              <DetailRow label="Trailer allowed" value={labelArray(BODY_TYPES, job.trailerTypesAllowed)} />
-              <DetailRow label="Equipment" value={labelArray(ONBOARD_EQUIPMENT, compactArray(job.reqEquipment).length ? job.reqEquipment : job.equipmentRequired)} />
-              <DetailRow label="Height limit" value={job.heightRestriction} />
-              <DetailRow label="Weight limit" value={job.weightRestriction} />
-              <DetailRow label="Length limit" value={job.lengthRestriction} />
+              <DetailRow label="Trailer allowed" value={labelArray(BODY_TYPES, job.trailersAllowed)} />
+              <DetailRow label="Equipment" value={labelArray(ONBOARD_EQUIPMENT, job.equipment)} />
               <DetailRow label="Access notes" value={job.vehicleAccessNotes} />
             </div>
           </DrawerSection>
@@ -163,7 +158,7 @@ export default function JobDetailDrawer({
             <div className="space-y-3">
               <DetailRow label="Planner notes" value={job.plannerNotes} />
               <DetailRow label="Internal notes" value={job.internalNotes} />
-              <DetailRow label="Customer instructions" value={job.customerInstructions} />
+              <DetailRow label="Internal notes" value={job.internalNotes} />
             </div>
           </DrawerSection>
         </div>

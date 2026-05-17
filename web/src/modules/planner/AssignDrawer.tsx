@@ -171,8 +171,8 @@ export default function AssignDrawer({
             <div>
               <h2 className="text-lg font-black text-primary">Allocate job</h2>
               <p className="mt-1 text-sm text-muted">{context.route}</p>
-              {context.job.referenceNumber && (
-                <p className="text-xs text-muted">Ref: {context.job.referenceNumber}</p>
+              {context.job.customerRef && (
+                <p className="text-xs text-muted">Ref: {context.job.customerRef}</p>
               )}
             </div>
             <button type="button" onClick={onClose} className="btn btn-outline px-3 py-1.5 text-xs">Close</button>

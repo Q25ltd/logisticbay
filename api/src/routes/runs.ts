@@ -89,9 +89,9 @@ const RUN_DETAIL_INCLUDE = {
           jobReference: true,
           customerName: true,
           plannedDate:  true,
-          status:       true,
-          materialType: true,
-          plannerNotes: true,
+          status:           true,
+          goodsDescription: true,
+          plannerNotes:     true,
         },
       },
     },
@@ -375,7 +375,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     // Verify JobPart and Job belong to this company
     const [jobPart, job] = await Promise.all([
       prisma.jobPart.findFirst({ where: { id: body.jobPartId, companyId } }),
-      prisma.plannedJob.findFirst({ where: { id: body.jobId, companyId } }),
+      prisma.job.findFirst({ where: { id: body.jobId, companyId } }),
     ]);
     if (!jobPart) return reply.status(400).send({ error: "JobPart not found" });
     if (!job)    return reply.status(400).send({ error: "Job not found" });

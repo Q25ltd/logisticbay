@@ -84,17 +84,17 @@ function firstStopText(job: PlannedJob, type: "pickup" | "dropoff") {
   const stop = job.stops
     ?.filter(s => s.type === type)
     .sort((a, b) => a.sequenceNumber - b.sequenceNumber)[type === "pickup" ? 0 : Math.max(0, (job.stops?.filter(s => s.type === type).length ?? 1) - 1)];
-  return stop?.locationTextSnapshot || (type === "pickup" ? job.pickupTextSnapshot : job.dropoffTextSnapshot) || "—";
+  return stop?.locationTextSnapshot || "—";
 }
 
 function jobMaterial(job: PlannedJob) {
-  return job.loadDetails?.materialType || job.materialType || "—";
+  return job.goodsDescription || job.goodsType || "—";
 }
 
 function jobQuantity(job: PlannedJob) {
-  const quantity = job.loadDetails?.quantity ?? job.quantityExpected;
-  const unit = job.loadDetails?.unit ?? job.quantityUnit;
-  return quantity ? `${quantity} ${unit || ""}`.trim() : "";
+  const quantity = job.quantity;
+  const unit = job.quantityUnit;
+  return quantity != null ? `${quantity} ${unit || ""}`.trim() : "";
 }
 
 function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
