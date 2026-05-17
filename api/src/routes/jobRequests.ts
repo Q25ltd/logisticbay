@@ -172,52 +172,39 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       return reply.status(410).send({ error: "This link has expired" });
     }
 
-    const body = request.body as Record<string, unknown>;
-
-    // ── Extract blobs ────────────────────────────────────────────────────────
-    const requesterData = (body.requesterData  as Record<string, unknown> | undefined) ?? {};
-    const stops         = (body.stops          as Record<string, unknown>[] | undefined) ?? [];
-    const loadData      = (body.loadData       as Record<string, unknown> | undefined) ?? {};
-    const specialData   = (body.specialRequirementsData  as Record<string, unknown> | undefined) ?? {};
-    const transportData = (body.transportRequirementsData as Record<string, unknown> | undefined) ?? {};
-    const billingData   = (body.billingData    as Record<string, unknown> | undefined) ?? {};
-    const notesData     = (body.notesData      as Record<string, unknown> | undefined) ?? {};
-    const exceptionData = (body.exceptionPolicyData as Record<string, unknown> | undefined) ?? {};
+    const body  = request.body as Record<string, unknown>;
+    const stops = (body.stops as Record<string, unknown>[] | undefined) ?? [];
 
     if (stops.length === 0) {
       return reply.status(400).send({ error: "At least one stop is required" });
     }
 
     // ── Vehicle requirements ─────────────────────────────────────────────────
-    const plannerDecides  = transportData.plannerDecides === true;
-    const vehicleCategory = plannerDecides ? "" : str(transportData.reqBodyCategory);
-    const reqBodyTypes    = Array.isArray(transportData.reqBodyTypes) ? transportData.reqBodyTypes as string[] : [];
-    const bodyTypes       = plannerDecides ? [] : reqBodyTypes;
-    const equipment       = plannerDecides ? [] : (Array.isArray(transportData.reqEquipment)      ? transportData.reqEquipment      as string[] : []);
-    const trailersAllowed = plannerDecides ? [] : (Array.isArray(transportData.trailerTypesAllowed) ? transportData.trailerTypesAllowed as string[] : []);
+    const vehicleCategory    = str(body.vehicleCategory);
+    const bodyTypes: string[]       = Array.isArray(body.bodyTypes)       ? body.bodyTypes       as string[] : [];
+    const equipment: string[]       = Array.isArray(body.equipment)       ? body.equipment       as string[] : [];
+    const trailersAllowed: string[] = Array.isArray(body.trailersAllowed) ? body.trailersAllowed as string[] : [];
 
     // ── Load ─────────────────────────────────────────────────────────────────
-    const tempControlled = !!(loadData.temperatureRange || loadData.chilledFrozenAmbient);
-    const tempRange      = str(loadData.temperatureRange || loadData.chilledFrozenAmbient);
-
-    // ── Special requirements ─────────────────────────────────────────────────
-    const specialItems = Array.isArray(specialData.items) ? specialData.items as string[] : [];
-    const fragile      = specialItems.includes("fragile");
-    const hazardClass  = str(specialData.adrClass);
+    const tempControlled = bool(body.tempControlled);
+    const tempRange      = strN(body.tempRange);
+    const fragile        = bool(body.fragile);
+    const hazardClass    = strN(body.hazardClass);
+    const specialItems: string[] = Array.isArray(body.specialRequirements) ? body.specialRequirements as string[] : [];
 
     // ── Exception policy ─────────────────────────────────────────────────────
-    const failureAction              = str(exceptionData.rejectionAction) || "call_assistance";
-    const approvalContactName        = strN(exceptionData.approvalContactName);
-    const approvalContactPhone       = strN(exceptionData.approvalContactPhone);
-    const alternativeReturnAddress   = strN(exceptionData.alternativeReturnAddress);
-    const alternativeReturnPostcode  = strN(exceptionData.alternativeReturnPostcode);
-    const alternativeReturnContactName  = strN(exceptionData.alternativeReturnContactName);
-    const alternativeReturnContactPhone = strN(exceptionData.alternativeReturnContactPhone);
+    const failureAction              = str(body.failureAction) || "call_assistance";
+    const approvalContactName        = strN(body.approvalContactName);
+    const approvalContactPhone       = strN(body.approvalContactPhone);
+    const alternativeReturnAddress   = strN(body.alternativeReturnAddress);
+    const alternativeReturnPostcode  = strN(body.alternativeReturnPostcode);
+    const alternativeReturnContactName  = strN(body.alternativeReturnContactName);
+    const alternativeReturnContactPhone = strN(body.alternativeReturnContactPhone);
 
     // ── Notes ────────────────────────────────────────────────────────────────
-    const driverNoteChips    = Array.isArray(notesData.driverNoteChips) ? notesData.driverNoteChips as string[] : [];
-    const driverVisibleNotes = strN(notesData.driverVisibleNotes);
-    const safetyInstructions = strN(notesData.safetyInstructions);
+    const driverNoteChips: string[]  = Array.isArray(body.driverNoteChips) ? body.driverNoteChips as string[] : [];
+    const driverVisibleNotes = strN(body.driverVisibleNotes);
+    const safetyInstructions = strN(body.safetyInstructions);
 
     // ── Find creator (a planner/owner in this company) ───────────────────────
     const membership = await prisma.companyMembership.findFirst({
@@ -248,47 +235,46 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           status:          "pending_review",
 
           // Customer / requester
-          customerName:        str(requesterData.customerCompanyName) || (link.customer?.name ?? ""),
-          customerRef:         str(requesterData.customerRef),
-          bookingContactName:  str(requesterData.contactName),
-          bookingContactPhone: str(requesterData.contactPhone),
-          bookingContactEmail: str(requesterData.contactEmail),
+          customerName:        str(body.customerName) || (link.customer?.name ?? ""),
+          customerRef:         strN(body.customerRef),
+          bookingContactName:  strN(body.bookingContactName),
+          bookingContactPhone: strN(body.bookingContactPhone),
+          bookingContactEmail: strN(body.bookingContactEmail),
 
           // Billing
-          purchaseOrderNumber: str(billingData.purchaseOrderNumber),
-          billingReference:    strN(billingData.billingReference),
-          declaredGoodsValue:  billingData.declaredGoodsValue != null
-                                 ? String(billingData.declaredGoodsValue)
-                                 : null,
+          purchaseOrderNumber: strN(body.purchaseOrderNumber),
+          billingReference:    strN(body.billingReference),
+          declaredGoodsValue:  body.declaredGoodsValue != null ? str(body.declaredGoodsValue) : null,
 
           // Load
-          goodsType:           str(loadData.goodsType),
-          goodsDescription:    str(loadData.goodsDescription),
-          quantity:            toNullableNumber(loadData.quantity as number | null | undefined),
-          quantityUnit:        str(loadData.unit),
-          weight:              toNullableNumber(loadData.estimatedWeight as number | null | undefined),
+          goodsType:           strN(body.goodsType),
+          goodsDescription:    strN(body.goodsDescription),
+          quantity:            toNullableNumber(body.quantity as number | null | undefined),
+          quantityUnit:        str(body.quantityUnit),
+          weight:              toNullableNumber(body.weight as number | null | undefined),
           fragile,
-          stackable:           bool(loadData.stackable),
+          stackable:           bool(body.stackable),
           tempControlled,
           tempRange,
           hazardClass,
-          securingRequirements: Array.isArray(loadData.securingRequirements)
-                                  ? (loadData.securingRequirements as Prisma.InputJsonValue)
+          securingRequirements: Array.isArray(body.securingRequirements)
+                                  ? (body.securingRequirements as Prisma.InputJsonValue)
                                   : Prisma.DbNull,
           specialRequirements:  specialItems.length > 0
                                   ? (specialItems as unknown as Prisma.InputJsonValue)
                                   : Prisma.DbNull,
+
           // Vehicle requirements
           vehicleCategory,
-          bodyTypes:        bodyTypes.length > 0
-                              ? (bodyTypes as unknown as Prisma.InputJsonValue)
-                              : Prisma.DbNull,
-          equipment:        equipment.length > 0
-                              ? (equipment as unknown as Prisma.InputJsonValue)
-                              : Prisma.DbNull,
-          trailersAllowed:  trailersAllowed.length > 0
-                              ? (trailersAllowed as unknown as Prisma.InputJsonValue)
-                              : Prisma.DbNull,
+          bodyTypes:           bodyTypes.length > 0
+                                 ? (bodyTypes as unknown as Prisma.InputJsonValue)
+                                 : Prisma.DbNull,
+          equipment:           equipment.length > 0
+                                 ? (equipment as unknown as Prisma.InputJsonValue)
+                                 : Prisma.DbNull,
+          trailersAllowed:     trailersAllowed.length > 0
+                                 ? (trailersAllowed as unknown as Prisma.InputJsonValue)
+                                 : Prisma.DbNull,
           vehicleAccessNotes: "",
 
           // Notes
@@ -307,7 +293,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           alternativeReturnContactName,
           alternativeReturnContactPhone,
 
-          canSplitShipment: str(loadData.canSplitShipment) || "must_stay_together",
+          canSplitShipment: str(body.canSplitShipment) || "must_stay_together",
 
           stops: {
             create: stops.map((stop, i) => stopToJobPartData(stop, link.companyId, i)),
