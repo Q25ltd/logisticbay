@@ -160,7 +160,7 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
     try {
       const result = await jobRequestsApi.accept(r.id, plannerNotes);
       onRefresh();
-      navigate(`/app/jobs/${result.jobId}`);
+      navigate(`/app/jobs/${result.jobId}/edit`);
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
   }
 
@@ -278,7 +278,7 @@ function RequestRow({ request: r, onRefresh }: { request: JobRequest; onRefresh:
                 </div>
                 <div className="flex gap-2">
                   <button className="btn btn-primary text-sm" onClick={accept} disabled={busy}>
-                    {busy ? "Creating job…" : "✓ Accept & create job"}
+                    {busy ? "Creating job…" : "✓ Accept & open in job form"}
                   </button>
                   <button className="btn btn-secondary text-sm" onClick={() => setAccepting(false)}>Cancel</button>
                 </div>

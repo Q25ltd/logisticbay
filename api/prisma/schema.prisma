@@ -279,6 +279,9 @@ model PlannedJob {
   purchaseOrderNumber  String    @default("")
   billingNotes         String    @default("")
   customerInstructions String    @default("")
+  bookingContactName   String    @default("")
+  bookingContactPhone  String    @default("")
+  bookingContactEmail  String    @default("")
   custRefRequired      Boolean   @default(false)
   poRequired           Boolean   @default(false)
   minVehicleSize          String    @default("")
@@ -291,6 +294,8 @@ model PlannedJob {
   assistancePhone      String    @default("")
   assistanceNote       String    @default("")
   internalNotes        String    @default("")
+  notesData            Json?     // driverNoteChips[], driverVisibleNotes, safetyInstructions
+  exceptionPolicyData  Json?     // rejectionAction, alternativeReturnAddress, approvalContactName, etc.
   validationStatus     String    @default("draft")
   qualityScore         Int       @default(0)
   status               String    @default("draft")
@@ -951,6 +956,7 @@ model ClientRequestLink {
   lastUsedAt  DateTime?
   usageCount  Int       @default(0)
   createdBy   Int
+  templateData Json?         // JSON blob: pre-fill values for the public intake form
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

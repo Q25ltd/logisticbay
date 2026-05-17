@@ -306,6 +306,8 @@ Table: `PlannedJob`
 | assistancePhone | String | Yes | Phone string, default `""` | Phone number to call for assistance on failure |
 | assistanceNote | String | Yes | Free text, default `""` | Instructions to include when calling for assistance |
 | returnDestination | String | Yes | Free text, default `""` | Where to return the load if delivery fails |
+| notesData | Json? | No | `{ driverNoteChips: string[], driverVisibleNotes: string, safetyInstructions: string }` | Driver-facing notes set by the planner: quick-select instruction chips, free-text driver notes, safety/PPE instructions. Added to internal `CreateJobPage` and pre-populated on accept from JobRequest.notesData. |
+| exceptionPolicyData | Json? | No | `{ rejectionAction, alternativeReturnAddress, alternativeReturnPostcode, alternativeReturnContactName, alternativeReturnContactPhone, approvalContactName, approvalContactPhone, photosRequiredOnRejection, rejectionSignatureRequired, rejectionNotes }` | Rejection and return policy blob — mirrors the public form's exception policy card. Set by the planner in the internal job form and pre-populated on accept from JobRequest.exceptionPolicyData. |
 | altAddress | Json? | No | Address object | Alternative delivery address (structured) |
 | internalNotes | String | Yes | Free text, default `""` | Internal notes not visible to the driver |
 | validationStatus | String | Yes | `draft` \| `ready_for_planner` \| `validated` \| `issues_found`, default `draft` | Planner-side validation state |
@@ -572,6 +574,7 @@ Table: `ClientRequestLink`
 | lastUsedAt | DateTime? | No | ISO 8601 | Timestamp of the most recent successful submission |
 | usageCount | Int | Yes | Default: 0 | Total number of successful submissions via this link |
 | createdBy | Int | Yes | FK → User.id | User who created the link |
+| templateData | Json? | No | Arbitrary key-value object | Pre-fill values injected into matching fields on the public intake form when this link is used. Common keys: `customerRef`, `goodsType`, `goodsDescription`, `unit`, `quantity`, `estimatedWeight`, `declaredGoodsValue`. Managed in the Intake Links admin page. |
 | createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
 | updatedAt | DateTime | Yes | ISO 8601 | Last update timestamp |
 

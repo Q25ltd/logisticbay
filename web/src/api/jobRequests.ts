@@ -8,6 +8,7 @@ export interface PublicLinkInfo {
   contactName:   string | null;
   contactEmail:  string | null;
   contactPhone:  string | null;
+  templateData:  Record<string, unknown> | null;
 }
 
 // Stop object — one per collection/delivery/reload/etc.
@@ -223,18 +224,19 @@ export interface JobRequest {
 }
 
 export interface RequestLink {
-  id:          number;
-  companyId:   number;
-  customerId:  number | null;
-  name:        string;
-  tokenHash:   string;
-  isActive:    boolean;
-  expiresAt:   string | null;
-  lastUsedAt:  string | null;
-  usageCount:  number;
-  createdAt:   string;
-  customer:    { id: number; name: string } | null;
-  rawToken?:   string; // only returned on create
+  id:           number;
+  companyId:    number;
+  customerId:   number | null;
+  name:         string;
+  tokenHash:    string;
+  isActive:     boolean;
+  expiresAt:    string | null;
+  lastUsedAt:   string | null;
+  usageCount:   number;
+  createdAt:    string;
+  customer:     { id: number; name: string } | null;
+  templateData: Record<string, unknown> | null;
+  rawToken?:    string; // only returned on create
 }
 
 // ── Public (no-auth) helpers ──────────────────────────────────────────────────
@@ -269,9 +271,9 @@ export const jobRequestsPublicApi = {
 
 export const jobRequestsApi = {
   listLinks:   ()  => api.get<{ data: RequestLink[] }>("/request-links"),
-  createLink:  (body: { name: string; customerId?: number; expiresAt?: string }) =>
+  createLink:  (body: { name: string; customerId?: number; expiresAt?: string; templateData?: Record<string, unknown> | null }) =>
     api.post<RequestLink>("/request-links", body),
-  updateLink:  (id: number, body: { name?: string; isActive?: boolean; expiresAt?: string | null }) =>
+  updateLink:  (id: number, body: { name?: string; isActive?: boolean; expiresAt?: string | null; templateData?: Record<string, unknown> | null }) =>
     api.patch<RequestLink>(`/request-links/${id}`, body),
 
   list:    (status?: string, page?: number) =>

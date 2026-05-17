@@ -89,6 +89,21 @@ export interface CreateJobPayload {
   templateName: string;
   agreedRate: string;
   plannerNotes: string;
+  // Driver instructions (notesData blob)
+  driverNoteChips: string[];
+  driverVisibleNotes: string;
+  safetyInstructions: string;
+  // Rejection & return policy (exceptionPolicyData blob)
+  rejectionAction: string;
+  alternativeReturnAddress: string;
+  alternativeReturnPostcode: string;
+  alternativeReturnContactName: string;
+  alternativeReturnContactPhone: string;
+  approvalContactName: string;
+  approvalContactPhone: string;
+  photosRequiredOnRejection: boolean;
+  rejectionSignatureRequired: boolean;
+  rejectionNotes: string;
 }
 
 // ── Builder function ──────────────────────────────────────────────────────────
@@ -180,6 +195,19 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     templateName,
     agreedRate,
     plannerNotes,
+    driverNoteChips,
+    driverVisibleNotes,
+    safetyInstructions,
+    rejectionAction,
+    alternativeReturnAddress,
+    alternativeReturnPostcode,
+    alternativeReturnContactName,
+    alternativeReturnContactPhone,
+    approvalContactName,
+    approvalContactPhone,
+    photosRequiredOnRejection,
+    rejectionSignatureRequired,
+    rejectionNotes,
   } = params;
 
   const mappedStops = stops.map((stop, i) => {
@@ -329,5 +357,22 @@ export function buildBody(params: CreateJobPayload, saveMode: "draft" | "ready_t
     templateName:           !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
     agreedRate:             agreedRate ? parseFloat(agreedRate) : undefined,
     plannerNotes:           plannerNotes.trim() || undefined,
+    notesData: (driverNoteChips.length || driverVisibleNotes.trim() || safetyInstructions.trim()) ? {
+      driverNoteChips:    driverNoteChips.length ? driverNoteChips : undefined,
+      driverVisibleNotes: driverVisibleNotes.trim() || undefined,
+      safetyInstructions: safetyInstructions.trim() || undefined,
+    } : undefined,
+    exceptionPolicyData: rejectionAction ? {
+      rejectionAction,
+      alternativeReturnAddress:     alternativeReturnAddress.trim()     || undefined,
+      alternativeReturnPostcode:    alternativeReturnPostcode.trim()    || undefined,
+      alternativeReturnContactName: alternativeReturnContactName.trim() || undefined,
+      alternativeReturnContactPhone: alternativeReturnContactPhone.trim() || undefined,
+      approvalContactName:          approvalContactName.trim()          || undefined,
+      approvalContactPhone:         approvalContactPhone.trim()         || undefined,
+      photosRequiredOnRejection:    photosRequiredOnRejection           || undefined,
+      rejectionSignatureRequired:   rejectionSignatureRequired          || undefined,
+      rejectionNotes:               rejectionNotes.trim()               || undefined,
+    } : undefined,
   };
 }

@@ -218,9 +218,9 @@ export interface PlannedJob {
   /** @deprecated Field removed */                  vehicleClass?:     string;
   /** @deprecated Use reqBodyCategory */            vehicleClassRequired?: string;
   /** @deprecated Removed — use JobPart.referenceNumber */ referenceNumber?: string;
-  /** @deprecated Removed */                        bookingContactName?:  string;
-  /** @deprecated Removed */                        bookingContactPhone?: string;
-  /** @deprecated Removed */                        bookingContactEmail?: string;
+  bookingContactName?:  string;
+  bookingContactPhone?: string;
+  bookingContactEmail?: string;
   /** @deprecated Removed */                        jobType?:            string;
   /** @deprecated Removed */                        jobTitle?:           string;
   /** @deprecated Removed */                        heightRestriction?:  string;

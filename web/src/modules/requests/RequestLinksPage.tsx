@@ -23,11 +23,21 @@ export default function RequestLinksPage() {
   const [creating,  setCreating]  = useState(false);
 
   // New link form
-  const [newName,       setNewName]       = useState("");
-  const [newCustomerId, setNewCustomerId] = useState<number | "">("");
-  const [saving,        setSaving]        = useState(false);
-  const [saveErr,       setSaveErr]       = useState("");
-  const [newLink,       setNewLink]       = useState<RequestLink | null>(null); // shown once after creation
+  const [newName,         setNewName]         = useState("");
+  const [newCustomerId,   setNewCustomerId]   = useState<number | "">("");
+  const [newTemplateJson, setNewTemplateJson] = useState("");
+  const [templateJsonErr, setTemplateJsonErr] = useState("");
+  const [saving,          setSaving]          = useState(false);
+  const [saveErr,         setSaveErr]         = useState("");
+  const [newLink,         setNewLink]         = useState<RequestLink | null>(null); // shown once after creation
+
+  // Per-link edit state
+  const [editingId,       setEditingId]       = useState<number | null>(null);
+  const [editName,        setEditName]        = useState("");
+  const [editTemplateJson,setEditTemplateJson]= useState("");
+  const [editTemplateErr, setEditTemplateErr] = useState("");
+  const [editSaving,      setEditSaving]      = useState(false);
+  const [editErr,         setEditErr]         = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -42,19 +52,63 @@ export default function RequestLinksPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) { setSaveErr("Link name is required"); return; }
+    let parsedTemplate: Record<string, unknown> | null = null;
+    if (newTemplateJson.trim()) {
+      try { parsedTemplate = JSON.parse(newTemplateJson.trim()); setTemplateJsonErr(""); }
+      catch { setTemplateJsonErr("Invalid JSON — check your template data."); return; }
+    }
     setSaveErr(""); setSaving(true);
     try {
       const link = await jobRequestsApi.createLink({
-        name: newName.trim(),
-        customerId: newCustomerId ? Number(newCustomerId) : undefined,
+        name:         newName.trim(),
+        customerId:   newCustomerId ? Number(newCustomerId) : undefined,
+        templateData: parsedTemplate,
       });
       setLinks(prev => [link, ...prev]);
       setNewLink(link);
-      setNewName(""); setNewCustomerId(""); setCreating(false);
+      setNewName(""); setNewCustomerId(""); setNewTemplateJson(""); setCreating(false);
     } catch (err: any) {
       setSaveErr(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openEdit(link: RequestLink) {
+    setEditingId(link.id);
+    setEditName(link.name);
+    setEditTemplateJson(link.templateData ? JSON.stringify(link.templateData, null, 2) : "");
+    setEditTemplateErr("");
+    setEditErr("");
+  }
+
+  function closeEdit() {
+    setEditingId(null);
+    setEditName("");
+    setEditTemplateJson("");
+    setEditTemplateErr("");
+    setEditErr("");
+  }
+
+  async function handleUpdate(link: RequestLink) {
+    if (!editName.trim()) { setEditErr("Name is required"); return; }
+    let parsedTemplate: Record<string, unknown> | null = null;
+    if (editTemplateJson.trim()) {
+      try { parsedTemplate = JSON.parse(editTemplateJson.trim()); setEditTemplateErr(""); }
+      catch { setEditTemplateErr("Invalid JSON — check your template data."); return; }
+    }
+    setEditErr(""); setEditSaving(true);
+    try {
+      const updated = await jobRequestsApi.updateLink(link.id, {
+        name:         editName.trim(),
+        templateData: parsedTemplate,
+      });
+      setLinks(prev => prev.map(l => l.id === link.id ? { ...l, name: updated.name, templateData: updated.templateData } : l));
+      closeEdit();
+    } catch (err: any) {
+      setEditErr(err.message ?? "Failed to save");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -140,6 +194,19 @@ export default function RequestLinksPage() {
                 If linked to a customer, their company name and contact details are pre-filled on the form.
               </p>
             </div>
+            <div>
+              <label className="label">Template pre-fill data (optional, JSON)</label>
+              <textarea
+                className={"input font-mono text-xs min-h-24 resize-y " + (templateJsonErr ? "border-red-400" : "")}
+                value={newTemplateJson}
+                onChange={e => { setNewTemplateJson(e.target.value); setTemplateJsonErr(""); }}
+                placeholder={'{\n  "serviceType": "delivery",\n  "jobType": "multi_drop"\n}'}
+              />
+              {templateJsonErr && <p className="text-xs text-red-600 mt-1">{templateJsonErr}</p>}
+              <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+                JSON object — values will pre-fill matching fields on the customer's intake form.
+              </p>
+            </div>
             <div className="flex gap-2">
               <button type="submit" className="btn btn-primary text-sm" disabled={saving}>
                 {saving ? "Creating…" : "Create link"}
@@ -194,12 +261,61 @@ export default function RequestLinksPage() {
                 <div className="flex gap-2 shrink-0">
                   <button
                     className="btn btn-secondary text-xs px-3 py-1.5"
+                    onClick={() => editingId === link.id ? closeEdit() : openEdit(link)}
+                  >
+                    {editingId === link.id ? "Cancel" : "Edit"}
+                  </button>
+                  <button
+                    className="btn btn-secondary text-xs px-3 py-1.5"
                     onClick={() => toggleActive(link)}
                   >
                     {link.isActive ? "Deactivate" : "Activate"}
                   </button>
                 </div>
               </div>
+
+              {/* Inline edit panel */}
+              {editingId === link.id && (
+                <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                  {editErr && <div className="text-xs text-red-600">{editErr}</div>}
+                  <div>
+                    <label className="label text-xs">Link name <span className="text-red-500">*</span></label>
+                    <input
+                      className="input text-sm"
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="label text-xs">Template pre-fill data (JSON)</label>
+                    <textarea
+                      className={"input font-mono text-xs min-h-24 resize-y " + (editTemplateErr ? "border-red-400" : "")}
+                      value={editTemplateJson}
+                      onChange={e => { setEditTemplateJson(e.target.value); setEditTemplateErr(""); }}
+                      placeholder={'{\n  "goodsType": "pallets",\n  "unit": "pallets"\n}'}
+                    />
+                    {editTemplateErr && <p className="text-xs text-red-600 mt-1">{editTemplateErr}</p>}
+                    <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+                      Leave blank to remove template data. Values pre-fill matching fields on the customer form.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="btn btn-primary text-xs px-3 py-1.5"
+                      onClick={() => handleUpdate(link)}
+                      disabled={editSaving}
+                    >
+                      {editSaving ? "Saving…" : "Save changes"}
+                    </button>
+                    <button
+                      className="btn btn-secondary text-xs px-3 py-1.5"
+                      onClick={closeEdit}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -271,6 +271,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       contactName:   link.customer?.contactName  ?? null,
       contactEmail:  link.customer?.contactEmail ?? null,
       contactPhone:  link.customer?.contactPhone ?? null,
+      templateData:  (link as any).templateData  ?? null,
     });
   });
 
@@ -355,22 +356,23 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   );
 
   // ── POST /request-links ────────────────────────────────────────────────────
-  app.post<{ Body: { name: string; customerId?: number; expiresAt?: string } }>(
+  app.post<{ Body: { name: string; customerId?: number; expiresAt?: string; templateData?: Record<string, unknown> | null } }>(
     "/request-links",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
       const { companyId, userId } = req.user!;
-      const { name, customerId, expiresAt } = req.body;
+      const { name, customerId, expiresAt, templateData } = req.body;
       if (!name?.trim()) return reply.status(400).send({ error: "Link name is required" });
       const rawToken = generateRawToken();
       const link = await prisma.clientRequestLink.create({
         data: {
           companyId,
-          customerId: customerId ?? null,
-          name:       name.trim(),
-          tokenHash:  hashToken(rawToken),
-          createdBy:  userId,
-          expiresAt:  expiresAt ? new Date(expiresAt) : null,
+          customerId:   customerId ?? null,
+          name:         name.trim(),
+          tokenHash:    hashToken(rawToken),
+          createdBy:    userId,
+          expiresAt:    expiresAt ? new Date(expiresAt) : null,
+          templateData: templateData ? (templateData as Prisma.InputJsonValue) : undefined,
         },
         include: { customer: { select: { id: true, name: true } } },
       });
@@ -379,7 +381,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   );
 
   // ── PATCH /request-links/:id ───────────────────────────────────────────────
-  app.patch<{ Params: { id: string }; Body: { name?: string; isActive?: boolean; expiresAt?: string | null } }>(
+  app.patch<{ Params: { id: string }; Body: { name?: string; isActive?: boolean; expiresAt?: string | null; templateData?: Record<string, unknown> | null } }>(
     "/request-links/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (req, reply) => {
@@ -394,6 +396,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           ...(req.body.isActive !== undefined ? { isActive: req.body.isActive }   : {}),
           ...(req.body.expiresAt !== undefined
             ? { expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null }
+            : {}),
+          ...(req.body.templateData !== undefined
+            ? { templateData: req.body.templateData ? (req.body.templateData as Prisma.InputJsonValue) : Prisma.DbNull }
             : {}),
         },
       });
@@ -460,36 +465,65 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (jobRequest.status !== "pending_review")
         return reply.status(409).send({ error: `Cannot accept a request with status '${jobRequest.status}'` });
 
-      const stopsArr  = (jobRequest.stops as unknown) as StopBlob[];
-      const loadData  = jobRequest.loadData as unknown as LoadDataBlob;
-      const transport = jobRequest.transportRequirementsData as unknown as TransportRequirementsBlob;
-      const billing   = jobRequest.billingData as unknown as BillingBlob;
+      const stopsArr    = (jobRequest.stops as unknown) as StopBlob[];
+      const loadData    = jobRequest.loadData as unknown as LoadDataBlob;
+      const transport   = jobRequest.transportRequirementsData as unknown as TransportRequirementsBlob;
+      const billing     = jobRequest.billingData as unknown as BillingBlob;
+      const notesBlob   = jobRequest.notesData as unknown as NotesBlob;
+      const exceptBlob  = jobRequest.exceptionPolicyData as unknown as ExceptionPolicyBlob;
 
       const collections  = stopsArr.filter(s => s.type === "collection");
       const deliveries   = stopsArr.filter(s => s.type === "delivery");
       const firstCollect = collections[0] ?? stopsArr[0];
-      const lastDeliver  = deliveries[deliveries.length - 1] ?? stopsArr[stopsArr.length - 1];
+
+      // Derive service type from stop mix
+      const hasCollection = collections.length > 0;
+      const hasDelivery   = deliveries.length > 0;
+      const derivedServiceType = hasCollection && hasDelivery
+        ? "multi_drop"
+        : hasCollection ? "collection" : "delivery";
+
+      // Map exception policy rejection action → PlannedJob failure action
+      const failureActionMap: Record<string, string> = {
+        call_office_before_leaving:     "call_assistance",
+        return_to_collection_point:     "return_to_depot",
+        deliver_to_alternative_address: "return_to_depot",
+        wait_for_further_instruction:   "wait",
+        do_not_return_without_approval: "call_assistance",
+        other:                          "other",
+      };
+      const derivedFailureAction = exceptBlob?.rejectionAction
+        ? (failureActionMap[exceptBlob.rejectionAction] ?? "call_assistance")
+        : "call_assistance";
 
       const job = await prisma.$transaction(async (tx) => {
         const job = await tx.plannedJob.create({
           data: {
             companyId,
-            createdByUserId:   userId,
-            customerId:        jobRequest.customerId ?? null,
-            customerName:      jobRequest.customerName,
-            status:            "draft",
-            validationStatus:  "ready_for_planner",
-            serviceType:       "delivery",
+            createdByUserId:    userId,
+            customerId:         jobRequest.customerId ?? null,
+            customerName:       jobRequest.customerName,
+            status:             "draft",
+            validationStatus:   "ready_for_planner",
+            serviceType:        derivedServiceType,
             purchaseOrderNumber: (billing?.purchaseOrderNumber ?? ""),
             customerRef:         (billing?.billingReference    ?? ""),
             plannerNotes:        req.body.plannerNotes ?? "",
             internalNotes:       jobRequest.internalOfficeNotes ?? "",
+            bookingContactName:  jobRequest.contactName  ?? "",
+            bookingContactPhone: jobRequest.contactPhone ?? "",
+            bookingContactEmail: jobRequest.contactEmail ?? "",
             reqBodyCategory:     transport?.reqBodyCategory ?? "",
             reqBodyType:         transport?.reqBodyType     ?? "",
             reqEquipment:        transport?.reqEquipment    ?? undefined,
             trailerTypesAllowed: transport?.trailerTypesAllowed ?? undefined,
             requirePOD:          false,
             plannedDate:         firstCollect.date ? new Date(firstCollect.date) : null,
+            failureAction:       derivedFailureAction,
+            assistancePhone:     exceptBlob?.approvalContactPhone ?? "",
+            assistanceNote:      exceptBlob?.rejectionNotes ?? "",
+            notesData:           notesBlob ? notesBlob as unknown as Prisma.InputJsonValue : undefined,
+            exceptionPolicyData: exceptBlob ? exceptBlob as unknown as Prisma.InputJsonValue : undefined,
           },
         });
 

@@ -331,6 +331,8 @@ export interface CreateJobBody {
   assistanceNote?:            string;
   returnDestination?:         string;
   altAddress?:                Record<string, unknown> | null;
+  notesData?:                 Record<string, unknown> | null;
+  exceptionPolicyData?:       Record<string, unknown> | null;
 }
 
 export interface PatchJobBody {
@@ -389,6 +391,8 @@ export interface PatchJobBody {
   assistanceNote?:            string;
   returnDestination?:         string;
   altAddress?:                Record<string, unknown> | null;
+  notesData?:                 Record<string, unknown> | null;
+  exceptionPolicyData?:       Record<string, unknown> | null;
 }
 
 export interface UpdateJobStatusBody {

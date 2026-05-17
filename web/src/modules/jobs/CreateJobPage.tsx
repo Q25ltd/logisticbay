@@ -13,6 +13,7 @@ import {
   TRAILER_LENGTH_OPTS, LOAD_UNITS, HANDLING_METHODS,
   TRAILER_BODY_TYPE_VALUES, equipmentForBodyType,
   GOODS_TYPES, SECURING_REQUIREMENTS, SPECIAL_REQUIREMENTS_OPTS,
+  REJECTION_ACTIONS, DRIVER_NOTE_CHIPS,
 } from "./createJobConstants";
 import type { StopState } from "./createJobTypes";
 import { today, nowDisplay, makeStop, jobPartToStopState, stopComplete } from "./createJobUtils";
@@ -442,6 +443,25 @@ export default function CreateJobPage() {
   const [sec7Collapsed,      setSec7Collapsed]      = useState(true);
   const [agreedRate,         setAgreedRate]         = useState("");
   const [plannerNotes,       setPlannerNotes]       = useState("");
+
+  // ── Driver instructions card ─────────────────────────────────────────────
+  const [showDriverNotes,    setShowDriverNotes]    = useState(false);
+  const [driverNoteChips,    setDriverNoteChips]    = useState<string[]>([]);
+  const [driverVisibleNotes, setDriverVisibleNotes] = useState("");
+  const [safetyInstructions, setSafetyInstructions] = useState("");
+
+  // ── Rejection & return policy card ──────────────────────────────────────
+  const [showRejectionPolicy,           setShowRejectionPolicy]           = useState(false);
+  const [rejectionAction,               setRejectionAction]               = useState("");
+  const [alternativeReturnAddress,      setAlternativeReturnAddress]      = useState("");
+  const [alternativeReturnPostcode,     setAlternativeReturnPostcode]     = useState("");
+  const [alternativeReturnContactName,  setAlternativeReturnContactName]  = useState("");
+  const [alternativeReturnContactPhone, setAlternativeReturnContactPhone] = useState("");
+  const [approvalContactName,           setApprovalContactName]           = useState("");
+  const [approvalContactPhone,          setApprovalContactPhone]          = useState("");
+  const [photosRequiredOnRejection,     setPhotosRequiredOnRejection]     = useState(false);
+  const [rejectionSignatureRequired,    setRejectionSignatureRequired]    = useState(false);
+  const [rejectionNotes,                setRejectionNotes]                = useState("");
   const [failureAction,      setFailureAction]      = useState("call_assistance");
   // call_assistance
   const [assistancePhone,    setAssistancePhone]    = useState("");
@@ -608,6 +628,29 @@ export default function CreateJobPage() {
       setAssistancePhone(job.assistancePhone || "");
       setAssistanceNote(job.assistanceNote || "");
       setReturnDestination(job.returnDestination || "");
+      // Driver notes
+      const nd = (job as any).notesData as { driverNoteChips?: string[]; driverVisibleNotes?: string; safetyInstructions?: string } | null;
+      if (nd) {
+        if (nd.driverNoteChips?.length)  setDriverNoteChips(nd.driverNoteChips);
+        if (nd.driverVisibleNotes)       setDriverVisibleNotes(nd.driverVisibleNotes);
+        if (nd.safetyInstructions)       setSafetyInstructions(nd.safetyInstructions);
+        if (nd.driverNoteChips?.length || nd.driverVisibleNotes || nd.safetyInstructions) setShowDriverNotes(true);
+      }
+      // Rejection policy
+      const ep = (job as any).exceptionPolicyData as { rejectionAction?: string; alternativeReturnAddress?: string; alternativeReturnPostcode?: string; alternativeReturnContactName?: string; alternativeReturnContactPhone?: string; approvalContactName?: string; approvalContactPhone?: string; photosRequiredOnRejection?: boolean; rejectionSignatureRequired?: boolean; rejectionNotes?: string } | null;
+      if (ep?.rejectionAction) {
+        setRejectionAction(ep.rejectionAction);
+        setAlternativeReturnAddress(ep.alternativeReturnAddress || "");
+        setAlternativeReturnPostcode(ep.alternativeReturnPostcode || "");
+        setAlternativeReturnContactName(ep.alternativeReturnContactName || "");
+        setAlternativeReturnContactPhone(ep.alternativeReturnContactPhone || "");
+        setApprovalContactName(ep.approvalContactName || "");
+        setApprovalContactPhone(ep.approvalContactPhone || "");
+        setPhotosRequiredOnRejection(ep.photosRequiredOnRejection ?? false);
+        setRejectionSignatureRequired(ep.rejectionSignatureRequired ?? false);
+        setRejectionNotes(ep.rejectionNotes || "");
+        setShowRejectionPolicy(true);
+      }
       // Expand all sections so the user sees filled data
       setSec1Collapsed(false);
       setSec2Collapsed(false);
@@ -952,6 +995,19 @@ export default function CreateJobPage() {
       templateName,
       agreedRate,
       plannerNotes,
+      driverNoteChips,
+      driverVisibleNotes,
+      safetyInstructions,
+      rejectionAction,
+      alternativeReturnAddress,
+      alternativeReturnPostcode,
+      alternativeReturnContactName,
+      alternativeReturnContactPhone,
+      approvalContactName,
+      approvalContactPhone,
+      photosRequiredOnRejection,
+      rejectionSignatureRequired,
+      rejectionNotes,
     };
     return [params, saveMode];
   }
@@ -989,6 +1045,15 @@ export default function CreateJobPage() {
     }
     // If required fields are missing, just reveal the pills — don't call API
     if (MISSING.length > 0) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    // Duplicate stop detection — warn if two stops share the same postcode on the same date
+    const stopKeys = stops.map(s => `${s.postcode.trim().toUpperCase()}|${s.date}`);
+    const dupIdx = stopKeys.findIndex((k, i) => k !== "|" && stopKeys.indexOf(k) !== i);
+    if (dupIdx !== -1) {
+      const dup = stops[dupIdx];
+      setError(`Stop ${dupIdx + 1} has the same postcode (${dup.postcode.toUpperCase()}) and date as another stop — is this a duplicate?`);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
@@ -2075,6 +2140,126 @@ export default function CreateJobPage() {
 
           </div>}
           {!sec7Collapsed && <SectionFooter complete={sec7Started} label="Planner details" onCollapse={() => setSec7Collapsed(true)} />}
+        </div>
+
+        {/* ── Driver instructions card ──────────────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <button type="button" onClick={() => setShowDriverNotes(o => !o)}
+            className="w-full flex items-center gap-3 px-5 py-4 border-b border-border text-left hover:bg-slate-50/60 transition-colors">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 border ${showDriverNotes ? "bg-blue-50 border-blue-200" : "bg-white border-slate-200 shadow-sm"}`}>
+              🚛
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black text-primary">Driver instructions</h2>
+                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
+              </div>
+              <p className="text-xs text-muted mt-0.5">
+                {driverNoteChips.length > 0 || driverVisibleNotes || safetyInstructions
+                  ? `${driverNoteChips.length} chip${driverNoteChips.length !== 1 ? "s" : ""}${driverVisibleNotes ? " · notes added" : ""}${safetyInstructions ? " · safety info added" : ""}`
+                  : "Quick-select chips, free-text notes and safety info for the driver"}
+              </p>
+            </div>
+            <span className={`text-xl font-bold flex-shrink-0 ml-1 transition-transform duration-200 ${showDriverNotes ? "text-accent" : "text-muted"}`}>
+              {showDriverNotes ? "⌄" : "›"}
+            </span>
+          </button>
+          {showDriverNotes && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <div>
+                <FieldLabel>Quick-select instructions</FieldLabel>
+                <div className="mt-1">
+                  <MultiCheck options={DRIVER_NOTE_CHIPS} value={driverNoteChips} onChange={setDriverNoteChips} />
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Driver-visible notes</FieldLabel>
+                <textarea className="input mt-1 w-full min-h-20 resize-none"
+                  placeholder="e.g. Call site contact 30 mins before arrival. Use rear entrance on Warehouse Lane."
+                  value={driverVisibleNotes}
+                  onChange={e => setDriverVisibleNotes(e.target.value)} />
+                <p className="text-xs text-muted mt-1">Shown to the driver before they start the job.</p>
+              </div>
+              <div>
+                <FieldLabel>Safety instructions</FieldLabel>
+                <textarea className="input mt-1 w-full min-h-20 resize-none"
+                  placeholder="e.g. COSHH: corrosive liquid — wear acid-resistant gloves. Hard hat required on site at all times."
+                  value={safetyInstructions}
+                  onChange={e => setSafetyInstructions(e.target.value)} />
+                <p className="text-xs text-muted mt-1">PPE requirements, COSHH notices, site hazards.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Rejection & return policy card ───────────────────────────────── */}
+        <div className="card overflow-hidden">
+          <button type="button" onClick={() => setShowRejectionPolicy(o => !o)}
+            className="w-full flex items-center gap-3 px-5 py-4 border-b border-border text-left hover:bg-slate-50/60 transition-colors">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 border ${showRejectionPolicy ? "bg-orange-50 border-orange-200" : "bg-white border-slate-200 shadow-sm"}`}>
+              🔄
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black text-primary">Rejection &amp; return policy</h2>
+                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
+              </div>
+              <p className="text-xs text-muted mt-0.5">
+                {rejectionAction
+                  ? REJECTION_ACTIONS.find(([v]) => v === rejectionAction)?.[1] ?? rejectionAction
+                  : "What should the driver do if goods are refused at the door?"}
+              </p>
+            </div>
+            <span className={`text-xl font-bold flex-shrink-0 ml-1 transition-transform duration-200 ${showRejectionPolicy ? "text-accent" : "text-muted"}`}>
+              {showRejectionPolicy ? "⌄" : "›"}
+            </span>
+          </button>
+          {showRejectionPolicy && (
+            <div className="px-5 pt-5 pb-4 space-y-4">
+              <div className="text-xs text-slate-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 leading-relaxed">
+                Specifying this avoids the driver having to call the office when a delivery is refused — they know exactly what to do.
+              </div>
+              <div>
+                <FieldLabel>If delivery is rejected at the door, what should the driver do?</FieldLabel>
+                <div className="mt-1">
+                  <MultiCheck options={REJECTION_ACTIONS} value={rejectionAction ? [rejectionAction] : []}
+                    onChange={vals => setRejectionAction(vals[vals.length - 1] ?? "")} />
+                </div>
+              </div>
+              {rejectionAction === "deliver_to_alternative_address" && (
+                <div className="space-y-3 border-l-2 border-orange-200 pl-4">
+                  <TextField label="Alternative delivery address" value={alternativeReturnAddress}
+                    onChange={setAlternativeReturnAddress} placeholder="12 Returns Lane, Manchester" />
+                  <TextField label="Alternative delivery postcode" value={alternativeReturnPostcode}
+                    onChange={v => setAlternativeReturnPostcode(v.toUpperCase())} placeholder="M1 1AA" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <TextField label="Contact name" value={alternativeReturnContactName}
+                      onChange={setAlternativeReturnContactName} placeholder="Jane Smith" caseRule="proper_name" />
+                    <TextField label="Contact phone" type="tel" value={alternativeReturnContactPhone}
+                      onChange={setAlternativeReturnContactPhone} placeholder="+44 7700 900123" />
+                  </div>
+                </div>
+              )}
+              {(rejectionAction === "call_office_before_leaving" || rejectionAction === "do_not_return_without_approval") && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-l-2 border-orange-200 pl-4">
+                  <TextField label="Approval contact name" value={approvalContactName}
+                    onChange={setApprovalContactName} placeholder="Jane Smith" />
+                  <TextField label="Approval contact phone" type="tel" value={approvalContactPhone}
+                    onChange={setApprovalContactPhone} placeholder="+44 7700 900123" />
+                </div>
+              )}
+              <Toggle value={photosRequiredOnRejection} onChange={setPhotosRequiredOnRejection}
+                label="Photos required on rejection" />
+              <Toggle value={rejectionSignatureRequired} onChange={setRejectionSignatureRequired}
+                label="Rejection signature required" />
+              <div>
+                <FieldLabel>Additional rejection / return notes</FieldLabel>
+                <textarea className="input mt-1 w-full min-h-16 resize-none"
+                  value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)}
+                  placeholder="Do not leave goods unattended. Call depot before returning." />
+              </div>
+            </div>
+          )}
         </div>
 
       </div>

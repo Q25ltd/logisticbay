@@ -1239,10 +1239,22 @@ export default function PublicRequestForm() {
     jobRequestsPublicApi.getLinkInfo(token)
       .then(info => {
         setLinkInfo(info);
+        // Customer details pre-fill (from linked Customer record)
         if (info.customerName)  setCustomerCompanyName(info.customerName);
         if (info.contactName)   setContactName(info.contactName);
         if (info.contactEmail)  setContactEmail(info.contactEmail);
         if (info.contactPhone)  setContactPhone(info.contactPhone);
+        // Template data pre-fill (from link templateData blob)
+        const t = info.templateData;
+        if (t && typeof t === "object") {
+          if (t.customerRef)       setCustomerRef(String(t.customerRef));
+          if (t.goodsType)         setGoodsType(String(t.goodsType));
+          if (t.goodsDescription)  setGoodsDesc(String(t.goodsDescription));
+          if (t.unit)              setUnit(String(t.unit));
+          if (t.quantity)          setQuantity(String(t.quantity));
+          if (t.estimatedWeight)   setEstWeight(String(t.estimatedWeight));
+          if (t.declaredGoodsValue) setDeclaredValue(String(t.declaredGoodsValue));
+        }
       })
       .catch(() => setLinkError("This request link is not valid or has expired."));
   }, [token]);
