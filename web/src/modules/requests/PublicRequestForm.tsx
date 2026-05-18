@@ -1048,7 +1048,7 @@ export default function PublicRequestForm() {
   const [s6, setS6] = useState(true);
 
   // ── Sec 1: Requester ──────────────────────────────────────────────────────
-  const [customerCompanyName, setCustomerCompanyName] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [contactName,  setContactName]  = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -1133,7 +1133,7 @@ export default function PublicRequestForm() {
 
   // ── Sec 4: Special requirements ───────────────────────────────────────────
   const [specialItems,                 setSpecialItems]                 = useState<string[]>([]);
-  const [adrClass,                     setAdrClass]                     = useState("");
+  const [hazardClass,                     setHazardClass]                     = useState("");
   const [unNumber,                     setUnNumber]                     = useState("");
   const [packingGroup,                 setPackingGroup]                 = useState("");
   const [hazardousQuantityKg,          setHazardousQuantityKg]          = useState("");
@@ -1145,10 +1145,10 @@ export default function PublicRequestForm() {
   // ── Sec 5: Transport ──────────────────────────────────────────────────────
   const [plannerDecides,  setPlannerDecides]  = useState(true);
   // Advanced transport (only when plannerDecides=false)
-  const [reqBodyCategory,     setReqBodyCategory]     = useState("");
-  const [reqBodyTypes,        setReqBodyTypes]        = useState<string[]>([]);
-  const [reqEquipment,        setReqEquipment]        = useState<string[]>([]);
-  const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
+  const [vehicleCategory,     setVehicleCategory]     = useState("");
+  const [bodyTypes,        setBodyTypes]        = useState<string[]>([]);
+  const [equipment,        setEquipment]        = useState<string[]>([]);
+  const [trailersAllowed, setTrailersAllowed] = useState<string[]>([]);
 
   // ── Sec 6: Billing ────────────────────────────────────────────────────────
   const [declaredValue,   setDeclaredValue]   = useState("");
@@ -1184,7 +1184,7 @@ export default function PublicRequestForm() {
   const [rejectionNotes,                 setRejectionNotes]                 = useState("");
 
   // ── Completeness ──────────────────────────────────────────────────────────
-  const sec1Complete = !!(customerCompanyName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
+  const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
   const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
   const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
@@ -1192,13 +1192,13 @@ export default function PublicRequestForm() {
   const sec5Complete = true; // optional
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
 
-  const sec1Started = !!(customerCompanyName || contactName);
+  const sec1Started = !!(customerName || contactName);
   const sec2Started = stops.some(stopStarted);
   const sec3Started = !!(goodsType || goodsDesc);
 
   // ── Human-readable missing field lists (shown in SectionFooter) ──────────────
   const sec1Missing: string[] = [
-    !customerCompanyName.trim() ? "company / organisation name"  : "",
+    !customerName.trim() ? "company / organisation name"  : "",
     !contactName.trim()         ? "contact name"                 : "",
     !contactPhone.trim()        ? "contact phone"                : "",
     !contactEmail.trim()        ? "contact email"                : "",
@@ -1243,7 +1243,7 @@ export default function PublicRequestForm() {
       .then(info => {
         setLinkInfo(info);
         // Customer details pre-fill (from linked Customer record)
-        if (info.customerName)  setCustomerCompanyName(info.customerName);
+        if (info.customerName)  setCustomerName(info.customerName);
         if (info.contactName)   setContactName(info.contactName);
         if (info.contactEmail)  setContactEmail(info.contactEmail);
         if (info.contactPhone)  setContactPhone(info.contactPhone);
@@ -1277,7 +1277,7 @@ export default function PublicRequestForm() {
 
     // Section 1
     const s1Problems = [
-      !customerCompanyName.trim() ? "Company / organisation name is required"        : "",
+      !customerName.trim() ? "Company / organisation name is required"        : "",
       !contactName.trim()         ? "Contact name is required"                        : "",
       !contactPhone.trim()        ? "Contact phone is required"                       : "",
       phoneErr                    ? `Contact phone: ${phoneErr}`                      : "",
@@ -1335,7 +1335,7 @@ export default function PublicRequestForm() {
 
     const body: SubmitRequestBody = {
       // Customer
-      customerName:         customerCompanyName.trim(),
+      customerName:         customerName.trim(),
       bookingContactName:   contactName.trim()  || undefined,
       bookingContactPhone:  contactPhone.trim() || undefined,
       bookingContactEmail:  contactEmail.trim() || undefined,
@@ -1354,17 +1354,17 @@ export default function PublicRequestForm() {
       tempControlled:       isTempControlled || undefined,
       tempRange:            resolvedTempRange,
       fragile:              isFragile || undefined,
-      hazardClass:          adrClass.trim() || undefined,
+      hazardClass:          hazardClass.trim() || undefined,
       securingRequirements: securingRequirements.length ? securingRequirements : undefined,
       specialRequirements:  specialItems.length ? specialItems : undefined,
       dimensions:           dimensions.trim() || undefined,
       canSplitShipment:     canSplitShipment || undefined,
 
       // Vehicle requirements
-      vehicleCategory:      plannerDecides ? undefined : reqBodyCategory || undefined,
-      bodyTypes:            plannerDecides ? undefined : reqBodyTypes.length ? reqBodyTypes : undefined,
-      equipment:            plannerDecides ? undefined : reqEquipment.length ? reqEquipment : undefined,
-      trailersAllowed:      plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
+      vehicleCategory:      plannerDecides ? undefined : vehicleCategory || undefined,
+      bodyTypes:            plannerDecides ? undefined : bodyTypes.length ? bodyTypes : undefined,
+      equipment:            plannerDecides ? undefined : equipment.length ? equipment : undefined,
+      trailersAllowed:      plannerDecides ? undefined : trailersAllowed.length ? trailersAllowed : undefined,
 
       // Billing
       declaredGoodsValue:   declaredValue ? String(parseFloat(declaredValue)) : undefined,
@@ -1495,12 +1495,12 @@ export default function PublicRequestForm() {
           <SectionHeader num={1} icon="👤" title="Your details" subtitle="Company and contact information"
             active collapsed={s1} onToggle={() => setS1(o => !o)}
             complete={sec1Complete} started={sec1Started}
-            summary={customerCompanyName || contactName}
+            summary={customerName || contactName}
             missingCount={sec1Missing.length} />
           {!s1 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
               <TextField label="Company / organisation name" required
-                value={customerCompanyName} onChange={setCustomerCompanyName}
+                value={customerName} onChange={setCustomerName}
                 placeholder="Acme Distribution Ltd" caseRule="proper_name" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Contact name" required
@@ -1909,7 +1909,7 @@ export default function PublicRequestForm() {
               {/* Conditional: dangerous goods */}
               {specialItems.includes("dangerous_goods") && (
                 <div className="space-y-3 border-l-2 border-red-200 pl-4">
-                  <TextField label="ADR class" value={adrClass} onChange={setAdrClass}
+                  <TextField label="ADR class" value={hazardClass} onChange={setHazardClass}
                     placeholder="Class 3 — Flammable liquids" />
                   <div className="grid grid-cols-2 gap-3">
                     <TextField label="UN number" value={unNumber} onChange={setUnNumber}
@@ -1967,8 +1967,8 @@ export default function PublicRequestForm() {
             complete optional
             summary={plannerDecides ? "Planner will decide" : (
               [
-                BODY_CATEGORIES.find(c => c.value === reqBodyCategory)?.label,
-                reqBodyTypes.map(t => BODY_TYPES.find(b => b.value === t)?.label).filter(Boolean).join(", "),
+                BODY_CATEGORIES.find(c => c.value === vehicleCategory)?.label,
+                bodyTypes.map(t => BODY_TYPES.find(b => b.value === t)?.label).filter(Boolean).join(", "),
               ].filter(Boolean).join(" · ") || undefined
             )} />
           {!s5 && (
@@ -1985,9 +1985,9 @@ export default function PublicRequestForm() {
                     <div className="flex flex-wrap gap-2 mt-1">
                       {BODY_CATEGORIES.map(({ value, label }) => (
                         <button key={value} type="button"
-                          onClick={() => { setReqBodyCategory(value); setReqBodyTypes([]); }}
+                          onClick={() => { setVehicleCategory(value); setBodyTypes([]); }}
                           className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
-                            (reqBodyCategory === value
+                            (vehicleCategory === value
                               ? "bg-accent text-white border-accent"
                               : "bg-white text-muted border-border hover:border-gray-400")}>
                           {label}
@@ -1995,8 +1995,8 @@ export default function PublicRequestForm() {
                       ))}
                     </div>
                   </div>
-                  {reqBodyCategory && (() => {
-                    const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []);
+                  {vehicleCategory && (() => {
+                    const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[vehicleCategory] ?? []);
                     const grouped: Record<string, { value: string; label: string }[]> = {};
                     BODY_TYPES.forEach(bt => {
                       if (!allowed.has(bt.value)) return;
@@ -2005,7 +2005,7 @@ export default function PublicRequestForm() {
                     });
                     const groups = Object.keys(grouped);
                     function toggleType(v: string) {
-                      setReqBodyTypes(prev =>
+                      setBodyTypes(prev =>
                         prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
                       );
                     }
@@ -2019,7 +2019,7 @@ export default function PublicRequestForm() {
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {grouped[g].map(bt => {
-                                const on = reqBodyTypes.includes(bt.value);
+                                const on = bodyTypes.includes(bt.value);
                                 return (
                                   <button key={bt.value} type="button" onClick={() => toggleType(bt.value)}
                                     className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
