@@ -380,7 +380,6 @@ export async function patchJob(
         alternativeReturnContactName:  p(body.alternativeReturnContactName,  job.alternativeReturnContactName),
         alternativeReturnContactPhone: p(body.alternativeReturnContactPhone, job.alternativeReturnContactPhone),
         internalNotes:       p(body.internalNotes, job.internalNotes),
-        ...(body.billingData !== undefined ? { billingData: body.billingData as Prisma.InputJsonValue } : {}),
         validationStatus:    structuredValidation.validationStatus,
         qualityScore:        quality.score,
         requirePOD:          p(body.requirePOD, job.requirePOD),

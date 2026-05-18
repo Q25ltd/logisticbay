@@ -143,12 +143,6 @@ export interface TransportRequirementsData {
   trailerTypesAllowed?: string[];
 }
 
-export interface BillingData {
-  declaredGoodsValue?:  number;
-  purchaseOrderNumber?: string;
-  billingReference?:    string;
-}
-
 export interface NotesData {
   driverNoteChips?:    string[];
   driverVisibleNotes?: string;
@@ -242,7 +236,6 @@ export interface JobRequest {
   loadData:                  LoadData;
   specialRequirementsData:   SpecialRequirementsData;
   transportRequirementsData: TransportRequirementsData;
-  billingData:               BillingData;
   notesData:                 NotesData;
   reviewData:                Record<string, unknown> | null;
   // Review

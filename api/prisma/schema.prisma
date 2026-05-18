@@ -287,7 +287,6 @@ model Job {
   billingReference    String?
   declaredGoodsValue  String?
   billingNotes        String  @default("")
-  billingData         Json?   // vatRegistered, vatNumber (kept as blob for now)
 
   bookingContactName  String  @default("")
   bookingContactPhone String  @default("")

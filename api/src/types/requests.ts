@@ -365,7 +365,6 @@ export interface CreateJobBody {
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
-  billingData?:               Record<string, unknown> | null;
   // Canonical flattened notes fields
   driverNoteChips?:           string[] | null;
   driverVisibleNotes?:        string;
@@ -465,7 +464,6 @@ export interface PatchJobBody {
   altAddress?:                Record<string, unknown> | null;
   notesData?:                 Record<string, unknown> | null;
   exceptionPolicyData?:       Record<string, unknown> | null;
-  billingData?:               Record<string, unknown> | null;
   // Canonical flattened notes fields
   driverNoteChips?:           string[] | null;
   driverVisibleNotes?:        string;

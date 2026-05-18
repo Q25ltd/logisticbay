@@ -148,7 +148,6 @@ export const PatchJobSchema = JobCreateBaseSchema.extend({
   plannerNotes:  z.string().nullable().optional(),
   internalNotes: z.string().nullable().optional(),
   status:        z.string().optional(),
-  billingData:   z.record(z.string(), z.unknown()).nullable().optional(),
 }).strip();
 
 // ── Status update, note ───────────────────────────────────────────────────────

@@ -495,12 +495,8 @@ export default function CreateJobPage() {
         if (ldb.canSplitShipment)         setCanSplitShipment(String(ldb.canSplitShipment));
       }
 
-      // Restore billingData blob
-      const bdb = (job as any).billingData as Record<string, unknown> | null;
-      if (bdb) {
-        if (bdb.declaredGoodsValue)  setDeclaredValue(String(bdb.declaredGoodsValue));
-        if (bdb.billingReference)    setBillingRef(String(bdb.billingReference));
-      }
+      if (job.declaredGoodsValue) setDeclaredValue(String(job.declaredGoodsValue));
+      if (job.billingReference)   setBillingRef(String(job.billingReference));
       if (job.purchaseOrderNumber) setPurchaseOrderNumber(job.purchaseOrderNumber);
 
       // Transport requirements

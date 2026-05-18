@@ -24,9 +24,9 @@ export async function locationRoutes(app: FastifyInstance, prisma: PrismaClient)
     const v = validateCreateLocation(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    const locationTextSnapshot = (body.locationTextSnapshot ?? body.addressText ?? "").trim();
-    const lat = body.lat ?? body.latitude ?? null;
-    const lng = body.lng ?? body.longitude ?? null;
+    const locationTextSnapshot = (body.locationTextSnapshot ?? "").trim();
+    const lat = body.lat ?? null;
+    const lng = body.lng ?? null;
 
     const loc = await prisma.savedLocation.create({
       data: {
@@ -45,7 +45,7 @@ export async function locationRoutes(app: FastifyInstance, prisma: PrismaClient)
         contactName:  body.contactName?.trim() ?? "",
         contactPhone: body.contactPhone?.trim() ?? "",
         instructions: body.instructions?.trim() ?? "",
-        internalNotes: (body.internalNotes ?? body.notes ?? "").trim(),
+        internalNotes: (body.internalNotes ?? "").trim(),
       },
     });
 
@@ -67,18 +67,18 @@ export async function locationRoutes(app: FastifyInstance, prisma: PrismaClient)
         name:         body.name?.trim() ?? loc.name,
         siteName:     body.siteName?.trim() ?? loc.siteName,
         unitName:     body.unitName?.trim() ?? loc.unitName,
-        locationTextSnapshot: (body.locationTextSnapshot ?? body.addressText)?.trim() ?? loc.locationTextSnapshot,
+        locationTextSnapshot: body.locationTextSnapshot?.trim() ?? loc.locationTextSnapshot,
         street:       body.street?.trim() ?? loc.street,
         town:         body.town?.trim() ?? loc.town,
         postcode:     body.postcode?.trim() ?? loc.postcode,
-        lat:          body.lat ?? body.latitude ?? loc.lat,
-        lng:          body.lng ?? body.longitude ?? loc.lng,
+        lat:          body.lat ?? loc.lat,
+        lng:          body.lng ?? loc.lng,
         gateLat:      body.gateLat ?? loc.gateLat,
         gateLng:      body.gateLng ?? loc.gateLng,
         contactName:  body.contactName?.trim() ?? loc.contactName,
         contactPhone: body.contactPhone?.trim() ?? loc.contactPhone,
         instructions: body.instructions?.trim() ?? loc.instructions,
-        internalNotes: (body.internalNotes ?? body.notes)?.trim() ?? loc.internalNotes,
+        internalNotes: body.internalNotes?.trim() ?? loc.internalNotes,
       },
     });
 
