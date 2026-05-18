@@ -300,14 +300,34 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const body = zodParsed.data as PatchDriverBody;
     const { companyId, userId: actorId } = request.user!;
 
-    const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
+    const driver = await prisma.driverProfile.findFirst({
+      where: { id, companyId },
+      include: { user: { select: { id: true, email: true } } },
+    });
     if (!driver) return reply.status(404).send({ error: "Driver not found" });
+
+    // Validate new email before entering the transaction
+    const newEmail = body.email?.toLowerCase().trim();
+    if (newEmail && driver.user && newEmail !== driver.user.email) {
+      const conflict = await prisma.user.findUnique({ where: { email: newEmail } });
+      if (conflict && conflict.id !== driver.user.id) {
+        return reply.status(409).send({ error: "A login account with this email already exists" });
+      }
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const saved = await tx.driverProfile.update({
         where: { id },
-        data: driverProfileData(body),
+        data: {
+          ...driverProfileData(body),
+          ...(newEmail ? { contactEmail: newEmail } : {}),
+        },
       });
+
+      // Keep User.email in sync so the driver can log in with the updated address
+      if (newEmail && driver.userId && driver.user && newEmail !== driver.user.email) {
+        await tx.user.update({ where: { id: driver.userId }, data: { email: newEmail } });
+      }
 
       if (Array.isArray(body.holidayRequests)) {
         await tx.holidayRequest.updateMany({

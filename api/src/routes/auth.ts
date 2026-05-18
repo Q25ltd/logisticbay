@@ -167,8 +167,6 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
     const body = parsed.data as ChangePasswordBody;
     const { currentPassword, newPassword } = body;
-    const isPin = /^\d{6}$/.test(newPassword);
-    if (!isPin && newPassword.length < 8) return reply.status(400).send({ error: "PIN must be 6 digits, or password at least 8 characters" });
     if (newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
     try {
       const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as { userId: number };
