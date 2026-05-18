@@ -35,8 +35,27 @@ export const RegisterCompanySchema = z.object({
   path: ["confirmPassword"],
 });
 
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
+export const ResetPasswordSchema = z.object({
+  token:       z.string().min(1, "Token is required"),
+  newPassword: z.string().min(1, "New password is required").refine(
+    v => /^\d{6}$/.test(v) || v.length >= 8,
+    "Password must be at least 8 characters"
+  ),
+});
+
+export const VerifyEmailSchema = z.object({
+  token: z.string().min(1, "Token is required"),
+});
+
 export type LoginBody            = z.infer<typeof LoginSchema>;
 export type RefreshBody          = z.infer<typeof RefreshSchema>;
 export type LogoutBody           = z.infer<typeof LogoutSchema>;
 export type ChangePasswordBody   = z.infer<typeof ChangePasswordSchema>;
 export type RegisterCompanyBody  = z.infer<typeof RegisterCompanySchema>;
+export type ForgotPasswordBody   = z.infer<typeof ForgotPasswordSchema>;
+export type ResetPasswordBody    = z.infer<typeof ResetPasswordSchema>;
+export type VerifyEmailBody      = z.infer<typeof VerifyEmailSchema>;

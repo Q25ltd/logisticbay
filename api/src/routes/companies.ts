@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
 import { authenticate, requireRole } from "../middleware.js";
-import { generateAccessToken, generateRefreshToken, storeRefreshToken } from "../lib/tokens.js";
+import { generateAccessToken, generateRefreshToken, storeRefreshToken, createEmailVerificationToken } from "../lib/tokens.js";
+import { env } from "../lib/env.js";
+import { sendEmailVerificationEmail } from "../email.js";
 import {
   validateRegisterCompany,
   validateCreateDriver,
@@ -71,6 +73,9 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
     const passwordHash = await bcrypt.hash(body.password, 12);
 
+    // When email is not configured, skip verification and activate immediately
+    const companyStatus = env.EMAIL_ENABLED ? "pending" : "trial";
+
     const result = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
@@ -79,7 +84,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
           ticker,
           nextJobSequence: 1,
           jobSequenceYear: new Date().getFullYear(),
-          status:          "trial",
+          status:          companyStatus,
         },
       });
 
@@ -99,12 +104,24 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       return { company, user };
     });
 
-    const tokenPayload = {
-      userId:    result.user.id,
-      companyId: result.company.id,
-      role:      "company_owner",
-    };
+    if (env.EMAIL_ENABLED) {
+      const rawToken = await createEmailVerificationToken(prisma, result.user.id);
+      const verifyUrl = `${env.APP_URL}/verify-email?token=${rawToken}`;
+      try {
+        await sendEmailVerificationEmail(result.user.email, result.user.name, verifyUrl);
+      } catch {
+        // Log but don't block registration
+      }
+      return reply.status(201).send({
+        requiresVerification: true,
+        email: result.user.email,
+        companyId: result.company.id,
+        userId:    result.user.id,
+      });
+    }
 
+    // Email disabled — issue tokens directly so registration works without SendGrid
+    const tokenPayload = { userId: result.user.id, companyId: result.company.id, role: "company_owner" };
     const accessToken  = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
     await storeRefreshToken(prisma, {
@@ -124,6 +141,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         name:      result.user.name,
         email:     result.user.email,
         companyId: result.company.id,
+        companyName: result.company.name,
         role:      "company_owner",
       },
     });

@@ -2,8 +2,11 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthCtx, useAuthProvider } from "./hooks/useAuth";
 import LandingPage      from "./modules/landing/LandingPage";
-import LoginPage        from "./modules/auth/LoginPage";
-import RegisterPage     from "./modules/auth/RegisterPage";
+import LoginPage            from "./modules/auth/LoginPage";
+import RegisterPage         from "./modules/auth/RegisterPage";
+import ForgotPasswordPage   from "./modules/auth/ForgotPasswordPage";
+import ResetPasswordPage    from "./modules/auth/ResetPasswordPage";
+import VerifyEmailPage      from "./modules/auth/VerifyEmailPage";
 import AppShell         from "./modules/planner/AppShell";
 import DashboardPage    from "./modules/planner/DashboardPage";
 import JobsPage         from "./modules/jobs/JobsPage";
@@ -41,8 +44,11 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/"         element={<LandingPage />} />
-          <Route path="/login"    element={auth.user ? <Navigate to="/app/dashboard" replace /> : <LoginPage onLogin={auth.refresh} />} />
-          <Route path="/register" element={auth.user ? <Navigate to="/app/dashboard" replace /> : <RegisterPage onLogin={auth.refresh} />} />
+          <Route path="/login"           element={auth.user ? <Navigate to="/app/dashboard" replace /> : <LoginPage onLogin={auth.refresh} />} />
+          <Route path="/register"        element={auth.user ? <Navigate to="/app/dashboard" replace /> : <RegisterPage onLogin={auth.refresh} />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password"  element={<ResetPasswordPage />} />
+          <Route path="/verify-email"    element={<VerifyEmailPage onLogin={auth.refresh} />} />
           {/* Public intake form — no auth required */}
           <Route path="/request/:token" element={<ErrorBoundary><PublicRequestForm /></ErrorBoundary>} />
           <Route path="/app" element={auth.user ? <ErrorBoundary><AppShell /></ErrorBoundary> : <Navigate to="/login" replace />}>

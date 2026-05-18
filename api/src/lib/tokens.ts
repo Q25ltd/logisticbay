@@ -3,6 +3,13 @@ import jwt from "jsonwebtoken";
 import { env } from "./env.js";
 import type { PrismaClient } from "../generated/client.js";
 
+const RESET_TTL_MS  = 60 * 60 * 1000;        // 1 hour
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;   // 24 hours
+
+export function generateSecureToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
 const ACCESS_TTL  = "15m";
 const REFRESH_TTL = "30d";
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -42,4 +49,31 @@ export async function revokeTokenFamily(prisma: PrismaClient, familyId: string):
     where:  { familyId, revokedAt: null },
     data:   { revokedAt: new Date() },
   });
+}
+
+export async function createPasswordResetToken(prisma: PrismaClient, userId: number): Promise<string> {
+  const raw  = generateSecureToken();
+  const hash = hashToken(raw);
+  // Invalidate any existing unused tokens for this user
+  await prisma.passwordResetToken.updateMany({
+    where: { userId, usedAt: null },
+    data:  { usedAt: new Date() },
+  });
+  await prisma.passwordResetToken.create({
+    data: { userId, tokenHash: hash, expiresAt: new Date(Date.now() + RESET_TTL_MS) },
+  });
+  return raw;
+}
+
+export async function createEmailVerificationToken(prisma: PrismaClient, userId: number): Promise<string> {
+  const raw  = generateSecureToken();
+  const hash = hashToken(raw);
+  await prisma.emailVerificationToken.updateMany({
+    where: { userId, usedAt: null },
+    data:  { usedAt: new Date() },
+  });
+  await prisma.emailVerificationToken.create({
+    data: { userId, tokenHash: hash, expiresAt: new Date(Date.now() + VERIFY_TTL_MS) },
+  });
+  return raw;
 }

@@ -1,7 +1,32 @@
 # LogisticBay — Developer Log & Architecture Charter
 
 > **Read this at the start of every chat session and before every PR review.**
-> Last updated: 2026-05-13
+> Last updated: 2026-05-18
+
+---
+
+## Session log — 2026-05-18
+
+### Auth security (PR: claude/confident-leavitt-acc4c0)
+
+**Done:**
+- Login lockout: 5 bad attempts → 15-min lockout. `failedLoginAttempts` + `lockedUntil` on `User`. Generic error always — lockout state never leaked.
+- Company email verification: register sets `status=pending`, sends verification email, login returns 403 `EMAIL_NOT_VERIFIED` until verified. Verify endpoint activates company and auto-issues tokens.
+- Password reset: company_owner only. SHA-256 hashed token, 1-hour TTL, revokes all sessions on password change.
+- DB migration `20260518000002_auth_security`: lockout columns + `PasswordResetToken` + `EmailVerificationToken` tables. Idempotent SQL.
+- Web: ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, RegisterPage "check inbox" state, LoginPage "Forgot password?" link.
+- Fixed `email?` missing from `PatchDriverBody` / `PatchDriverSchema` (was causing CI TS error).
+
+**Email gated on `SENDGRID_API_KEY`:**
+SendGrid free trial expired. Built a clean bypass: when `SENDGRID_API_KEY` is absent, `env.EMAIL_ENABLED = false` and register-company skips pending state — returns tokens directly (same UX as before). When the key is added to Railway, full email flow activates with zero code changes.
+
+**What to do when SendGrid is re-enabled:**
+See `PROJECT_STATUS.md` → "What to do when SendGrid is re-enabled" section — 8 steps including Railway env vars, end-to-end tests, and future admin panel for driver password reset.
+
+**Still outstanding (auth):**
+- Admin panel for resetting driver/planner passwords (owner-initiated, no email needed) — add to Settings page
+- Resend-verification endpoint if a user loses the email
+- MFA for planner/owner (listed in SAFETY.md security review)
 
 LogisticBay is being built for extreme, unbounded tenant growth: thousands to millions of tenant companies and records that may grow from millions into billions or trillions over time. Every engineer must internalise the rules in this document before writing code. The rules are not aspirational — they are enforced in code review, in CI, and in production checks.
 

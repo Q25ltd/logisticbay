@@ -46,6 +46,60 @@ Flow:
 
 Tenant isolation is never broken. Commercial relationship ≠ internal operational systems.
 
+### 3A. Company type — one platform, two worlds (decided 2026-05-18)
+
+Every company on the platform has a type: `carrier`, `sender`, or `both`.
+
+- **Carrier** — operates trucks and drivers. Current system. Planner board, fleet, shifts, jobs.
+- **Sender/Shipper** — has freight to move. Posts loads, tracks shipments, sees milestone data only. Phase 4.
+- **Both** — freight forwarders who operate their own fleet AND buy capacity from other carriers.
+
+**Rules:**
+- `Company.type` defaults to `"carrier"`. All existing companies are carriers automatically.
+- Registration does NOT ask for type until marketplace launches. No UI change before Phase 4.
+- When marketplace launches, new registrations choose their world at signup.
+- Existing carriers can opt into sender mode via settings — their carrier operations are untouched.
+- The web app loads a completely different navigation and feature set based on `companyType` in the JWT.
+- A `"both"` company gets a toggle in the nav to switch between their carrier and sender dashboards.
+- Tenant isolation rules apply equally to both worlds. A sender never sees inside a carrier's tenant.
+
+**Infrastructure decision:**
+Same PostgreSQL database. Same API codebase. Same auth system. Domain boundary enforced in code, not infrastructure. Extracting marketplace to a separate service is deferred until actual scaling requires it.
+
+### 3B. Trusted carrier network — pre-marketplace load sharing (decided 2026-05-18)
+
+Before the public marketplace exists, carriers need to share loads with trusted partner companies. This is how real haulage already works — companies call friendly operators when they can't cover a job.
+
+**Phase 2 feature (after operational core is stable):**
+
+```
+CompanyPartnership  — two companies trust each other (bidirectional after both accept)
+  companyId         — who sent the request
+  partnerId         — who they invited
+  status            — "pending" | "active" | "declined"
+
+SharedLoad          — a job offered to a trusted partner
+  ownerCompanyId    — company that cannot cover the job
+  partnerCompanyId  — specific partner offered to (null = all trusted partners)
+  jobId             — the job being shared
+  status            — "offered" | "accepted" | "declined" | "cancelled"
+  note              — message to partner
+```
+
+**Flow:**
+1. Carrier A cannot cover a job → clicks "Share with partner" on the job
+2. Picks from their trusted network list
+3. Carrier B receives the offer → sees job details → accepts or declines
+4. If accepted → job appears on Carrier B's planner board as a normal job
+5. Carrier A sees milestone progress only (collected / in transit / delivered / POD)
+6. Carrier A invoices the customer, settles with Carrier B directly
+
+**Why this before full marketplace:**
+- Solves a real operational pain carriers have right now
+- No bidding, scoring, or insurance complexity needed
+- `SharedLoad` directly evolves into `MarketplaceLoad` in Phase 4 — same data model, wider visibility
+- Builds early network effects before the public marketplace opens
+
 ### 4. Coordinates — auto-detect with mandatory manual override
 - Auto-detect is allowed and helpful
 - Human must always be able to override
@@ -863,19 +917,29 @@ Expand gradually
 - vehicle/trailer handling
 - offline execution
 - operational event recording
+- auth security (lockout, email verification, password reset)
+- role-based permissions on web (owner, manager, planner, job_creator, driver)
 
-### Phase 2 — Operational intelligence
+### Phase 2 — Operational intelligence + trusted network
 - branch coordination
 - smarter planning, location intelligence
 - recurring templates, execution analytics
+- **trusted carrier network**: CompanyPartnership + SharedLoad (load sharing between friendly companies)
+- financial basics: driver hours export, basic invoicing, accountant role access
 
 ### Phase 3 — Network intelligence
 - relays, cross-branch optimization
 - AI assistance, operational predictions
+- compliance officer role: working time exports, tachograph analysis
+- fleet manager role: maintenance, VOR, defects dashboard
 
 ### Phase 4 — Marketplace ecosystem
-- reverse auctions, subcontracting
-- execution-aware carrier matching
+- company type choice at registration (carrier / sender / both)
+- sender world: post loads, track shipments, invoice carriers
+- SharedLoad evolves into MarketplaceLoad (public visibility)
+- reverse auctions, bidding, carrier scoring
+- subcontracting, execution-aware carrier matching
+- commercial role: customer management, rate cards, marketplace commercial ops
 - network optimization
 
 ### Final stage

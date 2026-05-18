@@ -5,6 +5,79 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
 const EMAIL_FROM      = process.env.EMAIL_FROM!;
 const EMAIL_RECIPIENT = process.env.EMAIL_REPORT_RECIPIENT!;
 
+export async function sendPasswordResetEmail(to: string, name: string, resetUrl: string): Promise<void> {
+  await sgMail.send({
+    to,
+    from: EMAIL_FROM,
+    subject: "Reset your LogisticBay password",
+    html: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:#1a1a2e;padding:24px 36px;">
+          <p style="margin:0;color:#fff;font-size:20px;font-weight:700;">Logistic<span style="color:#e94560">Bay</span></p>
+        </td></tr>
+        <tr><td style="padding:32px 36px;">
+          <p style="margin:0 0 16px;color:#111827;font-size:16px;">Hi ${name},</p>
+          <p style="margin:0 0 24px;color:#374151;font-size:14px;">
+            We received a request to reset your password. Click the button below to set a new one.
+            This link expires in <strong>1 hour</strong>.
+          </p>
+          <a href="${resetUrl}" style="display:inline-block;background:#e94560;color:#fff;font-weight:700;font-size:15px;padding:14px 28px;border-radius:6px;text-decoration:none;">Reset password →</a>
+          <p style="margin:24px 0 0;font-size:12px;color:#6b7280;">
+            If you did not request this, you can safely ignore this email. Your password will not change.
+          </p>
+          <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">
+            Or copy this link: <span style="color:#1a1a2e;">${resetUrl}</span>
+          </p>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:16px 36px;border-top:1px solid #e5e7eb;">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">LogisticBay · Q25 Ltd · This email was sent automatically</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`,
+  });
+}
+
+export async function sendEmailVerificationEmail(to: string, name: string, verifyUrl: string): Promise<void> {
+  await sgMail.send({
+    to,
+    from: EMAIL_FROM,
+    subject: "Verify your LogisticBay account",
+    html: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:#1a1a2e;padding:24px 36px;">
+          <p style="margin:0;color:#fff;font-size:20px;font-weight:700;">Logistic<span style="color:#e94560">Bay</span></p>
+        </td></tr>
+        <tr><td style="padding:32px 36px;">
+          <p style="margin:0 0 16px;color:#111827;font-size:16px;">Welcome to LogisticBay, ${name}!</p>
+          <p style="margin:0 0 24px;color:#374151;font-size:14px;">
+            Your company account has been created. Please verify your email address to activate it.
+            This link expires in <strong>24 hours</strong>.
+          </p>
+          <a href="${verifyUrl}" style="display:inline-block;background:#e94560;color:#fff;font-weight:700;font-size:15px;padding:14px 28px;border-radius:6px;text-decoration:none;">Verify email →</a>
+          <p style="margin:24px 0 0;font-size:12px;color:#6b7280;">
+            Or copy this link: <span style="color:#1a1a2e;">${verifyUrl}</span>
+          </p>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:16px 36px;border-top:1px solid #e5e7eb;">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">LogisticBay · Q25 Ltd · This email was sent automatically</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`,
+  });
+}
+
 function fmtDate(d: any): string {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
