@@ -108,6 +108,7 @@ export interface CreateDriverBody extends DriverPlanningFields {
 
 export interface PatchDriverBody extends DriverPlanningFields {
   displayName?:          string;
+  email?:                string;
   employeeNumber?:       string;
   phoneNumber?:          string;
   defaultTruckReg?:      string;

@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
 import { authenticate, requireRole } from "../middleware.js";
-import { generateAccessToken, generateRefreshToken, storeRefreshToken } from "../lib/tokens.js";
+import { generateAccessToken, generateRefreshToken, storeRefreshToken, createEmailVerificationToken } from "../lib/tokens.js";
+import { env } from "../lib/env.js";
+import { sendEmailVerificationEmail } from "../email.js";
 import {
   validateRegisterCompany,
   validateCreateDriver,
@@ -79,7 +81,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
           ticker,
           nextJobSequence: 1,
           jobSequenceYear: new Date().getFullYear(),
-          status:          "trial",
+          status:          "pending",  // activated after email verification
         },
       });
 
@@ -99,33 +101,20 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       return { company, user };
     });
 
-    const tokenPayload = {
-      userId:    result.user.id,
-      companyId: result.company.id,
-      role:      "company_owner",
-    };
+    const rawToken = await createEmailVerificationToken(prisma, result.user.id);
+    const verifyUrl = `${env.APP_URL}/verify-email?token=${rawToken}`;
 
-    const accessToken  = generateAccessToken(tokenPayload);
-    const refreshToken = generateRefreshToken(tokenPayload);
-    await storeRefreshToken(prisma, {
-      userId:    result.user.id,
-      companyId: result.company.id,
-      token:     refreshToken,
-      userAgent: request.headers["user-agent"] ?? "",
-    });
+    try {
+      await sendEmailVerificationEmail(result.user.email, result.user.name, verifyUrl);
+    } catch {
+      // Log but don't block registration — user can request a new link later
+    }
 
     return reply.status(201).send({
-      accessToken,
-      refreshToken,
+      requiresVerification: true,
+      email: result.user.email,
       companyId: result.company.id,
       userId:    result.user.id,
-      user: {
-        id:        result.user.id,
-        name:      result.user.name,
-        email:     result.user.email,
-        companyId: result.company.id,
-        role:      "company_owner",
-      },
     });
   });
 

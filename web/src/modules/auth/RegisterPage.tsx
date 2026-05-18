@@ -5,12 +5,13 @@ import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { Alert } from "../../components/Alert";
 
-export default function RegisterPage({ onLogin }: { onLogin: () => void }) {
+export default function RegisterPage() {
   const [form, setForm] = useState({
     companyName: "", ticker: "", name: "", email: "", password: "", confirmPassword: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
@@ -20,9 +21,36 @@ export default function RegisterPage({ onLogin }: { onLogin: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(""); setLoading(true);
-    try { await registerCompany(form); await onLogin(); }
+    try {
+      const res = await registerCompany(form);
+      setSentTo(res.email);
+    }
     catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
+  }
+
+  if (sentTo) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <div className="text-2xl font-black text-primary mb-6">
+            Logistic<span className="text-accent">Bay</span>
+          </div>
+          <div className="card p-8">
+            <div className="text-4xl mb-4">✉️</div>
+            <h2 className="text-xl font-bold text-primary mb-2">Check your inbox</h2>
+            <p className="text-sm text-muted mb-4">
+              We've sent a verification email to <strong className="text-primary">{sentTo}</strong>.
+              Click the link in the email to activate your account.
+            </p>
+            <p className="text-xs text-muted">The link expires in 24 hours.</p>
+          </div>
+          <p className="text-center text-sm text-muted mt-4">
+            Already verified? <Link to="/login" className="text-accent font-semibold hover:underline">Sign in</Link>
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

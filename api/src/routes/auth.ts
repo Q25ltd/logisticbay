@@ -9,10 +9,20 @@ import {
   hashToken,
   storeRefreshToken,
   revokeTokenFamily,
+  createPasswordResetToken,
+  createEmailVerificationToken,
 } from "../lib/tokens.js";
 import type { LoginBody, RefreshBody, LogoutBody, ChangePasswordBody } from "../types/requests.js";
-import { LoginSchema, RefreshSchema, LogoutSchema, ChangePasswordSchema } from "../schemas/auth.js";
+import {
+  LoginSchema, RefreshSchema, LogoutSchema, ChangePasswordSchema,
+  ForgotPasswordSchema, ResetPasswordSchema, VerifyEmailSchema,
+} from "../schemas/auth.js";
+import type { ForgotPasswordBody, ResetPasswordBody, VerifyEmailBody } from "../schemas/auth.js";
 import { parseBody } from "../lib/validate.js";
+import { sendPasswordResetEmail } from "../email.js";
+
+const LOCKOUT_MAX_ATTEMPTS = 5;
+const LOCKOUT_WINDOW_MS    = 15 * 60 * 1000;  // 15 minutes
 
 export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -29,9 +39,32 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
       include: { memberships: { where: { status: "active" }, include: { company: true }, orderBy: { createdAt: "desc" } } },
     });
 
+    // Generic message — do not leak whether the account exists
     if (!user || user.status !== "active") return reply.status(401).send({ error: "Invalid email or password" });
+
+    // Lockout check
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      return reply.status(401).send({ error: "Invalid email or password" });
+    }
+
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return reply.status(401).send({ error: "Invalid email or password" });
+    if (!valid) {
+      const attempts = user.failedLoginAttempts + 1;
+      const lockedUntil = attempts >= LOCKOUT_MAX_ATTEMPTS ? new Date(Date.now() + LOCKOUT_WINDOW_MS) : null;
+      await prisma.user.update({
+        where: { id: user.id },
+        data:  { failedLoginAttempts: attempts, ...(lockedUntil ? { lockedUntil } : {}) },
+      });
+      return reply.status(401).send({ error: "Invalid email or password" });
+    }
+
+    // Reset lockout on successful credential check
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data:  { failedLoginAttempts: 0, lockedUntil: null },
+      });
+    }
 
     const memberships = user.memberships;
     if (!memberships.length) return reply.status(401).send({ error: "No active company membership" });
@@ -48,6 +81,11 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const membership = selectedCompanyId ? memberships.find(m => m.companyId === selectedCompanyId) : memberships[0];
     if (!membership) return reply.status(401).send({ error: "Company not found or access denied" });
+
+    // Block login for companies that have not verified their email yet
+    if (membership.company.status === "pending") {
+      return reply.status(403).send({ error: "Please verify your email address before signing in.", code: "EMAIL_NOT_VERIFIED" });
+    }
 
     const tokenPayload = { userId: user.id, companyId: membership.companyId, role: membership.role };
     const accessToken  = generateAccessToken(tokenPayload);
@@ -178,5 +216,123 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
       return reply.send({ ok: true, message: "Password changed successfully" });
     } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
+  });
+
+  // Only company_owner accounts can request a password reset — drivers/planners reset via admin panel
+  app.post("/auth/forgot-password", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
+    const parsed = parseBody(ForgotPasswordSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as ForgotPasswordBody;
+
+    // Always return success to prevent email enumeration
+    const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase().trim() } });
+    if (!user || user.status !== "active") return reply.send({ ok: true });
+
+    // Only company_owner role may self-serve password reset
+    const ownerMembership = await prisma.companyMembership.findFirst({
+      where: { userId: user.id, role: "company_owner", status: "active" },
+    });
+    if (!ownerMembership) return reply.send({ ok: true });
+
+    const rawToken = await createPasswordResetToken(prisma, user.id);
+    const resetUrl = `${env.APP_URL}/reset-password?token=${rawToken}`;
+
+    try {
+      await sendPasswordResetEmail(user.email, user.name, resetUrl);
+    } catch {
+      // Log but don't expose email errors to caller
+    }
+
+    return reply.send({ ok: true });
+  });
+
+  app.post("/auth/reset-password", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
+    const parsed = parseBody(ResetPasswordSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as ResetPasswordBody;
+    if (body.newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
+
+    const hash = hashToken(body.token);
+    const tokenRow = await prisma.passwordResetToken.findUnique({ where: { tokenHash: hash } });
+
+    if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
+      return reply.status(400).send({ error: "Token is invalid or has expired" });
+    }
+
+    const passwordHash = await bcrypt.hash(body.newPassword, 12);
+
+    await prisma.$transaction([
+      prisma.passwordResetToken.update({
+        where: { id: tokenRow.id },
+        data:  { usedAt: new Date() },
+      }),
+      prisma.user.update({
+        where: { id: tokenRow.userId },
+        data:  { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
+      }),
+      // Revoke all refresh tokens for this user so existing sessions end
+      prisma.refreshToken.updateMany({
+        where: { userId: tokenRow.userId, revokedAt: null },
+        data:  { revokedAt: new Date() },
+      }),
+    ]);
+
+    return reply.send({ ok: true, message: "Password has been reset. Please sign in." });
+  });
+
+  app.post("/auth/verify-email", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
+    const parsed = parseBody(VerifyEmailSchema, request.body);
+    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    const body = parsed.data as VerifyEmailBody;
+
+    const hash = hashToken(body.token);
+    const tokenRow = await prisma.emailVerificationToken.findUnique({
+      where:   { tokenHash: hash },
+      include: { user: { include: { memberships: { where: { status: "active" }, include: { company: true }, orderBy: { createdAt: "desc" } } } } },
+    });
+
+    if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
+      return reply.status(400).send({ error: "Verification link is invalid or has expired" });
+    }
+
+    const user = tokenRow.user;
+    const ownerMembership = user.memberships.find(m => m.role === "company_owner");
+    if (!ownerMembership) return reply.status(400).send({ error: "No company owner membership found" });
+
+    await prisma.$transaction([
+      prisma.emailVerificationToken.update({
+        where: { id: tokenRow.id },
+        data:  { usedAt: new Date() },
+      }),
+      prisma.company.update({
+        where: { id: ownerMembership.companyId },
+        data:  { status: "trial" },
+      }),
+    ]);
+
+    // Auto-login: issue tokens so the user lands on the dashboard after verifying
+    const tokenPayload = { userId: user.id, companyId: ownerMembership.companyId, role: ownerMembership.role };
+    const accessToken  = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
+
+    await storeRefreshToken(prisma, {
+      userId:    user.id,
+      companyId: ownerMembership.companyId,
+      token:     refreshToken,
+      userAgent: request.headers["user-agent"] ?? "",
+    });
+
+    return reply.send({
+      ok: true,
+      accessToken,
+      refreshToken,
+      user: { id: user.id, name: user.name, email: user.email, companyId: ownerMembership.companyId, companyName: ownerMembership.company.name, role: ownerMembership.role },
+    });
   });
 }

@@ -80,23 +80,53 @@ model Customer {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  name         String
-  email        String   @unique
-  passwordHash String
-  status       String   @default("active")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   Int       @id @default(autoincrement())
+  name                 String
+  email                String    @unique
+  passwordHash         String
+  status               String    @default("active")
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  memberships         CompanyMembership[]
-  driverProfile       DriverProfile?
-  shifts              Shift[]
-  createdJobs         Job[]               @relation("JobCreatedBy")
-  jobEvents           JobExecutionEvent[]
-  jobAudits           JobAudit[]
-  auditLogs           AuditLog[]
-  refreshTokens       RefreshToken[]
-  createdRequestLinks ClientRequestLink[]
+  memberships              CompanyMembership[]
+  driverProfile            DriverProfile?
+  shifts                   Shift[]
+  createdJobs              Job[]               @relation("JobCreatedBy")
+  jobEvents                JobExecutionEvent[]
+  jobAudits                JobAudit[]
+  auditLogs                AuditLog[]
+  refreshTokens            RefreshToken[]
+  createdRequestLinks      ClientRequestLink[]
+  passwordResetTokens      PasswordResetToken[]
+  emailVerificationTokens  EmailVerificationToken[]
+}
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model RefreshToken {

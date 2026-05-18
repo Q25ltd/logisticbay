@@ -7,6 +7,13 @@ type AuthResponse = {
   user: User;
 };
 
+type RegisterResponse = {
+  requiresVerification: true;
+  email: string;
+  companyId: number;
+  userId: number;
+};
+
 function storeAuthSession(data: AuthResponse) {
   setAuthTokens(data.accessToken, data.refreshToken);
 }
@@ -21,8 +28,20 @@ export async function login(email: string, password: string) {
 
 export async function registerCompany(form: {
   companyName: string; ticker: string; name: string; email: string; password: string; confirmPassword: string;
-}) {
-  const data = await api.post<AuthResponse>("/auth/register-company", form);
+}): Promise<RegisterResponse> {
+  return api.post<RegisterResponse>("/auth/register-company", form);
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  await api.post("/auth/forgot-password", { email });
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  await api.post("/auth/reset-password", { token, newPassword });
+}
+
+export async function verifyEmail(token: string): Promise<AuthResponse & { ok: boolean }> {
+  const data = await api.post<AuthResponse & { ok: boolean }>("/auth/verify-email", { token });
   storeAuthSession(data);
   return data;
 }

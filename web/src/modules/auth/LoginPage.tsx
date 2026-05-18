@@ -32,6 +32,9 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
           <form onSubmit={handleSubmit}>
             <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required />
             <Input label="Password / PIN" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password or 6-digit PIN" required />
+            <div className="text-right mb-2">
+              <Link to="/forgot-password" className="text-xs text-muted hover:text-accent">Forgot password?</Link>
+            </div>
             <Button type="submit" className="w-full mt-2" loading={loading}>Sign in →</Button>
           </form>
         </div>
