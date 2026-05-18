@@ -202,18 +202,18 @@ export default function CreateJobPage() {
   const [customerName,    setCustomerName]    = useState("");
   const [customerId,      setCustomerId]      = useState<number | null>(null);
   const [plannedDate,     setPlannedDate]     = useState(today());
-  const [contactName,     setContactName]     = useState("");
-  const [contactPhone,    setContactPhone]    = useState("");
-  const [contactEmail,    setContactEmail]    = useState("");
+  const [bookingContactName,  setBookingContactName]  = useState("");
+  const [bookingContactPhone, setBookingContactPhone] = useState("");
+  const [bookingContactEmail, setBookingContactEmail] = useState("");
   const [customerRef,     setCustomerRef]     = useState("");
 
   function handleCustomerChange(name: string, id: number | null, customer?: Customer) {
     setCustomerName(name);
     setCustomerId(id);
     if (customer) {
-      setContactName(customer.contactName   || "");
-      setContactPhone(customer.contactPhone || "");
-      setContactEmail(customer.contactEmail || "");
+      setBookingContactName(customer.contactName   || "");
+      setBookingContactPhone(customer.contactPhone || "");
+      setBookingContactEmail(customer.contactEmail || "");
     }
   }
 
@@ -288,7 +288,7 @@ export default function CreateJobPage() {
 
   // ── Section 04 — Special requirements ───────────────────────────────────────
   const [specialItems,       setSpecialItems]      = useState<string[]>([]);
-  const [adrClass,           setAdrClass]          = useState("");
+  const [hazardClass,        setHazardClass]        = useState("");
   const [unNumber,           setUnNumber]          = useState("");
   const [packingGroup,       setPackingGroup]      = useState("");
   const [hazardousQtyKg,     setHazardousQtyKg]    = useState("");
@@ -299,10 +299,10 @@ export default function CreateJobPage() {
 
   // ── Section 05 — Transport requirements ─────────────────────────────────────
   const [plannerDecides,     setPlannerDecides]    = useState(true);
-  const [reqBodyCategory,    setReqBodyCategory]   = useState("");
-  const [reqBodyTypes,       setReqBodyTypes]      = useState<string[]>([]);
-  const [reqEquipment,       setReqEquipment]      = useState<string[]>([]);
-  const [trailerTypesAllowed, setTrailerTypesAllowed] = useState<string[]>([]);
+  const [vehicleCategory,    setVehicleCategory]   = useState("");
+  const [bodyTypes,          setBodyTypes]         = useState<string[]>([]);
+  const [equipment,          setEquipment]         = useState<string[]>([]);
+  const [trailersAllowed,    setTrailersAllowed]   = useState<string[]>([]);
 
   // ── Section 06 — Billing ─────────────────────────────────────────────────────
   const [declaredValue,       setDeclaredValue]      = useState("");
@@ -311,7 +311,7 @@ export default function CreateJobPage() {
   const [plannerNotes,        setPlannerNotes]        = useState("");
   // ── Section 07 — Rejection & return policy ───────────────────────────────────
   const [showExceptionPolicy, setShowExceptionPolicy] = useState(false);
-  const [rejectionAction,              setRejectionAction]              = useState("");
+  const [failureAction,                setFailureAction]                = useState("");
   const [altReturnSiteName,            setAltReturnSiteName]            = useState("");
   const [altReturnAddress,             setAltReturnAddress]             = useState("");
   const [altReturnAddressLine2,        setAltReturnAddressLine2]        = useState("");
@@ -331,17 +331,17 @@ export default function CreateJobPage() {
   const [rejectionNotes,               setRejectionNotes]               = useState("");
 
   // ── Completeness ──────────────────────────────────────────────────────────────
-  const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim());
+  const sec1Complete = !!(customerName.trim() && bookingContactName.trim() && bookingContactPhone.trim());
   const sec2Complete = stops.length > 0 && stops.every(sharedStopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
   const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
 
-  const sec1Started = !!(customerName || contactName);
+  const sec1Started = !!(customerName || bookingContactName);
   const sec2Started = stops.some(s => s.siteName || s.street);
   const sec3Started = !!(goodsType || goodsDesc);
   const sec4Started = specialItems.length > 0;
-  const sec5Started = !!(reqBodyCategory || reqBodyTypes.length);
+  const sec5Started = !!(vehicleCategory || bodyTypes.length);
   const sec6Started = !!(declaredValue || purchaseOrderNumber);
   const hasStarted  = sec1Started || sec2Started || sec3Started || sec4Started || sec5Started || sec6Started;
 
@@ -354,8 +354,8 @@ export default function CreateJobPage() {
 
   const sec1Missing: string[] = [
     !customerName.trim()  ? "customer"        : "",
-    !contactName.trim()   ? "contact name"    : "",
-    !contactPhone.trim()  ? "contact phone"   : "",
+    !bookingContactName.trim()   ? "contact name"    : "",
+    !bookingContactPhone.trim()  ? "contact phone"   : "",
   ].filter(Boolean) as string[];
 
   const sec3Missing: string[] = [
@@ -381,9 +381,9 @@ export default function CreateJobPage() {
   function applyTemplate(t: JobTemplate) {
     const jd = t.defaultJobData as Record<string, unknown> | null | undefined;
     if (jd?.customerName) { setCustomerName(String(jd.customerName)); setCustomerId((jd.customerId as number) ?? null); }
-    if (jd?.contactName)  setContactName(String(jd.contactName));
-    if (jd?.contactPhone) setContactPhone(String(jd.contactPhone));
-    if (jd?.contactEmail) setContactEmail(String(jd.contactEmail));
+    if (jd?.contactName)  setBookingContactName(String(jd.contactName));
+    if (jd?.contactPhone) setBookingContactPhone(String(jd.contactPhone));
+    if (jd?.contactEmail) setBookingContactEmail(String(jd.contactEmail));
     if (jd?.customerRef)  setCustomerRef(String(jd.customerRef));
 
     const dl = t.defaultLoadDetails as Record<string, unknown> | null | undefined;
@@ -434,9 +434,9 @@ export default function CreateJobPage() {
       setCustomerId(job.customerId ?? null);
       setPlannedDate(job.plannedDate ? job.plannedDate.slice(0, 10) : today());
       setJobReference(job.jobReference ?? null);
-      setContactName(job.bookingContactName || "");
-      setContactPhone(job.bookingContactPhone || "");
-      setContactEmail(job.bookingContactEmail || "");
+      setBookingContactName(job.bookingContactName || "");
+      setBookingContactPhone(job.bookingContactPhone || "");
+      setBookingContactEmail(job.bookingContactEmail || "");
       setCustomerRef(job.customerRef || "");
       setPurchaseOrderNumber(job.purchaseOrderNumber || "");
       if (job.plannerNotes) setPlannerNotes(job.plannerNotes);
@@ -504,14 +504,14 @@ export default function CreateJobPage() {
       if (job.purchaseOrderNumber) setPurchaseOrderNumber(job.purchaseOrderNumber);
 
       // Transport requirements
-      if (job.vehicleCategory) setReqBodyCategory(job.vehicleCategory);
-      if (Array.isArray(job.trailersAllowed)) setTrailerTypesAllowed(job.trailersAllowed as string[]);
-      if (Array.isArray((job as any).reqBodyTypes)) setReqBodyTypes((job as any).reqBodyTypes as string[]);
+      if (job.vehicleCategory) setVehicleCategory(job.vehicleCategory);
+      if (Array.isArray(job.trailersAllowed)) setTrailersAllowed(job.trailersAllowed as string[]);
+      if (Array.isArray((job as any).bodyTypes)) setBodyTypes((job as any).bodyTypes as string[]);
 
       // Rejection / exception policy
       const ep = (job as any).exceptionPolicyData as Record<string, unknown> | null;
       if (ep?.rejectionAction) {
-        setRejectionAction(ep.rejectionAction as string);
+        setFailureAction(ep.rejectionAction as string);
         setAltReturnSiteName((ep.alternativeReturnSiteName as string) || "");
         setAltReturnAddress((ep.alternativeReturnAddress as string) || "");
         setAltReturnAddressLine2((ep.alternativeReturnAddressLine2 as string) || "");
@@ -563,6 +563,7 @@ export default function CreateJobPage() {
   function buildPayload(saveMode: "draft" | "ready_to_plan"): Record<string, unknown> {
     const effectiveUnit = unit === "other" ? otherUnit : unit;
 
+    // loadData blob: goods-type sub-details only (kept as blob per plan)
     const loadData: Record<string, unknown> = {
       goodsType,
       goodsTypeOther:    goodsType === "other" ? goodsTypeOther || undefined : undefined,
@@ -615,54 +616,6 @@ export default function CreateJobPage() {
       generalPackagingType:       generalPackagingType || undefined,
       generalPieceCount:          generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
     };
-
-    const billingData: Record<string, unknown> = {
-      declaredGoodsValue:  declaredValue ? parseFloat(declaredValue) : undefined,
-      purchaseOrderNumber: purchaseOrderNumber.trim() || undefined,
-      billingReference:    billingRef.trim() || undefined,
-    };
-
-    const specialRequirementsData = specialItems.length ? {
-      items:                       specialItems,
-      adrClass:                    adrClass.trim()         || undefined,
-      unNumber:                    unNumber.trim()          || undefined,
-      packingGroup:                packingGroup.trim()      || undefined,
-      hazardousQuantityKg:         hazardousQtyKg ? parseFloat(hazardousQtyKg) : undefined,
-      hazardousPaperworkAvailable: hazardousPaperwork || undefined,
-      oversizedWidth:              oversizedWidth.trim()   || undefined,
-      oversizedHeight:             oversizedHeight.trim()  || undefined,
-      oversizedLength:             oversizedLength.trim()  || undefined,
-    } : undefined;
-
-    const transportRequirementsData = {
-      plannerDecides,
-      reqBodyCategory:     plannerDecides ? undefined : reqBodyCategory || undefined,
-      reqBodyTypes:        plannerDecides ? undefined : reqBodyTypes.length ? reqBodyTypes : undefined,
-      reqEquipment:        plannerDecides ? undefined : reqEquipment.length ? reqEquipment : undefined,
-      trailerTypesAllowed: plannerDecides ? undefined : trailerTypesAllowed.length ? trailerTypesAllowed : undefined,
-    };
-
-    const hasExceptionPolicy = !!(rejectionAction || altReturnAddress || approvalContactName || photosOnRejection || signatureOnRejection || rejectionNotes);
-    const exceptionPolicyData = hasExceptionPolicy ? {
-      rejectionAction:                          rejectionAction || undefined,
-      alternativeReturnSiteName:                altReturnSiteName.trim()       || undefined,
-      alternativeReturnAddress:                 altReturnAddress.trim()        || undefined,
-      alternativeReturnAddressLine2:            altReturnAddressLine2.trim()   || undefined,
-      alternativeReturnTown:                    altReturnTown.trim()           || undefined,
-      alternativeReturnCounty:                  altReturnCounty.trim()         || undefined,
-      alternativeReturnPostcode:                altReturnPostcode.trim()       || undefined,
-      alternativeReturnCountry:                 altReturnCountry               || undefined,
-      alternativeReturnLat:                     altReturnLat ? parseFloat(altReturnLat) : undefined,
-      alternativeReturnLng:                     altReturnLng ? parseFloat(altReturnLng) : undefined,
-      alternativeReturnNavigationInstructions:  altReturnNavInstructions.trim() || undefined,
-      alternativeReturnContactName:             altReturnContactName.trim()    || undefined,
-      alternativeReturnContactPhone:            altReturnContactPhone.trim()   || undefined,
-      approvalContactName:                      approvalContactName.trim()     || undefined,
-      approvalContactPhone:                     approvalContactPhone.trim()    || undefined,
-      photosRequiredOnRejection:                photosOnRejection              || undefined,
-      rejectionSignatureRequired:               signatureOnRejection           || undefined,
-      rejectionNotes:                           rejectionNotes.trim()          || undefined,
-    } : undefined;
 
     const toISO = (date: string, time: string) =>
       (date && time) ? `${date}T${time}:00.000Z` : null;
@@ -726,38 +679,56 @@ export default function CreateJobPage() {
       saveMode,
       customerId,
       customerName,
-      plannedDate:         plannedDate || undefined,
-      bookingContactName:  contactName,
-      bookingContactPhone: contactPhone,
-      bookingContactEmail: contactEmail,
+      plannedDate:              plannedDate || undefined,
+      bookingContactName,
+      bookingContactPhone,
+      bookingContactEmail,
       customerRef,
-      purchaseOrderNumber,
-      serviceType:         stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery") ? "multi_drop" : stops.some(s => s.type === "collection") ? "collection" : "delivery",
-      priority:            "normal" as const,
-      reqBodyCategory:     plannerDecides ? "" : reqBodyCategory,
-      reqEquipment:        plannerDecides ? [] : reqEquipment,
-      trailerTypesAllowed: plannerDecides ? [] : trailerTypesAllowed,
-      requirePOD:          false,
+      purchaseOrderNumber:      purchaseOrderNumber.trim() || undefined,
+      serviceType:              stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery") ? "multi_drop" : stops.some(s => s.type === "collection") ? "collection" : "delivery",
+      priority:                 "normal" as const,
+      requirePOD:               false,
+      // Load fields — flat canonical names
+      goodsDescription:         goodsDesc.trim() || undefined,
+      goodsType:                goodsType || undefined,
+      quantity:                 quantity ? parseFloat(quantity) : undefined,
+      quantityUnit:             effectiveUnit || undefined,
+      weight:                   estWeight ? parseFloat(estWeight) : undefined,
+      loadNotes:                loadNotes.trim() || undefined,
+      securingRequirements:     securingRequirements.length ? securingRequirements : undefined,
       canSplitShipment,
-      stops:               mappedStops,
-      loadDetails: {
-        goodsType,
-        materialType:  goodsDesc.trim(),
-        quantity:      quantity ? parseFloat(quantity) : null,
-        unit:          effectiveUnit,
-        weight:        estWeight ? parseFloat(estWeight) : null,
-        notes:         loadNotes.trim(),
-        securingRequirements: securingRequirements.length ? securingRequirements : null,
-        specialRequirements:  specialItems.length ? specialItems : null,
-      },
+      // Special requirements — flat canonical names
+      specialRequirements:      specialItems.length ? specialItems : undefined,
+      hazardClass:              hazardClass.trim() || undefined,
+      unNumber:                 unNumber.trim() || undefined,
+      packingGroup:             packingGroup.trim() || undefined,
+      hazardousQuantityKg:      hazardousQtyKg ? parseFloat(hazardousQtyKg) : undefined,
+      hazardousPaperworkAvailable: hazardousPaperwork || undefined,
+      oversizedWidth:           oversizedWidth.trim() || undefined,
+      oversizedHeight:          oversizedHeight.trim() || undefined,
+      oversizedLength:          oversizedLength.trim() || undefined,
+      // Transport requirements — flat canonical names
+      vehicleCategory:          plannerDecides ? undefined : vehicleCategory || undefined,
+      bodyTypes:                plannerDecides ? undefined : bodyTypes.length ? bodyTypes : undefined,
+      equipment:                plannerDecides ? undefined : equipment.length ? equipment : undefined,
+      trailersAllowed:          plannerDecides ? undefined : trailersAllowed.length ? trailersAllowed : undefined,
+      // Billing — flat canonical names
+      declaredGoodsValue:       declaredValue ? parseFloat(declaredValue) : undefined,
+      billingReference:         billingRef.trim() || undefined,
+      // Rejection / exception policy — flat canonical names
+      failureAction:            failureAction || undefined,
+      alternativeReturnAddress: altReturnAddress.trim() || undefined,
+      alternativeReturnPostcode: altReturnPostcode.trim() || undefined,
+      alternativeReturnContactName: altReturnContactName.trim() || undefined,
+      alternativeReturnContactPhone: altReturnContactPhone.trim() || undefined,
+      approvalContactName:      approvalContactName.trim() || undefined,
+      approvalContactPhone:     approvalContactPhone.trim() || undefined,
+      // loadData blob: goods-type sub-details only
       loadData,
-      billingData,
-      specialRequirementsData,
-      transportRequirementsData,
-      exceptionPolicyData,
-      plannerNotes:    plannerNotes.trim() || undefined,
-      saveAsTemplate:  !isEditMode && saveAsTemplate,
-      templateName:    !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
+      stops:                    mappedStops,
+      plannerNotes:             plannerNotes.trim() || undefined,
+      saveAsTemplate:           !isEditMode && saveAsTemplate,
+      templateName:             !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
     };
   }
 
@@ -851,9 +822,9 @@ export default function CreateJobPage() {
         defaultJobData: {
           customerId,
           customerName,
-          contactName,
-          contactPhone,
-          contactEmail,
+          contactName: bookingContactName,
+          contactPhone: bookingContactPhone,
+          contactEmail: bookingContactEmail,
           customerRef,
           purchaseOrderNumber,
         },
@@ -976,7 +947,7 @@ export default function CreateJobPage() {
           <SectionHeader num={1} icon="🏢" title="Customer details" subtitle="Customer account, contact name, phone and email" active
             collapsed={s1} onToggle={() => setS1(o => !o)}
             complete={sec1Complete} started={sec1Started}
-            summary={customerName || contactName}
+            summary={customerName || bookingContactName}
             missingCount={sec1Missing.length} />
           {!s1 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
@@ -999,13 +970,13 @@ export default function CreateJobPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <TextField label="Contact name" required value={contactName} onChange={setContactName}
+                <TextField label="Contact name" required value={bookingContactName} onChange={setBookingContactName}
                   placeholder="Jane Smith" caseRule="proper_name" />
-                <TextField label="Contact phone" required type="tel" value={contactPhone}
-                  onChange={setContactPhone} placeholder="+44 7700 900123" />
+                <TextField label="Contact phone" required type="tel" value={bookingContactPhone}
+                  onChange={setBookingContactPhone} placeholder="+44 7700 900123" />
               </div>
-              <TextField label="Contact email" type="email" value={contactEmail}
-                onChange={setContactEmail} placeholder="jane@acme.com" caseRule="lower" />
+              <TextField label="Contact email" type="email" value={bookingContactEmail}
+                onChange={setBookingContactEmail} placeholder="jane@acme.com" caseRule="lower" />
               <TextField label="Customer reference / order number" value={customerRef}
                 onChange={setCustomerRef} placeholder="ORD-2026-1234"
                 hint="Your internal reference for this job, if you have one." />
@@ -1378,7 +1349,7 @@ export default function CreateJobPage() {
 
               {specialItems.includes("dangerous_goods") && (
                 <div className="space-y-3 border-l-2 border-red-200 pl-4">
-                  <TextField label="ADR class" value={adrClass} onChange={setAdrClass}
+                  <TextField label="ADR class" value={hazardClass} onChange={setHazardClass}
                     placeholder="Class 3 — Flammable liquids" />
                   <div className="grid grid-cols-2 gap-3">
                     <TextField label="UN number" value={unNumber} onChange={setUnNumber} placeholder="UN 1993" />
@@ -1426,8 +1397,8 @@ export default function CreateJobPage() {
             complete optional
             summary={plannerDecides ? "Planner will decide" : (
               [
-                BODY_CATEGORIES.find(c => c.value === reqBodyCategory)?.label,
-                reqBodyTypes.map(t => BODY_TYPES.find(b => b.value === t)?.label).filter(Boolean).join(", "),
+                BODY_CATEGORIES.find(c => c.value === vehicleCategory)?.label,
+                bodyTypes.map(t => BODY_TYPES.find(b => b.value === t)?.label).filter(Boolean).join(", "),
               ].filter(Boolean).join(" · ") || undefined
             )} />
           {!s5 && (
@@ -1446,9 +1417,9 @@ export default function CreateJobPage() {
                     <div className="flex flex-wrap gap-2 mt-1">
                       {BODY_CATEGORIES.map(({ value, label }) => (
                         <button key={value} type="button"
-                          onClick={() => { setReqBodyCategory(value); setReqBodyTypes([]); }}
+                          onClick={() => { setVehicleCategory(value); setBodyTypes([]); }}
                           className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
-                            (reqBodyCategory === value
+                            (vehicleCategory === value
                               ? "bg-accent text-white border-accent"
                               : "bg-white text-muted border-border hover:border-gray-400")}>
                           {label}
@@ -1457,8 +1428,8 @@ export default function CreateJobPage() {
                     </div>
                   </div>
 
-                  {reqBodyCategory && (() => {
-                    const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[reqBodyCategory] ?? []);
+                  {vehicleCategory && (() => {
+                    const allowed = new Set(REQ_BODY_TYPES_BY_CATEGORY[vehicleCategory] ?? []);
                     const grouped: Record<string, { value: string; label: string }[]> = {};
                     BODY_TYPES.forEach(bt => {
                       if (!allowed.has(bt.value)) return;
@@ -1467,7 +1438,7 @@ export default function CreateJobPage() {
                     });
                     const groups = Object.keys(grouped);
                     function toggleType(v: string) {
-                      setReqBodyTypes(prev =>
+                      setBodyTypes(prev =>
                         prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
                       );
                     }
@@ -1481,7 +1452,7 @@ export default function CreateJobPage() {
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {grouped[g].map(bt => {
-                                const on = reqBodyTypes.includes(bt.value);
+                                const on = bodyTypes.includes(bt.value);
                                 return (
                                   <button key={bt.value} type="button" onClick={() => toggleType(bt.value)}
                                     className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
@@ -1541,8 +1512,8 @@ export default function CreateJobPage() {
                 <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">optional</span>
               </div>
               <p className="text-xs text-muted mt-0.5">
-                {rejectionAction
-                  ? REJECTION_ACTIONS.find(([v]) => v === rejectionAction)?.[1] ?? rejectionAction
+                {failureAction
+                  ? REJECTION_ACTIONS.find(([v]) => v === failureAction)?.[1] ?? failureAction
                   : "What should the driver do if goods are refused at the door?"}
               </p>
             </div>
@@ -1560,11 +1531,11 @@ export default function CreateJobPage() {
               <div>
                 <FieldLabel>If delivery is rejected at the door, what should the driver do?</FieldLabel>
                 <div className="mt-1">
-                  <Chips options={REJECTION_ACTIONS} value={rejectionAction} onChange={setRejectionAction} />
+                  <Chips options={REJECTION_ACTIONS} value={failureAction} onChange={setFailureAction} />
                 </div>
               </div>
 
-              {rejectionAction === "deliver_to_alternative_address" && (
+              {failureAction === "deliver_to_alternative_address" && (
                 <div className="space-y-3 border-l-2 border-orange-200 pl-4">
                   <TextField label="Site name" value={altReturnSiteName}
                     onChange={setAltReturnSiteName} placeholder="Acme Returns Depot — Unit 3" caseRule="proper_name" />
@@ -1643,7 +1614,7 @@ export default function CreateJobPage() {
                 </div>
               )}
 
-              {rejectionAction === "call_office_before_leaving" && (
+              {failureAction === "call_office_before_leaving" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-l-2 border-orange-200 pl-4">
                   <TextField label="Approval contact name" value={approvalContactName}
                     onChange={setApprovalContactName} placeholder="Jane Smith" />
