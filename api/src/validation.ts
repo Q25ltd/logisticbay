@@ -1,6 +1,5 @@
 import type {
   ValidationResult,
-  CreateJobBody,
   CreateTemplateBody,
   CreateLocationBody,
   CreateDriverBody,
@@ -127,15 +126,6 @@ export function validateCreateTemplate(body: CreateTemplateBody): ValidationResu
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
-
-export function validateCreateJob(body: CreateJobBody): ValidationResult {
-  const errors: string[] = [];
-  if (body.plannedDate != null && !body.plannedDate.trim()) {
-    errors.push("plannedDate must not be empty");
-  }
-  if (!body.plannedDate && body.saveMode !== "draft") errors.push("plannedDate is required");
-  return ok(errors);
-}
 
 const VALID_JOB_STATUSES = [
   "pending", "accepted", "in_progress", "arrived_pickup",
