@@ -11,6 +11,9 @@ import { fleetRoutes }         from "./routes/fleet.js";
 import { dashboardRoutes }     from "./routes/dashboard.js";
 import { jobRequestRoutes }    from "./routes/jobRequests.js";
 import { runRoutes }           from "./routes/runs.js";
+import { locationRoutes }      from "./routes/locations.js";
+import { templateRoutes }      from "./routes/templates.js";
+import { scheduleRoutes }      from "./routes/schedule.js";
 import cors                    from "@fastify/cors";
 
 export async function buildApp(
@@ -99,6 +102,9 @@ export async function buildApp(
   await dashboardRoutes(app, prisma);
   await jobRequestRoutes(app, prisma);
   await runRoutes(app, prisma);
+  await locationRoutes(app, prisma);
+  await templateRoutes(app, prisma);
+  await scheduleRoutes(app, prisma);
 
   return app;
 }

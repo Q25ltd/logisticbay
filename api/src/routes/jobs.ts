@@ -1,35 +1,27 @@
 import type { FastifyInstance } from "fastify";
+import type { ZodType } from "zod";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import {
-  validateCreateLocation,
-  validateCreateTemplate,
-  validateCreateJob,
-  validateUpdateJobStatus,
-  validateAddJobNote,
-} from "../validation.js";
-import type {
-  CreateLocationBody,
-  PatchLocationBody,
-  CreateTemplateBody,
-  PatchTemplateBody,
-  CreateJobBody,
-  PatchJobBody,
-  UpdateJobStatusBody,
-  AddJobNoteBody,
-} from "../types/requests.js";
-import {
-  validateStructuredJob,
-  findInvalidStopLocationId,
-  type StructuredJobPartInput,
-  type StructuredLoadDetailsInput,
-} from "../services/jobValidation.js";
-import { scoreStructuredJob } from "../services/jobQuality.js";
+  CreateJobSchema,
+  PatchJobSchema,
+  UpdateJobStatusSchema,
+  AddJobNoteSchema,
+} from "../schemas/jobs.js";
 import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES, EVENT_TYPE_MAP } from "../sync/sync.constants.js";
-import { generateJobReference } from "../lib/jobReference.js";
-import { checkDayFeasibility, type ScheduleStop } from "../lib/driverSchedule.js";
-import { toNullableNumber, toNullableDate } from "../lib/coerce.js";
-import { hasLoadDetailsInput, appendPlannerReason, buildStopData } from "../lib/jobUtils.js";
+import { appendPlannerReason } from "../lib/jobUtils.js";
+import { createJob, patchJob } from "../services/jobService.js";
+
+// ── Parse helper ──────────────────────────────────────────────────────────────
+
+function parseBody<T>(schema: ZodType<T>, body: unknown): { data: T } | { error: string; errors: string[] } {
+  const result = schema.safeParse(body);
+  if (!result.success) {
+    const errors = result.error.issues.map(e => `${e.path.map(p => String(p)).join(".")}: ${e.message}`);
+    return { error: errors[0] ?? "Invalid request body", errors };
+  }
+  return { data: result.data };
+}
 
 // Standard include for job detail views
 const JOB_DETAIL_INCLUDE = {
@@ -61,189 +53,6 @@ function computePlanningStatus(
 }
 
 export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
-
-  // ── GET /locations ─────────────────────────────────────────────────────────
-  app.get("/locations", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const { companyId } = request.user!;
-    const locs = await prisma.savedLocation.findMany({
-      where:   { companyId },
-      orderBy: { name: "asc" },
-    });
-    return reply.send({ data: locs });
-  });
-
-  // ── POST /locations ────────────────────────────────────────────────────────
-  app.post("/locations", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as CreateLocationBody;
-    const { companyId } = request.user!;
-
-    const v = validateCreateLocation(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
-
-    const locationTextSnapshot = (body.locationTextSnapshot ?? body.addressText ?? "").trim();
-    const lat = body.lat ?? body.latitude ?? null;
-    const lng = body.lng ?? body.longitude ?? null;
-
-    const loc = await prisma.savedLocation.create({
-      data: {
-        companyId,
-        name:         body.name.trim(),
-        siteName:     body.siteName?.trim() ?? "",
-        unitName:     body.unitName?.trim() ?? "",
-        locationTextSnapshot,
-        street:       body.street?.trim() ?? "",
-        town:         body.town?.trim() ?? "",
-        postcode:     body.postcode?.trim() ?? "",
-        lat,
-        lng,
-        gateLat:      body.gateLat ?? null,
-        gateLng:      body.gateLng ?? null,
-        contactName:  body.contactName?.trim() ?? "",
-        contactPhone: body.contactPhone?.trim() ?? "",
-        instructions: body.instructions?.trim() ?? "",
-        internalNotes: (body.internalNotes ?? body.notes ?? "").trim(),
-      },
-    });
-
-    return reply.status(201).send(loc);
-  });
-
-  // ── PATCH /locations/:id ───────────────────────────────────────────────────
-  app.patch("/locations/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as PatchLocationBody;
-    const { companyId } = request.user!;
-
-    const loc = await prisma.savedLocation.findFirst({ where: { id, companyId } });
-    if (!loc) return reply.status(404).send({ error: "Location not found" });
-
-    const updated = await prisma.savedLocation.update({
-      where: { id },
-      data: {
-        name:         body.name?.trim() ?? loc.name,
-        siteName:     body.siteName?.trim() ?? loc.siteName,
-        unitName:     body.unitName?.trim() ?? loc.unitName,
-        locationTextSnapshot: (body.locationTextSnapshot ?? body.addressText)?.trim() ?? loc.locationTextSnapshot,
-        street:       body.street?.trim() ?? loc.street,
-        town:         body.town?.trim() ?? loc.town,
-        postcode:     body.postcode?.trim() ?? loc.postcode,
-        lat:          body.lat ?? body.latitude ?? loc.lat,
-        lng:          body.lng ?? body.longitude ?? loc.lng,
-        gateLat:      body.gateLat ?? loc.gateLat,
-        gateLng:      body.gateLng ?? loc.gateLng,
-        contactName:  body.contactName?.trim() ?? loc.contactName,
-        contactPhone: body.contactPhone?.trim() ?? loc.contactPhone,
-        instructions: body.instructions?.trim() ?? loc.instructions,
-        internalNotes: (body.internalNotes ?? body.notes)?.trim() ?? loc.internalNotes,
-      },
-    });
-
-    return reply.send(updated);
-  });
-
-  // ── GET /job-templates ─────────────────────────────────────────────────────
-  app.get("/job-templates", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const { companyId } = request.user!;
-    const q = request.query as { status?: string };
-
-    const templates = await prisma.jobTemplate.findMany({
-      where: {
-        companyId,
-        status: q.status ?? "active",
-      },
-      include: {
-        pickupLocation:  true,
-        dropoffLocation: true,
-      },
-      orderBy: { name: "asc" },
-    });
-
-    return reply.send({ data: templates });
-  });
-
-  // ── POST /job-templates ────────────────────────────────────────────────────
-  app.post("/job-templates", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as CreateTemplateBody;
-    const { companyId } = request.user!;
-
-    const v = validateCreateTemplate(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
-
-    let pickupText  = body.pickupTextSnapshot  ?? "";
-    let dropoffText = body.dropoffTextSnapshot ?? "";
-
-    if (body.pickupLocationId) {
-      const loc = await prisma.savedLocation.findFirst({ where: { id: body.pickupLocationId, companyId } });
-      if (!loc) return reply.status(400).send({ error: "Pickup location not found" });
-      pickupText = loc.locationTextSnapshot;
-    }
-    if (body.dropoffLocationId) {
-      const loc = await prisma.savedLocation.findFirst({ where: { id: body.dropoffLocationId, companyId } });
-      if (!loc) return reply.status(400).send({ error: "Dropoff location not found" });
-      dropoffText = loc.locationTextSnapshot;
-    }
-
-    const template = await prisma.jobTemplate.create({
-      data: {
-        companyId,
-        name:                body.name.trim(),
-        pickupLocationId:    body.pickupLocationId  ?? null,
-        dropoffLocationId:   body.dropoffLocationId ?? null,
-        pickupTextSnapshot:  pickupText,
-        dropoffTextSnapshot: dropoffText,
-        defaultReference:    body.defaultReference    ?? "",
-        defaultNotes:        body.defaultNotes        ?? "",
-        defaultMaterialType: body.defaultMaterialType ?? "",
-        defaultStops:        body.defaultStops        ?? undefined,
-        defaultLoadDetails:  body.defaultLoadDetails  ?? undefined,
-        defaultJobData:      body.defaultJobData      ?? undefined,
-        trailerTypesAllowed: body.trailerTypesAllowed ?? [],
-        status:              "active",
-      },
-    });
-
-    return reply.status(201).send(template);
-  });
-
-  // ── PATCH /job-templates/:id ───────────────────────────────────────────────
-  app.patch("/job-templates/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as PatchTemplateBody;
-    const { companyId } = request.user!;
-
-    const template = await prisma.jobTemplate.findFirst({ where: { id, companyId } });
-    if (!template) return reply.status(404).send({ error: "Template not found" });
-
-    const updated = await prisma.jobTemplate.update({
-      where: { id },
-      data: {
-        name:                body.name                ?? template.name,
-        defaultReference:    body.defaultReference    ?? template.defaultReference,
-        defaultNotes:        body.defaultNotes        ?? template.defaultNotes,
-        defaultMaterialType: body.defaultMaterialType ?? template.defaultMaterialType,
-        defaultStops:        (body.defaultStops        !== undefined ? body.defaultStops        : template.defaultStops)        as Prisma.InputJsonValue | undefined,
-        defaultLoadDetails:  (body.defaultLoadDetails  !== undefined ? body.defaultLoadDetails  : template.defaultLoadDetails)  as Prisma.InputJsonValue | undefined,
-        defaultJobData:      (body.defaultJobData      !== undefined ? body.defaultJobData      : template.defaultJobData)      as Prisma.InputJsonValue | undefined,
-        trailerTypesAllowed: (body.trailerTypesAllowed !== undefined ? body.trailerTypesAllowed : template.trailerTypesAllowed) as Prisma.InputJsonValue | undefined,
-        status:              body.status              ?? template.status,
-      },
-    });
-
-    return reply.send(updated);
-  });
-
-  // ── DELETE /job-templates/:id ──────────────────────────────────────────────
-  app.delete("/job-templates/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
-    const { companyId } = request.user!;
-
-    const template = await prisma.jobTemplate.findFirst({ where: { id, companyId } });
-    if (!template) return reply.status(404).send({ error: "Template not found" });
-
-    // Soft-delete: archive so existing job history (templateId FK) stays intact
-    await prisma.jobTemplate.update({ where: { id }, data: { status: "archived" } });
-    return reply.send({ ok: true });
-  });
 
   // ── GET /jobs — planner / driver view ─────────────────────────────────────
   app.get("/jobs", { preHandler: authenticate }, async (request, reply) => {
@@ -392,456 +201,28 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /jobs — create structured job ────────────────────────────────────
   app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as CreateJobBody;
+    const parsed = parseBody(CreateJobSchema, request.body);
+    if ("error" in parsed) return reply.status(400).send(parsed);
     const { companyId, userId } = request.user!;
-    const saveMode = body.saveMode ?? "draft";
-
-    const legacyValidation = validateCreateJob(body);
-    if (!legacyValidation.valid) return reply.status(400).send({ error: legacyValidation.errors.join(", ") });
-
-    let template: Awaited<ReturnType<typeof prisma.jobTemplate.findFirst>> = null;
-    if (body.templateId) {
-      template = await prisma.jobTemplate.findFirst({ where: { id: body.templateId, companyId } });
-      if (!template) return reply.status(400).send({ error: "Template not found" });
-    }
-
-    // Build stops array — body.stops takes precedence; legacy 2-stop fallback uses template snapshots
-    const stops: StructuredJobPartInput[] = Array.isArray(body.stops) && body.stops.length > 0
-      ? body.stops
-      : (() => {
-          const pText = template?.pickupTextSnapshot  ?? "";
-          const dText = template?.dropoffTextSnapshot ?? "";
-          return [
-            ...(pText ? [{ sequenceNumber: 1, type: "pickup",  locationTextSnapshot: pText }] : []),
-            ...(dText ? [{ sequenceNumber: 2, type: "dropoff", locationTextSnapshot: dText }] : []),
-          ];
-        })();
-
-    const vehicleCategory   = body.vehicleCategory   ?? "";
-    const minGvwClass       = body.minGvwClass       ?? "";
-    const bodyTypes: string[] = Array.isArray(body.bodyTypes) ? body.bodyTypes : body.bodyType ? [body.bodyType] : [];
-    const equipment: string[] = Array.isArray(body.equipment) ? body.equipment.map(String) : [];
-    const trailersAllowed: string[] = Array.isArray(body.trailersAllowed) ? body.trailersAllowed.map(String) : [];
-
-    const loadDetailsForValidation: StructuredLoadDetailsInput = {
-      quantity:        body.quantity,
-      unit:            body.quantityUnit,
-      weight:          body.weight,
-      materialType:    body.goodsDescription,
-      hazardClass:     body.hazardClass,
-      goodsType:       body.goodsType,
-      fragile:         body.fragile,
-      stackable:       body.stackable,
-      tempControlled:  body.tempControlled,
-      securingRequirements: Array.isArray(body.securingRequirements) ? body.securingRequirements : null,
-      specialRequirements:  Array.isArray(body.specialRequirements)  ? body.specialRequirements  : null,
-    };
-
-    let customerId   = body.customerId ?? null;
-    let customerName = body.customerName ?? "";
-    if (customerId !== null) {
-      const customer = await prisma.customer.findFirst({ where: { id: customerId, companyId } });
-      if (!customer) return reply.status(400).send({ error: "Customer not found" });
-      customerName = customer.name;
-    }
-
-    const structuredValidation = validateStructuredJob({
-      saveMode,
-      customerId,
-      customerName,
-      plannedDate:         body.plannedDate,
-      reqBodyCategory:     vehicleCategory,
-      reqGvwMin:           minGvwClass,
-      reqBodyType:         bodyTypes[0] ?? "",
-      reqEquipment:        equipment,
-      trailerTypesAllowed: trailersAllowed,
-      stops,
-      loadDetails:         loadDetailsForValidation,
-    });
-
-    if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
-      return reply.status(400).send({
-        error:    "Job is not ready to plan",
-        errors:   structuredValidation.errors,
-        warnings: structuredValidation.warnings,
-      });
-    }
-
-    const quality = scoreStructuredJob({ stops, loadDetails: loadDetailsForValidation });
-
-    const invalidStopLocationId = await findInvalidStopLocationId(prisma, companyId, stops);
-    if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
-
-    const job = await prisma.$transaction(async (tx) => {
-      const jobReference = await generateJobReference(companyId, tx);
-
-      const created = await tx.job.create({
-        data: {
-          companyId,
-          customerId,
-          customerName,
-          jobReference,
-          templateId:          body.templateId ?? null,
-          createdByUserId:     userId,
-          plannedDate:         body.plannedDate ? new Date(body.plannedDate) : null,
-          plannerNotes:        body.plannerNotes ?? "",
-          vehicleCategory,
-          minGvwClass,
-          bodyTypes:           bodyTypes.length > 0 ? (bodyTypes as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-          equipment,
-          trailersAllowed:     trailersAllowed.length > 0 ? (trailersAllowed as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-          priority:            body.priority ?? "normal",
-          serviceType:         body.serviceType ?? "",
-          customerRef:         body.customerRef ?? "",
-          purchaseOrderNumber: body.purchaseOrderNumber ?? "",
-          billingNotes:        body.billingNotes ?? "",
-          bookingContactName:  body.bookingContactName ?? "",
-          bookingContactPhone: body.bookingContactPhone ?? "",
-          bookingContactEmail: body.bookingContactEmail ?? "",
-          custRefRequired:     body.custRefRequired ?? false,
-          poRequired:          body.poRequired ?? false,
-          vehicleAccessNotes:  body.vehicleAccessNotes ?? "",
-          failureAction:       body.failureAction ?? "call_assistance",
-          assistancePhone:     body.assistancePhone ?? "",
-          assistanceNote:      body.assistanceNote ?? "",
-          approvalContactName:           body.approvalContactName ?? null,
-          approvalContactPhone:          body.approvalContactPhone ?? null,
-          alternativeReturnAddress:      body.alternativeReturnAddress ?? null,
-          alternativeReturnPostcode:     body.alternativeReturnPostcode ?? null,
-          alternativeReturnContactName:  body.alternativeReturnContactName ?? null,
-          alternativeReturnContactPhone: body.alternativeReturnContactPhone ?? null,
-          internalNotes:       body.internalNotes ?? "",
-          billingData:         body.billingData ? body.billingData as Prisma.InputJsonValue : undefined,
-          validationStatus:    structuredValidation.validationStatus,
-          qualityScore:        quality.score,
-          requirePOD:          body.requirePOD ?? false,
-          canSplitShipment:    body.canSplitShipment ?? "must_stay_together",
-          status:              "draft",
-          // Load details — flat columns directly on Job
-          goodsDescription:    body.goodsDescription ?? "",
-          goodsType:           body.goodsType ?? "",
-          quantity:            toNullableNumber(body.quantity),
-          quantityUnit:        body.quantityUnit ?? "",
-          weight:              toNullableNumber(body.weight),
-          volume:              toNullableNumber(body.volume),
-          dimensions:          body.dimensions ?? "",
-          fragile:             body.fragile ?? false,
-          stackable:           body.stackable ?? false,
-          tempControlled:      body.tempControlled ?? false,
-          tempRange:           body.tempRange ?? "",
-          hazardClass:         body.hazardClass ?? "",
-          photosRequired:      body.photosRequired ?? false,
-          weighbridgeRequired: body.weighbridgeRequired ?? false,
-          securingRequirements: Array.isArray(body.securingRequirements) ? (body.securingRequirements as Prisma.InputJsonValue) : Prisma.DbNull,
-          specialRequirements:  Array.isArray(body.specialRequirements)  ? (body.specialRequirements  as Prisma.InputJsonValue) : Prisma.DbNull,
-          driverNoteChips:     Array.isArray(body.driverNoteChips) && body.driverNoteChips.length
-                                 ? (body.driverNoteChips as Prisma.InputJsonValue) : Prisma.DbNull,
-          driverVisibleNotes:  body.driverVisibleNotes ?? null,
-          safetyInstructions:  body.safetyInstructions ?? null,
-          stops: {
-            create: stops.map(s => buildStopData(s, companyId)),
-          },
-          audits: {
-            create: {
-              companyId,
-              changedBy: userId,
-              action:    "created",
-              field:     "job",
-              newValue:  {
-                saveMode,
-                validationStatus: structuredValidation.validationStatus,
-                qualityScore:     quality.score,
-              },
-            },
-          },
-        },
-        include: {
-          stops:  { orderBy: { sequenceNumber: "asc" } },
-          audits: { orderBy: { createdAt: "desc" }, take: 5 },
-        },
-      });
-
-      if (body.saveAsTemplate && body.templateName) {
-        const templateStops = (stops as unknown as Record<string, unknown>[]).map((s) => ({
-          ...s,
-          date:            undefined,
-          timeType:        "anytime",
-          bookedTime:      undefined,
-          timeWindowStart: undefined,
-          timeWindowEnd:   undefined,
-          referenceNumber: undefined,
-          bookingRef:      undefined,
-        }));
-
-        const defaultJobData = {
-          customerId:      body.customerId    ?? null,
-          customerName:    body.customerName  ?? "",
-          serviceType:     body.serviceType   ?? "",
-          priority:        body.priority      ?? "normal",
-          billingNotes:    body.billingNotes  ?? "",
-          custInstructions: body.customerInstructions ?? "",
-          custRefRequired:  body.custRefRequired ?? false,
-          poRequired:       body.poRequired     ?? false,
-          goodsDescription: body.goodsDescription ?? "",
-          quantity:         body.quantity != null ? String(body.quantity) : "",
-          quantityUnit:     body.quantityUnit ?? "",
-          hazardClass:      body.hazardClass ?? "",
-          podRequired:      body.requirePOD ?? true,
-          vehicleCategory,
-          minGvwClass,
-          bodyTypes,
-          equipment,
-          trailersAllowed,
-          lengthRestriction: body.lengthRestriction  ?? "",
-          accessNotes:       body.vehicleAccessNotes ?? "",
-          failureAction:     body.failureAction       ?? "call_assistance",
-          assistancePhone:   body.assistancePhone     ?? "",
-          assistanceNote:    body.assistanceNote      ?? "",
-        };
-
-        const sortedStops = [...stops].sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
-        const firstPickup = sortedStops.find(s => s.type === "collection" || s.type === "pickup");
-        const lastDropoff = [...sortedStops].reverse().find(s => s.type === "delivery" || s.type === "dropoff");
-
-        await tx.jobTemplate.create({
-          data: {
-            companyId,
-            name:                body.templateName,
-            pickupLocationId:    firstPickup?.savedLocationId ?? null,
-            dropoffLocationId:   lastDropoff?.savedLocationId ?? null,
-            pickupTextSnapshot:  typeof firstPickup?.locationTextSnapshot === "string" ? firstPickup.locationTextSnapshot.trim() : "",
-            dropoffTextSnapshot: typeof lastDropoff?.locationTextSnapshot === "string" ? lastDropoff.locationTextSnapshot.trim() : "",
-            defaultReference:    "",
-            defaultNotes:        body.plannerNotes ?? "",
-            defaultMaterialType: body.goodsDescription ?? "",
-            trailerTypesAllowed: trailersAllowed,
-            defaultStops:        JSON.parse(JSON.stringify(templateStops)),
-            defaultLoadDetails:  JSON.parse(JSON.stringify(loadDetailsForValidation)),
-            defaultJobData:      JSON.parse(JSON.stringify(defaultJobData)),
-            qualityScore:        quality.score,
-            status:              "active",
-          },
-        });
-      }
-
-      return created;
-    });
-
-    return reply.status(201).send({
-      ...job,
-      validation: structuredValidation,
-      quality,
-    });
+    const result = await createJob(prisma, { companyId, userId, body: parsed.data });
+    if (!result.ok) return reply.status(result.status).send(result);
+    return reply.status(201).send({ ...(result.job as object), validation: result.validation, quality: result.quality });
   });
 
   // ── PATCH /jobs/:id — edit structured job before execution ────────────────
   app.patch("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as PatchJobBody;
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const parsed = parseBody(PatchJobSchema, request.body);
+    if ("error" in parsed) return reply.status(400).send(parsed);
     const { companyId, userId } = request.user!;
-
     const job = await prisma.job.findFirst({
       where:   { id, companyId },
-      include: {
-        customer: true,
-        stops:    { orderBy: { sequenceNumber: "asc" } },
-      },
+      include: { customer: true, stops: { orderBy: { sequenceNumber: "asc" } } },
     });
     if (!job) return reply.status(404).send({ error: "Job not found" });
-
-    const existingStops: StructuredJobPartInput[] = job.stops.map(s => ({
-      sequenceNumber:       s.sequenceNumber,
-      type:                 s.type,
-      savedLocationId:      s.savedLocationId,
-      siteName:             s.siteName,
-      unitName:             s.unitName,
-      street:               s.street,
-      town:                 s.town,
-      postcode:             s.postcode,
-      locationTextSnapshot: s.locationTextSnapshot,
-      lat:                  s.lat,
-      lng:                  s.lng,
-      gateLat:              s.gateLat,
-      gateLng:              s.gateLng,
-      timeWindowStart:      s.timeWindowStart,
-      timeWindowEnd:        s.timeWindowEnd,
-      contactName:          s.contactName,
-      contactPhone:         s.contactPhone,
-      referenceNumber:      s.referenceNumber,
-      instructions:         s.instructions,
-    }));
-
-    const stops: StructuredJobPartInput[] = Array.isArray(body.stops) ? body.stops : existingStops;
-
-    const saveMode = body.saveMode ?? (job.validationStatus === "ready_to_plan" ? "ready_to_plan" : "draft");
-    const vehicleCategory = body.vehicleCategory !== undefined ? body.vehicleCategory : job.vehicleCategory ?? "";
-    const minGvwClass     = body.minGvwClass     !== undefined ? body.minGvwClass     : job.minGvwClass ?? "";
-    const bodyTypes: string[] = Array.isArray(body.bodyTypes)
-      ? body.bodyTypes
-      : body.bodyType ? [body.bodyType]
-      : (Array.isArray(job.bodyTypes) ? job.bodyTypes.map(String) : []);
-    const equipment: string[] = Array.isArray(body.equipment)
-      ? body.equipment.map(String)
-      : (Array.isArray(job.equipment) ? job.equipment.map(String) : []);
-    const trailersAllowed: string[] = Array.isArray(body.trailersAllowed)
-      ? body.trailersAllowed.map(String)
-      : (Array.isArray(job.trailersAllowed) ? job.trailersAllowed.map(String) : []);
-
-    const loadDetailsForValidation: StructuredLoadDetailsInput = {
-      quantity:       body.quantity       !== undefined ? body.quantity       : job.quantity,
-      unit:           body.quantityUnit   !== undefined ? body.quantityUnit   : job.quantityUnit,
-      weight:         body.weight         !== undefined ? body.weight         : job.weight,
-      materialType:   body.goodsDescription !== undefined ? body.goodsDescription : job.goodsDescription,
-      hazardClass:    body.hazardClass    !== undefined ? body.hazardClass    : job.hazardClass,
-      goodsType:      body.goodsType      !== undefined ? body.goodsType      : job.goodsType,
-      fragile:        body.fragile        !== undefined ? body.fragile        : job.fragile,
-      stackable:      body.stackable      !== undefined ? body.stackable      : job.stackable,
-      tempControlled: body.tempControlled !== undefined ? body.tempControlled : job.tempControlled,
-    };
-
-    const effectiveCustomerId = body.customerId !== undefined ? body.customerId : job.customerId;
-
-    let patchCustomerName = job.customerName;
-    if (body.customerId !== undefined && body.customerId !== null) {
-      const customer = await prisma.customer.findFirst({ where: { id: body.customerId, companyId } });
-      if (!customer) return reply.status(400).send({ error: "Customer not found" });
-      patchCustomerName = customer.name;
-    } else if (body.customerId === null) {
-      patchCustomerName = body.customerName ?? "";
-    } else if (body.customerName !== undefined) {
-      patchCustomerName = body.customerName ?? "";
-    }
-
-    const structuredValidation = validateStructuredJob({
-      saveMode,
-      customerId:          effectiveCustomerId,
-      customerName:        patchCustomerName,
-      plannedDate:         body.plannedDate ?? job.plannedDate ?? undefined,
-      reqBodyCategory:     vehicleCategory,
-      reqGvwMin:           minGvwClass,
-      reqBodyType:         bodyTypes[0] ?? "",
-      reqEquipment:        equipment,
-      trailerTypesAllowed: trailersAllowed,
-      stops,
-      loadDetails:         loadDetailsForValidation,
-    });
-
-    if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
-      return reply.status(400).send({
-        error:    "Job is not ready to plan",
-        errors:   structuredValidation.errors,
-        warnings: structuredValidation.warnings,
-      });
-    }
-
-    const quality = scoreStructuredJob({ stops, loadDetails: loadDetailsForValidation });
-
-    const invalidStopLocationId = await findInvalidStopLocationId(prisma, companyId, stops);
-    if (invalidStopLocationId !== null) return reply.status(400).send({ error: "Invalid location reference in stops" });
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const jobReference = !job.jobReference
-        ? await generateJobReference(companyId, tx)
-        : undefined;
-
-      await tx.jobPart.deleteMany({ where: { jobId: id, companyId } });
-
-      if (stops.length > 0) {
-        await tx.jobPart.createMany({
-          data: stops.map(s => ({ jobId: id, ...buildStopData(s, companyId) })),
-        });
-      }
-
-      await tx.jobAudit.create({
-        data: {
-          companyId,
-          jobId:     id,
-          changedBy: userId,
-          action:    "updated",
-          field:     "job",
-          oldValue:  { validationStatus: job.validationStatus, qualityScore: job.qualityScore },
-          newValue:  { validationStatus: structuredValidation.validationStatus, qualityScore: quality.score },
-        },
-      });
-
-      return tx.job.update({
-        where: { id },
-        data: {
-          ...(jobReference !== undefined ? { jobReference } : {}),
-          customerId:          effectiveCustomerId ?? null,
-          customerName:        patchCustomerName,
-          plannerNotes:        body.plannerNotes ?? job.plannerNotes,
-          vehicleCategory,
-          minGvwClass,
-          bodyTypes:           bodyTypes.length > 0 ? (bodyTypes as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-          equipment,
-          trailersAllowed:     trailersAllowed.length > 0 ? (trailersAllowed as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-          priority:            body.priority ?? job.priority,
-          serviceType:         body.serviceType ?? job.serviceType,
-          customerRef:         body.customerRef ?? job.customerRef,
-          purchaseOrderNumber: body.purchaseOrderNumber ?? job.purchaseOrderNumber,
-          billingNotes:        body.billingNotes ?? job.billingNotes,
-          bookingContactName:  body.bookingContactName ?? job.bookingContactName,
-          bookingContactPhone: body.bookingContactPhone ?? job.bookingContactPhone,
-          bookingContactEmail: body.bookingContactEmail ?? job.bookingContactEmail,
-          custRefRequired:     body.custRefRequired ?? job.custRefRequired,
-          poRequired:          body.poRequired ?? job.poRequired,
-          vehicleAccessNotes:  body.vehicleAccessNotes ?? job.vehicleAccessNotes,
-          failureAction:       body.failureAction ?? job.failureAction,
-          assistancePhone:     body.assistancePhone ?? job.assistancePhone,
-          assistanceNote:      body.assistanceNote ?? job.assistanceNote,
-          approvalContactName:           body.approvalContactName           !== undefined ? body.approvalContactName           : job.approvalContactName,
-          approvalContactPhone:          body.approvalContactPhone          !== undefined ? body.approvalContactPhone          : job.approvalContactPhone,
-          alternativeReturnAddress:      body.alternativeReturnAddress      !== undefined ? body.alternativeReturnAddress      : job.alternativeReturnAddress,
-          alternativeReturnPostcode:     body.alternativeReturnPostcode     !== undefined ? body.alternativeReturnPostcode     : job.alternativeReturnPostcode,
-          alternativeReturnContactName:  body.alternativeReturnContactName  !== undefined ? body.alternativeReturnContactName  : job.alternativeReturnContactName,
-          alternativeReturnContactPhone: body.alternativeReturnContactPhone !== undefined ? body.alternativeReturnContactPhone : job.alternativeReturnContactPhone,
-          internalNotes:       body.internalNotes ?? job.internalNotes,
-          ...(body.billingData !== undefined ? { billingData: body.billingData as Prisma.InputJsonValue } : {}),
-          validationStatus:    structuredValidation.validationStatus,
-          qualityScore:        quality.score,
-          requirePOD:          body.requirePOD ?? job.requirePOD,
-          canSplitShipment:    body.canSplitShipment ?? job.canSplitShipment,
-          plannedDate:         body.plannedDate ? new Date(body.plannedDate) : job.plannedDate,
-          // Load details — flat columns directly on Job
-          goodsDescription:    body.goodsDescription    !== undefined ? body.goodsDescription    : job.goodsDescription ?? "",
-          goodsType:           body.goodsType           !== undefined ? body.goodsType           : job.goodsType ?? "",
-          quantity:            body.quantity            !== undefined ? toNullableNumber(body.quantity) : job.quantity,
-          quantityUnit:        body.quantityUnit        !== undefined ? body.quantityUnit        : job.quantityUnit ?? "",
-          weight:              body.weight              !== undefined ? toNullableNumber(body.weight) : job.weight,
-          volume:              body.volume              !== undefined ? toNullableNumber(body.volume) : job.volume,
-          dimensions:          body.dimensions          !== undefined ? body.dimensions          : job.dimensions ?? "",
-          fragile:             body.fragile             !== undefined ? body.fragile             : job.fragile,
-          stackable:           body.stackable           !== undefined ? body.stackable           : job.stackable,
-          tempControlled:      body.tempControlled      !== undefined ? body.tempControlled      : job.tempControlled,
-          tempRange:           body.tempRange           !== undefined ? body.tempRange           : job.tempRange ?? "",
-          hazardClass:         body.hazardClass         !== undefined ? body.hazardClass         : job.hazardClass ?? "",
-          photosRequired:      body.photosRequired      !== undefined ? body.photosRequired      : job.photosRequired,
-          weighbridgeRequired: body.weighbridgeRequired !== undefined ? body.weighbridgeRequired : job.weighbridgeRequired,
-          driverNoteChips:     body.driverNoteChips !== undefined
-            ? (Array.isArray(body.driverNoteChips) && body.driverNoteChips.length ? (body.driverNoteChips as Prisma.InputJsonValue) : Prisma.DbNull)
-            : (Array.isArray(job.driverNoteChips) && (job.driverNoteChips as string[]).length ? (job.driverNoteChips as unknown as Prisma.InputJsonValue) : Prisma.DbNull),
-          driverVisibleNotes:  body.driverVisibleNotes  !== undefined ? (body.driverVisibleNotes || null)  : job.driverVisibleNotes,
-          safetyInstructions:  body.safetyInstructions  !== undefined ? (body.safetyInstructions || null)  : job.safetyInstructions,
-          securingRequirements: body.securingRequirements !== undefined
-            ? (Array.isArray(body.securingRequirements) ? (body.securingRequirements as Prisma.InputJsonValue) : Prisma.DbNull)
-            : (Array.isArray(job.securingRequirements) ? (job.securingRequirements as unknown as Prisma.InputJsonValue) : Prisma.DbNull),
-          specialRequirements: body.specialRequirements !== undefined
-            ? (Array.isArray(body.specialRequirements) ? (body.specialRequirements as Prisma.InputJsonValue) : Prisma.DbNull)
-            : (Array.isArray(job.specialRequirements) ? (job.specialRequirements as unknown as Prisma.InputJsonValue) : Prisma.DbNull),
-        },
-        include: {
-          stops:  { orderBy: { sequenceNumber: "asc" } },
-          audits: { orderBy: { createdAt: "desc" }, take: 5 },
-        },
-      });
-    });
-
-    return reply.send({
-      ...updated,
-      validation: structuredValidation,
-      quality,
-    });
+    const result = await patchJob(prisma, { id, companyId, userId, body: parsed.data, job });
+    if (!result.ok) return reply.status(result.status).send(result);
+    return reply.send({ ...(result.job as object), validation: result.validation, quality: result.quality });
   });
 
   // ── DELETE /jobs/:id ──────────────────────────────────────────────────────
@@ -893,8 +274,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   });
 
   // ── PATCH /jobs/:id/stop-times — planner edits per-stop timing ───────────
-  // Driver/vehicle assignment is now on Run, not Job.
-  // This endpoint handles only stop-level timing fields.
   app.patch("/jobs/:id/stop-times", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseInt((request.params as { id: string }).id, 10);
     const { companyId, userId } = request.user!;
@@ -947,12 +326,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /jobs/:id/status — driver updates job status ────────────────────
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as UpdateJobStatusBody;
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const parsed = parseBody(UpdateJobStatusSchema, request.body);
+    if ("error" in parsed) return reply.status(400).send(parsed);
+    const body = parsed.data;
     const { companyId, userId, role } = request.user!;
-
-    const v = validateUpdateJobStatus(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
@@ -1003,13 +381,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(400).send({ error: "BAD_REQUEST", message: "gpsLat and gpsLng must be provided together" });
     }
 
-    if (body.gpsLat !== undefined && (typeof body.gpsLat !== "number" || !Number.isFinite(body.gpsLat) || body.gpsLat < -90 || body.gpsLat > 90)) {
-      return reply.status(400).send({ error: "BAD_REQUEST", message: "gpsLat must be a number between -90 and 90" });
-    }
-    if (body.gpsLng !== undefined && (typeof body.gpsLng !== "number" || !Number.isFinite(body.gpsLng) || body.gpsLng < -180 || body.gpsLng > 180)) {
-      return reply.status(400).send({ error: "BAD_REQUEST", message: "gpsLng must be a number between -180 and 180" });
-    }
-
     await prisma.$transaction([
       prisma.job.update({ where: { id }, data: { status: body.status } }),
       prisma.jobExecutionEvent.create({
@@ -1032,12 +403,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /jobs/:id/note ───────────────────────────────────────────────────
   app.post("/jobs/:id/note", { preHandler: authenticate }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
-    const body = request.body as AddJobNoteBody;
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const parsed = parseBody(AddJobNoteSchema, request.body);
+    if ("error" in parsed) return reply.status(400).send(parsed);
+    const body = parsed.data;
     const { companyId, userId } = request.user!;
-
-    const v = validateAddJobNote(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
     const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
@@ -1057,70 +427,5 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.status(201).send({ ok: true });
   });
 
-  // ── GET /drivers/:driverId/schedule ─────────────────────────────────────────
-  app.get<{ Params: { driverId: string }; Querystring: { date?: string } }>(
-    "/drivers/:driverId/schedule",
-    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
-    async (req, reply) => {
-      const companyId = req.user!.companyId;
-      const driverId  = parseInt(req.params.driverId, 10);
-      const date      = req.query.date;
-
-      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return reply.status(400).send({ error: "date query param required (YYYY-MM-DD)" });
-      }
-
-      const driver = await prisma.driverProfile.findFirst({
-        where:  { id: driverId, companyId },
-        select: { id: true, preferredStartTime: true, earliestStartTime: true },
-      });
-      if (!driver) return reply.status(404).send({ error: "Driver not found" });
-
-      // Find all jobs this driver has RunAssignments for on the given date
-      const dayStart = new Date(`${date}T00:00:00`);
-      const dayEnd   = new Date(`${date}T23:59:59`);
-
-      const assignments = await prisma.runAssignment.findMany({
-        where: { companyId, removedAt: null, run: { assignedDriverId: driverId } },
-        select: { jobId: true },
-        distinct: ["jobId"],
-      });
-      const jobIds = assignments.map(a => a.jobId);
-
-      const jobs = await prisma.job.findMany({
-        where: {
-          companyId,
-          id:          { in: jobIds },
-          plannedDate: { gte: dayStart, lte: dayEnd },
-          status:      { notIn: ["cancelled"] },
-        },
-        include: { stops: { orderBy: { sequenceNumber: "asc" } } },
-        orderBy: { id: "asc" },
-      });
-
-      const stops: ScheduleStop[] = [];
-      for (const job of jobs) {
-        for (const s of job.stops) {
-          stops.push({
-            jobId:          job.id,
-            jobReference:   job.jobReference,
-            stopSequence:   s.sequenceNumber,
-            type:           s.type,
-            postcode:       s.postcode || null,
-            lat:            s.lat,
-            lng:            s.lng,
-            windowStart:    s.timeWindowStart?.toISOString() ?? null,
-            windowEnd:      s.timeWindowEnd?.toISOString()   ?? null,
-            bookedTime:     s.bookedTime?.toISOString()      ?? null,
-            serviceMinutes: s.unloadingAllowanceMinutes ?? 30,
-          });
-        }
-      }
-
-      const dayStart24 = driver.earliestStartTime ?? driver.preferredStartTime ?? "06:00";
-      const result = await checkDayFeasibility(driverId, date, stops, dayStart24);
-
-      return reply.send(result);
-    },
-  );
 }
+

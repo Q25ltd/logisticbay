@@ -1,145 +1,157 @@
 import { z } from "zod";
 
+// ── Stop (JobPart) schema ─────────────────────────────────────────────────────
+
 const JobPartSchema = z.object({
-  sequenceNumber:             z.number().int().min(0),
-  type:                       z.string().min(1),
-  savedLocationId:            z.number().int().nullable().optional(),
-  siteName:                   z.string().optional(),
-  unitName:                   z.string().optional(),
-  street:                     z.string().optional(),
-  town:                       z.string().optional(),
-  postcode:                   z.string().optional(),
-  locationTextSnapshot:       z.string().default(""),
-  lat:                        z.number().nullable().optional(),
-  lng:                        z.number().nullable().optional(),
-  gateLat:                    z.number().nullable().optional(),
-  gateLng:                    z.number().nullable().optional(),
-  timeWindowStart:            z.string().nullable().optional(),
-  timeWindowEnd:              z.string().nullable().optional(),
-  bookedTime:                 z.string().nullable().optional(),
-  earliestArrivalMinutes:     z.number().int().nullable().optional(),
-  unloadingAllowanceMinutes:  z.number().int().nullable().optional(),
-  standingChargeNote:         z.string().optional(),
-  contactName:                z.string().optional(),
-  contactPhone:               z.string().optional(),
-  referenceNumber:            z.string().optional(),
-  instructions:               z.string().optional(),
-  contactEmail:               z.string().optional(),
-  bookingRequired:            z.boolean().optional(),
-  bookingRef:                 z.string().optional(),
-  openingHours:               z.string().optional(),
-  locationType:               z.string().optional(),
-  navigationInstructions:     z.string().optional(),
-  numPallets:                 z.number().int().nullable().optional(),
-  internalNotes:              z.string().optional(),
-  country:                    z.string().optional(),
-  addressLine2:               z.string().optional(),
-  countyRegion:               z.string().optional(),
-  // New form-parity fields
-  quantityRequired:           z.number().nullable().optional(),
-  quantityUnit:               z.string().optional(),
-  exchangeDropQty:            z.number().nullable().optional(),
-  exchangeCollectQty:         z.number().nullable().optional(),
-  exchangeUnit:               z.string().optional(),
-  handlingMethods:            z.array(z.string()).nullable().optional(),
-  accessRequirements:         z.array(z.string()).nullable().optional(),
-  proofRequirements:          z.array(z.string()).nullable().optional(),
-  loadReadiness:              z.string().optional(),
-  stopNotes:                  z.string().optional(),
-});
+  sequenceNumber:            z.number().int().min(1),
+  type:                      z.string().min(1),
+  savedLocationId:           z.number().int().nullable().optional(),
+  siteName:                  z.string().optional(),
+  unitName:                  z.string().optional(),
+  street:                    z.string().optional(),
+  addressLine2:              z.string().optional(),
+  town:                      z.string().optional(),
+  countyRegion:              z.string().optional(),
+  postcode:                  z.string().optional(),
+  country:                   z.string().optional(),
+  locationTextSnapshot:      z.string().default(""),
+  lat:                       z.number().nullable().optional(),
+  lng:                       z.number().nullable().optional(),
+  gateLat:                   z.number().nullable().optional(),
+  gateLng:                   z.number().nullable().optional(),
+  timeWindowStart:           z.string().nullable().optional(),
+  timeWindowEnd:             z.string().nullable().optional(),
+  bookedTime:                z.string().nullable().optional(),
+  unloadingAllowanceMinutes: z.number().int().nullable().optional(),
+  contactName:               z.string().optional(),
+  contactPhone:              z.string().optional(),
+  contactEmail:              z.string().optional(),
+  referenceNumber:           z.string().optional(),
+  bookingRequired:           z.boolean().optional(),
+  bookingRef:                z.string().optional(),
+  openingHours:              z.string().optional(),
+  locationType:              z.string().optional(),
+  instructions:              z.string().optional(),
+  navigationInstructions:    z.string().optional(),
+  internalNotes:             z.string().optional(),
+  quantityRequired:          z.number().nullable().optional(),
+  quantityUnit:              z.string().optional(),
+  exchangeDropQty:           z.number().nullable().optional(),
+  exchangeCollectQty:        z.number().nullable().optional(),
+  exchangeUnit:              z.string().optional(),
+  handlingMethods:           z.array(z.string()).nullable().optional(),
+  accessRequirements:        z.array(z.string()).nullable().optional(),
+  proofRequirements:         z.array(z.string()).nullable().optional(),
+  loadReadiness:             z.string().optional(),
+  stopNotes:                 z.string().optional(),
+  heightRestriction:         z.string().optional(),
+  weightRestriction:         z.string().optional(),
+  lengthRestriction:         z.string().optional(),
+  // legacy compat — still accepted but not read by new route code
+  numPallets:                z.number().int().nullable().optional(),
+  earliestArrivalMinutes:    z.number().int().nullable().optional(),
+}).strip();
 
-const LoadDetailsSchema = z.object({
-  quantity:           z.union([z.number(), z.string(), z.null()]).optional(),
-  unit:               z.string().optional(),
-  weight:             z.union([z.number(), z.string(), z.null()]).optional(),
-  volume:             z.union([z.number(), z.string(), z.null()]).optional(),
-  materialType:       z.string().optional(),
-  hazardClass:        z.string().optional(),
-  notes:              z.string().optional(),
-  dimensions:         z.string().optional(),
-  fragile:            z.boolean().optional(),
-  stackable:          z.boolean().optional(),
-  tempControlled:     z.boolean().optional(),
-  tempRange:          z.string().optional(),
-  photosRequired:     z.boolean().optional(),
-  weighbridgeRequired:z.boolean().optional(),
-  forkliftRequired:   z.boolean().optional(),
-  tailLiftRequired:   z.boolean().optional(),
-  craneRequired:      z.boolean().optional(),
-  loadingMethod:       z.string().optional(),
-  unloadingMethod:     z.string().optional(),
-  goodsType:           z.string().optional(),
-  securingRequirements:z.array(z.string()).nullable().optional(),
-  specialRequirements: z.array(z.string()).nullable().optional(),
-});
+// ── Job base schema (fields both CJP and PRF can set) ─────────────────────────
 
-const JobCommonFields = z.object({
-  customerId:               z.number().int().nullable().optional(),
-  customerName:             z.string().optional(),
-  assignedDriverId:         z.number().int().nullable().optional(),
-  plannedDate:              z.string().optional(),
-  templateId:               z.number().int().optional(),
-  pickupLocationId:         z.number().int().optional(),
-  dropoffLocationId:        z.number().int().optional(),
-  pickupTextSnapshot:       z.string().optional(),
-  dropoffTextSnapshot:      z.string().optional(),
-  referenceNumber:          z.string().optional(),
-  materialType:             z.string().optional(),
-  quantityExpected:         z.string().optional(),
-  quantityUnit:             z.string().optional(),
-  plannerNotes:             z.string().optional(),
-  assignedTruck:            z.string().optional(),
-  assignedTrailer:          z.string().optional(),
-  vehicleClass:             z.string().optional(),
-  vehicleClassRequired:     z.string().optional(),
-  reqBodyCategory:          z.string().optional(),
-  reqGvwMin:                z.string().optional(),
-  reqBodyType:              z.string().optional(),
-  reqEquipment:             z.array(z.string()).optional(),
-  reqLicenceClass:          z.string().optional(),
-  trailerTypesAllowed:      z.array(z.string()).optional(),
-  priority:                 z.enum(["low", "normal", "high", "urgent"]).optional(),
-  serviceType:              z.string().optional(),
-  internalNotes:            z.string().optional(),
-  stops:                    z.array(JobPartSchema).optional(),
-  loadDetails:              LoadDetailsSchema.nullable().optional(),
-  saveMode:                 z.enum(["draft", "ready_to_plan"]).optional(),
-  requireCollection:        z.boolean().optional(),
-  requirePOD:               z.boolean().optional(),
-  canSplitShipment:         z.string().optional(),
-  requireDeliveryQty:       z.boolean().optional(),
-  sequence:                 z.number().int().optional(),
-  jobType:                  z.string().optional(),
-  jobTitle:                 z.string().optional(),
-  customerRef:              z.string().optional(),
-  purchaseOrderNumber:      z.string().optional(),
-  bookingContactName:       z.string().optional(),
-  bookingContactPhone:      z.string().optional(),
-  bookingContactEmail:      z.string().optional(),
-  billingNotes:             z.string().optional(),
-  customerInstructions:     z.string().optional(),
-  custRefRequired:          z.boolean().optional(),
-  poRequired:               z.boolean().optional(),
-  minVehicleSize:           z.string().optional(),
-  equipmentRequired:        z.array(z.string()).optional(),
-  driverQualificationsReq:  z.array(z.string()).optional(),
-  heightRestriction:        z.string().optional(),
-  weightRestriction:        z.string().optional(),
-  lengthRestriction:        z.string().optional(),
-  vehicleAccessNotes:       z.string().optional(),
-  failureAction:            z.string().optional(),
-  assistancePhone:          z.string().optional(),
-  assistanceNote:           z.string().optional(),
-  returnDestination:        z.string().optional(),
-  altAddress:               z.record(z.string(), z.unknown()).nullable().optional(),
-});
+const JobCreateBaseSchema = z.object({
+  // Identity & customer
+  customerId:              z.number().int().nullable().optional(),
+  customerName:            z.string().optional(),
+  customerRef:             z.string().optional(),
+  purchaseOrderNumber:     z.string().optional(),
+  jobTitle:                z.string().nullable().optional(),
+  priority:                z.enum(["low", "normal", "high", "urgent"]).optional(),
+  serviceType:             z.string().optional(),
+  jobType:                 z.string().optional(),
+  canSplitShipment:        z.string().optional(),
+  templateId:              z.number().int().optional(),
 
-export const CreateJobSchema = JobCommonFields.extend({
+  // Booking contact
+  bookingContactName:      z.string().optional(),
+  bookingContactPhone:     z.string().optional(),
+  bookingContactEmail:     z.string().optional(),
+
+  // Billing
+  billingReference:        z.string().nullable().optional(),
+  billingNotes:            z.string().optional(),
+  declaredGoodsValue:      z.string().nullable().optional(),
+  custRefRequired:         z.boolean().optional(),
+  poRequired:              z.boolean().optional(),
+
+  // Load
+  goodsType:               z.string().optional(),
+  goodsDescription:        z.string().optional(),
+  quantity:                z.number().nullable().optional(),
+  quantityUnit:            z.string().optional(),
+  weight:                  z.number().nullable().optional(),
+  volume:                  z.number().nullable().optional(),
+  dimensions:              z.string().optional(),
+  fragile:                 z.boolean().optional(),
+  stackable:               z.boolean().optional(),
+  tempControlled:          z.boolean().optional(),
+  tempRange:               z.string().optional(),
+  hazardClass:             z.string().optional(),
+  photosRequired:          z.boolean().optional(),
+  weighbridgeRequired:     z.boolean().optional(),
+  securingRequirements:    z.array(z.string()).nullable().optional(),
+  specialRequirements:     z.array(z.string()).nullable().optional(),
+
+  // Vehicle requirements
+  vehicleCategory:         z.string().optional(),
+  bodyTypes:               z.array(z.string()).nullable().optional(),
+  minGvwClass:             z.string().optional(),
+  equipment:               z.array(z.string()).nullable().optional(),
+  trailersAllowed:         z.array(z.string()).nullable().optional(),
+  vehicleAccessNotes:      z.string().optional(),
+
+  // Exception policy
+  failureAction:           z.string().optional(),
+  assistancePhone:         z.string().nullable().optional(),
+  assistanceNote:          z.string().nullable().optional(),
+  approvalContactName:     z.string().nullable().optional(),
+  approvalContactPhone:    z.string().nullable().optional(),
+  alternativeReturnAddress:      z.string().nullable().optional(),
+  alternativeReturnPostcode:     z.string().nullable().optional(),
+  alternativeReturnContactName:  z.string().nullable().optional(),
+  alternativeReturnContactPhone: z.string().nullable().optional(),
+
+  // Proof
+  requirePOD:              z.boolean().optional(),
+
+  // Driver-visible notes
+  driverNoteChips:         z.array(z.string()).nullable().optional(),
+  driverVisibleNotes:      z.string().nullable().optional(),
+  safetyInstructions:      z.string().nullable().optional(),
+
+  // Stops
+  stops:                   z.array(JobPartSchema).optional(),
+}).strip();
+
+// ── CJP variant — adds planner-only fields ────────────────────────────────────
+
+export const CreateJobSchema = JobCreateBaseSchema.extend({
+  saveMode:       z.enum(["draft", "ready_to_plan"]).optional(),
+  plannedDate:    z.string().nullable().optional(),
+  plannerNotes:   z.string().nullable().optional(),
+  internalNotes:  z.string().nullable().optional(),
   saveAsTemplate: z.boolean().optional(),
   templateName:   z.string().optional(),
-});
+  agreedRate:     z.number().nullable().optional(),
+}).strip();
 
-export const PatchJobSchema = JobCommonFields;
+// ── PATCH variant — all fields optional ───────────────────────────────────────
+
+export const PatchJobSchema = JobCreateBaseSchema.extend({
+  saveMode:      z.enum(["draft", "ready_to_plan"]).optional(),
+  plannedDate:   z.string().nullable().optional(),
+  plannerNotes:  z.string().nullable().optional(),
+  internalNotes: z.string().nullable().optional(),
+  status:        z.string().optional(),
+  billingData:   z.record(z.string(), z.unknown()).nullable().optional(),
+}).strip();
+
+// ── Status update, note ───────────────────────────────────────────────────────
 
 export const UpdateJobStatusSchema = z.object({
   status:          z.string().min(1, "Status is required"),
@@ -159,7 +171,7 @@ export const AddJobNoteSchema = z.object({
   note: z.string().min(1, "Note cannot be empty"),
 });
 
-export type CreateJobBody        = z.infer<typeof CreateJobSchema>;
-export type PatchJobBody         = z.infer<typeof PatchJobSchema>;
-export type UpdateJobStatusBody  = z.infer<typeof UpdateJobStatusSchema>;
-export type AddJobNoteBody       = z.infer<typeof AddJobNoteSchema>;
+export type CreateJobInput        = z.infer<typeof CreateJobSchema>;
+export type PatchJobInput         = z.infer<typeof PatchJobSchema>;
+export type UpdateJobStatusInput  = z.infer<typeof UpdateJobStatusSchema>;
+export type AddJobNoteInput       = z.infer<typeof AddJobNoteSchema>;
