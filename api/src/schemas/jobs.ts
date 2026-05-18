@@ -161,7 +161,7 @@ export const UpdateJobStatusSchema = z.object({
   collectionNote:  z.string().optional(),
   podNumber:       z.string().optional(),
   deliveryNote:    z.string().optional(),
-  clientEventId:   z.string().uuid("clientEventId must be a UUID").optional(),
+  clientEventId:   z.string().min(1).optional(),
   clientTimestamp: z.string().optional(),
   gpsLat:          z.number().min(-90).max(90).optional(),
   gpsLng:          z.number().min(-180).max(180).optional(),
