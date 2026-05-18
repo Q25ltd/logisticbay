@@ -48,6 +48,7 @@ export const CreateDriverSchema = DriverPlanningFields.extend({
 
 export const PatchDriverSchema = DriverPlanningFields.extend({
   displayName:          z.string().min(1).max(200).optional(),
+  email:                z.string().email().optional(),
   employeeNumber:       z.string().optional(),
   phoneNumber:          z.string().optional(),
   defaultTruckReg:      z.string().optional(),
