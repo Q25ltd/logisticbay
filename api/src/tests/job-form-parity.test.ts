@@ -68,6 +68,7 @@ async function cleanup(companyIds: number[], userIds: number[]) {
 const SHARED_PAYLOAD = {
   customerName:        "Parity Test Ltd",
   customerRef:         "PARITY-001",
+  serviceType:         "multi_drop",
   purchaseOrderNumber: "PO-2026-TEST",
   bookingContactName:  "Alice Smith",
   bookingContactPhone: "07700000001",

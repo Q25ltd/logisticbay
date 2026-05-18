@@ -78,7 +78,14 @@ function buildPRFJobData(
     tempRange:           b.tempRange?.trim()           || null,
     hazardClass:         b.hazardClass?.trim()         || null,
     priority:            b.priority            ?? "normal",
-    serviceType:         b.serviceType?.trim()          || null,
+    serviceType:         (() => {
+      const ss = b.stops ?? [];
+      const hasCollection = ss.some(s => s.type === "collection" || s.type === "pickup");
+      const hasDelivery   = ss.some(s => s.type === "delivery"   || s.type === "dropoff");
+      if (hasCollection && hasDelivery) return "multi_drop";
+      if (hasCollection) return "collection";
+      return "delivery";
+    })(),
     jobType:             b.jobType?.trim()              || null,
     custRefRequired:     b.custRefRequired     ?? false,
     poRequired:          b.poRequired          ?? false,
@@ -95,12 +102,12 @@ function buildPRFJobData(
     vehicleCategory:     b.vehicleCategory?.trim()     || null,
     bodyTypes:           toJson(b.bodyTypes),
     minGvwClass:         b.minGvwClass?.trim()          || null,
-    equipment:           b.equipment           ?? [],
+    equipment:           toJson(b.equipment),
     trailersAllowed:     toJson(b.trailersAllowed),
     vehicleAccessNotes:  b.vehicleAccessNotes?.trim()  || null,
     driverNoteChips:     toJson(b.driverNoteChips),
-    driverVisibleNotes:  b.driverVisibleNotes  ?? null,
-    safetyInstructions:  b.safetyInstructions  ?? null,
+    driverVisibleNotes:  b.driverVisibleNotes?.trim()  || null,
+    safetyInstructions:  b.safetyInstructions?.trim()  || null,
     failureAction:       b.failureAction        ?? "call_assistance",
     assistancePhone:     b.assistancePhone?.trim()      || null,
     assistanceNote:      b.assistanceNote?.trim()       || null,
@@ -111,6 +118,7 @@ function buildPRFJobData(
     alternativeReturnContactName:  b.alternativeReturnContactName?.trim()  || null,
     alternativeReturnContactPhone: b.alternativeReturnContactPhone?.trim() || null,
     canSplitShipment:    b.canSplitShipment ?? "must_stay_together",
+    internalNotes:       null,
     stops: { create: b.stops!.map(s => buildStopData(s, link.companyId)) },
   };
 }

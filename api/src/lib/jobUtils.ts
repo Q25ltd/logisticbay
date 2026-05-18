@@ -61,9 +61,10 @@ export function buildStopData(s: StructuredJobPartInput, companyId: number) {
     proofRequirements:         Array.isArray(s.proofRequirements) ? (s.proofRequirements as Prisma.InputJsonValue) : undefined,
     loadReadiness:             typeof s.loadReadiness === "string" ? (s.loadReadiness.trim() || null) : null,
     stopNotes:                 typeof s.stopNotes === "string" ? (s.stopNotes.trim() || null) : null,
-    heightRestriction:         typeof s.heightRestriction === "string" ? (s.heightRestriction.trim() || null) : null,
-    weightRestriction:         typeof s.weightRestriction === "string" ? (s.weightRestriction.trim() || null) : null,
-    lengthRestriction:         typeof s.lengthRestriction === "string" ? (s.lengthRestriction.trim() || null) : null,
+    heightRestriction:         typeof s.heightRestriction    === "string" ? (s.heightRestriction.trim()    || null) : null,
+    weightRestriction:         typeof s.weightRestriction    === "string" ? (s.weightRestriction.trim()    || null) : null,
+    lengthRestriction:         typeof s.lengthRestriction    === "string" ? (s.lengthRestriction.trim()    || null) : null,
+    standingChargeNote:        typeof s.standingChargeNote   === "string" ? (s.standingChargeNote.trim()   || null) : null,
     status:                    "pending",
   };
 }
