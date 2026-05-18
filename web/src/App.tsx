@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthCtx, useAuthProvider } from "./hooks/useAuth";
 import LandingPage      from "./modules/landing/LandingPage";
 import LoginPage        from "./modules/auth/LoginPage";
@@ -43,8 +44,8 @@ export default function App() {
           <Route path="/login"    element={auth.user ? <Navigate to="/app/dashboard" replace /> : <LoginPage onLogin={auth.refresh} />} />
           <Route path="/register" element={auth.user ? <Navigate to="/app/dashboard" replace /> : <RegisterPage onLogin={auth.refresh} />} />
           {/* Public intake form — no auth required */}
-          <Route path="/request/:token" element={<PublicRequestForm />} />
-          <Route path="/app" element={auth.user ? <AppShell /> : <Navigate to="/login" replace />}>
+          <Route path="/request/:token" element={<ErrorBoundary><PublicRequestForm /></ErrorBoundary>} />
+          <Route path="/app" element={auth.user ? <ErrorBoundary><AppShell /></ErrorBoundary> : <Navigate to="/login" replace />}>
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard"    element={<DashboardPage />} />
             <Route path="jobs"         element={<JobsPage />} />

@@ -271,21 +271,42 @@ export interface RequestLink {
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://192.168.0.45:3000";
 
+const PUBLIC_TIMEOUT_MS = 30_000;
+
 async function publicGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
-  return res.json() as Promise<T>;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PUBLIC_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.json() as Promise<T>;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw new Error("Request timed out. Please try again.");
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function publicPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error ?? res.statusText), { errors: data.errors });
-  return data as T;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PUBLIC_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+      signal:  controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error ?? res.statusText), { errors: data.errors });
+    return data as T;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw new Error("Request timed out. Please try again.");
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const jobRequestsPublicApi = {

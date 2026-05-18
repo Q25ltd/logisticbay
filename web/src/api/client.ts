@@ -52,20 +52,30 @@ async function refreshSession(): Promise<boolean> {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function request<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
   const token = getToken();
   let res: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method,
+      signal: controller.signal,
       headers: {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
     throw new Error("Cannot connect to server. Check your connection.");
+  } finally {
+    clearTimeout(timeoutId);
   }
   if (res.status === 401) {
     if (retry && shouldRefresh(path) && await refreshSession()) {

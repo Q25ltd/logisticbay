@@ -24,6 +24,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
 import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
+import { findInvalidStopLocationId } from "../services/jobValidation.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -146,7 +147,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   });
 
   // ── POST /public/request/:token ────────────────────────────────────────────
-  app.post("/public/request/:token", async (request, reply) => {
+  app.post("/public/request/:token", {
+    config: { rateLimit: { max: 10, timeWindow: "10 minutes" } },
+  }, async (request, reply) => {
     const { token } = request.params as { token: string };
     const tokenHash = hashToken(token);
 
@@ -176,6 +179,12 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       orderBy: { id: "asc" },
     });
     if (!membership) return reply.status(500).send({ error: "Company has no active planner account" });
+
+    // ── IDOR guard: validate every savedLocationId against this company ───────
+    const invalidLocId = await findInvalidStopLocationId(prisma, link.companyId, b.stops!);
+    if (invalidLocId !== null) {
+      return reply.status(400).send({ error: "Invalid location reference in stops" });
+    }
 
     // ── Transaction: create Job + JobParts, update link stats ────────────────
     const job = await prisma.$transaction(async (tx) => {
