@@ -990,8 +990,10 @@ model ClientRequestLink {
   companyId   Int
   customerId  Int?
   name        String                        // human label, e.g. "Acme Haulage standing link"
-  tokenHash   String    @unique             // SHA-256 of the raw token — never store raw
+  tokenHash   String    @unique             // SHA-256 of the raw token — used for fast lookups
+  rawToken    String?                       // the raw token, stored so it can always be shown again
   isActive    Boolean   @default(true)
+  isMain      Boolean   @default(false)     // true for the one auto-created company-wide link
   expiresAt   DateTime?
   lastUsedAt  DateTime?
   usageCount  Int       @default(0)

@@ -272,6 +272,8 @@ export interface RequestLink {
   customerId:   number | null;
   name:         string;
   tokenHash:    string;
+  rawToken:     string | null;
+  isMain:       boolean;
   isActive:     boolean;
   expiresAt:    string | null;
   lastUsedAt:   string | null;
@@ -279,7 +281,6 @@ export interface RequestLink {
   createdAt:    string;
   customer:     { id: number; name: string } | null;
   templateData: Record<string, unknown> | null;
-  rawToken?:    string; // only returned on create
 }
 
 // ── Public (no-auth) helpers ──────────────────────────────────────────────────
@@ -339,6 +340,8 @@ export const jobRequestsApi = {
     api.post<RequestLink>("/request-links", body),
   updateLink:  (id: number, body: { name?: string; isActive?: boolean; expiresAt?: string | null; templateData?: Record<string, unknown> | null }) =>
     api.patch<RequestLink>(`/request-links/${id}`, body),
+  regenerateLink: (id: number) =>
+    api.post<RequestLink>(`/request-links/${id}/regenerate`, {}),
 
   list:    (status?: string, page?: number) =>
     api.get<{ data: import("../types").Job[]; total: number; page: number; pages: number }>(
