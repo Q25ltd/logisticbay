@@ -216,6 +216,21 @@ export interface SubmitRequestBody {
   alternativeReturnPostcode?:   string;
   alternativeReturnContactName?:  string;
   alternativeReturnContactPhone?: string;
+  // Extended alternative return address
+  alternativeReturnSiteName?:              string;
+  alternativeReturnAddressLine2?:          string;
+  alternativeReturnTown?:                  string;
+  alternativeReturnCounty?:                string;
+  alternativeReturnCountry?:               string;
+  alternativeReturnLat?:                   number;
+  alternativeReturnLng?:                   number;
+  alternativeReturnNavigationInstructions?: string;
+  // Rejection policy
+  photosRequiredOnRejection?:              boolean;
+  rejectionSignatureRequired?:             boolean;
+  rejectionNotes?:                         string;
+  // Goods sub-type details blob
+  loadData?:                               Record<string, unknown>;
 }
 
 export interface JobRequest {

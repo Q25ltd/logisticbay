@@ -1333,6 +1333,67 @@ export default function PublicRequestForm() {
     const isTempControlled     = !!(resolvedTempRange);
     const isFragile            = specialItems.includes("fragile");
 
+    // Build goods sub-type details blob
+    const loadDataBlob: Record<string, unknown> = {
+      loadHeight:             loadHeight.trim() || undefined,
+      loadNotes:              loadNotes.trim()  || undefined,
+      // pallets
+      palletCount:            palletCount  ? parseInt(palletCount, 10)  : undefined,
+      palletType:             palletType   || undefined,
+      palletTypeOther:        palletType === "other" ? (palletTypeOther.trim() || undefined) : undefined,
+      stackable:              stackable    || undefined,
+      // roll cages
+      cageCount:              cageCount    ? parseInt(cageCount, 10)    : undefined,
+      cageFolded:             cageFolded   || undefined,
+      // machinery
+      machineryPieceWeight:   machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
+      liftingPoints:          machineryLiftingPoints || undefined,
+      skidMounted:            machinerySkidMounted   || undefined,
+      craneRequired:          craneRequired          || undefined,
+      // building materials
+      buildingMaterialType:   buildingMaterialType           || undefined,
+      buildingPalletised:     buildingMaterialPalletised     || undefined,
+      longestItem:            buildingMaterialLongestItem    || undefined,
+      weatherSensitive:       buildingMaterialWeatherSensitive || undefined,
+      // food / refrigerated
+      chilledFrozenAmbient:   tempType    || undefined,
+      temperatureRange:       tempRange   || undefined,
+      foodPreCooled:          foodPreCooled || undefined,
+      // bulk material
+      tippingRequired:        tippingReq  || undefined,
+      wetDry:                 wetDry      || undefined,
+      // liquid bulk
+      liquidProductType:      liquidProductType  || undefined,
+      liquidVolumeLitres:     liquidVolumeLitres ? parseFloat(liquidVolumeLitres) : undefined,
+      // steel / long
+      steelPieceCount:        steelPieceCount ? parseInt(steelPieceCount, 10) : undefined,
+      steelWidth:             steelWidth || undefined,
+      // vehicles
+      vehicleCount:           vehicleCount ? parseInt(vehicleCount, 10) : undefined,
+      vehicleMakeModel:       vehicleMakeModel || undefined,
+      vehicleKeysWithVehicle: vehicleKeysWithVehicle || undefined,
+      vehicleDriveable:       driveable   || undefined,
+      // containers
+      containerSize:          containerSize     || undefined,
+      containerSizeOther:     containerSize === "other" ? (containerSizeOther || undefined) : undefined,
+      loadedOrEmpty:          loadedOrEmpty     || undefined,
+      containerNum:           containerNum      || undefined,
+      // general goods
+      generalPackagingType:   generalPackagingType || undefined,
+      generalPieceCount:      generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
+      // hazmat / ADR
+      unNumber:               unNumber.trim()     || undefined,
+      packingGroup:           packingGroup.trim() || undefined,
+      hazardousQuantityKg:    hazardousQuantityKg ? parseFloat(hazardousQuantityKg) : undefined,
+      hazardousPaperworkAvailable: hazardousPaperworkAvailable || undefined,
+      // oversized
+      oversizedWidth:         oversizedWidth.trim()  || undefined,
+      oversizedHeight:        oversizedHeight.trim() || undefined,
+      oversizedLength:        oversizedLength.trim() || undefined,
+    };
+    // Remove keys with undefined values
+    Object.keys(loadDataBlob).forEach(k => loadDataBlob[k] === undefined && delete loadDataBlob[k]);
+
     const body: SubmitRequestBody = {
       // Customer
       customerName:         customerName.trim(),
@@ -1384,6 +1445,21 @@ export default function PublicRequestForm() {
       alternativeReturnPostcode:        alternativeReturnPostcode.trim()     || undefined,
       alternativeReturnContactName:     alternativeReturnContactName.trim()  || undefined,
       alternativeReturnContactPhone:    alternativeReturnContactPhone.trim() || undefined,
+      // Extended alternative return address
+      alternativeReturnSiteName:        alternativeReturnSiteName.trim()        || undefined,
+      alternativeReturnAddressLine2:    alternativeReturnAddressLine2.trim()    || undefined,
+      alternativeReturnTown:            alternativeReturnTown.trim()            || undefined,
+      alternativeReturnCounty:          alternativeReturnCounty.trim()          || undefined,
+      alternativeReturnCountry:         alternativeReturnCountry !== "GB" ? alternativeReturnCountry : undefined,
+      alternativeReturnLat:             alternativeReturnLat ? parseFloat(alternativeReturnLat) : undefined,
+      alternativeReturnLng:             alternativeReturnLng ? parseFloat(alternativeReturnLng) : undefined,
+      alternativeReturnNavigationInstructions: alternativeReturnNavInstructions.trim() || undefined,
+      // Rejection policy
+      photosRequiredOnRejection:        photosRequiredOnRejection || undefined,
+      rejectionSignatureRequired:       rejectionSignatureRequired || undefined,
+      rejectionNotes:                   rejectionNotes.trim() || undefined,
+      // Goods sub-type details
+      loadData: Object.keys(loadDataBlob).length > 0 ? loadDataBlob : undefined,
     };
 
     setSubmitting(true);

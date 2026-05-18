@@ -349,7 +349,7 @@ model Job {
   weighbridgeRequired  Boolean @default(false)
   securingRequirements Json?   // string[]
   specialRequirements  Json?   // string[]
-  // loadData dropped — goods sub-type details belong in dedicated columns, not a blob
+  loadData             Json?   // goods-type sub-details blob (pallets, cages, machinery, containers, etc.)
 
   // ── vehicle requirements ──────────────────────────────────────────────────
   // What the job NEEDS — system checks against fleet/driver at assignment time.
@@ -370,6 +370,17 @@ model Job {
   alternativeReturnPostcode     String?
   alternativeReturnContactName  String?
   alternativeReturnContactPhone String?
+  alternativeReturnSiteName              String?
+  alternativeReturnAddressLine2          String?
+  alternativeReturnTown                  String?
+  alternativeReturnCounty                String?
+  alternativeReturnCountry               String?
+  alternativeReturnLat                   Float?
+  alternativeReturnLng                   Float?
+  alternativeReturnNavigationInstructions String?
+  photosRequiredOnRejection   Boolean @default(false)
+  rejectionSignatureRequired  Boolean @default(false)
+  rejectionNotes              String?
 
   // ── proof / quality ───────────────────────────────────────────────────────
   requirePOD       Boolean @default(false)

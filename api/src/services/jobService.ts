@@ -201,6 +201,18 @@ export async function createJob(
         jobType:             body.jobType?.trim()             || null,
         billingReference:    body.billingReference?.trim()    || null,
         declaredGoodsValue:  body.declaredGoodsValue?.trim()  || null,
+        loadData:                               body.loadData != null ? (body.loadData as Prisma.InputJsonValue) : Prisma.DbNull,
+        alternativeReturnSiteName:              body.alternativeReturnSiteName?.trim()              || null,
+        alternativeReturnAddressLine2:          body.alternativeReturnAddressLine2?.trim()          || null,
+        alternativeReturnTown:                  body.alternativeReturnTown?.trim()                  || null,
+        alternativeReturnCounty:                body.alternativeReturnCounty?.trim()                || null,
+        alternativeReturnCountry:               body.alternativeReturnCountry?.trim()               || null,
+        alternativeReturnLat:                   body.alternativeReturnLat ?? null,
+        alternativeReturnLng:                   body.alternativeReturnLng ?? null,
+        alternativeReturnNavigationInstructions: body.alternativeReturnNavigationInstructions?.trim() || null,
+        photosRequiredOnRejection:              body.photosRequiredOnRejection ?? false,
+        rejectionSignatureRequired:             body.rejectionSignatureRequired ?? false,
+        rejectionNotes:                         body.rejectionNotes?.trim() || null,
         stops: { create: stops.map(s => buildStopData(s, companyId)) },
         audits: {
           create: {
@@ -412,6 +424,20 @@ export async function patchJob(
         jobType:             body.jobType             !== undefined ? (body.jobType?.trim()             || null) : job.jobType,
         billingReference:    body.billingReference    !== undefined ? (body.billingReference?.trim()    || null) : job.billingReference,
         declaredGoodsValue:  body.declaredGoodsValue  !== undefined ? (body.declaredGoodsValue?.trim()  || null) : job.declaredGoodsValue,
+        loadData: body.loadData !== undefined
+          ? (body.loadData != null ? (body.loadData as Prisma.InputJsonValue) : Prisma.DbNull)
+          : ((job as any).loadData ?? Prisma.DbNull),
+        alternativeReturnSiteName:              body.alternativeReturnSiteName !== undefined ? (body.alternativeReturnSiteName?.trim() || null) : (job as any).alternativeReturnSiteName,
+        alternativeReturnAddressLine2:          body.alternativeReturnAddressLine2 !== undefined ? (body.alternativeReturnAddressLine2?.trim() || null) : (job as any).alternativeReturnAddressLine2,
+        alternativeReturnTown:                  body.alternativeReturnTown !== undefined ? (body.alternativeReturnTown?.trim() || null) : (job as any).alternativeReturnTown,
+        alternativeReturnCounty:                body.alternativeReturnCounty !== undefined ? (body.alternativeReturnCounty?.trim() || null) : (job as any).alternativeReturnCounty,
+        alternativeReturnCountry:               body.alternativeReturnCountry !== undefined ? (body.alternativeReturnCountry?.trim() || null) : (job as any).alternativeReturnCountry,
+        alternativeReturnLat:                   body.alternativeReturnLat !== undefined ? (body.alternativeReturnLat ?? null) : (job as any).alternativeReturnLat,
+        alternativeReturnLng:                   body.alternativeReturnLng !== undefined ? (body.alternativeReturnLng ?? null) : (job as any).alternativeReturnLng,
+        alternativeReturnNavigationInstructions: body.alternativeReturnNavigationInstructions !== undefined ? (body.alternativeReturnNavigationInstructions?.trim() || null) : (job as any).alternativeReturnNavigationInstructions,
+        photosRequiredOnRejection: body.photosRequiredOnRejection !== undefined ? (body.photosRequiredOnRejection ?? false) : (job as any).photosRequiredOnRejection ?? false,
+        rejectionSignatureRequired: body.rejectionSignatureRequired !== undefined ? (body.rejectionSignatureRequired ?? false) : (job as any).rejectionSignatureRequired ?? false,
+        rejectionNotes: body.rejectionNotes !== undefined ? (body.rejectionNotes?.trim() || null) : (job as any).rejectionNotes,
         securingRequirements: body.securingRequirements !== undefined
           ? jsonOrNull(Array.isArray(body.securingRequirements) ? body.securingRequirements : [])
           : jsonOrNull(Array.isArray(job.securingRequirements) ? (job.securingRequirements as string[]) : []),

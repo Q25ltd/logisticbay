@@ -119,6 +119,18 @@ function buildPRFJobData(
     alternativeReturnContactPhone: b.alternativeReturnContactPhone?.trim() || null,
     canSplitShipment:    b.canSplitShipment ?? "must_stay_together",
     internalNotes:       null,
+    loadData:                               b.loadData != null ? (b.loadData as Prisma.InputJsonValue) : Prisma.DbNull,
+    alternativeReturnSiteName:              b.alternativeReturnSiteName?.trim()              || null,
+    alternativeReturnAddressLine2:          b.alternativeReturnAddressLine2?.trim()          || null,
+    alternativeReturnTown:                  b.alternativeReturnTown?.trim()                  || null,
+    alternativeReturnCounty:                b.alternativeReturnCounty?.trim()                || null,
+    alternativeReturnCountry:               b.alternativeReturnCountry?.trim()               || null,
+    alternativeReturnLat:                   b.alternativeReturnLat ?? null,
+    alternativeReturnLng:                   b.alternativeReturnLng ?? null,
+    alternativeReturnNavigationInstructions: b.alternativeReturnNavigationInstructions?.trim() || null,
+    photosRequiredOnRejection:              b.photosRequiredOnRejection ?? false,
+    rejectionSignatureRequired:             b.rejectionSignatureRequired ?? false,
+    rejectionNotes:                         b.rejectionNotes?.trim() || null,
     stops: { create: b.stops!.map(s => buildStopData(s, link.companyId)) },
   };
 }

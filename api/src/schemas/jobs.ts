@@ -96,6 +96,8 @@ const JobCreateBaseSchema = z.object({
   weighbridgeRequired:     z.boolean().optional(),
   securingRequirements:    z.array(z.string()).nullable().optional(),
   specialRequirements:     z.array(z.string()).nullable().optional(),
+  // Goods sub-type details blob
+  loadData:                              z.record(z.string(), z.unknown()).nullable().optional(),
 
   // Vehicle requirements
   vehicleCategory:         z.string().optional(),
@@ -115,6 +117,19 @@ const JobCreateBaseSchema = z.object({
   alternativeReturnPostcode:     z.string().nullable().optional(),
   alternativeReturnContactName:  z.string().nullable().optional(),
   alternativeReturnContactPhone: z.string().nullable().optional(),
+  // Extended alternative return address
+  alternativeReturnSiteName:              z.string().nullable().optional(),
+  alternativeReturnAddressLine2:          z.string().nullable().optional(),
+  alternativeReturnTown:                  z.string().nullable().optional(),
+  alternativeReturnCounty:                z.string().nullable().optional(),
+  alternativeReturnCountry:               z.string().nullable().optional(),
+  alternativeReturnLat:                   z.number().nullable().optional(),
+  alternativeReturnLng:                   z.number().nullable().optional(),
+  alternativeReturnNavigationInstructions: z.string().nullable().optional(),
+  // Rejection policy
+  photosRequiredOnRejection:              z.boolean().optional(),
+  rejectionSignatureRequired:             z.boolean().optional(),
+  rejectionNotes:                         z.string().nullable().optional(),
 
   // Proof
   requirePOD:              z.boolean().optional(),

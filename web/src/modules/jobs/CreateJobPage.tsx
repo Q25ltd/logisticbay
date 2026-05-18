@@ -489,6 +489,13 @@ export default function CreateJobPage() {
         if (ldb.generalPieceCount)        setGeneralPieceCount(String(ldb.generalPieceCount));
         if (ldb.loadHeight)               setLoadHeight(String(ldb.loadHeight));
         if (ldb.canSplitShipment)         setCanSplitShipment(String(ldb.canSplitShipment));
+        if (ldb.loadNotes)       setLoadNotes(String(ldb.loadNotes));
+        if (ldb.unNumber)        setUnNumber(String(ldb.unNumber));
+        if (ldb.packingGroup)    setPackingGroup(String(ldb.packingGroup));
+        if (ldb.hazardousPaperworkAvailable !== undefined) setHazardousPaperwork(Boolean(ldb.hazardousPaperworkAvailable));
+        if (ldb.oversizedWidth)  setOversizedWidth(String(ldb.oversizedWidth));
+        if (ldb.oversizedHeight) setOversizedHeight(String(ldb.oversizedHeight));
+        if (ldb.oversizedLength) setOversizedLength(String(ldb.oversizedLength));
       }
 
       if (job.declaredGoodsValue) setDeclaredValue(String(job.declaredGoodsValue));
@@ -500,29 +507,27 @@ export default function CreateJobPage() {
       if (Array.isArray(job.trailersAllowed)) setTrailersAllowed(job.trailersAllowed as string[]);
       if (Array.isArray((job as any).bodyTypes)) setBodyTypes((job as any).bodyTypes as string[]);
 
-      // Rejection / exception policy
-      const ep = (job as any).exceptionPolicyData as Record<string, unknown> | null;
-      if (ep?.rejectionAction) {
-        setFailureAction(ep.rejectionAction as string);
-        setAltReturnSiteName((ep.alternativeReturnSiteName as string) || "");
-        setAltReturnAddress((ep.alternativeReturnAddress as string) || "");
-        setAltReturnAddressLine2((ep.alternativeReturnAddressLine2 as string) || "");
-        setAltReturnTown((ep.alternativeReturnTown as string) || "");
-        setAltReturnCounty((ep.alternativeReturnCounty as string) || "");
-        setAltReturnPostcode((ep.alternativeReturnPostcode as string) || "");
-        setAltReturnCountry((ep.alternativeReturnCountry as string) || "GB");
-        setAltReturnLat((ep.alternativeReturnLat as string) || "");
-        setAltReturnLng((ep.alternativeReturnLng as string) || "");
-        setAltReturnNavInstructions((ep.alternativeReturnNavigationInstructions as string) || "");
-        setAltReturnContactName((ep.alternativeReturnContactName as string) || "");
-        setAltReturnContactPhone((ep.alternativeReturnContactPhone as string) || "");
-        setApprovalContactName((ep.approvalContactName as string) || "");
-        setApprovalContactPhone((ep.approvalContactPhone as string) || "");
-        setPhotosOnRejection((ep.photosRequiredOnRejection as boolean) ?? false);
-        setSignatureOnRejection((ep.rejectionSignatureRequired as boolean) ?? false);
-        setRejectionNotes((ep.rejectionNotes as string) || "");
-        setShowExceptionPolicy(true);
-      }
+      // Rejection / exception policy — flat Job columns (not a blob)
+      if (job.failureAction && job.failureAction !== "call_assistance") setFailureAction(job.failureAction);
+      if (job.alternativeReturnAddress)      setAltReturnAddress(job.alternativeReturnAddress);
+      if (job.alternativeReturnPostcode)     setAltReturnPostcode(job.alternativeReturnPostcode);
+      if (job.alternativeReturnContactName)  setAltReturnContactName(job.alternativeReturnContactName);
+      if (job.alternativeReturnContactPhone) setAltReturnContactPhone(job.alternativeReturnContactPhone);
+      if ((job as any).alternativeReturnSiteName)              setAltReturnSiteName((job as any).alternativeReturnSiteName);
+      if ((job as any).alternativeReturnAddressLine2)          setAltReturnAddressLine2((job as any).alternativeReturnAddressLine2);
+      if ((job as any).alternativeReturnTown)                  setAltReturnTown((job as any).alternativeReturnTown);
+      if ((job as any).alternativeReturnCounty)                setAltReturnCounty((job as any).alternativeReturnCounty);
+      if ((job as any).alternativeReturnCountry)               setAltReturnCountry((job as any).alternativeReturnCountry);
+      if ((job as any).alternativeReturnLat != null)           setAltReturnLat(String((job as any).alternativeReturnLat));
+      if ((job as any).alternativeReturnLng != null)           setAltReturnLng(String((job as any).alternativeReturnLng));
+      if ((job as any).alternativeReturnNavigationInstructions) setAltReturnNavInstructions((job as any).alternativeReturnNavigationInstructions);
+      if (job.approvalContactName)  setApprovalContactName(job.approvalContactName);
+      if (job.approvalContactPhone) setApprovalContactPhone(job.approvalContactPhone);
+      if ((job as any).photosRequiredOnRejection)  setPhotosOnRejection(true);
+      if ((job as any).rejectionSignatureRequired) setSignatureOnRejection(true);
+      if ((job as any).rejectionNotes)             setRejectionNotes((job as any).rejectionNotes);
+      const hasEp = job.failureAction !== "call_assistance" || !!job.alternativeReturnAddress || !!job.approvalContactName;
+      if (hasEp) setShowExceptionPolicy(true);
 
       setS1(false); setS2(false); setS3(false);
       setS4(false); setS5(false); setS6(false);
@@ -606,6 +611,15 @@ export default function CreateJobPage() {
       // general
       generalPackagingType:       generalPackagingType || undefined,
       generalPieceCount:          generalPieceCount ? parseInt(generalPieceCount, 10) : undefined,
+      loadNotes:  loadNotes.trim() || undefined,
+      // hazmat
+      unNumber:   unNumber.trim() || undefined,
+      packingGroup: packingGroup.trim() || undefined,
+      hazardousPaperworkAvailable: hazardousPaperwork || undefined,
+      // oversized dimensions
+      oversizedWidth:  oversizedWidth.trim() || undefined,
+      oversizedHeight: oversizedHeight.trim() || undefined,
+      oversizedLength: oversizedLength.trim() || undefined,
     };
 
     const toISO = (date: string, time: string) =>
@@ -709,9 +723,20 @@ export default function CreateJobPage() {
       alternativeReturnPostcode: altReturnPostcode.trim() || undefined,
       alternativeReturnContactName: altReturnContactName.trim() || undefined,
       alternativeReturnContactPhone: altReturnContactPhone.trim() || undefined,
+      alternativeReturnSiteName:              altReturnSiteName.trim()              || undefined,
+      alternativeReturnAddressLine2:          altReturnAddressLine2.trim()          || undefined,
+      alternativeReturnTown:                  altReturnTown.trim()                  || undefined,
+      alternativeReturnCounty:                altReturnCounty.trim()                || undefined,
+      alternativeReturnCountry:               altReturnCountry !== "GB" ? altReturnCountry : undefined,
+      alternativeReturnLat:                   altReturnLat ? parseFloat(altReturnLat) : undefined,
+      alternativeReturnLng:                   altReturnLng ? parseFloat(altReturnLng) : undefined,
+      alternativeReturnNavigationInstructions: altReturnNavInstructions.trim() || undefined,
       approvalContactName:      approvalContactName.trim() || undefined,
       approvalContactPhone:     approvalContactPhone.trim() || undefined,
-      // loadData blob: goods-type sub-details only
+      photosRequiredOnRejection: photosOnRejection,
+      rejectionSignatureRequired: signatureOnRejection,
+      rejectionNotes:             rejectionNotes.trim() || undefined,
+      // loadData blob: goods-type sub-details (loadNotes, hazmat, oversized + all type sub-fields)
       loadData,
       stops:                    mappedStops,
       plannerNotes:             plannerNotes.trim() || undefined,
