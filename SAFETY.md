@@ -534,6 +534,62 @@ Step-by-step incident response:
 
 ---
 
+## SECURITY REVIEW TODO (2026-05-18)
+
+Findings from the auth, tenant isolation, API abuse, dependency, and operations review.
+
+### Critical before production/customer rollout
+- [ ] Restrict `GET /dashboard` to planner/owner roles only, or return driver-scoped data for drivers. Current route only requires authentication and returns company-wide jobs, drivers, units, and trailers.
+- [ ] Lock down `PATCH /jobs/:id/status` so only assigned drivers can submit driver workflow updates, and planners/owners use a separate planner-approved action path.
+- [ ] Lock down `POST /jobs/:id/note` so drivers can only add notes to assigned jobs; planners/owners may add planner notes through planner routes.
+- [ ] Validate `customerId` on `POST /request-links` against `request.user.companyId` before creating the link. Never allow a public request link to reference another company's customer.
+- [ ] Run `npm audit --prefix api --omit=dev` and update/remove vulnerable API dependencies. Latest review found 16 production audit findings: 1 critical, 10 high, 5 moderate.
+- [ ] Ensure Railway sets `NODE_ENV=production`; CORS and the dev reset route rely on this value.
+- [ ] Add automated CI checks for typecheck, tests, tenant isolation, and dependency audit before deploy.
+
+### High priority hardening
+- [ ] Move refresh tokens out of `localStorage` or harden the web app with httpOnly secure refresh cookies plus CSRF protection. Until then, any XSS can steal both access and refresh tokens.
+- [ ] Add MFA/2FA for planner and company owner accounts.
+- [ ] Add login/session audit records: login success/failure, refresh reuse, logout, password change, user-agent, IP, and companyId.
+- [ ] Add account lockout or progressive delay for repeated failed login attempts per email/IP/company, not only global route rate limits.
+- [ ] Add public intake abuse protection: per-token rate limits, CAPTCHA or email verification, submission throttling, and alerting on spikes.
+- [ ] Add request size/body limits for all JSON endpoints, especially public request submission and sync.
+- [ ] Add security headers: HSTS, Content-Security-Policy, X-Frame-Options/frame-ancestors, X-Content-Type-Options, Referrer-Policy.
+- [ ] Add Sentry or equivalent error monitoring for API and web.
+
+### Tenant and authorization coverage
+- [ ] Extend tenant-isolation tests to cover runs, run assignments, request links, dashboard, schedule, public request links, and every related-ID create/update path.
+- [ ] Add tests that drivers cannot access planner dashboard data or modify unassigned jobs.
+- [ ] Add tests that related IDs are company-scoped before write: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, jobPartId, jobId, runId, assignmentId.
+- [ ] Standardize all protected routes on shared `authenticate` + role helpers; avoid one-off JWT parsing in route handlers.
+- [ ] Define roles in one shared enum/source of truth. Current code uses `company_owner` and `planner`, while one constants file still lists `company_admin`.
+
+### Dependency and package cleanup
+- [ ] Remove unused API packages if not needed: `@fastify/cookie`, `@fastify/jwt`, `@fastify/static`, `nodemailer`, or any other unused dependency.
+- [ ] Keep Prisma, Fastify, SendGrid, JWT, bcrypt, and PDF-related packages on current patched versions.
+- [ ] Schedule recurring dependency scanning and patch windows.
+
+### Operational security
+- [ ] Verify `.env` files are ignored and not tracked before every release. Current git tracking only includes example env files.
+- [ ] Rotate any secret ever exposed outside the secrets manager within 24 hours.
+- [ ] Confirm production database is private, not publicly reachable except through intended platform networking/proxy.
+- [ ] Use least-privilege database credentials for the app, migrations, and manual admin separately where possible.
+- [ ] Document backup restore and rollback runbooks, then run a restore test.
+
+### File upload readiness
+- [ ] Before adding uploads/photos/POD files, design upload safety first: size limits, MIME sniffing, extension allowlist, malware scanning, object storage outside app runtime, private bucket defaults, signed URLs, and per-tenant ownership checks.
+
+### Verified strengths from review
+- [x] Tenant isolation pattern is mostly correct: API routes generally use `request.user.companyId`, not frontend-provided companyId.
+- [x] Existing tenant isolation integration test passed locally: 27/27 tests.
+- [x] Prisma is used for normal DB access; SQL injection risk is low.
+- [x] `generateJobReference` uses parameterized raw SQL values, not interpolated user input.
+- [x] Access tokens are short-lived and refresh tokens are stored hashed with rotation/reuse detection.
+- [x] No real file upload attack surface exists yet.
+- [x] Web production dependency audit reported 0 vulnerabilities at review time.
+
+---
+
 ## MINIMUM SAFE VERSION (BEFORE FIRST PAYING CUSTOMER)
 
 These must be in place:
