@@ -357,83 +357,63 @@ export interface FleetTrailer {
 export interface JobEvent {
   id: number; jobId: number; eventType: string; note: string; createdAt: string;
 }
+/** Canonical shape for Job template defaultJobData blobs.
+ *  All field names match Job column names exactly.
+ *  Run api/scripts/migrate_template_job_data.ts to backfill old templates. */
 export interface TemplateJobData {
-  customerId?: number | null;
-  customerName?: string;
-  serviceType?: string;
-  jobType?: string;
-  jobTitle?: string;
-  priority?: string;
-  contactName?: string;
-  contactPhone?: string;
-  contactEmail?: string;
-  billingNotes?: string;
-  // canonical names
-  customerInstructions?: string;
-  requirePOD?: boolean;
-  materialType?: string;
-  quantity?: string;
-  unit?: string;
-  unitOther?: string;
-  weight?: string;
-  forkliftRequired?: boolean;
-  tailLiftRequired?: boolean;
-  craneRequired?: boolean;
+  // Identity / customer
+  customerId?:          number | null;
+  customerName?:        string;
+  customerRef?:         string;
+  serviceType?:         string;
+  jobType?:             string;
+  jobTitle?:            string;
+  priority?:            string;
+  // Booking contact
+  bookingContactName?:  string;
+  bookingContactPhone?: string;
+  bookingContactEmail?: string;
+  billingNotes?:        string;
+  custRefRequired?:     boolean;
+  poRequired?:          boolean;
+  // Load
+  goodsDescription?:    string;
+  goodsType?:           string;
+  quantity?:            string;
+  quantityUnit?:        string;
+  weight?:              string;
+  volume?:              string;
+  dimensions?:          string;
+  fragile?:             boolean;
+  stackable?:           boolean;
+  tempControlled?:      boolean;
+  tempRange?:           string;
+  hazardClass?:         string;
+  photosRequired?:      boolean;
   weighbridgeRequired?: boolean;
-  vehicleClass?: string;
-  vehicleClassOther?: string;
-  trailerTypesAllowed?: string[];
-  vehicleAccessNotes?: string;
-  // legacy names kept for backward compat reading of old templates
-  custInstructions?: string;
-  custRefRequired?: boolean;
-  poRequired?: boolean;
-  materialDesc?: string;
-  totalQty?: string;
-  qtyUnit?: string;
-  qtyUnitOther?: string;
-  totalWeight?: string;
-  forkliftReq?: boolean;
-  tailLiftReq?: boolean;
-  craneReq?: boolean;
-  weighbridgeReq?: boolean;
-  podRequired?: boolean;
-  vehicleType?: string;
-  vehicleTypeOther?: string;
-  minSize?: string;
-  trailersAllowed?: string[];
-  equipmentReq?: string[];
-  driverQuals?: string[];
-  accessNotes?: string;
-  // always present
-  volume?: string;
-  dimensions?: string;
-  adrClass?: string;
-  fragile?: boolean;
-  stackable?: boolean;
-  tempControlled?: boolean;
-  tempRange?: string;
-  loadingMethod?: string;
-  unloadingMethod?: string;
-  loadNotes?: string;
-  photosRequired?: boolean;
-  reqBodyCategory?: string;
-  reqGvwMin?: string;
-  reqBodyType?: string;
-  reqEquipment?: string[];
-  reqLicenceClass?: string;
-  reqEndorsements?: string[];
-  trailerLength?: string;
-  heightRestriction?: string;
-  weightRestriction?: string;
-  lengthRestriction?: string;
-  assignedTruck?: string;
-  assignedTrailer?: string;
-  failureAction?: string;
-  assistancePhone?: string;
-  assistanceNote?: string;
-  returnDestination?: string;
-  altAddress?: Record<string, unknown> | null;
+  securingRequirements?: string[];
+  specialRequirements?:  string[];
+  // Vehicle
+  vehicleCategory?:     string;
+  bodyTypes?:           string[];
+  minGvwClass?:         string;
+  equipment?:           string[];
+  trailersAllowed?:     string[];
+  vehicleAccessNotes?:  string;
+  // Notes
+  requirePOD?:          boolean;
+  driverVisibleNotes?:  string;
+  internalNotes?:       string;
+  // Exception policy
+  failureAction?:                  string;
+  assistancePhone?:                string;
+  assistanceNote?:                 string;
+  approvalContactName?:            string;
+  approvalContactPhone?:           string;
+  alternativeReturnAddress?:       string;
+  alternativeReturnPostcode?:      string;
+  alternativeReturnContactName?:   string;
+  alternativeReturnContactPhone?:  string;
 }
 
 export interface JobTemplate {

@@ -94,10 +94,10 @@ function TemplateCard({ t, onEdit, onUse, onArchive, onRestore }: {
         {/* Stop count + material */}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
           {stopSummary(t) && <span>🚛 {stopSummary(t)}</span>}
-          {(jd?.materialDesc || t.defaultMaterialType) && (
-            <span>📦 {jd?.materialDesc || t.defaultMaterialType}</span>
+          {(jd?.goodsDescription || t.defaultMaterialType) && (
+            <span>📦 {jd?.goodsDescription || t.defaultMaterialType}</span>
           )}
-          {jd?.vehicleType && <span>🚚 {jd.vehicleType.replace("_"," ")}</span>}
+          {jd?.vehicleCategory && <span>🚚 {jd.vehicleCategory.replace("_"," ")}</span>}
         </div>
 
         {/* Variables note */}

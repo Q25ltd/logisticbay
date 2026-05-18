@@ -380,21 +380,17 @@ export default function CreateJobPage() {
   // ── Template apply ───────────────────────────────────────────────────────────
   function applyTemplate(t: JobTemplate) {
     const jd = t.defaultJobData as Record<string, unknown> | null | undefined;
-    if (jd?.customerName) { setCustomerName(String(jd.customerName)); setCustomerId((jd.customerId as number) ?? null); }
-    if (jd?.contactName)  setBookingContactName(String(jd.contactName));
-    if (jd?.contactPhone) setBookingContactPhone(String(jd.contactPhone));
-    if (jd?.contactEmail) setBookingContactEmail(String(jd.contactEmail));
-    if (jd?.customerRef)  setCustomerRef(String(jd.customerRef));
+    if (jd?.customerName)        { setCustomerName(String(jd.customerName)); setCustomerId((jd.customerId as number) ?? null); }
+    if (jd?.bookingContactName)  setBookingContactName(String(jd.bookingContactName));
+    if (jd?.bookingContactPhone) setBookingContactPhone(String(jd.bookingContactPhone));
+    if (jd?.bookingContactEmail) setBookingContactEmail(String(jd.bookingContactEmail));
+    if (jd?.customerRef)         setCustomerRef(String(jd.customerRef));
 
-    const dl = t.defaultLoadDetails as Record<string, unknown> | null | undefined;
-    const materialTypeVal = (jd?.materialDesc ?? jd?.materialType ?? dl?.materialType ?? t.defaultMaterialType ?? "") as string;
-    if (materialTypeVal) setGoodsDesc(materialTypeVal);
-    const qty = ((jd?.totalQty ?? jd?.quantity ?? (dl?.quantity != null ? String(dl.quantity) : "")) as string);
-    if (qty) setQuantity(qty);
-    const unitVal = ((jd?.qtyUnit ?? jd?.unit ?? dl?.unit ?? "") as string);
-    if (unitVal) setUnit(unitVal);
-    const weightVal = ((jd?.totalWeight ?? jd?.weight ?? (dl?.weight != null ? String(dl.weight) : "")) as string);
-    if (weightVal) setEstWeight(weightVal);
+    const goodsDescVal = (jd?.goodsDescription ?? t.defaultMaterialType ?? "") as string;
+    if (goodsDescVal) setGoodsDesc(goodsDescVal);
+    if (jd?.quantity != null) setQuantity(String(jd.quantity));
+    if (jd?.quantityUnit)     setUnit(String(jd.quantityUnit));
+    if (jd?.weight != null)   setEstWeight(String(jd.weight));
 
     const ds = Array.isArray(t.defaultStops) ? t.defaultStops : [];
     if (ds.length > 0) {
