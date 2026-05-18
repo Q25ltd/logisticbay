@@ -22,6 +22,7 @@ import SharedStopCard, {
   type SharedStopState,
   blankSharedStop,
   sharedStopComplete,
+  sharedStopMissingFields,
   jobPartToSharedStopState,
 } from "./SharedStopCard";
 import {
@@ -352,6 +353,10 @@ export default function CreateJobPage() {
     collectionCount > 0 && `${collectionCount} collection${collectionCount > 1 ? "s" : ""}`,
     deliveryCount   > 0 && `${deliveryCount} deliver${deliveryCount > 1 ? "ies" : "y"}`,
   ].filter(Boolean).join(", ");
+
+  const sec2Missing: string[] = stops.flatMap((s, i) =>
+    sharedStopMissingFields(s).map(f => `Stop ${i + 1} (${s.type}) — ${f}`)
+  );
 
   const sec1Missing: string[] = [
     !customerName.trim()  ? "customer"        : "",
@@ -970,6 +975,9 @@ export default function CreateJobPage() {
               <div>
                 <FieldLabel required>Customer</FieldLabel>
                 <CustomerSearch value={customerName} linkedId={customerId} onChange={handleCustomerChange} />
+                {triedSave && !customerName.trim() && (
+                  <p className="text-xs text-red-600 mt-1">Required</p>
+                )}
               </div>
               <div>
                 <FieldLabel required>Planned date</FieldLabel>
@@ -987,9 +995,11 @@ export default function CreateJobPage() {
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Contact name" required value={bookingContactName} onChange={setBookingContactName}
-                  placeholder="Jane Smith" caseRule="proper_name" />
+                  placeholder="Jane Smith" caseRule="proper_name"
+                  error={triedSave && !bookingContactName.trim() ? "Required" : undefined} />
                 <TextField label="Contact phone" required type="tel" value={bookingContactPhone}
-                  onChange={setBookingContactPhone} placeholder="+44 7700 900123" />
+                  onChange={setBookingContactPhone} placeholder="+44 7700 900123"
+                  error={triedSave && !bookingContactPhone.trim() ? "Required" : undefined} />
               </div>
               <TextField label="Contact email" type="email" value={bookingContactEmail}
                 onChange={setBookingContactEmail} placeholder="jane@acme.com" caseRule="lower" />
@@ -1015,7 +1025,8 @@ export default function CreateJobPage() {
             subtitle="Where to collect from and deliver to" active
             collapsed={s2} onToggle={() => setS2(o => !o)}
             complete={sec2Complete} started={sec2Started}
-            summary={sec2Summary || undefined} />
+            summary={sec2Summary || undefined}
+            missingCount={sec2Missing.length} />
           {!s2 && (
             <div className="p-4 space-y-3">
               {stops.map((stop, idx) => (
@@ -1035,7 +1046,7 @@ export default function CreateJobPage() {
                   {!stops.some(s => s.type === "delivery")   && "⚠ Add at least one delivery stop."}
                 </div>
               )}
-              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => setS2(true)} />
+              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => setS2(true)} missing={sec2Missing} />
             </div>
           )}
         </div>
@@ -1055,7 +1066,7 @@ export default function CreateJobPage() {
               {/* Goods type */}
               <div>
                 <FieldLabel required>What are you moving?</FieldLabel>
-                <div className="flex flex-wrap gap-2 mt-1">
+                <div className={`flex flex-wrap gap-2 mt-1 ${triedSave && !goodsType ? "p-2 rounded-xl border border-red-400" : ""}`}>
                   {LOAD_TYPES.map(([v, l]) => (
                     <button key={v} type="button"
                       onClick={() => setGoodsType(goodsType === v ? "" : v)}
@@ -1067,6 +1078,7 @@ export default function CreateJobPage() {
                     </button>
                   ))}
                 </div>
+                {triedSave && !goodsType && <p className="text-xs text-red-600 mt-1">Required — select a goods type</p>}
                 {goodsType === "other" && (
                   <input className="input mt-2 w-full" type="text"
                     placeholder="Describe what you are moving"
@@ -1077,10 +1089,10 @@ export default function CreateJobPage() {
               {/* Goods description */}
               <div>
                 <FieldLabel required>Description of goods</FieldLabel>
-                <textarea className="input mt-1 w-full" rows={2}
+                <textarea className={`input mt-1 w-full ${triedSave && goodsDesc.trim().length < 15 ? "border-red-400 focus:border-red-500" : ""}`} rows={2}
                   value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
                   placeholder="Describe exactly what is being transported — be specific" />
-                <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 15 ? "text-muted" : "text-amber-600 font-medium"}`}>
+                <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 15 ? "text-muted" : triedSave ? "text-red-600 font-medium" : "text-amber-600 font-medium"}`}>
                   {goodsDesc.trim().length} / 15 characters minimum
                 </div>
               </div>
@@ -1088,7 +1100,8 @@ export default function CreateJobPage() {
               {/* Quantity + unit */}
               <div className="grid grid-cols-2 gap-3">
                 <TextField label="Quantity" required type="number" min="0" step="1" value={quantity}
-                  onChange={setQuantity} placeholder="24" />
+                  onChange={setQuantity} placeholder="24"
+                  error={triedSave && !quantity ? "Required" : undefined} />
                 <div>
                   <FieldLabel required>Unit</FieldLabel>
                   <select className="input mt-1 w-full" value={unit} onChange={e => setUnit(e.target.value)}>
@@ -1103,7 +1116,8 @@ export default function CreateJobPage() {
               {/* Estimated weight */}
               <TextField label="Estimated total weight (kg)" required type="number" min="0" step="1"
                 value={estWeight} onChange={setEstWeight} placeholder="14000"
-                hint="Approximate is fine, but do not leave blank." />
+                hint="Approximate is fine, but do not leave blank."
+                error={triedSave && !(parseFloat(estWeight) > 0) ? "Required" : undefined} />
 
               {/* Overall load height */}
               <TextField label="Overall load height (m)" type="number" min="0"
@@ -1503,7 +1517,8 @@ export default function CreateJobPage() {
             <div className="px-5 pt-5 pb-4 space-y-4">
               <TextField label="Declared value of goods (£)" required type="number" min="0"
                 value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
-                hint="For insurance and liability purposes — not the transport price." />
+                hint="For insurance and liability purposes — not the transport price."
+                error={triedSave && !(parseFloat(declaredValue) > 0) ? "Required" : undefined} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Purchase order number" value={purchaseOrderNumber}
                   onChange={setPurchaseOrderNumber} placeholder="PO-2026-12345"

@@ -497,6 +497,29 @@ function stopToRequestStop(s: StopState, seq: number): RequestStop {
   };
 }
 
+// ── LogisticBay branding badge ────────────────────────────────────────────────
+
+function PoweredBy({ className = "" }: { className?: string }) {
+  return (
+    <a
+      href="https://logisticbay.com"
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex flex-col items-end gap-0.5 group no-underline ${className}`}
+    >
+      <span className="text-[10px] font-medium text-slate-400 group-hover:text-slate-500 transition-colors leading-none">
+        Powered by
+      </span>
+      <span className="flex items-center gap-1">
+        <img src="/favicon.svg" alt="LogisticBay logo" className="w-3.5 h-3.5" />
+        <span className="text-xs font-black text-slate-600 group-hover:text-[#863bff] transition-colors tracking-tight">
+          LogisticBay
+        </span>
+      </span>
+    </a>
+  );
+}
+
 // ── Inline chip-button (single-select) ────────────────────────────────────────
 
 function Chips({ options, value, onChange }: {
@@ -1505,6 +1528,9 @@ export default function PublicRequestForm() {
           <div className="text-4xl mb-4">🔒</div>
           <h1 className="text-xl font-black text-primary mb-2">Link not available</h1>
           <p className="text-sm text-muted">{linkError}</p>
+          <div className="mt-6 pt-5 border-t border-slate-100 flex justify-center">
+            <PoweredBy />
+          </div>
         </div>
       </div>
     );
@@ -1532,6 +1558,9 @@ export default function PublicRequestForm() {
             onClick={() => window.location.reload()}>
             Submit another request
           </button>
+          <div className="mt-6 pt-5 border-t border-slate-100 flex justify-center">
+            <PoweredBy />
+          </div>
         </div>
       </div>
     );
@@ -1542,10 +1571,11 @@ export default function PublicRequestForm() {
     <div className="min-h-screen bg-surface">
 
       {/* Page header */}
-      <div className="bg-white border-b border-border px-4 py-5 text-center shadow-sm">
+      <div className="bg-white border-b border-border px-4 py-5 text-center shadow-sm relative">
         <div className="text-xs font-bold uppercase tracking-widest text-accent mb-1">Transport Request</div>
         <h1 className="text-xl font-black text-primary">{linkInfo.companyName}</h1>
         <p className="text-sm text-muted mt-1">Fill in the required sections then submit.</p>
+        <PoweredBy className="absolute top-1/2 -translate-y-1/2 right-4" />
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-2xl mx-auto px-4 py-6 space-y-4">
