@@ -434,6 +434,218 @@ Roles:
 
 ---
 
+## 13A. HACK PROTECTION PROTOCOL
+
+This section turns the common real-world attack paths into concrete rules for LogisticBay. These rules must be checked before first paying customer, before every major release, and after any incident.
+
+### 1. Phishing and stolen passwords
+
+Risk:
+- An attacker logs in with a real user's password.
+- Secure code does not help if the attacker has a valid session.
+
+Required:
+- MFA for planner, manager, company_owner, and platform_admin accounts.
+- Password manager recommended for every internal/admin user.
+- Login audit records for success, failure, password change, logout, refresh, refresh reuse, IP, user-agent, userId, and companyId.
+- Session/device view for admins: active sessions, last used time, user-agent, rough location/IP.
+- Ability to revoke one session or all sessions for a user.
+
+MVP status:
+- [x] Short-lived access tokens
+- [x] Refresh token rotation/reuse detection
+- [ ] MFA
+- [ ] Session/device management
+- [ ] Login/session audit trail
+
+### 2. Authentication logic
+
+Risk:
+- Weak JWT handling, predictable reset flows, broken refresh rotation, no brute-force controls.
+
+Rules:
+- JWT secrets must be strong, separate, and stored only in platform secrets.
+- Access tokens stay short-lived.
+- Refresh tokens are stored hashed only.
+- Refresh token reuse revokes the token family.
+- Password/PIN reset must be audited.
+- Default PINs must force change on first login.
+- Failed login attempts must be rate-limited by IP and account/email, not only globally.
+
+Do not ship:
+- Same JWT secret for access and refresh.
+- Long-lived access tokens.
+- Plaintext refresh tokens in the database.
+- Password reset tokens that are guessable, reusable, or not expiring.
+
+### 3. Authorization and tenant isolation
+
+Risk:
+- User changes an ID in the browser and reads or modifies another company's data.
+
+Rules:
+- Never trust `companyId` from frontend.
+- Every route must derive companyId from verified JWT only.
+- Every read, write, update, delete, count, search, export, and dashboard query must include tenant scoping.
+- Every related ID must be verified inside `companyId` before write: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, jobId, jobPartId, runId, assignmentId.
+- Drivers can only access assigned driver data.
+- Planner/company owner routes must use server-side role checks.
+
+Tests required:
+- Company A cannot read Company B list data.
+- Company A cannot fetch/update/delete Company B resource IDs.
+- Drivers cannot access planner dashboard data.
+- Drivers cannot mutate unassigned jobs.
+- Public request links cannot be created for another company's customer.
+
+### 4. SQL injection and unsafe queries
+
+Risk:
+- User input becomes executable SQL.
+
+Rules:
+- Use Prisma query APIs by default.
+- Raw SQL is high risk and must be reviewed.
+- Raw SQL must use parameter binding, never string interpolation with user input.
+- Raw SQL must include tenant predicates where tenant data is involved.
+
+Allowed:
+- `prisma.model.findMany({ where: { companyId } })`
+- Parameterized raw SQL with `$1`, `$2`, etc.
+
+Not allowed:
+- SQL strings built with `${input}`.
+- Raw tenant queries without `companyId`.
+
+### 5. API abuse and automation
+
+Risk:
+- Brute-force login, spam public request forms, scraping, fake jobs/orders, sync floods.
+
+Rules:
+- Global rate limits are required but not enough.
+- Add per-IP, per-account, per-company, and per-public-token limits where appropriate.
+- Public request forms need throttling and abuse detection.
+- Sync endpoints must enforce max batch size and idempotency.
+- Expensive list/dashboard/search endpoints must paginate and cap row counts.
+
+MVP requirements:
+- Login/register/refresh rate limits.
+- Public request submission rate limit per token and IP.
+- Sync events max batch size.
+- Server-side pagination for high-volume lists.
+
+Post-MVP:
+- CAPTCHA or email verification for public intake.
+- Anomaly alerts for spikes in login failures, public submissions, and sync failures.
+
+### 6. File uploads
+
+Risk:
+- Malware, executable files, huge files, fake PDFs, unsafe public buckets.
+
+Current status:
+- No real upload surface yet.
+
+Before adding uploads:
+- Enforce file size limits.
+- Validate MIME type and file extension.
+- Sniff file content, not only browser-provided MIME.
+- Virus scan uploaded files.
+- Store files outside app runtime in object storage.
+- Default buckets must be private.
+- Access files through signed URLs.
+- Store file ownership with companyId and entityId.
+- Never serve uploaded files from the API source directory.
+
+### 7. Dependency security
+
+Risk:
+- Vulnerable npm packages become the attack path.
+
+Rules:
+- Run dependency audit before release.
+- Patch high and critical findings before production rollout.
+- Remove unused packages.
+- Keep Prisma, Fastify, JWT, bcrypt, PDF, email, and upload-related libraries current.
+- Review advisories for auth, parsing, image/PDF, and server libraries with extra care.
+
+Commands:
+```bash
+npm audit --prefix api --omit=dev
+npm audit --prefix web --omit=dev
+```
+
+### 8. Cloud and secret configuration
+
+Risk:
+- Public database, leaked env vars, open buckets, overly broad credentials.
+
+Rules:
+- `.env` files must never be committed.
+- Production secrets live in Railway/Vercel secret managers only.
+- Rotate exposed secrets within 24 hours.
+- Use separate dev, staging, and production secrets.
+- Use least-privilege credentials where possible.
+- Production database must not be publicly reachable except through intended platform networking/proxy.
+- `NODE_ENV=production` must be set in production.
+
+### 9. Browser and frontend security
+
+Risk:
+- XSS steals tokens or user data.
+
+Rules:
+- Do not use `dangerouslySetInnerHTML` unless separately reviewed.
+- Escape/render user content through React text nodes.
+- Add security headers: HSTS, Content-Security-Policy, X-Frame-Options/frame-ancestors, X-Content-Type-Options, Referrer-Policy.
+- Avoid storing long-lived secrets in `localStorage`.
+- If using cookies for refresh tokens, use httpOnly, secure, sameSite, and CSRF protection.
+
+Current risk:
+- Web tokens are currently stored in `localStorage`; any XSS can steal access and refresh tokens.
+
+### 10. Detection and incident response
+
+Risk:
+- Breach happens and nobody notices quickly.
+
+Required logs:
+- requestId
+- userId
+- companyId
+- role
+- route
+- statusCode
+- duration
+- error details for failures
+- login/session/security events
+
+Required alerts:
+- repeated failed logins
+- refresh token reuse
+- large public request spike
+- 5xx spike
+- abnormal sync failure spike
+- cross-tenant access attempt detected by tests or logs
+
+Incident rule:
+- If a security incident is suspected, switch to INCIDENT mode, revoke affected sessions/tokens, rotate exposed secrets, preserve logs, and write a post-mortem within 48 hours.
+
+### Release gate
+
+Before production/customer rollout:
+- [ ] All critical items in `SECURITY REVIEW TODO` are closed.
+- [ ] Tenant isolation tests pass.
+- [ ] Auth/session tests pass.
+- [ ] Dependency audit has no unresolved critical/high production issues.
+- [ ] `.env` files are ignored and only examples are tracked.
+- [ ] Backup restore test has been performed.
+- [ ] Rollback procedure has been tested.
+- [ ] Incident contact/process is documented.
+
+---
+
 ## 14. SOFT DELETE SYSTEM
 
 Never hard delete operational data.

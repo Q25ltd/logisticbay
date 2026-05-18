@@ -88,13 +88,11 @@ export interface StructuredJobValidationInput {
   customerId?: number | null;
   customerName?: unknown;
   plannedDate?: unknown;
-  vehicleClassRequired?: unknown;
-  reqBodyCategory?: unknown;
-  reqGvwMin?: unknown;
-  reqBodyType?: unknown;
-  reqEquipment?: unknown;
-  reqLicenceClass?: unknown;
-  trailerTypesAllowed?: unknown;
+  vehicleCategory?: unknown;
+  minGvwClass?: unknown;
+  bodyType?: unknown;
+  equipment?: unknown;
+  trailersAllowed?: unknown;
   stops?: StructuredJobPartInput[];
   loadDetails?: StructuredLoadDetailsInput | null;
 }
@@ -141,16 +139,14 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
   const warnings: string[] = [];
   const saveMode = input.saveMode ?? "draft";
   const stops = Array.isArray(input.stops) ? input.stops : [];
-  const reqBodyCategory = hasText(input.reqBodyCategory)
-    ? String(input.reqBodyCategory)
-    : legacyVehicleToBodyCategory(input.vehicleClassRequired);
+  const vehicleCategory = hasText(input.vehicleCategory) ? String(input.vehicleCategory) : "";
 
   // ── Hard blocks (ready_to_plan only) ──────────────────────────────────────
 
   if (saveMode === "ready_to_plan") {
     if (!input.customerId && !hasText(input.customerName)) errors.push("Customer is required");
     if (!input.plannedDate) errors.push("Job date is required");
-    if (!hasText(reqBodyCategory)) errors.push("Vehicle type is required");
+    if (!hasText(vehicleCategory)) errors.push("Vehicle type is required");
 
     if (stops.length === 0) errors.push("At least one stop is required");
     if (!stops.some(s => s.type === "pickup" || s.type === "collection"))  errors.push("At least one pickup stop is required");
@@ -169,34 +165,30 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
 
   // ── Field-level validation ────────────────────────────────────────────────
 
-  if (hasText(input.reqBodyCategory) && !isBodyCategory(input.reqBodyCategory)) {
-    errors.push("reqBodyCategory is invalid");
+  if (hasText(input.vehicleCategory) && !isBodyCategory(input.vehicleCategory)) {
+    errors.push("vehicleCategory is invalid");
   }
 
-  if (hasText(input.reqGvwMin) && !isGvwClass(input.reqGvwMin)) {
-    errors.push("reqGvwMin is invalid");
+  if (hasText(input.minGvwClass) && !isGvwClass(input.minGvwClass)) {
+    errors.push("minGvwClass is invalid");
   }
 
-  if (hasText(input.reqBodyType) && !isBodyType(input.reqBodyType)) {
-    errors.push("reqBodyType is invalid");
+  if (hasText(input.bodyType) && !isBodyType(input.bodyType)) {
+    errors.push("bodyType is invalid");
   }
 
-  if (hasText(input.reqLicenceClass) && !isLicenceClass(input.reqLicenceClass)) {
-    errors.push("reqLicenceClass is invalid");
-  }
-
-  const trailerTypes = Array.isArray(input.trailerTypesAllowed) ? input.trailerTypesAllowed : [];
+  const trailerTypes = Array.isArray(input.trailersAllowed) ? input.trailersAllowed : [];
   for (const t of trailerTypes) {
     if (!isBodyType(t)) errors.push(`Invalid trailer type: ${String(t)}`);
   }
 
-  const reqEquipment = Array.isArray(input.reqEquipment) ? input.reqEquipment : [];
-  for (const e of reqEquipment) {
+  const equipment = Array.isArray(input.equipment) ? input.equipment : [];
+  for (const e of equipment) {
     if (!isOnboardEquipment(e)) errors.push(`Invalid onboard equipment: ${String(e)}`);
   }
 
-  if (isBodyCategory(reqBodyCategory) && bodyCategoryNeedsTrailer(reqBodyCategory) && saveMode === "ready_to_plan" && trailerTypes.length === 0) {
-    errors.push(reqBodyCategory === "tractor"
+  if (isBodyCategory(vehicleCategory) && bodyCategoryNeedsTrailer(vehicleCategory) && saveMode === "ready_to_plan" && trailerTypes.length === 0) {
+    errors.push(vehicleCategory === "tractor"
       ? "Tractor unit requires at least one trailer body type"
       : "Vehicle requires at least one trailer body type");
   }

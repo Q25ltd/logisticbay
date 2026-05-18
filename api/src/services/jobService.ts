@@ -115,14 +115,14 @@ export async function createJob(
     saveMode,
     customerId,
     customerName,
-    plannedDate:         body.plannedDate,
-    reqBodyCategory:     vehicleCategory,
-    reqGvwMin:           minGvwClass,
-    reqBodyType:         bodyTypes[0] ?? "",
-    reqEquipment:        equipment,
-    trailerTypesAllowed: trailersAllowed,
+    plannedDate:     body.plannedDate,
+    vehicleCategory,
+    minGvwClass,
+    bodyType:        bodyTypes[0] ?? "",
+    equipment,
+    trailersAllowed,
     stops,
-    loadDetails:         loadDetailsForValidation,
+    loadDetails:     loadDetailsForValidation,
   });
 
   if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
@@ -310,16 +310,16 @@ export async function patchJob(
 
   const structuredValidation = validateStructuredJob({
     saveMode,
-    customerId:          effectiveCustomerId,
-    customerName:        patchCustomerName,
-    plannedDate:         body.plannedDate ?? job.plannedDate ?? undefined,
-    reqBodyCategory:     vehicleCategory,
-    reqGvwMin:           minGvwClass,
-    reqBodyType:         bodyTypes[0] ?? "",
-    reqEquipment:        equipment,
-    trailerTypesAllowed: trailersAllowed,
+    customerId:  effectiveCustomerId,
+    customerName: patchCustomerName,
+    plannedDate:  body.plannedDate ?? job.plannedDate ?? undefined,
+    vehicleCategory,
+    minGvwClass,
+    bodyType:     bodyTypes[0] ?? "",
+    equipment,
+    trailersAllowed,
     stops,
-    loadDetails:         loadDetailsForValidation,
+    loadDetails:  loadDetailsForValidation,
   });
 
   if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
