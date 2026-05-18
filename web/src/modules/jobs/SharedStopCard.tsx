@@ -585,6 +585,7 @@ export default function SharedStopCard({
   onChange,
   onRemove,
   savedLocations,
+  highlightErrors,
 }: {
   stop: SharedStopState;
   index: number;
@@ -592,6 +593,7 @@ export default function SharedStopCard({
   onChange: (patch: Partial<SharedStopState>) => void;
   onRemove: () => void;
   savedLocations?: SavedLocation[];
+  highlightErrors?: boolean;
 }) {
   const [showCoordHelp, setShowCoordHelp] = useState(false);
   const [stopPhoneError, setStopPhoneError] = useState("");
@@ -668,7 +670,7 @@ export default function SharedStopCard({
       </div>
 
       {/* Stop body */}
-      {!stop.collapsed && (
+      {(!stop.collapsed || (!!highlightErrors && !complete)) && (
         <div className="px-4 py-5 space-y-5 border-t border-border">
 
           {/* Stop type selector */}
@@ -727,7 +729,8 @@ export default function SharedStopCard({
               placeholder={stop.type === "collection" ? "COL-2026-001" : "DEL-2026-001"}
               hint={stop.type === "collection"
                 ? "Warehouse release number or booking ref. Driver shows this on arrival."
-                : "Goods-in booking number or PO. Driver shows this to unload."} />
+                : "Goods-in booking number or PO. Driver shows this to unload."}
+              error={highlightErrors && needsRef && !stop.referenceNumber.trim() ? "Required" : undefined} />
           )}
 
           {/* Quantity at this stop */}
@@ -811,12 +814,14 @@ export default function SharedStopCard({
           {/* Site name */}
           <TextField label="Site name" required
             value={stop.siteName} onChange={v => onChange({ siteName: v })}
-            placeholder="Acme Warehouse — Unit 5" caseRule="proper_name" />
+            placeholder="Acme Warehouse — Unit 5" caseRule="proper_name"
+            error={highlightErrors && !stop.siteName.trim() ? "Required" : undefined} />
 
           {/* Address */}
           <TextField label="Address line 1" required
             value={stop.street} onChange={v => onChange({ street: v })}
-            placeholder="Industrial Estate Road" caseRule="proper_name" />
+            placeholder="Industrial Estate Road" caseRule="proper_name"
+            error={highlightErrors && !stop.street.trim() ? "Required" : undefined} />
           <TextField label="Address line 2"
             value={stop.addressLine2} onChange={v => onChange({ addressLine2: v })}
             placeholder="Business Park" caseRule="proper_name" />
@@ -824,17 +829,21 @@ export default function SharedStopCard({
             <div className="sm:col-span-2">
               <TextField label="Town / city" required
                 value={stop.town} onChange={v => onChange({ town: v })}
-                placeholder="Birmingham" caseRule="proper_name" />
+                placeholder="Birmingham" caseRule="proper_name"
+                error={highlightErrors && !stop.town.trim() ? "Required" : undefined} />
             </div>
             <div className="block">
               <FieldLabel required>{POSTCODE_META[stop.country]?.label ?? "Postcode"}</FieldLabel>
               <input
-                className="input mt-1"
+                className={`input mt-1 ${highlightErrors && !stop.postcode.trim() ? "border-red-400 focus:border-red-500" : ""}`}
                 type="text"
                 value={stop.postcode}
                 placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
                 onChange={e => onChange({ postcode: e.target.value.toUpperCase() })}
               />
+              {highlightErrors && !stop.postcode.trim() && (
+                <p className="text-xs text-red-600 mt-1">Required</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -867,19 +876,22 @@ export default function SharedStopCard({
             <div className="grid grid-cols-2 gap-3 mt-1">
               <div>
                 <FieldLabel>Latitude</FieldLabel>
-                <input className="input font-mono" type="number" step="0.000001"
+                <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. 53.483959"
                   value={stop.lat}
                   onChange={e => onChange({ lat: e.target.value })} />
               </div>
               <div>
                 <FieldLabel>Longitude</FieldLabel>
-                <input className="input font-mono" type="number" step="0.000001"
+                <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. -2.244644"
                   value={stop.lng}
                   onChange={e => onChange({ lng: e.target.value })} />
               </div>
             </div>
+            {highlightErrors && (!stop.lat || !stop.lng) && (
+              <p className="text-xs text-red-600 mt-1">Entrance pin coordinates are required</p>
+            )}
 
             {/* Always-visible operational warning */}
             <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
@@ -918,21 +930,26 @@ export default function SharedStopCard({
           {/* Entrance instructions */}
           <div>
             <FieldLabel required>Entrance instructions</FieldLabel>
-            <textarea className="input mt-1 w-full" rows={3}
+            <textarea className={`input mt-1 w-full ${highlightErrors && !stop.navigationInstructions.trim() ? "border-red-400 focus:border-red-500" : ""}`} rows={3}
               placeholder={stop.type === "collection"
                 ? "Enter via Gate B on the left. Intercom code 1234. Ask for goods-in."
                 : "Goods-in via roller shutters at rear. Report to warehouse office first."}
               value={stop.navigationInstructions}
               onChange={e => onChange({ navigationInstructions: e.target.value })} />
-            <div className="text-xs text-muted mt-1">Gate code, security procedure, which entrance to use.</div>
+            {highlightErrors && !stop.navigationInstructions.trim()
+              ? <p className="text-xs text-red-600 mt-1">Required — enter gate code, security procedure, which entrance to use.</p>
+              : <div className="text-xs text-muted mt-1">Gate code, security procedure, which entrance to use.</div>
+            }
           </div>
 
           {/* Date + time window */}
           <TextField label={stop.type === "collection" ? "Collection date" : "Delivery date"} required
-            type="date" value={stop.date} onChange={v => onChange({ date: v })} />
+            type="date" value={stop.date} onChange={v => onChange({ date: v })}
+            error={highlightErrors && !stop.date ? "Required" : undefined} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <TextField label="Earliest arrival" required
-              type="time" value={stop.earliestArrivalTime} onChange={v => onChange({ earliestArrivalTime: v })} />
+              type="time" value={stop.earliestArrivalTime} onChange={v => onChange({ earliestArrivalTime: v })}
+              error={highlightErrors && !stop.earliestArrivalTime ? "Required" : undefined} />
             <div>
               <TextField
                 label={stop.type === "collection" ? "Collection time" : "Delivery time"}
@@ -942,13 +959,17 @@ export default function SharedStopCard({
               <div className="text-xs text-muted mt-1">Fixed appointment only — leave blank if open window.</div>
             </div>
             <TextField label="Latest arrival" required
-              type="time" value={stop.latestArrivalTime} onChange={v => onChange({ latestArrivalTime: v })} />
+              type="time" value={stop.latestArrivalTime} onChange={v => onChange({ latestArrivalTime: v })}
+              error={highlightErrors && !stop.latestArrivalTime ? "Required" : undefined} />
           </div>
 
           {/* Service time */}
           <div>
             <FieldLabel required>Estimated {stop.type === "collection" ? "loading" : "unloading"} time</FieldLabel>
             <ServiceTimeChips value={stop.serviceTime} onChange={v => onChange({ serviceTime: v })} />
+            {highlightErrors && !stop.serviceTime && (
+              <p className="text-xs text-red-600 mt-1">Required — select a loading / unloading time</p>
+            )}
             {stop.serviceTime === "custom" && (() => {
               const totalMin = Math.max(0, parseInt(stop.serviceTimeCustom, 10) || 0);
               const hrs = Math.floor(totalMin / 60);

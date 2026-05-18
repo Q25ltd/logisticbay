@@ -161,6 +161,7 @@ export default function CreateJobPage() {
   const [error, setError] = useState("");
   const [loadingJob, setLoadingJob] = useState(isEditMode || isTemplateMode);
   const [triedSave, setTriedSave] = useState(false);
+  const [showStopErrors, setShowStopErrors] = useState(false);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
@@ -747,6 +748,7 @@ export default function CreateJobPage() {
 
   // ── Save handlers ────────────────────────────────────────────────────────────
   async function handleSaveDraft() {
+    setShowStopErrors(true);
     if (!isEditMode && saveAsTemplate && !templateName.trim()) {
       setError("Enter a template name, or uncheck 'Save as template'");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -772,6 +774,7 @@ export default function CreateJobPage() {
 
   async function handleSaveReady() {
     setTriedSave(true);
+    setShowStopErrors(true);
     if (!isEditMode && saveAsTemplate && !templateName.trim()) {
       setError("Enter a template name, or uncheck 'Save as template'");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1019,7 +1022,8 @@ export default function CreateJobPage() {
                 <SharedStopCard key={stop.id} stop={stop} index={idx} total={stops.length}
                   savedLocations={locations}
                   onChange={patch => updateStop(stop.id, patch)}
-                  onRemove={() => removeStop(stop.id)} />
+                  onRemove={() => removeStop(stop.id)}
+                  highlightErrors={showStopErrors} />
               ))}
               <button type="button" onClick={addStop}
                 className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
