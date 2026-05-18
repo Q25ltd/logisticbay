@@ -7,12 +7,9 @@ type AuthResponse = {
   user: User;
 };
 
-type RegisterResponse = {
-  requiresVerification: true;
-  email: string;
-  companyId: number;
-  userId: number;
-};
+type RegisterResponse =
+  | { requiresVerification: true; email: string; companyId: number; userId: number }
+  | (AuthResponse & { companyId: number; userId: number });
 
 function storeAuthSession(data: AuthResponse) {
   setAuthTokens(data.accessToken, data.refreshToken);
@@ -29,7 +26,9 @@ export async function login(email: string, password: string) {
 export async function registerCompany(form: {
   companyName: string; ticker: string; name: string; email: string; password: string; confirmPassword: string;
 }): Promise<RegisterResponse> {
-  return api.post<RegisterResponse>("/auth/register-company", form);
+  const data = await api.post<RegisterResponse>("/auth/register-company", form);
+  if ("accessToken" in data) storeAuthSession(data);
+  return data;
 }
 
 export async function forgotPassword(email: string): Promise<void> {

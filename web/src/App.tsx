@@ -45,7 +45,7 @@ export default function App() {
         <Routes>
           <Route path="/"         element={<LandingPage />} />
           <Route path="/login"           element={auth.user ? <Navigate to="/app/dashboard" replace /> : <LoginPage onLogin={auth.refresh} />} />
-          <Route path="/register"        element={auth.user ? <Navigate to="/app/dashboard" replace /> : <RegisterPage />} />
+          <Route path="/register"        element={auth.user ? <Navigate to="/app/dashboard" replace /> : <RegisterPage onLogin={auth.refresh} />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password"  element={<ResetPasswordPage />} />
           <Route path="/verify-email"    element={<VerifyEmailPage onLogin={auth.refresh} />} />

@@ -73,6 +73,9 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
     const passwordHash = await bcrypt.hash(body.password, 12);
 
+    // When email is not configured, skip verification and activate immediately
+    const companyStatus = env.EMAIL_ENABLED ? "pending" : "trial";
+
     const result = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
@@ -81,7 +84,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
           ticker,
           nextJobSequence: 1,
           jobSequenceYear: new Date().getFullYear(),
-          status:          "pending",  // activated after email verification
+          status:          companyStatus,
         },
       });
 
@@ -101,20 +104,46 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       return { company, user };
     });
 
-    const rawToken = await createEmailVerificationToken(prisma, result.user.id);
-    const verifyUrl = `${env.APP_URL}/verify-email?token=${rawToken}`;
-
-    try {
-      await sendEmailVerificationEmail(result.user.email, result.user.name, verifyUrl);
-    } catch {
-      // Log but don't block registration — user can request a new link later
+    if (env.EMAIL_ENABLED) {
+      const rawToken = await createEmailVerificationToken(prisma, result.user.id);
+      const verifyUrl = `${env.APP_URL}/verify-email?token=${rawToken}`;
+      try {
+        await sendEmailVerificationEmail(result.user.email, result.user.name, verifyUrl);
+      } catch {
+        // Log but don't block registration
+      }
+      return reply.status(201).send({
+        requiresVerification: true,
+        email: result.user.email,
+        companyId: result.company.id,
+        userId:    result.user.id,
+      });
     }
 
+    // Email disabled — issue tokens directly so registration works without SendGrid
+    const tokenPayload = { userId: result.user.id, companyId: result.company.id, role: "company_owner" };
+    const accessToken  = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
+    await storeRefreshToken(prisma, {
+      userId:    result.user.id,
+      companyId: result.company.id,
+      token:     refreshToken,
+      userAgent: request.headers["user-agent"] ?? "",
+    });
+
     return reply.status(201).send({
-      requiresVerification: true,
-      email: result.user.email,
+      accessToken,
+      refreshToken,
       companyId: result.company.id,
       userId:    result.user.id,
+      user: {
+        id:        result.user.id,
+        name:      result.user.name,
+        email:     result.user.email,
+        companyId: result.company.id,
+        companyName: result.company.name,
+        role:      "company_owner",
+      },
     });
   });
 

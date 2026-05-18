@@ -5,7 +5,7 @@ import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import { Alert } from "../../components/Alert";
 
-export default function RegisterPage() {
+export default function RegisterPage({ onLogin }: { onLogin?: () => void }) {
   const [form, setForm] = useState({
     companyName: "", ticker: "", name: "", email: "", password: "", confirmPassword: "",
   });
@@ -23,7 +23,12 @@ export default function RegisterPage() {
     e.preventDefault(); setError(""); setLoading(true);
     try {
       const res = await registerCompany(form);
-      setSentTo(res.email);
+      if ("requiresVerification" in res) {
+        setSentTo(res.email);
+      } else {
+        // Email disabled — tokens already stored, go to app
+        await onLogin?.();
+      }
     }
     catch (err: any) { setError(err.message); }
     finally { setLoading(false); }

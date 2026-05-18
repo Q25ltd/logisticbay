@@ -15,4 +15,5 @@ export const env = {
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET!,
   DATABASE_URL:       process.env.DATABASE_URL!,
   APP_URL:            process.env.APP_URL ?? "https://logisticbay.com",
+  EMAIL_ENABLED:      !!process.env.SENDGRID_API_KEY,
 };
