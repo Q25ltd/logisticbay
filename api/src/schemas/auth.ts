@@ -17,7 +17,10 @@ export const LogoutSchema = z.object({
 
 export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
-  newPassword:     z.string().min(8, "New password must be at least 8 characters"),
+  newPassword:     z.string().min(1, "New password is required").refine(
+    v => /^\d{6}$/.test(v) || v.length >= 8,
+    "PIN must be exactly 6 digits, or a password of at least 8 characters"
+  ),
 });
 
 export const RegisterCompanySchema = z.object({

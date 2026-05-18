@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { api } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -17,18 +18,6 @@ export default function SettingsPage() {
   const [companySuccess,     setCompanySuccess]     = useState("");
   const [companyError,       setCompanyError]       = useState("");
 
-  const [baseHolidayAllowanceDays, setBaseHolidayAllowanceDays] = useState("28");
-  const [holidayYearResetMonth, setHolidayYearResetMonth] = useState("1");
-  const [holidayYearResetDay, setHolidayYearResetDay] = useState("1");
-  const [holidayWarnDaysBefore, setHolidayWarnDaysBefore] = useState("30");
-  const [maxHolidaysPerDay, setMaxHolidaysPerDay] = useState("2");
-  const [holidayCarryOverAllowed, setHolidayCarryOverAllowed] = useState(false);
-  const [holidayCarryOverMaxDays, setHolidayCarryOverMaxDays] = useState("0");
-  const [holidaySeniorityEnabled, setHolidaySeniorityEnabled] = useState(true);
-  const [holidaySeniorityYears, setHolidaySeniorityYears] = useState("5");
-  const [holidaySeniorityExtraDays, setHolidaySeniorityExtraDays] = useState("1");
-  const [holidaySeniorityMaxExtraDays, setHolidaySeniorityMaxExtraDays] = useState("5");
-
   // Password change
   const [currentPw, setCurrentPw] = useState("");
   const [newPw,     setNewPw]     = useState("");
@@ -44,17 +33,6 @@ export default function SettingsPage() {
       setReportEmailEnabled(data.reportEmailEnabled ?? true);
       setCompanyName(data.name ?? "");
       setTicker(data.ticker ?? "");
-      setBaseHolidayAllowanceDays(String(data.baseHolidayAllowanceDays ?? 28));
-      setHolidayYearResetMonth(String(data.holidayYearResetMonth ?? 1));
-      setHolidayYearResetDay(String(data.holidayYearResetDay ?? 1));
-      setHolidayWarnDaysBefore(String(data.holidayWarnDaysBefore ?? 30));
-      setMaxHolidaysPerDay(String(data.maxHolidaysPerDay ?? 2));
-      setHolidayCarryOverAllowed(Boolean(data.holidayCarryOverAllowed ?? false));
-      setHolidayCarryOverMaxDays(String(data.holidayCarryOverMaxDays ?? 0));
-      setHolidaySeniorityEnabled(Boolean(data.holidaySeniorityEnabled ?? true));
-      setHolidaySeniorityYears(String(data.holidaySeniorityYears ?? 5));
-      setHolidaySeniorityExtraDays(String(data.holidaySeniorityExtraDays ?? 1));
-      setHolidaySeniorityMaxExtraDays(String(data.holidaySeniorityMaxExtraDays ?? 5));
     }).catch(() => {});
   }, []);
 
@@ -67,17 +45,6 @@ export default function SettingsPage() {
         ticker: ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || undefined,
         reportEmail,
         reportEmailEnabled,
-        baseHolidayAllowanceDays: Number(baseHolidayAllowanceDays),
-        holidayYearResetMonth: Number(holidayYearResetMonth),
-        holidayYearResetDay: Number(holidayYearResetDay),
-        holidayWarnDaysBefore: Number(holidayWarnDaysBefore),
-        maxHolidaysPerDay: Number(maxHolidaysPerDay),
-        holidayCarryOverAllowed,
-        holidayCarryOverMaxDays: Number(holidayCarryOverMaxDays),
-        holidaySeniorityEnabled,
-        holidaySeniorityYears: Number(holidaySeniorityYears),
-        holidaySeniorityExtraDays: Number(holidaySeniorityExtraDays),
-        holidaySeniorityMaxExtraDays: Number(holidaySeniorityMaxExtraDays),
       });
       setCompanySuccess("Settings saved ✓");
     } catch (err: any) { setCompanyError(err.message); }
@@ -168,121 +135,24 @@ export default function SettingsPage() {
             </label>
           </div>
 
-          <div className="border-t border-border pt-4 mt-5">
-            <h3 className="font-bold mb-3" style={{ color: "#0f172a" }}>Holiday policy</h3>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Base holiday days"
-                type="number"
-                value={baseHolidayAllowanceDays}
-                onChange={e => setBaseHolidayAllowanceDays(e.target.value)}
-                placeholder="28"
-              />
-              <Input
-                label="Warn before reset (days)"
-                type="number"
-                value={holidayWarnDaysBefore}
-                onChange={e => setHolidayWarnDaysBefore(e.target.value)}
-                placeholder="30"
-              />
-            </div>
-
-            <Input
-              label="Max drivers off per day"
-              type="number"
-              value={maxHolidaysPerDay}
-              onChange={e => setMaxHolidaysPerDay(e.target.value)}
-              placeholder="2"
-            />
-            <p className="text-xs -mt-2 mb-4" style={{ color: "#6b7280" }}>
-              Pending and approved holiday requests count against this daily planning limit. Planners can still approve over the limit as an exception, but the system warns them.
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Holiday reset month"
-                type="number"
-                value={holidayYearResetMonth}
-                onChange={e => setHolidayYearResetMonth(e.target.value)}
-                placeholder="1"
-              />
-              <Input
-                label="Holiday reset day"
-                type="number"
-                value={holidayYearResetDay}
-                onChange={e => setHolidayYearResetDay(e.target.value)}
-                placeholder="1"
-              />
-            </div>
-
-            <div className="flex items-center gap-3 mb-4">
-              <input
-                type="checkbox"
-                id="holidayCarryOverAllowed"
-                checked={holidayCarryOverAllowed}
-                onChange={e => setHolidayCarryOverAllowed(e.target.checked)}
-              />
-              <label htmlFor="holidayCarryOverAllowed" className="text-sm cursor-pointer" style={{ color: "#0f172a" }}>
-                Allow unused holidays to transfer to next holiday year
-              </label>
-            </div>
-
-            {holidayCarryOverAllowed && (
-              <Input
-                label="Maximum carry-over days"
-                type="number"
-                value={holidayCarryOverMaxDays}
-                onChange={e => setHolidayCarryOverMaxDays(e.target.value)}
-                placeholder="5"
-              />
-            )}
-
-            <div className="flex items-center gap-3 mb-4">
-              <input
-                type="checkbox"
-                id="holidaySeniorityEnabled"
-                checked={holidaySeniorityEnabled}
-                onChange={e => setHolidaySeniorityEnabled(e.target.checked)}
-              />
-              <label htmlFor="holidaySeniorityEnabled" className="text-sm cursor-pointer" style={{ color: "#0f172a" }}>
-                Increase holiday allowance by employment length
-              </label>
-            </div>
-
-            {holidaySeniorityEnabled && (
-              <div className="grid grid-cols-3 gap-3">
-                <Input
-                  label="After years"
-                  type="number"
-                  value={holidaySeniorityYears}
-                  onChange={e => setHolidaySeniorityYears(e.target.value)}
-                  placeholder="5"
-                />
-                <Input
-                  label="Extra days each step"
-                  type="number"
-                  value={holidaySeniorityExtraDays}
-                  onChange={e => setHolidaySeniorityExtraDays(e.target.value)}
-                  placeholder="1"
-                />
-                <Input
-                  label="Max extra days"
-                  type="number"
-                  value={holidaySeniorityMaxExtraDays}
-                  onChange={e => setHolidaySeniorityMaxExtraDays(e.target.value)}
-                  placeholder="5"
-                />
-              </div>
-            )}
-
-            <p className="text-xs mt-2" style={{ color: "#6b7280" }}>
-              Paid holiday allowance applies to permanent drivers only. Agency/subcontractor drivers can still mark unavailable dates from the mobile app.
-            </p>
-          </div>
-
           <Button type="submit" loading={companySaving}>Save Settings</Button>
         </form>
+      </div>
+
+      {/* Holiday policy — managed on the Holidays page */}
+      <div className="card p-6 flex items-center justify-between">
+        <div>
+          <h2 className="font-bold" style={{ color: "#0f172a" }}>Holiday Policy</h2>
+          <p className="text-sm mt-1" style={{ color: "#6b7280" }}>
+            Allowance, carry-over, seniority, and daily limits are configured on the Holidays page.
+          </p>
+        </div>
+        <Link
+          to="/app/holidays"
+          className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-white hover:opacity-90 transition-opacity whitespace-nowrap"
+        >
+          Go to Holidays →
+        </Link>
       </div>
 
       {/* Change password */}
