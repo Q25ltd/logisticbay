@@ -185,6 +185,8 @@ export interface CreateTemplateBody {
 
 export interface PatchTemplateBody {
   name?:                string;
+  pickupTextSnapshot?:  string;
+  dropoffTextSnapshot?: string;
   defaultReference?:    string;
   defaultNotes?:        string;
   defaultMaterialType?: string;

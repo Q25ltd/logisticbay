@@ -192,20 +192,20 @@ model SavedLocation {
   id                   Int      @id @default(autoincrement())
   companyId            Int
   name                 String
-  siteName             String   @default("")
-  unitName             String   @default("")
-  locationTextSnapshot String   @default("")
-  street               String   @default("")
-  town                 String   @default("")
-  postcode             String   @default("")
+  siteName             String?
+  unitName             String?
+  locationTextSnapshot String?
+  street               String?
+  town                 String?
+  postcode             String?
   lat                  Float?
   lng                  Float?
   gateLat              Float?
   gateLng              Float?
-  contactName          String   @default("")
-  contactPhone         String   @default("")
-  instructions         String   @default("")
-  internalNotes        String   @default("")
+  contactName          String?
+  contactPhone         String?
+  instructions         String?
+  internalNotes        String?
   accessType           String   @default("unknown")
   accessConfidence     String   @default("low")
   driverReportCount    Int      @default(0)
@@ -228,11 +228,11 @@ model JobTemplate {
   name                String
   pickupLocationId    Int?
   dropoffLocationId   Int?
-  pickupTextSnapshot  String   @default("")
-  dropoffTextSnapshot String   @default("")
-  defaultReference    String   @default("")
-  defaultNotes        String   @default("")
-  defaultMaterialType String   @default("")
+  pickupTextSnapshot  String?
+  dropoffTextSnapshot String?
+  defaultReference    String?
+  defaultNotes        String?
+  defaultMaterialType String?
   trailerTypesAllowed Json?
   defaultStops        Json?
   defaultLoadDetails  Json?
@@ -276,44 +276,44 @@ model Job {
 
   // ── scheduling ────────────────────────────────────────────────────────────
   plannedDate      DateTime?
-  serviceType      String    @default("")
-  jobType          String    @default("")
+  serviceType      String?
+  jobType          String?
   canSplitShipment String    @default("must_stay_together")
 
   // ── customer ──────────────────────────────────────────────────────────────
-  customerName        String  @default("")
-  customerRef         String  @default("")
-  purchaseOrderNumber String  @default("")
+  customerName        String?
+  customerRef         String?
+  purchaseOrderNumber String?
   billingReference    String?
   declaredGoodsValue  String?
-  billingNotes        String  @default("")
+  billingNotes        String?
 
-  bookingContactName  String  @default("")
-  bookingContactPhone String  @default("")
-  bookingContactEmail String  @default("")
+  bookingContactName  String?
+  bookingContactPhone String?
+  bookingContactEmail String?
   custRefRequired     Boolean @default(false)
   poRequired          Boolean @default(false)
 
   // ── planner ───────────────────────────────────────────────────────────────
-  plannerNotes       String  @default("")
-  internalNotes      String  @default("")
+  plannerNotes       String?
+  internalNotes      String?
   driverNoteChips    Json?   // string[] — chips shown to driver on mobile
   driverVisibleNotes String?
   safetyInstructions String?
 
   // ── load (merged from LoadDetails) ────────────────────────────────────────
-  goodsType            String  @default("")
-  goodsDescription     String  @default("")
+  goodsType            String?
+  goodsDescription     String?
   quantity             Float?
-  quantityUnit         String  @default("")
+  quantityUnit         String?
   weight               Float?
   volume               Float?
-  dimensions           String  @default("")
+  dimensions           String?
   fragile              Boolean @default(false)
   stackable            Boolean @default(false)
   tempControlled       Boolean @default(false)
-  tempRange            String  @default("")
-  hazardClass          String  @default("")
+  tempRange            String?
+  hazardClass          String?
   photosRequired       Boolean @default(false)
   weighbridgeRequired  Boolean @default(false)
   securingRequirements Json?   // string[]
@@ -322,17 +322,17 @@ model Job {
 
   // ── vehicle requirements ──────────────────────────────────────────────────
   // What the job NEEDS — system checks against fleet/driver at assignment time.
-  vehicleCategory    String  @default("")   // matches FleetUnit.bodyCategory
+  vehicleCategory    String?                // matches FleetUnit.bodyCategory
   bodyTypes          Json?                  // string[] — each value matches FleetUnit.bodyType
-  minGvwClass        String  @default("")   // matches FleetUnit.gvwClass
+  minGvwClass        String?                // matches FleetUnit.gvwClass
   equipment          Json?                  // string[] — matches FleetUnit.onboardEquipment
   trailersAllowed    Json?                  // string[] — matches FleetTrailer.bodyType
-  vehicleAccessNotes String  @default("")
+  vehicleAccessNotes String?
 
   // ── exception policy ──────────────────────────────────────────────────────
   failureAction                 String  @default("call_assistance")
-  assistancePhone               String  @default("")
-  assistanceNote                String  @default("")
+  assistancePhone               String?
+  assistanceNote                String?
   approvalContactName           String?
   approvalContactPhone          String?
   alternativeReturnAddress      String?
@@ -387,12 +387,12 @@ model JobPart {
   type           String
 
   savedLocationId      Int?
-  siteName             String @default("")
-  unitName             String @default("")
-  street               String @default("")
-  town                 String @default("")
-  postcode             String @default("")
-  locationTextSnapshot String @default("")
+  siteName             String?
+  unitName             String?
+  street               String?
+  town                 String?
+  postcode             String?
+  locationTextSnapshot String?
 
   lat     Float?
   lng     Float?
@@ -406,23 +406,23 @@ model JobPart {
   bookedTime                DateTime?
   earliestArrivalMinutes    Int?
   unloadingAllowanceMinutes Int?
-  standingChargeNote        String    @default("")
+  standingChargeNote        String?
 
-  contactName     String @default("")
-  contactPhone    String @default("")
-  contactEmail    String @default("")
-  referenceNumber String @default("")
+  contactName     String?
+  contactPhone    String?
+  contactEmail    String?
+  referenceNumber String?
   bookingRequired Boolean @default(false)
-  bookingRef      String  @default("")
-  openingHours    String  @default("")
-  instructions    String  @default("")
-  navigationInstructions String @default("")
-  locationType    String  @default("")
+  bookingRef      String?
+  openingHours    String?
+  instructions    String?
+  navigationInstructions String?
+  locationType    String?
 
   // Quantity tracking
   numPallets         Int?     // legacy field — kept for mobile compatibility
   quantityRequired   Decimal?
-  quantityUnit       String   @default("")
+  quantityUnit       String?
   quantityCollected  Decimal  @default(0)
   quantityDelivered  Decimal  @default(0)
 
@@ -434,9 +434,9 @@ model JobPart {
   // Equipment exchange / asset return at this stop
   exchangeDropQty    Decimal?
   exchangeCollectQty Decimal?
-  exchangeUnit       String   @default("")
+  exchangeUnit       String?
   // Load readiness reported by customer
-  loadReadiness      String   @default("")
+  loadReadiness      String?
 
   // Stop-level load specification — drives trailer compatibility checks
   stopGoodsType        String?
@@ -447,13 +447,13 @@ model JobPart {
   hazardClass          String?
   oversized            Boolean  @default(false)
 
-  heightRestriction String @default("")
-  weightRestriction String @default("")
-  lengthRestriction String @default("")
-  internalNotes     String @default("")
-  stopNotes         String @default("")
-  addressLine2      String @default("")
-  countyRegion      String @default("")
+  heightRestriction String?
+  weightRestriction String?
+  lengthRestriction String?
+  internalNotes     String?
+  stopNotes         String?
+  addressLine2      String?
+  countyRegion      String?
   country           String @default("United Kingdom")
 
   status String @default("pending")

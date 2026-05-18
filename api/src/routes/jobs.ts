@@ -254,7 +254,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { id },
         data: {
           status:       "cancelled",
-          plannerNotes: appendPlannerReason(job.plannerNotes, "Job deleted by planner. Record kept as cancelled for audit and reporting."),
+          plannerNotes: appendPlannerReason(job.plannerNotes ?? "", "Job deleted by planner. Record kept as cancelled for audit and reporting."),
         },
       });
       await tx.jobAudit.create({

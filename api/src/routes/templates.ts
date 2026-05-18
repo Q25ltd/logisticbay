@@ -34,18 +34,18 @@ export async function templateRoutes(app: FastifyInstance, prisma: PrismaClient)
     const v = validateCreateTemplate(body);
     if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
 
-    let pickupText  = body.pickupTextSnapshot  ?? "";
-    let dropoffText = body.dropoffTextSnapshot ?? "";
+    let pickupText:  string | null = body.pickupTextSnapshot?.trim()  || null;
+    let dropoffText: string | null = body.dropoffTextSnapshot?.trim() || null;
 
     if (body.pickupLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.pickupLocationId, companyId } });
       if (!loc) return reply.status(400).send({ error: "Pickup location not found" });
-      pickupText = loc.locationTextSnapshot;
+      pickupText = loc.locationTextSnapshot?.trim() || null;
     }
     if (body.dropoffLocationId) {
       const loc = await prisma.savedLocation.findFirst({ where: { id: body.dropoffLocationId, companyId } });
       if (!loc) return reply.status(400).send({ error: "Dropoff location not found" });
-      dropoffText = loc.locationTextSnapshot;
+      dropoffText = loc.locationTextSnapshot?.trim() || null;
     }
 
     const template = await prisma.jobTemplate.create({
@@ -56,9 +56,9 @@ export async function templateRoutes(app: FastifyInstance, prisma: PrismaClient)
         dropoffLocationId:   body.dropoffLocationId ?? null,
         pickupTextSnapshot:  pickupText,
         dropoffTextSnapshot: dropoffText,
-        defaultReference:    body.defaultReference    ?? "",
-        defaultNotes:        body.defaultNotes        ?? "",
-        defaultMaterialType: body.defaultMaterialType ?? "",
+        defaultReference:    body.defaultReference?.trim()    || null,
+        defaultNotes:        body.defaultNotes?.trim()        || null,
+        defaultMaterialType: body.defaultMaterialType?.trim() || null,
         defaultStops:        body.defaultStops        ?? undefined,
         defaultLoadDetails:  body.defaultLoadDetails  ?? undefined,
         defaultJobData:      body.defaultJobData      ?? undefined,
@@ -83,9 +83,11 @@ export async function templateRoutes(app: FastifyInstance, prisma: PrismaClient)
       where: { id },
       data: {
         name:                body.name                ?? template.name,
-        defaultReference:    body.defaultReference    ?? template.defaultReference,
-        defaultNotes:        body.defaultNotes        ?? template.defaultNotes,
-        defaultMaterialType: body.defaultMaterialType ?? template.defaultMaterialType,
+        defaultReference:    body.defaultReference    !== undefined ? (body.defaultReference?.trim()    || null) : template.defaultReference,
+        defaultNotes:        body.defaultNotes        !== undefined ? (body.defaultNotes?.trim()        || null) : template.defaultNotes,
+        defaultMaterialType: body.defaultMaterialType !== undefined ? (body.defaultMaterialType?.trim() || null) : template.defaultMaterialType,
+        pickupTextSnapshot:  body.pickupTextSnapshot  !== undefined ? (body.pickupTextSnapshot?.trim()  || null) : template.pickupTextSnapshot,
+        dropoffTextSnapshot: body.dropoffTextSnapshot !== undefined ? (body.dropoffTextSnapshot?.trim() || null) : template.dropoffTextSnapshot,
         defaultStops:        (body.defaultStops        !== undefined ? body.defaultStops        : template.defaultStops)        as Prisma.InputJsonValue | undefined,
         defaultLoadDetails:  (body.defaultLoadDetails  !== undefined ? body.defaultLoadDetails  : template.defaultLoadDetails)  as Prisma.InputJsonValue | undefined,
         defaultJobData:      (body.defaultJobData      !== undefined ? body.defaultJobData      : template.defaultJobData)      as Prisma.InputJsonValue | undefined,
