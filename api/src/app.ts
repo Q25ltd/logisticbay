@@ -10,6 +10,7 @@ import { availabilityRoutes }  from "./routes/availability.js";
 import { fleetRoutes }         from "./routes/fleet.js";
 import { dashboardRoutes }     from "./routes/dashboard.js";
 import { jobRequestRoutes }    from "./routes/jobRequests.js";
+import { requestLinkRoutes }   from "./routes/requestLinks.js";
 import { runRoutes }           from "./routes/runs.js";
 import { locationRoutes }      from "./routes/locations.js";
 import { templateRoutes }      from "./routes/templates.js";
@@ -101,6 +102,7 @@ export async function buildApp(
   await fleetRoutes(app, prisma);
   await dashboardRoutes(app, prisma);
   await jobRequestRoutes(app, prisma);
+  await requestLinkRoutes(app, prisma);
   await runRoutes(app, prisma);
   await locationRoutes(app, prisma);
   await templateRoutes(app, prisma);

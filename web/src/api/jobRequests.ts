@@ -14,7 +14,7 @@ export interface PublicLinkInfo {
 // Stop object — one per collection/delivery/reload/etc.
 export interface RequestStop {
   type: "collection" | "delivery" | "reload" | "return" | "waypoint" | "other";
-  sequence?: number;
+  sequenceNumber:      number;
   siteName:            string;
   street:              string;
   addressLine2?:       string;
@@ -33,10 +33,9 @@ export interface RequestStop {
   bookingRef?:         string;
   openingHours?:       string;
   siteRestrictions?:   string[];
-  date:                string;   // YYYY-MM-DD
-  earliestArrivalTime: string;   // HH:MM
-  latestArrivalTime:   string;   // HH:MM
-  bookedTime?:         string;
+  timeWindowStart?:    string;   // ISO datetime
+  timeWindowEnd?:      string;   // ISO datetime
+  bookedTime?:         string;   // ISO datetime
   unloadingAllowanceMinutes: number;
   quantityRequired?:       number;
   quantityUnit?:           string;

@@ -351,7 +351,7 @@ export function sharedStopToRequestStop(s: SharedStopState, seq: number): Reques
   const svcMin = s.serviceTime === "custom" ? (customMin > 0 ? customMin : 30) : parseInt(s.serviceTime, 10);
   return {
     type:           s.type as RequestStop["type"],
-    sequence:       seq,
+    sequenceNumber: seq,
     siteName:            s.siteName.trim(),
     street:              s.street.trim(),
     addressLine2:        s.addressLine2.trim() || undefined,
@@ -369,10 +369,9 @@ export function sharedStopToRequestStop(s: SharedStopState, seq: number): Reques
     bookingRequired:     s.bookingRequired || undefined,
     bookingRef:          s.bookingRef.trim() || undefined,
     openingHours:        s.openingHours.trim() || undefined,
-    date:                s.date,
-    earliestArrivalTime: s.earliestArrivalTime,
-    latestArrivalTime:   s.latestArrivalTime,
-    bookedTime:          s.bookedTime || undefined,
+    timeWindowStart: (s.date && s.earliestArrivalTime) ? `${s.date}T${s.earliestArrivalTime}:00.000Z` : undefined,
+    timeWindowEnd:   (s.date && s.latestArrivalTime)   ? `${s.date}T${s.latestArrivalTime}:00.000Z`   : undefined,
+    bookedTime:      (s.date && s.bookedTime)           ? `${s.date}T${s.bookedTime}:00.000Z`           : undefined,
     unloadingAllowanceMinutes: svcMin,
     quantityRequired:    s.quantityRequired ? parseFloat(s.quantityRequired) : undefined,
     quantityUnit:        s.quantityRequired ? s.quantityUnit : undefined,
