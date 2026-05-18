@@ -17,6 +17,7 @@ model Company {
   nextRunSequence              Int      @default(1)
   runSequenceYear              Int      @default(2026)
   status                       String   @default("trial")
+  type                         String   @default("carrier")  // "carrier" | "sender" | "both"
   reportEmail                  String?
   reportEmailEnabled           Boolean  @default(true)
   maxHolidaysPerDay            Int      @default(2)
