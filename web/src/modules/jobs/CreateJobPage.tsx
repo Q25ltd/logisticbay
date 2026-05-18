@@ -569,8 +569,7 @@ export default function CreateJobPage() {
       // roll_cages
       cageCount:         cageCount    ? parseInt(cageCount, 10)    : undefined,
       cageFolded:        cageFolded   || undefined,
-      // machinery
-      dimensions:        dimensions   || undefined,
+      // machinery (dimensions is a flat Job column, sent separately)
       machineryPieceWeight: machineryPieceWeight ? parseFloat(machineryPieceWeight) : undefined,
       liftingPoints:     machineryLiftingPoints  || undefined,
       skidMounted:       machinerySkidMounted    || undefined,
@@ -686,26 +685,23 @@ export default function CreateJobPage() {
       quantity:                 quantity ? parseFloat(quantity) : undefined,
       quantityUnit:             effectiveUnit || undefined,
       weight:                   estWeight ? parseFloat(estWeight) : undefined,
-      loadNotes:                loadNotes.trim() || undefined,
+      dimensions:               dimensions.trim() || undefined,
+      fragile:                  specialItems.includes("fragile"),
+      stackable,
+      tempControlled:           !!tempType,
+      tempRange:                tempRange.trim() || undefined,
       securingRequirements:     securingRequirements.length ? securingRequirements : undefined,
       canSplitShipment,
       // Special requirements — flat canonical names
       specialRequirements:      specialItems.length ? specialItems : undefined,
       hazardClass:              hazardClass.trim() || undefined,
-      unNumber:                 unNumber.trim() || undefined,
-      packingGroup:             packingGroup.trim() || undefined,
-      hazardousQuantityKg:      hazardousQtyKg ? parseFloat(hazardousQtyKg) : undefined,
-      hazardousPaperworkAvailable: hazardousPaperwork || undefined,
-      oversizedWidth:           oversizedWidth.trim() || undefined,
-      oversizedHeight:          oversizedHeight.trim() || undefined,
-      oversizedLength:          oversizedLength.trim() || undefined,
       // Transport requirements — flat canonical names
       vehicleCategory:          plannerDecides ? undefined : vehicleCategory || undefined,
       bodyTypes:                plannerDecides ? undefined : bodyTypes.length ? bodyTypes : undefined,
       equipment:                plannerDecides ? undefined : equipment.length ? equipment : undefined,
       trailersAllowed:          plannerDecides ? undefined : trailersAllowed.length ? trailersAllowed : undefined,
-      // Billing — flat canonical names
-      declaredGoodsValue:       declaredValue ? parseFloat(declaredValue) : undefined,
+      // Billing — flat canonical names (schema expects strings for monetary fields)
+      declaredGoodsValue:       declaredValue.trim() || undefined,
       billingReference:         billingRef.trim() || undefined,
       // Rejection / exception policy — flat canonical names
       failureAction:            failureAction || undefined,

@@ -56,6 +56,9 @@ export interface StructuredJobPartInput {
   proofRequirements?: unknown[] | null;
   loadReadiness?: unknown;
   stopNotes?: unknown;
+  heightRestriction?: unknown;
+  weightRestriction?: unknown;
+  lengthRestriction?: unknown;
 }
 
 export interface StructuredLoadDetailsInput {

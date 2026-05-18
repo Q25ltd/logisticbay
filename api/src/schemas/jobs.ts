@@ -137,7 +137,6 @@ export const CreateJobSchema = JobCreateBaseSchema.extend({
   internalNotes:  z.string().nullable().optional(),
   saveAsTemplate: z.boolean().optional(),
   templateName:   z.string().optional(),
-  agreedRate:     z.number().nullable().optional(),
 }).strip();
 
 // ── PATCH variant — all fields optional ───────────────────────────────────────
