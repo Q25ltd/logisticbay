@@ -335,9 +335,7 @@ export const jobRequestsPublicApi = {
 // ── Internal (auth required) ──────────────────────────────────────────────────
 
 export const jobRequestsApi = {
-  listLinks:   ()  => api.get<{ data: RequestLink[] }>("/request-links"),
-  createLink:  (body: { name: string; customerId?: number; expiresAt?: string; templateData?: Record<string, unknown> | null }) =>
-    api.post<RequestLink>("/request-links", body),
+  listLinks:   ()  => api.get<{ data: RequestLink[]; companySlug: string | null }>("/request-links"),
   updateLink:  (id: number, body: { name?: string; isActive?: boolean; expiresAt?: string | null; templateData?: Record<string, unknown> | null }) =>
     api.patch<RequestLink>(`/request-links/${id}`, body),
   regenerateLink: (id: number) =>

@@ -73,43 +73,15 @@ export async function requestLinkRoutes(app: FastifyInstance, prisma: PrismaClie
       // Ensure the company always has a main link
       await ensureMainLink(prisma, companyId, userId);
 
-      const links = await prisma.clientRequestLink.findMany({
-        where:   { companyId },
-        include: { customer: { select: { id: true, name: true } } },
-        orderBy: [{ isMain: "desc" }, { createdAt: "desc" }],
-      });
-      return reply.send({ data: links.map(serializeLink) });
-    },
-  );
-
-  // ── POST /request-links ────────────────────────────────────────────────────
-  app.post(
-    "/request-links",
-    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
-    async (request, reply) => {
-      const body      = request.body as Record<string, unknown>;
-      const rawToken  = generateRawToken();
-      const tokenHash = hashToken(rawToken);
-
-      const link = await prisma.clientRequestLink.create({
-        data: {
-          companyId:    request.user!.companyId,
-          customerId:   typeof body.customerId === "number" ? body.customerId : null,
-          name:         (typeof body.name === "string" ? body.name : "") || "Untitled link",
-          tokenHash,
-          rawToken,
-          isMain:       false,
-          isActive:     true,
-          expiresAt:    body.expiresAt ? new Date(body.expiresAt as string) : null,
-          createdBy:    request.user!.userId,
-          templateData: body.templateData != null
-                          ? (body.templateData as unknown as Prisma.InputJsonValue)
-                          : Prisma.DbNull,
-        },
-        include: { customer: { select: { id: true, name: true } } },
-      });
-
-      return reply.status(201).send(serializeLink(link));
+      const [links, company] = await Promise.all([
+        prisma.clientRequestLink.findMany({
+          where:   { companyId },
+          include: { customer: { select: { id: true, name: true } } },
+          orderBy: [{ isMain: "desc" }, { createdAt: "desc" }],
+        }),
+        prisma.company.findUnique({ where: { id: companyId }, select: { slug: true } }),
+      ]);
+      return reply.send({ data: links.map(serializeLink), companySlug: company?.slug ?? null });
     },
   );
 

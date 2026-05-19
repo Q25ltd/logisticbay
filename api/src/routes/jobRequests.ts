@@ -135,6 +135,27 @@ function buildPRFJobData(
   };
 }
 
+// ─── link resolution ────────────────────────────────────────────────────────
+
+/** Resolve a URL param to a link — tries token hash first, then company slug (main link only). */
+async function resolveLink(prisma: PrismaClient, param: string) {
+  const byToken = await prisma.clientRequestLink.findUnique({
+    where:   { tokenHash: hashToken(param) },
+    include: { company: true, customer: true },
+  });
+  if (byToken) return byToken;
+
+  // Slug path: only resolves the main active link for that company
+  const company = await prisma.company.findUnique({ where: { slug: param } });
+  if (!company) return null;
+
+  const mainLink = await prisma.clientRequestLink.findFirst({
+    where:   { companyId: company.id, isMain: true },
+    include: { company: true, customer: true },
+  });
+  return mainLink ?? null;
+}
+
 // ─── routes ─────────────────────────────────────────────────────────────────
 
 export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
@@ -142,12 +163,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
   // ── GET /public/request/:token ─────────────────────────────────────────────
   app.get("/public/request/:token", async (request, reply) => {
     const { token } = request.params as { token: string };
-    const tokenHash = hashToken(token);
 
-    const link = await prisma.clientRequestLink.findUnique({
-      where:   { tokenHash },
-      include: { company: true, customer: true },
-    });
+    const link = await resolveLink(prisma, token);
 
     if (!link || !link.isActive) {
       return reply.status(404).send({ error: "Link not found or inactive" });
@@ -171,12 +188,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     config: { rateLimit: { max: 10, timeWindow: "10 minutes" } },
   }, async (request, reply) => {
     const { token } = request.params as { token: string };
-    const tokenHash = hashToken(token);
 
-    const link = await prisma.clientRequestLink.findUnique({
-      where:   { tokenHash },
-      include: { company: true, customer: true },
-    });
+    const link = await resolveLink(prisma, token);
 
     if (!link || !link.isActive) {
       return reply.status(404).send({ error: "Link not found or inactive" });
