@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { isValidPhoneNumber, type CountryCode } from "libphonenumber-js";
 import { jobsApi } from "../../api/jobs";
 import { api } from "../../api/client";
 import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
@@ -38,6 +39,25 @@ import {
   BODY_TYPES_BY_CATEGORY as BODY_TYPES_BY_CATEGORY_FULL,
   type BodyCategory,
 } from "../../constants/vehicleTaxonomy";
+
+// ── Validation helpers ────────────────────────────────────────────────────────
+
+function validatePhone(value: string, country = "GB"): string {
+  const v = value.trim();
+  if (!v) return "";
+  try {
+    if (v.startsWith("+")) return isValidPhoneNumber(v) ? "" : "Phone number doesn't look valid — check the number and country code";
+    return isValidPhoneNumber(v, country as CountryCode)
+      ? ""
+      : "Phone number doesn't look valid for this country — include country code (+44…) if calling from abroad";
+  } catch { return "Phone number doesn't look valid"; }
+}
+
+function validateEmail(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? "" : "Email address doesn't look valid";
+}
 
 // ── Local constants ────────────────────────────────────────────────────────────
 
@@ -210,6 +230,8 @@ export default function CreateJobPage() {
   const [bookingContactName,  setBookingContactName]  = useState("");
   const [bookingContactPhone, setBookingContactPhone] = useState("");
   const [bookingContactEmail, setBookingContactEmail] = useState("");
+  const [bookingContactPhoneError, setBookingContactPhoneError] = useState("");
+  const [bookingContactEmailError, setBookingContactEmailError] = useState("");
   const [customerRef,     setCustomerRef]     = useState("");
 
   function handleCustomerChange(name: string, id: number | null, customer?: Customer) {
@@ -336,7 +358,7 @@ export default function CreateJobPage() {
   const [rejectionNotes,               setRejectionNotes]               = useState("");
 
   // ── Completeness ──────────────────────────────────────────────────────────────
-  const sec1Complete = !!(customerName.trim() && bookingContactName.trim() && bookingContactPhone.trim());
+  const sec1Complete = !!(customerName.trim() && bookingContactName.trim() && bookingContactPhone.trim() && bookingContactEmail.trim() && !bookingContactPhoneError && !bookingContactEmailError);
   const sec2Complete = stops.length > 0 && stops.every(sharedStopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
   const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
@@ -362,9 +384,12 @@ export default function CreateJobPage() {
   );
 
   const sec1Missing: string[] = [
-    !customerName.trim()  ? "customer"        : "",
-    !bookingContactName.trim()   ? "contact name"    : "",
-    !bookingContactPhone.trim()  ? "contact phone"   : "",
+    !customerName.trim()              ? "customer"        : "",
+    !bookingContactName.trim()        ? "contact name"    : "",
+    !bookingContactPhone.trim()       ? "contact phone"   : "",
+    !bookingContactEmail.trim()       ? "contact email"   : "",
+    bookingContactPhoneError          ? `phone: ${bookingContactPhoneError}` : "",
+    bookingContactEmailError          ? `email: ${bookingContactEmailError}` : "",
   ].filter(Boolean) as string[];
 
   const sec3Missing: string[] = [
@@ -783,6 +808,11 @@ export default function CreateJobPage() {
   async function handleSaveReady() {
     setTriedSave(true);
     setShowStopErrors(true);
+    setS1Attempted(true); setS3Attempted(true); setS6Attempted(true);
+    const phoneErr = validatePhone(bookingContactPhone);
+    const emailErr = validateEmail(bookingContactEmail);
+    if (phoneErr) setBookingContactPhoneError(phoneErr);
+    if (emailErr) setBookingContactEmailError(emailErr);
     if (!isEditMode && saveAsTemplate && !templateName.trim()) {
       setError("Enter a template name, or uncheck 'Save as template'");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1001,11 +1031,16 @@ export default function CreateJobPage() {
                   placeholder="Jane Smith" caseRule="proper_name"
                   error={(s1Attempted || triedSave) && !bookingContactName.trim() ? "Required" : undefined} />
                 <TextField label="Contact phone" required type="tel" value={bookingContactPhone}
-                  onChange={setBookingContactPhone} placeholder="+44 7700 900123"
-                  error={(s1Attempted || triedSave) && !bookingContactPhone.trim() ? "Required" : undefined} />
+                  error={bookingContactPhoneError || ((s1Attempted || triedSave) && !bookingContactPhone.trim() ? "Required" : undefined)}
+                  onChange={v => { setBookingContactPhone(v); setBookingContactPhoneError(""); }}
+                  onBlur={v => setBookingContactPhoneError(validatePhone(v))}
+                  placeholder="+44 7700 900123" />
               </div>
-              <TextField label="Contact email" type="email" value={bookingContactEmail}
-                onChange={setBookingContactEmail} placeholder="jane@acme.com" caseRule="lower" />
+              <TextField label="Contact email" required type="email" value={bookingContactEmail}
+                error={bookingContactEmailError || ((s1Attempted || triedSave) && !bookingContactEmail.trim() ? "Required" : undefined)}
+                onChange={v => { setBookingContactEmail(v); setBookingContactEmailError(""); }}
+                onBlur={v => setBookingContactEmailError(validateEmail(v))}
+                placeholder="jane@acme.com" caseRule="lower" />
               <TextField label="Customer reference / order number" value={customerRef}
                 onChange={setCustomerRef} placeholder="ORD-2026-1234"
                 hint="Your internal reference for this job, if you have one." />
