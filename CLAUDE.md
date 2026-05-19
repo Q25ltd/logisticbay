@@ -1,102 +1,74 @@
-# LogisticBay — Claude Code instructions
+# LogisticBay — Agent Instructions
 
-## Read this first — mandatory at the start of every session
+> Read this file first, every session, no exceptions.
+> Last updated: 2026-05-19
 
-Use the right document for the right question. Each doc has one job:
+---
 
-| Question | Go to |
+## The 8 documents — what each one is for
+
+| Question you have | Go to |
 |---|---|
-| What is LogisticBay, what are the phases, what are the roles? | **MASTER_BLUEPRINT.md** |
-| How do the five core objects relate? What is a Run vs a Job vs a JobPart? | **SYSTEM_PLAN.md** |
-| What fields exist on Job / JobPart / Run / LoadTrack / Event? What are the status values? | **PHASE1_DATA_MODEL.md** — but see ⚠ gaps table at the top before trusting field names |
-| What is actually built right now — done, partial, not started? | **PROJECT_STATUS.md** ← always check here before proposing anything |
-| What is the canonical name for a field or concept? | **DATA_DICTIONARY.md** |
-| What open decisions need answers before building? | **QUESTIONS_OPERATIONS.md** / **QUESTIONS_*.md** |
+| What is LogisticBay, what are the phases, what roles exist? | **PRODUCT.md** |
+| How do Job / JobPart / Run / LoadTrack / Event relate? What are the rules? | **ARCHITECTURE.md** |
+| What is the canonical name for a field? Is this name already used? | **DATA_DICTIONARY.md** |
+| What is actually built right now — done, partial, not started? | **STATUS.md** ← always check before proposing anything |
+| What open decisions need answering before building a feature? | **QUESTIONS.md** |
+| What are the safety, security, and agent behaviour rules? | **SAFETY.md** |
+| What was decided in a previous session and why? | **DEVLOG.md** |
+| How should frontend pages and components be structured? | **ARCHITECTURE.md** → Frontend Rules section |
 
-**Never assume what exists. Always check PROJECT_STATUS.md and the actual routes/pages first.**
+**Never assume what exists. Always check STATUS.md and the actual routes/pages first.**
 
-### Document authority hierarchy
+---
 
-When documents conflict, this order wins:
-1. `schema.prisma` — the schema is the implementation truth
+## Authority hierarchy — when documents conflict, this order wins
+
+1. `api/prisma/schema.prisma` — the schema is implementation truth
 2. `DATA_DICTIONARY.md` — canonical field names
-3. `PROJECT_STATUS.md` — what is actually built
-4. `PHASE1_DATA_MODEL.md` — target design (may be ahead of schema)
-5. `SYSTEM_PLAN.md` — architecture principles
-6. `MASTER_BLUEPRINT.md` — product vision
+3. `STATUS.md` — what is actually built
+4. `ARCHITECTURE.md` — target design (may be ahead of schema)
+5. `PRODUCT.md` — product vision
 
-## Doc-update rule — mandatory after every significant change
+---
 
-After any session that:
-- adds a new feature or screen
-- changes a data model or route
-- completes or partially completes something from the 🔲 or 🔶 lists
-- identifies a new gap or open question
+## Mandatory rules
 
-**You MUST update PROJECT_STATUS.md** before the session ends. Move items between tiers (🔲 → 🔶 → ✅), add new rows to the partial table, note new gaps in the not-started list.
+### Field naming
+Before naming any new field, state, variable, or JSON key — check **DATA_DICTIONARY.md** first.
+If the concept exists, use that exact name. No aliases, no synonyms.
+After adding a new field, add it to DATA_DICTIONARY.md in the same commit.
 
-If a new open question surfaces that belongs in one of the QUESTIONS_*.md files, add it there too.
-
-The rule in one sentence: **the docs must always reflect what the code actually does, not what it was planned to do.**
-
-## Field naming rule — mandatory before adding any new field
-
-Before naming any new field, state, variable, or JSON blob key, **check DATA_DICTIONARY.md first**.
-
-Rules:
-1. If the concept already exists in the dictionary, use that exact name — no aliases, no synonyms.
-2. If you are unsure whether a concept already exists, grep the codebase and the dictionary before deciding.
-3. Never invent a new name for a concept that already has a canonical name. Examples of forbidden aliases:
-   - `companySiteName`, `siteCompanyName`, `customerSiteName` → use `siteName`
-   - `addressLine1`, `address1`, `streetAddress` → use `street`
-   - `townCity`, `city`, `cityTown` → use `town`
-   - `entranceLatitude`, `gateLat` (on intake blobs), `pinLat` → use `lat`
-   - `entranceLongitude`, `gateLng` (on intake blobs), `pinLng` → use `lng`
-   - `entranceInstructions`, `gateInstructions`, `accessInstructions` → use `navigationInstructions`
-   - `bookingReference`, `siteBookingRef`, `bookingNumber` → use `bookingRef`
-   - `exactAppointmentTime`, `appointmentTime`, `fixedTime` → use `bookedTime`
-   - `estimatedServiceTimeMinutes`, `serviceTimeMinutes`, `dwellTime` → use `unloadingAllowanceMinutes`
-   - `customerReference`, `customerOrderRef`, `clientRef` → use `customerRef`
-   - `trailerTypesAllowed` is already canonical — do not create `trailersAllowed`
-   - `requirePOD` is already canonical — do not create `podRequired`
-   - `weighbridgeRequired` is already canonical — do not create `weighbridgeReq`
-
-4. When creating a JSON blob field that will eventually map to a DB column, use the DB column name from the start. The intake `stops[]` blob uses the same names as `JobStop` columns. The intake `requesterData` blob uses the same names as the denormalized `JobRequest` columns.
-5. After adding any new field, add it to DATA_DICTIONARY.md in the same PR. The dictionary is the contract.
-
-## Reference field semantics — mandatory understanding
-
-There are four distinct reference fields. They are not interchangeable:
-
-| Field | Scope | Example |
-|---|---|---|
-| `jobReference` | System-generated LogisticBay job number | `LGB-26-000001` |
-| `customerRef` | Customer's own order/reference for the whole transport job | `ACME-ORDER-7781` |
-| `referenceNumber` | Operational driver reference at a specific stop (collection release number or goods-in number) | `COL-44392` |
-| `bookingRef` | Site appointment/slot reference | `SLOT-09:30-BAY4` |
-
-Never merge these into a single field or use one in place of another.
-
-## Nullable field rule — fix on contact, not all at once
-
-Many models still have optional string fields declared as `String @default("")` instead of `String?`. This is a known issue — empty string is being used as a null substitute, which breaks `WHERE field IS NULL` queries and makes PATCH semantics ambiguous ("not sent" vs "explicitly cleared to empty").
-
-**Rule: whenever you do feature work on a model, fix its optional string fields in the same PR.**
-
-How to fix a model:
-1. Change each optional field in `schema.prisma` from `String @default("")` to `String?`
-2. Write a migration: `ALTER TABLE "X" ALTER COLUMN "y" DROP NOT NULL;` for each field, then `UPDATE "X" SET "y" = NULL WHERE "y" = '';`
-3. Update the write paths in the route: CREATE uses `body.field?.trim() || null`, PATCH uses `body.field !== undefined ? (body.field.trim() || null) : existing.field`
-4. Run `prisma generate` and `tsc --noEmit` — fix any type errors
-
+### Nullable fields
+Optional string fields must be `String?` in schema, not `String @default("")`.
+Fix model-by-model when you touch them — not all at once.
+Write path: `body.field?.trim() || null`. Patch path: `body.field !== undefined ? (body.field?.trim() || null) : existing.field`.
 Models already fixed: `Customer` (contactName, contactPhone, contactEmail, notes).
 
-Do NOT do a single sweep across all models — migration risk is too high vs benefit. Fix model-by-model as you touch them.
+### Doc updates — mandatory after every significant session
+After any session that adds a feature, changes a model/route, or completes something from the 🔲/🔶 lists:
+- Update **STATUS.md** (move items between ✅/🔶/🔲, update partial table)
+- Add a session entry to **DEVLOG.md**
+- If new open questions emerged, add them to **QUESTIONS.md**
 
-## Codebase conventions
+The docs must always reflect what the code actually does.
 
-- API schemas live in `api/src/schemas/`. Always validate with Zod.
-- Shared TypeScript types for API bodies live in `api/src/types/requests.ts`.
-- Frontend API client types live in `web/src/api/*.ts`.
-- The `DATA_DICTIONARY.md` at the repo root is the authoritative field reference.
-- Backfill scripts go in `api/scripts/` and follow the pattern in `backfill_vocab_v1.ts`.
+### Before adding any new feature
+Answer these five questions first:
+1. Which of the five core objects does this belong to? (Job / JobPart / Run / LoadTrack / Event)
+2. Where does it fit in the lifecycle?
+3. Does a concept with this name already exist? (Check DATA_DICTIONARY.md)
+4. What does it depend on? What breaks if this is wrong?
+5. Is this in STATUS.md 🔲 — or is it actually already partially built (🔶)?
+
+---
+
+## Known gaps — planned but not yet implemented
+
+| Document says | Reality today |
+|---|---|
+| `branchId` on Job and Run | No Branch model in schema. All at Company level. Do NOT add `branchId` to queries. |
+| `job_creator` role | Not enforced in routes. Only `company_owner` and `planner` used in `requireRole`. |
+| `manager` role | Role string exists, no route guards use it. |
+| Job statuses `planned`, `partially_collected`, `partially_delivered`, `attention_needed` | Not yet implemented. Current set: `draft`, `pending_review`, `ready_to_plan`, `in_progress`, `completed`, `cancelled`. |
+| Run statuses `at_collection`, `loading`, `in_transit`, `at_delivery`, `failed` | Not yet implemented. Current set: `draft`, `assigned`, `in_progress`, `completed`, `cancelled`. |

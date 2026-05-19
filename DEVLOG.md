@@ -1,7 +1,55 @@
-# LogisticBay — Developer Log & Architecture Charter
+# LogisticBay — Developer Log
 
-> **Read this at the start of every chat session and before every PR review.**
-> Last updated: 2026-05-18
+> Historical record of every session: what was built, what was decided, what is still outstanding.
+> Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
+> Do NOT rewrite history — only append. New entries go at the TOP.
+> Last updated: 2026-05-19
+
+---
+
+## Session log — 2026-05-19
+
+### PRF improvements + doc consolidation
+
+**Done:**
+
+PRF and CJP required-field highlighting:
+- Section 1 (customer name, contact name, contact phone) — red borders + "Required" messages on save attempt
+- Section 3 (goods type chips, goods description, quantity, weight) — conditional red border + counter colour change
+- Section 6 (declared value) — error prop on TextField
+- Section 2 stop-level `missingCount` / `missing` wiring to SectionHeader and SectionFooter badges
+
+PRF LogisticBay branding:
+- `PoweredBy` component with `/favicon.svg` logo + "Powered by LogisticBay" text
+- Placed in PRF header (absolute positioned top-right), success screen footer, error screen footer
+- Links to `https://logisticbay.com`, text turns `#863bff` on hover
+
+Document consolidation (21 docs → 8 docs):
+
+The previous system had 21 loose documents with overlapping content, stale information, and conflicting rules. Consolidated to exactly 8 docs, each with a single clear purpose:
+
+| Doc | Purpose |
+|-----|---------|
+| `CLAUDE.md` | Entry point — which doc answers which question, mandatory rules |
+| `PRODUCT.md` | What LogisticBay is, phases, roles, locked architecture decisions |
+| `ARCHITECTURE.md` | Object model, field tables, status flows, splitting logic, frontend rules |
+| `DATA_DICTIONARY.md` | Canonical field names (unchanged) |
+| `SAFETY.md` | Agent discipline rules (from ai.md) + production safety standards |
+| `STATUS.md` | Live feature status (✅/🔶/🔲) + P0/P1/P2 release checklist |
+| `QUESTIONS.md` | All 196 open questions in one file, categorised |
+| `DEVLOG.md` | This file — session history |
+
+All superseded docs moved to `docs/archive/` (MASTER_BLUEPRINT.md, SYSTEM_PLAN.md, PHASE1_DATA_MODEL.md, FPSR.md, ai.md, PROJECT_STATUS.md, RELEASE_READINESS.md, OPEN_QUESTIONS.md, all 5 QUESTIONS_*.md, MIGRATION_PLAN.md, NAMING_AUDIT.md, REQUEST_TO_JOB_PLAN.md, JOB_FORM_IMPLEMENTATION_BRIEF.md).
+
+Added ⚠ known-gaps tables to ARCHITECTURE.md and CLAUDE.md covering: branchId not implemented, executionDate→plannedDate, totalQuantityRequired→quantity, serviceType values differ, unimplemented status values, job_creator role not enforced.
+
+**Still outstanding:**
+- P0.1 Staging environment
+- P0.2 Sentry
+- P0.3 Backup restore test
+- P0.7 Mobile logout with unsynced events
+- Rest of P0 checklist (see STATUS.md)
+- Load movement engine (see STATUS.md → not started)
 
 ---
 

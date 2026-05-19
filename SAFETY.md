@@ -1,125 +1,203 @@
-# LogisticBay — Safety Standards
-# Production safety architecture
-# Read this before making any architecture or data decisions
+# LogisticBay — Safety & Agent Operating Rules
 
-## CORE PRINCIPLE
-
-The system must fail safely.
-
-That means:
-- No data loss
-- No cross-company leaks
-- Drivers can always work
-- System can recover and reconcile
+> Two things in one place: how agents must behave, and what the system must protect.
+> Read this before touching any code. No exceptions.
+> Last updated: 2026-05-19
 
 ---
 
-## 1. SYSTEM STATES
+## PART 1 — AGENT DISCIPLINE
 
-Define global system state:
+### Rule hierarchy
+
+When rules conflict, this order wins:
+
+1. Production safety
+2. Tenant isolation
+3. Data integrity
+4. Offline / event durability
+5. Security / authentication
+6. Existing approved architecture
+7. Project truth files (CLAUDE.md, this file, STATUS.md, ARCHITECTURE.md)
+8. Task-specific instructions
+9. Cleanup / refactor quality
+10. Code style / preferences
+
+Never improve style by weakening safety.
+Do not delete safety code to clean files.
+Do not bypass validation to make a feature work.
+Do not change architecture because another pattern looks cleaner.
+
+---
+
+### Workflow rule
+
+Default workflow for every task:
+
+1. Inspect existing code
+2. Identify exact files involved
+3. Explain intended change
+4. Identify risk level
+5. Make the smallest safe change
+6. Run relevant checks
+7. Report result — files changed, what changed, why, safety impact, checks run, risks left, next step
+
+Do not jump straight to implementation on risky work.
+
+---
+
+### Stop-before-risk rule
+
+Stop before implementation if the task touches:
+
+- Deployment files or production startup scripts
+- Database schema, migrations, or data deletion
+- Auth / JWT / session logic
+- Tenant isolation
+- Offline sync or idempotency
+- Audit logging or secrets / env vars
+- Package manager or lock files
+- CI/CD config or mobile app config
+- Rollback / compatibility code
+
+When stopping, explain: (1) the problem, (2) why it matters, (3) options including "do nothing." No implementation until the decision is made.
+
+---
+
+### No silent rule conflicts
+
+If a rule conflict appears, stop. Identify the conflict, quote both rules, explain the risk, offer options including "do nothing," and wait for a decision. Never silently choose between conflicting rules.
+
+---
+
+### Small change rule
+
+No large rewrites unless explicitly requested. One file, one purpose, one behaviour change per commit.
+
+Do not mix: feature work + cleanup + refactor + database change + deployment change + dependency upgrades.
+
+---
+
+### Existing architecture wins
+
+Existing approved architecture has priority over agent preference. Do not introduce a new architecture style casually, partially migrate, or invent generic frameworks inside the app. If architecture needs to change, stop and propose options.
+
+---
+
+### No premature abstraction
+
+Do not create abstractions before at least two real use cases exist. Avoid generic managers, engines, builders, base classes, universal wrappers, "future-proof" systems. Abstract on proven repetition, not prediction.
+
+---
+
+### Dead code rules
+
+Allowed without approval: unused imports, unused local variables, unreachable local branches, old commented-out code, duplicate comments, unused helpers inside the same edited file.
+
+Approval required before deleting: whole files, API routes, database fields, migrations, deployment/config files, auth/security code, offline/sync code, audit/logging code, compatibility shims, deprecated files still referenced anywhere.
+
+Before deleting non-trivial code, prove: (1) not imported anywhere, (2) not used by routing/config/tests/scripts, (3) not used by dynamic imports, (4) not kept for rollback/migration/compatibility, (5) not needed by older mobile/web clients.
+
+---
+
+### Protected files
+
+Never delete, rename, or heavily rewrite these without explicit approval:
+
+- `package.json`, lock files, `Dockerfile`
+- `railway.json`, `vercel.json`, `eas.json`, `app.json`, `app.config.*`
+- `vite.config.*`, `tsconfig.*`
+- `prisma/schema.prisma`, `prisma/migrations/*`
+- All start scripts, CI workflow files, environment example files
+- `DEVLOG.md`, `SAFETY.md`, `STATUS.md`, `ARCHITECTURE.md`, `CLAUDE.md`
+
+Project truth files may be appended. Historical logs must not be rewritten unless explicitly instructed.
+
+---
+
+### Behaviour preservation rule
+
+During refactor, behaviour must remain unchanged unless explicitly requested. Do not change API response shape, rename fields, change UI flow, change validation behaviour, change defaults, change error handling, or change persistence behaviour. If behaviour changes are necessary, split them into a separate proposed change.
+
+---
+
+### The puzzle rule
+
+Every task is one piece of a larger puzzle. Before implementing anything: understand what already exists, identify naming conventions and file structure in use, find how similar features are done elsewhere, make the new piece look like it always belonged there. Never bolt something on. Never introduce a new pattern when an existing one fits.
+
+---
+
+### No mixed parts
+
+Do not mix styles, patterns, or conventions within one area of the codebase. Examples of forbidden mixing: raw SQL in a route that uses Prisma everywhere else; a new validation style alongside existing Zod schemas; a new UI pattern in a page that uses established components; cleanup combined with feature work in the same change. If a pattern does not exist yet, propose it first.
+
+---
+
+### Verification rule
+
+After code changes, run relevant checks:
+- API: `tsc --noEmit`, tests if available, `prisma validate` if schema changed
+- Web: build + `tsc --noEmit`
+- Mobile: `tsc --noEmit`, Expo config check if app config changed
+
+Never claim tested unless a command was actually run.
+
+---
+
+### No deployment / database / auth / sync guessing
+
+Before changing deployment/build config — stop and answer: which environment is affected? How does production start today? Does rollback still work? Are env vars unchanged? If unknown, stop.
+
+Before schema/migration/data changes — stop and answer: is this destructive? Is this backwards compatible? Does existing code still work during deploy? Is there a rollback path? Is data preserved? Does tenant isolation still hold? If unknown, stop.
+
+Never guess around `companyId`, JWT, refresh tokens, roles, permissions, ownership checks, or related-record validation. If unsure, stop.
+
+Never casually change queue structure, `clientEventId` behaviour, retry behaviour, failed event retention, sync response parsing, optimistic UI behaviour, or offline login/cache assumptions. Drivers must not lose work because an agent "cleaned up" sync code.
+
+---
+
+## PART 2 — PRODUCTION SAFETY STANDARDS
+
+### Core principle
+
+The system must fail safely. No data loss. No cross-company leaks. Drivers can always work. System can recover and reconcile.
+
+---
+
+### System states
 
 NORMAL → DEGRADED → INCIDENT
 
-**NORMAL**
-- Full functionality
+**NORMAL** — full functionality.
 
-**DEGRADED**
-- Reads OK, writes risky
-- Warnings shown to users
+**DEGRADED** — reads OK, writes risky. Warnings shown to users.
 
-**INCIDENT**
-- Backend unreliable
-- Switch to offline-first behavior
-- Restrict risky operations
+**INCIDENT** — backend unreliable. Switch to offline-first. Restrict risky operations.
 
-### MVP scope
-- Manual feature flag to toggle states
-- Show banner in driver app + planner dashboard
-- Log incident start/end timestamps
-
-### Later (post-launch)
-- Automated detection (error rate spikes, DB unreachable)
-- Auto-switch states based on metrics
+MVP: manual feature flag to toggle states. Show banner in driver app + planner dashboard. Log incident start/end timestamps.
 
 ---
 
-## 2. DRIVER APP — OFFLINE-FIRST CORE
+### Driver app — offline-first core
 
-### Rule
 All actions saved locally first. Always.
 
-### Local storage (MVP)
-- AsyncStorage for event queue (start here)
-- Secure storage for auth tokens
-- Migrate to SQLite when queue regularly exceeds 50 events
-
-### Local data model
-- LocalEvent (the queue)
-- SyncMetadata (last sync time, queue size)
-- PhotoQueue (later phase)
-
-### Action flow
-
-### Sync queue rules
-- Retry with exponential backoff
-- Idempotency key required (clientEventId)
-- Never drop failed events
-- Retry triggers:
-  - App opens
-  - Network returns
-  - Manual refresh
-  - Heartbeat every 30s while active
-
-### Offline startup
-**Allowed:**
-- Open app using stored session
-- View cached jobs
-- Perform actions offline
-
-**Not allowed:**
-- First-time login without internet
-
-### Token handling
-Separate concerns:
-- Local session → allows app access offline
-- Server token → used only for syncing
-
-Offline must never block driver from working.
-
-### Logout rule
-Problem: driver logs out with unsynced data → data loss risk
-
-**MVP decision:** Block logout if unsynced events exist
-- Show warning: "X actions waiting to sync. Please connect to internet first."
-- Force sync attempt before allowing logout
-- Override only if explicitly confirmed (track in audit log)
-
-### UI sync state requirements
-Driver must always see:
-- ✅ Synced
-- ⏳ Pending sync
-- ⚠ Failed (retrying)
-- 📶 Offline mode
-
-Never hide sync state from driver.
+- AsyncStorage for event queue (MVP). Migrate to SQLite when queue regularly exceeds 50 events.
+- Idempotency key required on every event (`clientEventId`).
+- Sync retry with exponential backoff. Never drop failed events. Retry on: app opens, network returns, manual refresh, heartbeat every 30s while active.
+- Block logout if unsynced events exist. Show warning: "X actions waiting to sync." Override only if explicitly confirmed (track in audit log).
+- UI sync state must always be visible: ✅ Synced · ⏳ Pending · ⚠ Failed (retrying) · 📶 Offline mode.
+- Offline startup allowed (stored session, cached jobs, offline actions). First-time login without internet NOT allowed.
 
 ---
 
-## 3. BACKEND SAFETY
+### Backend safety — idempotency (mandatory)
 
-### Idempotency (mandatory)
+Every event must include `clientEventId` (UUID generated on phone).
 
-Every event must include:
-- `clientEventId` (UUID generated on phone)
+Database constraint: `UNIQUE(companyId, clientEventId)`.
 
-Database constraint:
-- `UNIQUE(companyId, clientEventId)` — extra tenant safety
-
-Behavior:
-- Duplicate event → return success (don't error)
-- Same retry 100 times = saved once
-
-### Event validation
+Behavior: duplicate event → return success (don't error). Same retry 100 times = saved once.
 
 Backend must verify on every event:
 1. Driver belongs to company (via JWT)
@@ -128,612 +206,109 @@ Backend must verify on every event:
 4. Event not duplicate
 5. Timestamp not >7 days old or >1 hour in future
 
-### Status transitions
+---
 
-Strict allowed flow:
+### Tenant isolation — CRITICAL, ZERO TOLERANCE
 
-Final job state = derived from events, not stored directly.
+Every query must scope by `companyId` from `request.user.companyId`. Never trust frontend.
 
-### MVP minimum
-- Each event has: clientEventId, eventType, clientTimestamp, serverReceivedAt, payload
-- Job status field stays for performance, but recalculated from events on conflict
+- Middleware injects companyId from JWT.
+- All reads, writes, updates, deletes, counts, summaries, search queries, and background jobs are scoped by companyId.
+- Every related ID must be validated inside companyId before use: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, jobId, jobPartId, runId, assignmentId.
+- Create routes write companyId from JWT only. Update/delete routes find row by `{ id, companyId }` first, then mutate.
+- Raw SQL must include companyId predicates and must be reviewed as high risk.
+- Integration test on every deploy proves Company A cannot read Company B data.
+
+Failure consequence: catastrophic. End of business. Test relentlessly.
 
 ---
 
-## 4. EVENT-BASED MODEL
+### Scale and search safety
 
-Job status is derived from events, not stored directly. The `status` field on `PlannedJob` exists for query performance but must always be consistent with the event log.
-
-**Implemented:**
-- `JobExecutionEvent` table with `clientEventId`, `clientTimestamp`, `serverReceivedAt`, `needsReview`
-- `@@unique([companyId, clientEventId])` — idempotency guaranteed
-- POST /sync/events endpoint — processes all 5 event types, idempotent on retry
-- `SyncEventLog` — audit log for every sync attempt including failures
-
-**Not yet implemented:**
-- Recalculation of job status from events on conflict
-- Reconciliation dashboard for `needsReview` events
-
----
-
-## 5. DATABASE SAFETY
-
-### Rules
-- Managed PostgreSQL only (Railway)
-- Daily automatic backups (Railway provides)
-- Separate staging + production databases
-- No destructive migrations in production
-- Use transactions for critical writes
-
-### Migration rules
-
-**Current production behavior:**
-Production startup uses `prisma migrate deploy` via `api/start.sh`. `prisma db push` is allowed only for local development and must never run during production startup/deploy.
-
-**Idempotent migration rule:**
-When a migration creates a constraint with an explicit name, guard both `pg_constraint.conname` and `pg_class.relname`. PostgreSQL unique constraints create backing relations/indexes, and a partial or drifted migration can leave the relation name present even when the constraint guard alone does not catch it.
-
-**Intended (post-launch hardening):**
-```bash
-# development only
-prisma migrate dev
-
-# production — use this, not db push
-prisma migrate deploy
-```
-
-**Local manual push** (only needed if Railway auto-deploy is broken):
-Requires TCP Proxy URL from Railway dashboard → Postgres → Settings → TCP Proxy.
-Internal Railway hostname does NOT work from outside Railway network.
-
-**Failed migration recovery:**
-If Railway logs show Prisma `P3009`, deploys will keep failing until the failed migration row is resolved. Prefer `prisma migrate resolve --rolled-back <migration_name>` followed by `prisma migrate deploy`. If the database is intentionally disposable, reset the Railway database and redeploy only after confirming no customer data must be preserved.
-
-### Safe migration flow
-1. Add new field (nullable or with default)
-2. Deploy code that handles both old and new
-3. Migrate data
-4. Deploy code that requires new field
-5. Remove old field later (separate migration)
-
-Never combine schema change + data migration in one step.
-
-### Disaster recovery
-- Test backup restore quarterly
-- Document restoration procedure
-- Have rollback plan for every migration
-
----
-
-## 6. TENANT ISOLATION (CRITICAL — ZERO TOLERANCE)
-
-### Rule
-Every query must scope by:
-- `companyId` from `request.user.companyId`
-
-Never trust frontend.
-
-Frontend may display or submit IDs, but it must never be the source of truth
-for tenant ownership. A request body `companyId` must be ignored or rejected.
-
-### Enforcement
-- Middleware injects companyId from JWT
-- All Prisma reads, writes, updates, deletes, counts, dashboard summaries, search queries, sync queries, and background jobs are scoped by companyId
-- Every related ID must be validated inside companyId before use: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, linkedJobId, shiftId, and any future foreign key
-- Create routes must write companyId from JWT only
-- Update/delete routes must first find the target row by `{ id, companyId }`, then mutate it
-- Dashboard/search endpoints must never aggregate across tenants unless the route is explicitly an internal admin route with separate authorization
-- Raw SQL must include companyId predicates and must be reviewed as high risk
-- Integration test on every deploy proves Company A cannot read Company B data
-
-### Failure consequence
-Catastrophic. End of business. Test relentlessly.
-
-### MVP integration test
-Write one test that:
-1. Creates two companies with data
-2. Logs in as Company A user
-3. Tries to fetch Company B's jobs
-4. Expects 404 or empty array
-5. Run on every deploy
-
----
-
-## 6A. SCALE AND SEARCH SAFETY (CRITICAL)
-
-### Rule
 Do not build pages that load all tenant data into the browser.
 
-The product must be designed for:
-- unbounded tenant growth
-- operational records that may grow from millions into billions or trillions
-- Many planners filtering/searching at the same time
+- Dashboard must use dedicated server-side endpoints.
+- Jobs list must support server-side filters and pagination.
+- Search must be server-side and tenant-scoped.
+- Summary counts computed server-side.
 
-### Mandatory API shape
-- Dashboard must use dedicated server-side endpoints, e.g. `/dashboard?date=YYYY-MM-DD`, not `GET /jobs` plus React filtering
-- Jobs list must support server-side filters: date, status, customer, vehicle type, driver, warnings, loaded trailer, carried over
-- Jobs list must support pagination or cursor pagination before large customer rollout
-- Search must be server-side and tenant-scoped
-- Summary counts must be computed server-side, cached, or pre-aggregated when needed
+Every new list/dashboard/search/export must answer: Where is companyId enforced? Max rows returned? Which index supports it? Does it paginate? Can it leak another tenant through related records? If not answered, do not ship.
 
-### Database requirements
-Every high-volume model must have indexes that match production queries.
-
-Minimum indexes to plan for:
-- `PlannedJob(companyId, plannedDate)`
-- `PlannedJob(companyId, status)`
-- `PlannedJob(companyId, assignedDriverId)`
-- `PlannedJob(companyId, customerId)`
-- `PlannedJob(companyId, updatedAt)`
-- `JobExecutionEvent(companyId, jobId)`
-- `JobExecutionEvent(companyId, createdAt)`
-- `FleetTrailer(companyId, status)`
-- `FleetUnit(companyId, status)`
-- Search indexes for customer/reference/site fields before global search rollout
-
-### AI / smart features
-AI must not scan all tenant data live on a request.
-
-Allowed:
-- Background analysis per company
-- Cached recommendations
-- Rule-based warnings at request time
-- Tenant-scoped search results passed into AI
-
-Not allowed:
-- Cross-company prompts
-- Sending unfiltered database dumps to AI
-- Live dashboard AI calls over unbounded job history
-
-### Implementation rule
-Any new list, dashboard, search, export, report, or smart suggestion must answer:
-1. Where is companyId enforced?
-2. What is the maximum number of rows returned?
-3. Which database index supports it?
-4. Does it paginate?
-5. Can it leak another tenant through related records?
-
-If those questions are not answered, do not ship it.
+AI must not scan all tenant data live on a request. Only background per-company analysis, cached recommendations, rule-based warnings, and tenant-scoped search results passed into AI.
 
 ---
 
-## 7. DATA CLEANUP
+### Database safety
 
-### Problem
-- Deleting too early = data loss
-- Keeping forever = storage/privacy issue
-
-### Correct rule
-Delete only after:
-- Event synced AND confirmed by backend
-- AND retention period elapsed
-
-### Cleanup policy
-- Synced events on phone: delete after 7-14 days
-- Completed jobs in mobile cache: delete after 3-7 days
-- Photos uploaded: delete local copy after URL confirmed
-- Backend logs: rotate after 30-90 days
-
-### Never delete
-- Pending events
-- Failed events
-- Unsynced photos
-- Active jobs
-- Audit log entries
+- Managed PostgreSQL only (Railway). Daily automatic backups. Separate staging + production databases.
+- No destructive migrations in production. Use transactions for critical writes.
+- Production startup uses `prisma migrate deploy`. `prisma db push` only for local development.
+- Safe migration flow: (1) add nullable field, (2) deploy code that handles both, (3) migrate data, (4) deploy code requiring new field, (5) remove old field in separate migration. Never combine schema change + data migration.
+- Failed migration recovery: if Prisma `P3009`, use `prisma migrate resolve --rolled-back <migration_name>` then `prisma migrate deploy`.
+- Idempotent migration rule: when creating a named constraint, guard both `pg_constraint.conname` and `pg_class.relname`.
 
 ---
 
-## 8. PLANNER EMERGENCY MODE
+### Soft delete
 
-When backend is degraded, planner must support:
-- Cached job list (last known state)
-- Stale data view with timestamp
-- Manual updates (flagged for reconciliation)
-- Export jobs to CSV/PDF
-- Direct driver communication info (phone numbers)
+Never hard delete operational data. Use status fields: active / inactive / archived / cancelled / removed.
 
-### Manual override
-
-Must be reconciled later when system recovers.
-
-### MVP
-- Read-only cached view
-- "Last updated: HH:MM" banner
-- Manual override deferred to post-launch
+Hard delete only for: GDPR right-to-erasure requests, test data cleanup in dev/staging.
 
 ---
 
-## 9. RECONCILIATION ENGINE
+### Secrets
 
-### After recovery
-System must:
-1. Replay queued events in clientTimestamp order
-2. Process all pending data
-3. Detect conflicts (planner changed something while driver was offline)
-4. Flag inconsistencies for human review
-
-### Conflict handling
-**Best approach:** Flag for manual resolution
-- Don't silently overwrite
-- Don't auto-merge
-- Show both versions to admin/planner
-- Admin decides which wins
-
-### MVP
-- Simple flag system: events that arrive late get `needsReview: true`
-- Planner sees them in a queue
-- Reconciliation dashboard deferred to post-launch
-
----
-
-## 10. API / SERVER PROTECTION
-
-### Required (MVP)
-- Auto-restart on crash — ✅ Railway provides
-- /health endpoint — ✅ EXISTS at GET /health — checks DB with SELECT 1, returns `{server, db}`. MISSING: queue depth, DB latency, memory
-- Structured logging with requestId — ⚠️ Fastify logger enabled (JSON) but does NOT inject requestId/userId/companyId per request. Must add.
-- Error monitoring (Sentry) — ❌ NOT set up
-- Staging environment — ❌ NOT set up — all deploys go direct to production
-- Rollback capability — ❌ NOT documented or tested
-
-### Per-tenant rate limiting
-Add post-MVP:
-- Limit per company (not just global)
-- Prevents one company's bug from affecting others
-
----
-
-## 11. DEPLOYMENT SAFETY
-
-### Flow
-
-### Before production deploy
-- TypeScript check passes
-- Tests pass
-- Manual flow testing on staging
-- Database migration tested on staging
-- Rollback tested
-
-### Rollback
-- Must be instant
-- Tested before each major deploy
-- Document rollback steps in runbook
-
----
-
-## 12. FRONTEND SAFETY
-
-Every screen must handle:
-- Loading state
-- Error state
-- Empty state
-- Success state
-
-API calls must:
-- Use try/catch
-- Show user-friendly errors (not stack traces)
-- Have timeout (30s default)
-
-React error boundaries on all major sections.
-
----
-
-## 13. PERMISSIONS SYSTEM
-
-Roles:
-- driver
-- planner
-- manager
-- company_owner
-- platform_admin
-
-### Rule
-- Every route checks role server-side
-- Frontend role indicators are UX hints only
-- Never trust frontend for authorization decisions
-
----
-
-## 13A. HACK PROTECTION PROTOCOL
-
-This section turns the common real-world attack paths into concrete rules for LogisticBay. These rules must be checked before first paying customer, before every major release, and after any incident.
-
-### 1. Phishing and stolen passwords
-
-Risk:
-- An attacker logs in with a real user's password.
-- Secure code does not help if the attacker has a valid session.
-
-Required:
-- MFA for planner, manager, company_owner, and platform_admin accounts.
-- Password manager recommended for every internal/admin user.
-- Login audit records for success, failure, password change, logout, refresh, refresh reuse, IP, user-agent, userId, and companyId.
-- Session/device view for admins: active sessions, last used time, user-agent, rough location/IP.
-- Ability to revoke one session or all sessions for a user.
-
-MVP status:
-- [x] Short-lived access tokens
-- [x] Refresh token rotation/reuse detection
-- [ ] MFA
-- [ ] Session/device management
-- [ ] Login/session audit trail
-
-### 2. Authentication logic
-
-Risk:
-- Weak JWT handling, predictable reset flows, broken refresh rotation, no brute-force controls.
-
-Rules:
-- JWT secrets must be strong, separate, and stored only in platform secrets.
-- Access tokens stay short-lived.
-- Refresh tokens are stored hashed only.
-- Refresh token reuse revokes the token family.
-- Password/PIN reset must be audited.
-- Default PINs must force change on first login.
-- Failed login attempts must be rate-limited by IP and account/email, not only globally.
-
-Do not ship:
-- Same JWT secret for access and refresh.
-- Long-lived access tokens.
-- Plaintext refresh tokens in the database.
-- Password reset tokens that are guessable, reusable, or not expiring.
-
-### 3. Authorization and tenant isolation
-
-Risk:
-- User changes an ID in the browser and reads or modifies another company's data.
-
-Rules:
-- Never trust `companyId` from frontend.
-- Every route must derive companyId from verified JWT only.
-- Every read, write, update, delete, count, search, export, and dashboard query must include tenant scoping.
-- Every related ID must be verified inside `companyId` before write: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, jobId, jobPartId, runId, assignmentId.
-- Drivers can only access assigned driver data.
-- Planner/company owner routes must use server-side role checks.
-
-Tests required:
-- Company A cannot read Company B list data.
-- Company A cannot fetch/update/delete Company B resource IDs.
-- Drivers cannot access planner dashboard data.
-- Drivers cannot mutate unassigned jobs.
-- Public request links cannot be created for another company's customer.
-
-### 4. SQL injection and unsafe queries
-
-Risk:
-- User input becomes executable SQL.
-
-Rules:
-- Use Prisma query APIs by default.
-- Raw SQL is high risk and must be reviewed.
-- Raw SQL must use parameter binding, never string interpolation with user input.
-- Raw SQL must include tenant predicates where tenant data is involved.
-
-Allowed:
-- `prisma.model.findMany({ where: { companyId } })`
-- Parameterized raw SQL with `$1`, `$2`, etc.
-
-Not allowed:
-- SQL strings built with `${input}`.
-- Raw tenant queries without `companyId`.
-
-### 5. API abuse and automation
-
-Risk:
-- Brute-force login, spam public request forms, scraping, fake jobs/orders, sync floods.
-
-Rules:
-- Global rate limits are required but not enough.
-- Add per-IP, per-account, per-company, and per-public-token limits where appropriate.
-- Public request forms need throttling and abuse detection.
-- Sync endpoints must enforce max batch size and idempotency.
-- Expensive list/dashboard/search endpoints must paginate and cap row counts.
-
-MVP requirements:
-- Login/register/refresh rate limits.
-- Public request submission rate limit per token and IP.
-- Sync events max batch size.
-- Server-side pagination for high-volume lists.
-
-Post-MVP:
-- CAPTCHA or email verification for public intake.
-- Anomaly alerts for spikes in login failures, public submissions, and sync failures.
-
-### 6. File uploads
-
-Risk:
-- Malware, executable files, huge files, fake PDFs, unsafe public buckets.
-
-Current status:
-- No real upload surface yet.
-
-Before adding uploads:
-- Enforce file size limits.
-- Validate MIME type and file extension.
-- Sniff file content, not only browser-provided MIME.
-- Virus scan uploaded files.
-- Store files outside app runtime in object storage.
-- Default buckets must be private.
-- Access files through signed URLs.
-- Store file ownership with companyId and entityId.
-- Never serve uploaded files from the API source directory.
-
-### 7. Dependency security
-
-Risk:
-- Vulnerable npm packages become the attack path.
-
-Rules:
-- Run dependency audit before release.
-- Patch high and critical findings before production rollout.
-- Remove unused packages.
-- Keep Prisma, Fastify, JWT, bcrypt, PDF, email, and upload-related libraries current.
-- Review advisories for auth, parsing, image/PDF, and server libraries with extra care.
-
-Commands:
-```bash
-npm audit --prefix api --omit=dev
-npm audit --prefix web --omit=dev
-```
-
-### 8. Cloud and secret configuration
-
-Risk:
-- Public database, leaked env vars, open buckets, overly broad credentials.
-
-Rules:
-- `.env` files must never be committed.
-- Production secrets live in Railway/Vercel secret managers only.
-- Rotate exposed secrets within 24 hours.
-- Use separate dev, staging, and production secrets.
-- Use least-privilege credentials where possible.
-- Production database must not be publicly reachable except through intended platform networking/proxy.
+- `.env` never committed to git. Use platform secrets (Railway, Vercel).
+- Rotate any exposed secret within 24 hours.
+- Never log tokens, passwords, or PII.
+- Separate secrets for dev/staging/production.
+- `JWT_ACCESS_SECRET` ≠ `JWT_REFRESH_SECRET`. Server must refuse to start if either is missing or equal.
 - `NODE_ENV=production` must be set in production.
 
-### 9. Browser and frontend security
+---
 
-Risk:
-- XSS steals tokens or user data.
+### Logging (mandatory)
 
-Rules:
-- Do not use `dangerouslySetInnerHTML` unless separately reviewed.
-- Escape/render user content through React text nodes.
-- Add security headers: HSTS, Content-Security-Policy, X-Frame-Options/frame-ancestors, X-Content-Type-Options, Referrer-Policy.
-- Avoid storing long-lived secrets in `localStorage`.
-- If using cookies for refresh tokens, use httpOnly, secure, sameSite, and CSRF protection.
+Every request must log: requestId (UUID), userId, companyId, jobId (if applicable), route, statusCode, error details, duration.
 
-Current risk:
-- Web tokens are currently stored in `localStorage`; any XSS can steal access and refresh tokens.
-
-### 10. Detection and incident response
-
-Risk:
-- Breach happens and nobody notices quickly.
-
-Required logs:
-- requestId
-- userId
-- companyId
-- role
-- route
-- statusCode
-- duration
-- error details for failures
-- login/session/security events
-
-Required alerts:
-- repeated failed logins
-- refresh token reuse
-- large public request spike
-- 5xx spike
-- abnormal sync failure spike
-- cross-tenant access attempt detected by tests or logs
-
-Incident rule:
-- If a security incident is suspected, switch to INCIDENT mode, revoke affected sessions/tokens, rotate exposed secrets, preserve logs, and write a post-mortem within 48 hours.
-
-### Release gate
-
-Before production/customer rollout:
-- [ ] All critical items in `SECURITY REVIEW TODO` are closed.
-- [ ] Tenant isolation tests pass.
-- [ ] Auth/session tests pass.
-- [ ] Dependency audit has no unresolved critical/high production issues.
-- [ ] `.env` files are ignored and only examples are tracked.
-- [ ] Backup restore test has been performed.
-- [ ] Rollback procedure has been tested.
-- [ ] Incident contact/process is documented.
+MVP: Fastify built-in logger, JSON format, ship to Railway logs, add Sentry for errors.
 
 ---
 
-## 14. SOFT DELETE SYSTEM
+### Hack protection — key rules
 
-Never hard delete operational data.
+**Phishing/stolen passwords:** MFA for planner/owner/admin. Login audit records. Session/device view. Ability to revoke sessions.
 
-Use status fields:
-- active
-- inactive
-- archived
-- cancelled
-- removed
+**Auth logic:** JWT secrets separate, stored only in platform secrets. Access tokens short-lived. Refresh tokens stored hashed only. Refresh token reuse revokes token family.
 
-Hard delete only for:
-- GDPR right-to-erasure requests
-- Test data cleanup in dev/staging
+**SQL injection:** Use Prisma APIs. Raw SQL is high risk, must use parameter binding, never string interpolation with user input.
 
----
+**API abuse:** Global + per-IP + per-account + per-company rate limits. Public request form throttling. Sync endpoint max batch size. Server-side pagination.
 
-## 15. SECRETS SECURITY
+**File uploads (before adding any):** Enforce size limits, validate MIME type, sniff file content, virus scan, store in object storage outside app runtime, private bucket defaults, signed URLs, per-tenant ownership check.
 
-### Rules
-- .env never committed to git
-- Use platform secrets (Railway, Vercel)
-- Rotate any exposed secret within 24 hours
-- Never log tokens, passwords, or PII
-- Separate secrets for dev/staging/production
-
-### MVP checklist
-- JWT_ACCESS_SECRET in Railway
-- JWT_REFRESH_SECRET in Railway
-- DATABASE_URL in Railway only
-- SENDGRID_API_KEY in Railway only
+**Browser/frontend:** Do not use `dangerouslySetInnerHTML` without review. Add security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy. Avoid long-lived secrets in `localStorage`.
 
 ---
 
-## 16. LOGGING (MANDATORY)
+### API / server protection
 
-Every request must log:
-- requestId (UUID per request)
-- userId
-- companyId
-- jobId (if applicable)
-- route
-- statusCode
-- error details (if any)
-- duration
-
-Without structured logs, debugging production is impossible.
-
-### MVP
-- Use Fastify built-in logger
-- JSON format for parsing
-- Ship to Railway logs
-- Add Sentry for errors only
+Required (MVP):
+- Auto-restart on crash — ✅ Railway provides
+- `/health` endpoint — ✅ EXISTS (minimal — only checks DB reachable)
+- Structured logging — ✅ implemented (requestId/userId/companyId per request)
+- Error monitoring (Sentry) — ❌ NOT set up
+- Staging environment — ❌ NOT set up
+- Rollback capability — ❌ NOT documented or tested
 
 ---
 
-## 17. INCIDENT COMMUNICATION
-
-When system state is INCIDENT or DEGRADED:
-
-### Driver app banner
-### Planner dashboard banner
-Always show ETA when known. Drivers panic without context.
-
----
-
-## 18. SAFE MODE RESTRICTIONS
-
-During INCIDENT mode, disable:
-- Destructive actions (bulk delete, hard delete)
-- Bulk edits affecting many records
-- Schema changes
-- Data exports of large datasets
-
-Allow only:
-- Essential driver operations (start/end shift, job stages)
-- Event recording
-- Read-only views
-
----
-
-## 19. RECOVERY PLAYBOOK
-
-Step-by-step incident response:
+### Recovery playbook
 
 1. Detect incident (alert or report)
 2. Switch system to INCIDENT mode
-3. Notify team via designated channel
+3. Notify team
 4. Monitor sync queues for backlog
 5. Identify root cause
 6. Fix and deploy
@@ -746,176 +321,86 @@ Step-by-step incident response:
 
 ---
 
-## SECURITY REVIEW TODO (2026-05-18)
+### Data cleanup policy
 
-Findings from the auth, tenant isolation, API abuse, dependency, and operations review.
+Synced events on phone: delete after 7–14 days.
+Completed jobs in mobile cache: delete after 3–7 days.
+Photos uploaded: delete local copy after URL confirmed.
+Backend logs: rotate after 30–90 days.
+
+Never delete: pending events, failed events, unsynced photos, active jobs, audit log entries.
+
+---
+
+## PART 3 — KNOWN VULNERABILITIES (FOUND AND FIXED)
+
+| Date | Issue | Severity | Fix |
+|------|-------|----------|-----|
+| 2026-05-05 | Per-stop `savedLocationId` not validated against `companyId` — IDOR | CRITICAL | Added company check before transaction in POST/PATCH /jobs |
+| 2026-05-05 | `bookedTime`, `earliestArrivalMinutes`, `unloadingAllowanceMinutes` accepted but never written to DB — silent data loss | CRITICAL | Added to stop create/createMany mapping in jobs.ts |
+| 2026-05-05 | Vehicle types / trailer types / load units rejected by server constants — saves blocked for most vehicle types | HIGH | Expanded VEHICLE_CLASSES, TRAILER_TYPES, LOAD_UNITS in jobCreation.ts |
+| 2026-05-05 | `earliestArrival` HH:MM conversion used raw `split(":").map(Number)` — NaN if malformed | MEDIUM | Replaced with `toMins()` helper returning null for NaN |
+| 2026-05-05 | Datetime strings built without timezone — ambiguous UTC vs local | MEDIUM | Appended `.000Z` to all constructed stop datetimes |
+| 2026-05-05 | DATABASE_PUBLIC_URL password exposed in chat session | HIGH | ⚠️ Rotate Postgres password in Railway |
+
+**Pattern — IDOR on related records:** Any time a client sends an ID referencing a related record, validate that record belongs to `companyId` before writing. The top-level job's companyId check is not enough — check every foreign key separately.
+
+**Pattern — Silent field drops:** When adding new fields to a form, always audit that they are: (1) in the API request type, (2) mapped in the route handler create block, AND (3) mapped in the route handler update block. Missing any one causes silent data loss.
+
+---
+
+## PART 4 — SECURITY REVIEW TODO
 
 ### Critical before production/customer rollout
-- [ ] Restrict `GET /dashboard` to planner/owner roles only, or return driver-scoped data for drivers. Current route only requires authentication and returns company-wide jobs, drivers, units, and trailers.
-- [ ] Lock down `PATCH /jobs/:id/status` so only assigned drivers can submit driver workflow updates, and planners/owners use a separate planner-approved action path.
-- [ ] Lock down `POST /jobs/:id/note` so drivers can only add notes to assigned jobs; planners/owners may add planner notes through planner routes.
-- [ ] Validate `customerId` on `POST /request-links` against `request.user.companyId` before creating the link. Never allow a public request link to reference another company's customer.
-- [ ] Run `npm audit --prefix api --omit=dev` and update/remove vulnerable API dependencies. Latest review found 16 production audit findings: 1 critical, 10 high, 5 moderate.
-- [ ] Ensure Railway sets `NODE_ENV=production`; CORS and the dev reset route rely on this value.
-- [ ] Add automated CI checks for typecheck, tests, tenant isolation, and dependency audit before deploy.
+
+- [ ] Restrict `GET /dashboard` to planner/owner roles only
+- [ ] Lock down `PATCH /jobs/:id/status` so only assigned drivers can submit driver workflow updates
+- [ ] Lock down `POST /jobs/:id/note` so drivers can only add notes to assigned jobs
+- [ ] Validate `customerId` on `POST /request-links` against `request.user.companyId`
+- [ ] Run `npm audit --prefix api --omit=dev` — last review found 1 critical, 10 high, 5 moderate
+- [ ] Ensure Railway sets `NODE_ENV=production`
+- [ ] Add automated CI checks for typecheck, tests, tenant isolation, and dependency audit before deploy
 
 ### High priority hardening
-- [ ] Move refresh tokens out of `localStorage` or harden the web app with httpOnly secure refresh cookies plus CSRF protection. Until then, any XSS can steal both access and refresh tokens.
-- [ ] Add MFA/2FA for planner and company owner accounts.
-- [ ] Add login/session audit records: login success/failure, refresh reuse, logout, password change, user-agent, IP, and companyId.
-- [ ] Add account lockout or progressive delay for repeated failed login attempts per email/IP/company, not only global route rate limits.
-- [ ] Add public intake abuse protection: per-token rate limits, CAPTCHA or email verification, submission throttling, and alerting on spikes.
-- [ ] Add request size/body limits for all JSON endpoints, especially public request submission and sync.
-- [ ] Add security headers: HSTS, Content-Security-Policy, X-Frame-Options/frame-ancestors, X-Content-Type-Options, Referrer-Policy.
-- [ ] Add Sentry or equivalent error monitoring for API and web.
 
-### Tenant and authorization coverage
-- [ ] Extend tenant-isolation tests to cover runs, run assignments, request links, dashboard, schedule, public request links, and every related-ID create/update path.
-- [ ] Add tests that drivers cannot access planner dashboard data or modify unassigned jobs.
-- [ ] Add tests that related IDs are company-scoped before write: customerId, driverProfileId, savedLocationId, templateId, fleet unit/trailer IDs, jobPartId, jobId, runId, assignmentId.
-- [ ] Standardize all protected routes on shared `authenticate` + role helpers; avoid one-off JWT parsing in route handlers.
-- [ ] Define roles in one shared enum/source of truth. Current code uses `company_owner` and `planner`, while one constants file still lists `company_admin`.
+- [ ] Move refresh tokens out of `localStorage` or use httpOnly secure refresh cookies + CSRF
+- [ ] MFA/2FA for planner and company owner accounts
+- [ ] Login/session audit records
+- [ ] Account lockout / progressive delay for repeated failed logins per email/IP/company
+- [ ] Public intake abuse protection: per-token rate limits, CAPTCHA or email verification
+- [ ] Request size/body limits on all JSON endpoints
+- [ ] Security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+- [ ] Sentry or equivalent error monitoring
 
-### Dependency and package cleanup
-- [ ] Remove unused API packages if not needed: `@fastify/cookie`, `@fastify/jwt`, `@fastify/static`, `nodemailer`, or any other unused dependency.
-- [ ] Keep Prisma, Fastify, SendGrid, JWT, bcrypt, and PDF-related packages on current patched versions.
-- [ ] Schedule recurring dependency scanning and patch windows.
+### Verified strengths
 
-### Operational security
-- [ ] Verify `.env` files are ignored and not tracked before every release. Current git tracking only includes example env files.
-- [ ] Rotate any secret ever exposed outside the secrets manager within 24 hours.
-- [ ] Confirm production database is private, not publicly reachable except through intended platform networking/proxy.
-- [ ] Use least-privilege database credentials for the app, migrations, and manual admin separately where possible.
-- [ ] Document backup restore and rollback runbooks, then run a restore test.
-
-### File upload readiness
-- [ ] Before adding uploads/photos/POD files, design upload safety first: size limits, MIME sniffing, extension allowlist, malware scanning, object storage outside app runtime, private bucket defaults, signed URLs, and per-tenant ownership checks.
-
-### Verified strengths from review
-- [x] Tenant isolation pattern is mostly correct: API routes generally use `request.user.companyId`, not frontend-provided companyId.
-- [x] Existing tenant isolation integration test passed locally: 27/27 tests.
-- [x] Prisma is used for normal DB access; SQL injection risk is low.
-- [x] `generateJobReference` uses parameterized raw SQL values, not interpolated user input.
-- [x] Access tokens are short-lived and refresh tokens are stored hashed with rotation/reuse detection.
-- [x] No real file upload attack surface exists yet.
-- [x] Web production dependency audit reported 0 vulnerabilities at review time.
+- [x] Tenant isolation pattern mostly correct: API routes use `request.user.companyId`
+- [x] Existing tenant isolation integration test: 27/27 tests passing
+- [x] Prisma used for normal DB access — SQL injection risk low
+- [x] Access tokens short-lived, refresh tokens stored hashed with rotation/reuse detection
+- [x] No real file upload attack surface yet
+- [x] Web production dependency audit: 0 vulnerabilities at review time
 
 ---
 
 ## MINIMUM SAFE VERSION (BEFORE FIRST PAYING CUSTOMER)
 
-These must be in place:
-
-- [x] Tenant isolation enforced via JWT — companyId injected from JWT, all queries scoped
-- [x] Soft deletes for operational data — status fields used throughout
-- [x] .env not in git — all .env files in .gitignore
-- [x] HTTPS in production — Railway + Vercel both enforce HTTPS
-- [x] Idempotency via clientEventId UNIQUE — @@unique([companyId, clientEventId]) on JobExecutionEvent
-- [x] Event-based data model — JobExecutionEvent table, sync endpoint live
-- [x] Per-stop location IDOR fixed — savedLocationId validated against companyId before write (fixed 2026-05-05)
-- [ ] Database backups verified by restore test — Railway auto-backups exist but restore NOT tested
-- [ ] Staging environment separate from production — NO staging, all deploys go direct to production
-- [x] Migration safety — production startup uses `prisma migrate deploy`, not `prisma db push` (fixed 2026-05-07)
-- [x] Structured logging with requestId/userId/companyId — request completion and server errors log tenant/user context when authenticated
-- [ ] Error monitoring (Sentry) — NOT set up
-- [ ] System state banner (manual toggle) — NOT built
-- [ ] Manual override flag for planner — NOT built
-- [ ] /health endpoint with metrics — EXISTS but minimal (only checks DB reachable, no queue depth or latency)
-- [ ] Tenant isolation integration test on every deploy — NOT built
-- [ ] Server-side dashboard endpoint — NOT built; current dashboard must not remain client-filtered before scale rollout
-- [ ] Pagination on high-volume list endpoints — NOT complete
-- [ ] Database indexes reviewed against planner/search/dashboard queries — baseline tenant-first operational indexes added 2026-05-07; search/trigram and production query-plan review still needed
-- [ ] Tenant-scoped search architecture — NOT built
-- [ ] Rollback procedure documented and tested — NOT documented
-
----
-
-## BUILD ORDER (NEXT 90 DAYS)
-
-### Phase 1 — Foundation (now)
-- Idempotency (clientEventId)
-- Event-based model for job status
-- Tenant isolation test
-- CompanyId enforcement review for every API route
-- Server-side pagination/filtering for jobs/dashboard before customer scale
-
-### Phase 2 — Offline driver flow
-- AsyncStorage queue
-- Sync engine with backoff
-- UI sync indicators
-- Logout protection
-
-### Phase 3 — Reliability
-- Sentry error monitoring
-- /health endpoint with metrics
-- Database backup restore test
-- Documented rollback procedure
-
-### Phase 4 — Operational maturity
-- System state banners
-- Manual override for planner
-- Reconciliation flagging
-- Per-tenant rate limiting
-
-### Phase 5 — Scale safety
-- Dedicated dashboard summary API
-- Server-side search with companyId and indexes
-- Per-company cached smart warnings/recommendations
-- Automated incident detection
-- Reconciliation dashboard
-- Post-mortem template
-- Disaster recovery quarterly tests
-
----
-
-## 20. KNOWN VULNERABILITIES — FOUND AND FIXED
-
-Track every security issue discovered, even after fixing, so patterns are not repeated.
-
-| Date | Issue | Severity | Fix |
-|------|-------|----------|-----|
-| 2026-05-05 | Per-stop `savedLocationId` not validated against `companyId` — planner could reference another company's saved location | CRITICAL (IDOR) | Added company check before transaction in POST/PATCH /jobs |
-| 2026-05-05 | `bookedTime`, `earliestArrivalMinutes`, `unloadingAllowanceMinutes` accepted by API but never written to DB — silent data loss | CRITICAL | Added to stop create/createMany mapping in jobs.ts |
-| 2026-05-05 | Vehicle types, trailer types, load units from form rejected by server constants — `ready_to_plan` saves blocked for most vehicle types | HIGH | Expanded VEHICLE_CLASSES, TRAILER_TYPES, LOAD_UNITS in jobCreation.ts |
-| 2026-05-05 | `earliestArrival` HH:MM conversion used raw `split(":").map(Number)` — NaN if input malformed | MEDIUM | Replaced with `toMins()` helper which returns null for NaN |
-| 2026-05-05 | Datetime strings built without timezone (`T14:30:00` not `T14:30:00.000Z`) — ambiguous UTC vs local | MEDIUM | Appended `.000Z` to all constructed stop datetimes |
-| 2026-05-05 | DATABASE_PUBLIC_URL password exposed in chat session | HIGH | ⚠️ ROTATE POSTGRES PASSWORD IN RAILWAY IMMEDIATELY |
-
-### Pattern: IDOR on related records
-Any time a client sends an ID referencing a related record (location, driver, customer, template), validate that record belongs to `companyId` before writing. The top-level job's companyId check is not enough — check every foreign key separately.
-
-### Pattern: Silent field drops
-When adding new fields to a form, always audit that they are: (1) in the API request type, (2) mapped in the route handler create block, AND (3) mapped in the route handler update block. Missing any one of the three causes silent data loss.
-
----
-
-## ENFORCEMENT
-
-### Every specialist chat must:
-- Read this file before starting safety-critical work
-- Reject any task that violates these rules without explicit override from Brain
-- Add new safety rules learned from incidents back into this file
-
-### Brain must:
-- Check every architecture decision against:
-  - Section 1 (system states)
-  - Section 6 (tenant isolation)
-  - Section 4 (event-based model)
-  - Section 7 (data cleanup)
-  - Section 3 (idempotency)
-- Reject specialist proposals that violate safety rules
-- Sequence safety improvements based on customer maturity
-
----
-
-## FINAL TRUTH
-
-Skip any of these and you will:
-- Lose data
-- Mix companies (catastrophic)
-- Block drivers
-- Corrupt history
-
-In logistics, that kills trust fast. Trust takes years to rebuild.
-
-Build the foundations right. Iterate on top.
+- [x] Tenant isolation enforced via JWT
+- [x] Soft deletes for operational data
+- [x] `.env` not in git
+- [x] HTTPS in production (Railway + Vercel)
+- [x] Idempotency via `clientEventId` UNIQUE
+- [x] Event-based data model (JobExecutionEvent table, sync endpoint live)
+- [x] Per-stop location IDOR fixed
+- [x] Migration safety (`prisma migrate deploy` on production startup)
+- [x] Structured logging with requestId/userId/companyId
+- [ ] Database backups verified by restore test
+- [ ] Staging environment separate from production
+- [ ] Error monitoring (Sentry)
+- [ ] System state banner (manual toggle)
+- [ ] /health endpoint with real metrics
+- [ ] Tenant isolation integration test on every deploy
+- [ ] Server-side dashboard endpoint (not client-filtered)
+- [ ] Pagination on high-volume list endpoints
+- [ ] Database indexes reviewed against production queries
+- [ ] Rollback procedure documented and tested
