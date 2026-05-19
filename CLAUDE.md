@@ -2,13 +2,28 @@
 
 ## Read this first — mandatory at the start of every session
 
-**MASTER_BLUEPRINT.md** is the full product vision — what LogisticBay is, all roles, all systems, MVP phases. Read this first.
+Use the right document for the right question. Each doc has one job:
 
-**SYSTEM_PLAN.md** is the system architecture and build plan — the five core objects, phases, rules for adding features.
+| Question | Go to |
+|---|---|
+| What is LogisticBay, what are the phases, what are the roles? | **MASTER_BLUEPRINT.md** |
+| How do the five core objects relate? What is a Run vs a Job vs a JobPart? | **SYSTEM_PLAN.md** |
+| What fields exist on Job / JobPart / Run / LoadTrack / Event? What are the status values? | **PHASE1_DATA_MODEL.md** — but see ⚠ gaps table at the top before trusting field names |
+| What is actually built right now — done, partial, not started? | **PROJECT_STATUS.md** ← always check here before proposing anything |
+| What is the canonical name for a field or concept? | **DATA_DICTIONARY.md** |
+| What open decisions need answers before building? | **QUESTIONS_OPERATIONS.md** / **QUESTIONS_*.md** |
 
-**PHASE1_DATA_MODEL.md** is the agreed data model contract for Job, JobPart, Run, RunAssignment, LoadTrack, and Event. No code touches these models without reading this first. Special attention: partial quantities, load possession, custody chain, handover logic.
+**Never assume what exists. Always check PROJECT_STATUS.md and the actual routes/pages first.**
 
-**PROJECT_STATUS.md** is the live status of every feature — ✅ Done · 🔶 Partial · 🔲 Not started. Read it before proposing what to build next. Do NOT rely on memory or assumptions about what exists — scan the actual routes and pages.
+### Document authority hierarchy
+
+When documents conflict, this order wins:
+1. `schema.prisma` — the schema is the implementation truth
+2. `DATA_DICTIONARY.md` — canonical field names
+3. `PROJECT_STATUS.md` — what is actually built
+4. `PHASE1_DATA_MODEL.md` — target design (may be ahead of schema)
+5. `SYSTEM_PLAN.md` — architecture principles
+6. `MASTER_BLUEPRINT.md` — product vision
 
 ## Doc-update rule — mandatory after every significant change
 

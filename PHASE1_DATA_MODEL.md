@@ -1,10 +1,24 @@
 # LogisticBay — Phase 1 Data Model
 > Logic-level definition of the six core objects.
-> Last updated: 2026-05-16 (added stop-level load specs, vehicle/trailer requirement sources, derived run requirements, compatibility check logic)
+> Last updated: 2026-05-19
 >
-> **This document is never finished.**
-> New operational details will always emerge. When they do, insert them here in the right place
-> before writing any code. Every detail that is not written down gets built wrong.
+> **This document is the target design — not a mirror of the current schema.**
+> It defines what the system is designed to become. Where the actual `schema.prisma` or
+> `DATA_DICTIONARY.md` differs, **the schema is the implementation truth**.
+> This document is the architectural target.
+
+## ⚠ Known gaps between this document and the current schema
+
+| This doc says | Reality today | Action |
+|---|---|---|
+| `branchId` on Job and Run | **Branch model does not exist yet.** No `branchId` in schema. Operations are at Company level for now. Do NOT add `branchId` to queries. | Add when Branch model is built (Phase 2+) |
+| `executionDate` on Job | Schema uses `plannedDate` | Use `plannedDate` in all code |
+| `totalQuantityRequired` / `totalQuantityUnit` on Job | Schema uses `quantity` / `quantityUnit` | Use `quantity` / `quantityUnit` |
+| `materialType` on Job | Schema uses `goodsType` + `goodsDescription` | Use `goodsType` / `goodsDescription` |
+| `serviceType` values: `standard`, `express`, `timed`, `economy` | Schema uses `multi_drop`, `collection`, `delivery` | Use actual schema values |
+| Job statuses: `planned`, `partially_collected`, `partially_delivered`, `attention_needed` | Not yet implemented — current set is `draft`, `pending_review`, `ready_to_plan`, `in_progress`, `completed`, `cancelled` | These are the planned target set — build toward them |
+| Run statuses: `at_collection`, `loading`, `in_transit`, `at_delivery`, `failed` | Not yet implemented — current set is `draft`, `assigned`, `in_progress`, `completed`, `cancelled` | Planned target — driven by mobile events when execution engine is built |
+| `job_creator` role | Not implemented in routes or auth — only `company_owner` and `planner` enforced today | Planned for Phase 2 role expansion |
 
 ---
 

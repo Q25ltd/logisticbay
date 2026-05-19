@@ -1,7 +1,18 @@
 # LOGISTICBAY — MASTER BLUEPRINT v1
 > Full Product Vision, Operational Philosophy & System Architecture
-> Last updated: 2026-05-16
+> Last updated: 2026-05-19
 > Read this before starting any product, design, or architecture work.
+
+## ⚠ Planned vs implemented — read before coding
+
+This document is the product vision. Some things described here are designed but not yet built.
+Key gaps to know before writing any code:
+
+| Blueprint says | Reality today |
+|---|---|
+| `job_creator` role | Not enforced in routes yet. Only `company_owner` and `planner` are used in `requireRole`. `job_creator` is a planned Phase 2 expansion. |
+| `Company → Branch` structure | Branch model does not exist in schema yet. All operations are at Company level. Do NOT add `branchId` to queries. |
+| `manager` role | Exists as a membership role string but no route guards use it yet. |
 
 ---
 
@@ -13,13 +24,13 @@ These are locked decisions. Do not re-debate without a strong reason.
 Job Creator and Planner are separate operational permissions, not necessarily separate people.
 A user may hold one, several, or all roles depending on company size.
 
-| Role | Responsible for |
-|---|---|
-| `job_creator` | entering customer work, addresses, POD requirements, references, time windows, gate instructions |
-| `planner` | assigning drivers/fleet, route changes, swaps, delays, live execution management |
-| `manager` | analytics, approvals, company settings |
-| `driver` | execution confirmation on mobile |
-| `company_owner` | all of the above |
+| Role | Responsible for | Status |
+|---|---|---|
+| `job_creator` | entering customer work, addresses, POD requirements, references, time windows, gate instructions | 🔲 Planned — not enforced in routes yet |
+| `planner` | assigning drivers/fleet, route changes, swaps, delays, live execution management | ✅ Implemented |
+| `manager` | analytics, approvals, company settings | 🔲 Planned — role string exists, no guards yet |
+| `driver` | execution confirmation on mobile | ✅ Implemented |
+| `company_owner` | all of the above | ✅ Implemented |
 
 Small company: one person holds all roles.
 Large company: roles are held by different people.

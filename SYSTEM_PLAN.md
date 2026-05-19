@@ -1,19 +1,15 @@
 # LogisticBay — System Plan
-> This document is the single source of truth for what the system is, how it works, and what needs to be built.
-> Read this before starting any new feature. Update it when anything changes.
-> Last updated: 2026-05-16
+> **Architecture and object model reference.** Read this to understand how the five core objects
+> relate and how the system is designed to work. For current build status (what is done / partial /
+> not started) see **PROJECT_STATUS.md** — do not rely on the tables in this document for that.
+> Last updated: 2026-05-19
 
 ---
 
 ## Why this document exists
 
-We built parts of the system without a structured plan. The result was:
-- Duplicate UI (JobDetailPage and JobDetailDrawer doing the same thing)
-- Wrong architecture (PlannedJob doing the job of both Job and Run)
-- Disconnected pages that don't hand off to each other
-- No clear flow from customer request to job complete
-
-This document prevents that from happening again. Before adding anything new, check here first:
+This document defines the architecture so every agent and developer builds against the same mental model.
+Before adding anything new, check here first:
 - Does this concept already exist under a different name?
 - Where does it fit in the flow?
 - What does it depend on? What depends on it?
@@ -135,34 +131,45 @@ The only difference is that the internal form skips the request/review phase.
 
 ## Job lifecycle (status flow)
 
-Status is always derived from real work — never set by pressing a button.
+> **Implemented statuses** (in schema + routes today) are marked ✅.
+> Remaining statuses are the planned target — not yet derived automatically.
 
 ```
-draft              → job created, no runs planned yet
-planned            → runs created and assigned, not started
-in_progress        → at least one run has started
-partially_collected → some quantity collected, not all
-partially_delivered → some quantity delivered, not all
-attention_needed   → a problem exists (stuck driver, failed delivery, etc.)
-completed          → all required quantity delivered
-cancelled          → job cancelled before completion
+draft              ✅ job created, not yet submitted for planning
+pending_review     ✅ submitted via PRF, awaiting planner accept/reject
+ready_to_plan      ✅ accepted / created directly — waiting for run assignment
+in_progress        ✅ at least one run has started
+completed          ✅ all required work confirmed
+cancelled          ✅ rejected or cancelled before completion
+─────────────────────────────────────────────────────────────────
+planned            🔲 runs assigned, none started yet (not yet derived)
+partially_collected 🔲 some quantity collected, not all (not yet derived)
+partially_delivered 🔲 some quantity delivered, not all (not yet derived)
+attention_needed   🔲 problem state — stuck driver, failed delivery (not yet derived)
 ```
+
+Status must come from real work — never from a manual button.
+The ✅ statuses are currently set via explicit PATCH calls; the 🔲 ones will be derived from
+events and load positions once the execution engine is complete.
 
 ---
 
 ## Run lifecycle (status flow)
 
+> **Implemented statuses** (in schema + routes today) are marked ✅.
+
 ```
-unassigned   → run created, no driver/vehicle assigned yet
-assigned     → driver and vehicle assigned, not started
-in_progress  → driver started the run
-at_collection → driver arrived at collection point
-loading      → driver is loading
-collected    → driver has collected and left site
-in_transit   → driver travelling to delivery/depot
-at_delivery  → driver arrived at delivery point
-completed    → all job parts in this run delivered
-failed       → run could not complete (stuck, breakdown, refusal)
+draft        ✅ run created, driver/vehicle not yet assigned
+assigned     ✅ driver and vehicle assigned, not yet started
+in_progress  ✅ driver has started the run
+completed    ✅ all assignments in this run confirmed
+cancelled    ✅ run cancelled
+─────────────────────────────────────────────────────────────────
+at_collection 🔲 driver arrived at collection point (planned — from mobile event)
+loading       🔲 driver is loading (planned — from mobile event)
+in_transit    🔲 driver travelling (planned — from mobile event)
+at_delivery   🔲 driver arrived at delivery (planned — from mobile event)
+failed        🔲 run could not complete (planned)
 ```
 
 ---
@@ -285,70 +292,11 @@ Information is structured. Operations are flexible.
 
 ---
 
-## What currently exists vs what needs to be built
+## Build status
 
-### Currently exists (web)
-| Thing | Status | Notes |
-|---|---|---|
-| Public request form | ✓ Done | Needs form fields to match internal form |
-| Request review page (accept/reject) | ✓ Done | Works correctly |
-| Job detail page (`/app/jobs/:id`) | Partial | Old implementation — will be replaced |
-| Planner dashboard with job cards | Partial | Good foundation but wrong data model |
-| Jobs list page | Partial | Needs redesign |
-| Create job page (internal) | Partial | Wrong shape — needs to match public form |
-| Driver/fleet management | ✓ Done | Keep as-is |
-
-### Currently exists (API)
-| Thing | Status | Notes |
-|---|---|---|
-| Job requests routes | ✓ Done | Keep — request flow is correct |
-| Jobs routes (PlannedJob) | Partial | Will be refactored when model changes |
-| Shifts routes | ✓ Done | Keep as-is |
-| Auth / company / drivers | ✓ Done | Keep as-is |
-
-### Does not exist yet (needs to be built)
-| Thing | Priority | Notes |
-|---|---|---|
-| `JobPart` model and API | P1 | Core — nothing else works without this |
-| `Run` model and API | P1 | Core — replaces PlannedJob as execution unit |
-| Load position ledger | P1 | Core — tracks where pallets are |
-| Run Planner page (split/assign UI) | P1 | The main planner working view |
-| Warning engine | P2 | Derives warnings from load position + run logic |
-| Recovery suggestions | P3 | Suggest options when things go wrong |
-| Real-time status updates (web) | P2 | Planner sees driver progress without refreshing |
-| Merge runs UI | P2 | Combine split runs back together |
-| Run dependency support (hub-and-spoke) | P2 | Run 4 waits for Runs 1+2+3 |
-
----
-
-## Build phases
-
-### Phase 1 — Data model (agree before writing any code)
-Define exact fields and relationships for: Main Job, Job Part, Run, Load Position, Event.
-Write these into DATA_DICTIONARY.md.
-No code until the model is agreed.
-
-### Phase 2 — API
-Build the new routes for Job, Job Part, Run.
-Migrate existing PlannedJob data: every existing job gets one Run automatically (no data loss).
-Build the load position ledger (transaction log).
-
-### Phase 3 — Run Planner UI
-The main planner page: see a job, its parts, create runs, assign stops to runs, assign driver/vehicle.
-This replaces the current dashboard drawer as the primary planning tool.
-
-### Phase 4 — Driver execution (mobile)
-Update mobile app to work against Job Parts and Runs instead of PlannedJob.
-Driver sees their Run, confirms events on Job Parts.
-
-### Phase 5 — Warnings and recovery
-Warning engine reads load position + run config and surfaces issues.
-Recovery suggestions for common failure scenarios.
-
-### Phase 6 — Polish and unify
-Remove duplicate UI (old JobDetailPage, old dashboard drawer).
-Ensure external and internal forms are identical in structure.
-Real-time updates for planner (WebSocket or polling).
+> **Do not use this document to judge what is built or not.**
+> See **PROJECT_STATUS.md** for the current live status of every feature (✅ Done · 🔶 Partial · 🔲 Not started).
+> This document defines architecture and object relationships only.
 
 ---
 
@@ -370,7 +318,7 @@ If you cannot answer all five questions, the feature is not ready to build yet.
 
 - Build UI for a feature before the data model is agreed
 - Create two separate pages/components that do the same thing
-- Use PlannedJob as both the job record and the execution record
 - Name fields without checking DATA_DICTIONARY.md first
 - Add a field to a form without knowing which database column it maps to
 - Build a page that is not connected to the page before and after it in the flow
+- Assume a feature is not built — check PROJECT_STATUS.md and the actual routes/pages first
