@@ -862,20 +862,26 @@ function StopCard({
             {checkingDist && (
               <p className="text-xs text-slate-400 mt-1">Checking postcode…</p>
             )}
-            {distanceWarn && !checkingDist && (
-              <div className={"flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg text-xs " +
-                (distanceWarn.level === "danger"
-                  ? "bg-red-50 border border-red-300 text-red-800"
-                  : "bg-amber-50 border border-amber-200 text-amber-800")}>
-                <span className="shrink-0 font-bold">⚠</span>
-                <span>
-                  Pin is <strong>{distanceWarn.km} km</strong> from the centre of postcode <strong>{stop.postcode}</strong>.
-                  {" "}{distanceWarn.level === "danger"
-                    ? "This looks like the wrong location — please re-check."
-                    : "Double-check this is the correct site entrance."}
-                </span>
-              </div>
-            )}
+            {distanceWarn && !checkingDist && (() => {
+              const useMiles = stop.country === "GB";
+              const dist = useMiles
+                ? `${Math.round(distanceWarn.km * 0.621371 * 10) / 10} miles`
+                : `${distanceWarn.km} km`;
+              return (
+                <div className={"flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg text-xs " +
+                  (distanceWarn.level === "danger"
+                    ? "bg-red-50 border border-red-300 text-red-800"
+                    : "bg-amber-50 border border-amber-200 text-amber-800")}>
+                  <span className="shrink-0 font-bold">⚠</span>
+                  <span>
+                    Pin is <strong>{dist}</strong> from the centre of postcode <strong>{stop.postcode}</strong>.
+                    {" "}{distanceWarn.level === "danger"
+                      ? "This looks like the wrong location — please re-check."
+                      : "Double-check this is the correct site entrance."}
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Always-visible operational warning */}
             <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
