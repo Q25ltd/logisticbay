@@ -583,32 +583,33 @@ function StopCard({
   const [showCoordHelp, setShowCoordHelp] = useState(false);
   const [stopPhoneError, setStopPhoneError] = useState("");
   const [stopEmailError, setStopEmailError] = useState("");
-  const [distanceWarn,   setDistanceWarn]   = useState<{ km: number; level: "warn" | "danger" } | null>(null);
-  const [checkingDist,   setCheckingDist]   = useState(false);
+  const [distanceWarn, setDistanceWarn] = useState<{ km: number; level: "warn" | "danger" } | null>(null);
+  const [checkingDist, setCheckingDist] = useState(false);
 
-  useEffect(() => { setDistanceWarn(null); }, [stop.lat, stop.lng, stop.postcode]);
-
-  async function checkDistance() {
+  useEffect(() => {
+    setDistanceWarn(null);
     const lat = parseFloat(stop.lat);
     const lng = parseFloat(stop.lng);
     const pc  = stop.postcode.trim().replace(/\s+/g, "");
-    if (!pc || isNaN(lat) || isNaN(lng) || stop.country !== "GB") { setDistanceWarn(null); return; }
-    setCheckingDist(true);
-    try {
-      const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`);
-      if (!res.ok) return;
-      const data = await res.json() as { result?: { latitude: number; longitude: number } };
-      const pcLat = data.result?.latitude;
-      const pcLng = data.result?.longitude;
-      if (pcLat == null || pcLng == null) return;
-      const km = haversineKm(lat, lng, pcLat, pcLng);
-      setDistanceWarn(km < 2 ? null : { km: Math.round(km * 10) / 10, level: km >= 8 ? "danger" : "warn" });
-    } catch {
-      // network error — silently skip
-    } finally {
-      setCheckingDist(false);
-    }
-  }
+    if (!pc || isNaN(lat) || isNaN(lng) || stop.country !== "GB") return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setCheckingDist(true);
+      try {
+        const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as { result?: { latitude: number; longitude: number } };
+        if (cancelled) return;
+        const pcLat = data.result?.latitude;
+        const pcLng = data.result?.longitude;
+        if (pcLat == null || pcLng == null) return;
+        const km = haversineKm(lat, lng, pcLat, pcLng);
+        setDistanceWarn(km < 2 ? null : { km: Math.round(km * 10) / 10, level: km >= 8 ? "danger" : "warn" });
+      } catch { /* network error — skip silently */ }
+      finally { if (!cancelled) setCheckingDist(false); }
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [stop.lat, stop.lng, stop.postcode, stop.country]);
   const complete = stopComplete(stop);
   const started  = stopStarted(stop);
   const typeLabel = STOP_TYPES.find(([v]) => v === stop.type)?.[1] ?? stop.type;
@@ -804,7 +805,6 @@ function StopCard({
                 value={stop.postcode}
                 placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
                 onChange={e => onChange({ postcode: e.target.value.toUpperCase() })}
-                onBlur={checkDistance}
               />
               {highlightErrors && !stop.postcode.trim() && (
                 <p className="text-xs text-red-600 mt-1">Required</p>
@@ -844,16 +844,14 @@ function StopCard({
                 <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. 53.483959"
                   value={stop.lat}
-                  onChange={e => onChange({ lat: e.target.value })}
-                  onBlur={checkDistance} />
+                  onChange={e => onChange({ lat: e.target.value })} />
               </div>
               <div>
                 <FieldLabel>Longitude</FieldLabel>
                 <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. -2.244644"
                   value={stop.lng}
-                  onChange={e => onChange({ lng: e.target.value })}
-                  onBlur={checkDistance} />
+                  onChange={e => onChange({ lng: e.target.value })} />
               </div>
             </div>
             {highlightErrors && (!stop.lat || !stop.lng) && (
