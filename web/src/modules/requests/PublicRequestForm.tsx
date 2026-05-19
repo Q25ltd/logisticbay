@@ -560,6 +560,15 @@ function ServiceTimeChips({ value, onChange }: { value: string; onChange: (v: st
 
 // ── Stop card ─────────────────────────────────────────────────────────────────
 
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function StopCard({
   stop, index, total,
   onChange, onRemove, highlightErrors,
@@ -574,6 +583,32 @@ function StopCard({
   const [showCoordHelp, setShowCoordHelp] = useState(false);
   const [stopPhoneError, setStopPhoneError] = useState("");
   const [stopEmailError, setStopEmailError] = useState("");
+  const [distanceWarn,   setDistanceWarn]   = useState<{ km: number; level: "warn" | "danger" } | null>(null);
+  const [checkingDist,   setCheckingDist]   = useState(false);
+
+  useEffect(() => { setDistanceWarn(null); }, [stop.lat, stop.lng, stop.postcode]);
+
+  async function checkDistance() {
+    const lat = parseFloat(stop.lat);
+    const lng = parseFloat(stop.lng);
+    const pc  = stop.postcode.trim().replace(/\s+/g, "");
+    if (!pc || isNaN(lat) || isNaN(lng) || stop.country !== "GB") { setDistanceWarn(null); return; }
+    setCheckingDist(true);
+    try {
+      const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`);
+      if (!res.ok) return;
+      const data = await res.json() as { result?: { latitude: number; longitude: number } };
+      const pcLat = data.result?.latitude;
+      const pcLng = data.result?.longitude;
+      if (pcLat == null || pcLng == null) return;
+      const km = haversineKm(lat, lng, pcLat, pcLng);
+      setDistanceWarn(km < 2 ? null : { km: Math.round(km * 10) / 10, level: km >= 8 ? "danger" : "warn" });
+    } catch {
+      // network error — silently skip
+    } finally {
+      setCheckingDist(false);
+    }
+  }
   const complete = stopComplete(stop);
   const started  = stopStarted(stop);
   const typeLabel = STOP_TYPES.find(([v]) => v === stop.type)?.[1] ?? stop.type;
@@ -769,6 +804,7 @@ function StopCard({
                 value={stop.postcode}
                 placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
                 onChange={e => onChange({ postcode: e.target.value.toUpperCase() })}
+                onBlur={checkDistance}
               />
               {highlightErrors && !stop.postcode.trim() && (
                 <p className="text-xs text-red-600 mt-1">Required</p>
@@ -808,18 +844,39 @@ function StopCard({
                 <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. 53.483959"
                   value={stop.lat}
-                  onChange={e => onChange({ lat: e.target.value })} />
+                  onChange={e => onChange({ lat: e.target.value })}
+                  onBlur={checkDistance} />
               </div>
               <div>
                 <FieldLabel>Longitude</FieldLabel>
                 <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. -2.244644"
                   value={stop.lng}
-                  onChange={e => onChange({ lng: e.target.value })} />
+                  onChange={e => onChange({ lng: e.target.value })}
+                  onBlur={checkDistance} />
               </div>
             </div>
             {highlightErrors && (!stop.lat || !stop.lng) && (
               <p className="text-xs text-red-600 mt-1">Entrance pin coordinates are required</p>
+            )}
+
+            {/* Distance-from-postcode warning */}
+            {checkingDist && (
+              <p className="text-xs text-slate-400 mt-1">Checking postcode…</p>
+            )}
+            {distanceWarn && !checkingDist && (
+              <div className={"flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg text-xs " +
+                (distanceWarn.level === "danger"
+                  ? "bg-red-50 border border-red-300 text-red-800"
+                  : "bg-amber-50 border border-amber-200 text-amber-800")}>
+                <span className="shrink-0 font-bold">⚠</span>
+                <span>
+                  Pin is <strong>{distanceWarn.km} km</strong> from the centre of postcode <strong>{stop.postcode}</strong>.
+                  {" "}{distanceWarn.level === "danger"
+                    ? "This looks like the wrong location — please re-check."
+                    : "Double-check this is the correct site entrance."}
+                </span>
+              </div>
             )}
 
             {/* Always-visible operational warning */}
