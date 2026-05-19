@@ -53,6 +53,19 @@ After any session that adds a feature, changes a model/route, or completes somet
 
 The docs must always reflect what the code actually does.
 
+### Before claiming anything is missing — check first
+
+Never state that a field, feature, or behaviour is missing without first reading the actual code.
+
+1. Read the relevant schema model in `api/prisma/schema.prisma`
+2. Read the relevant API route or schema file in `api/src/`
+3. Read the relevant UI form or page in `web/src/`
+
+Only after reading all three can you say something is missing or already exists.
+"I think it might be missing" is not acceptable. Check, then state a fact.
+
+---
+
 ### Before adding any new feature
 Answer these five questions first:
 1. Which of the five core objects does this belong to? (Job / JobPart / Run / LoadTrack / Event)

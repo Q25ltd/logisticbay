@@ -53,7 +53,7 @@ export function TextField({
     <label className="block">
       <FieldLabel required={required}>{label}</FieldLabel>
       <input
-        className={`input mt-1 w-full ${error ? "border-red-400 focus:border-red-500" : ""} ${className}`}
+        className={`input mt-1 w-full ${error ? "border-red-400 focus:border-red-500" : (required && String(value).trim()) ? "border-green-400 focus:border-green-500" : ""} ${className}`}
         type={type}
         value={value}
         placeholder={placeholder}

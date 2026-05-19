@@ -824,7 +824,7 @@ function StopCard({
             <div className="block">
               <FieldLabel required>{POSTCODE_META[stop.country]?.label ?? "Postcode"}</FieldLabel>
               <input
-                className={`input mt-1 ${highlightErrors && !stop.postcode.trim() ? "border-red-400 focus:border-red-500" : ""}`}
+                className={`input mt-1 ${highlightErrors && !stop.postcode.trim() ? "border-red-400 focus:border-red-500" : stop.postcode.trim() ? "border-green-400 focus:border-green-500" : ""}`}
                 type="text"
                 value={stop.postcode}
                 placeholder={POSTCODE_META[stop.country]?.placeholder ?? "Postcode"}
@@ -865,14 +865,14 @@ function StopCard({
             <div className="grid grid-cols-2 gap-3 mt-1">
               <div>
                 <FieldLabel>Latitude</FieldLabel>
-                <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
+                <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : stop.lat ? "border-green-400 focus:border-green-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. 53.483959"
                   value={stop.lat}
                   onChange={e => onChange({ lat: e.target.value })} />
               </div>
               <div>
                 <FieldLabel>Longitude</FieldLabel>
-                <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
+                <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : stop.lng ? "border-green-400 focus:border-green-500" : ""}`} type="number" step="0.000001"
                   placeholder="e.g. -2.244644"
                   value={stop.lng}
                   onChange={e => onChange({ lng: e.target.value })} />
@@ -944,7 +944,7 @@ function StopCard({
           {/* Entrance instructions */}
           <div>
             <FieldLabel required>Entrance instructions</FieldLabel>
-            <textarea className={`input mt-1 w-full ${highlightErrors && !stop.navigationInstructions.trim() ? "border-red-400 focus:border-red-500" : ""}`} rows={3}
+            <textarea className={`input mt-1 w-full ${highlightErrors && !stop.navigationInstructions.trim() ? "border-red-400 focus:border-red-500" : stop.navigationInstructions.trim() ? "border-green-400 focus:border-green-500" : ""}`} rows={3}
               placeholder={stop.type === "collection"
                 ? "Enter via Gate B on the left. Intercom code 1234. Ask for goods-in."
                 : "Goods-in via roller shutters at rear. Report to warehouse office first."}
@@ -1167,6 +1167,10 @@ export default function PublicRequestForm() {
   const [submitting,     setSubmitting]     = useState(false);
   const [errors,         setErrors]         = useState<string[]>([]);
   const [showStopErrors, setShowStopErrors] = useState(false);
+  const [s1Attempted,    setS1Attempted]    = useState(false);
+  const [s2Attempted,    setS2Attempted]    = useState(false);
+  const [s3Attempted,    setS3Attempted]    = useState(false);
+  const [s6Attempted,    setS6Attempted]    = useState(false);
 
   // Section collapse
   const [s1, setS1] = useState(true);
@@ -1706,7 +1710,7 @@ export default function PublicRequestForm() {
         {/* ── Sec 1: Your details ──────────────────────────────────────────── */}
         <div className="card overflow-hidden">
           <SectionHeader num={1} icon="👤" title="Your details" subtitle="Company and contact information"
-            active collapsed={s1} onToggle={() => setS1(o => !o)}
+            active collapsed={s1} onToggle={() => { if (!s1 && !sec1Complete) setS1Attempted(true); setS1(o => !o); }}
             complete={sec1Complete} started={sec1Started}
             summary={customerName || contactName}
             missingCount={sec1Missing.length} />
@@ -1715,22 +1719,22 @@ export default function PublicRequestForm() {
               <TextField label="Company / organisation name" required
                 value={customerName} onChange={setCustomerName}
                 placeholder="Acme Distribution Ltd" caseRule="proper_name"
-                error={showStopErrors && !customerName.trim() ? "Required" : undefined} />
+                error={s1Attempted && !customerName.trim() ? "Required" : undefined} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Contact name" required
                   value={contactName} onChange={setContactName}
                   placeholder="Jane Smith" caseRule="proper_name"
-                  error={showStopErrors && !contactName.trim() ? "Required" : undefined} />
+                  error={s1Attempted && !contactName.trim() ? "Required" : undefined} />
                 <TextField label="Contact phone" required type="tel"
                   value={contactPhone}
-                  error={contactPhoneError || (showStopErrors && !contactPhone.trim() ? "Required" : undefined)}
+                  error={contactPhoneError || (s1Attempted && !contactPhone.trim() ? "Required" : undefined)}
                   onChange={v => { setContactPhone(v); setContactPhoneError(""); }}
                   onBlur={v => setContactPhoneError(validatePhone(v, stops[0]?.country ?? "GB"))}
                   placeholder="+44 7700 900123" />
               </div>
               <TextField label="Contact email" required type="email"
                 value={contactEmail}
-                error={contactEmailError || (showStopErrors && !contactEmail.trim() ? "Required" : undefined)}
+                error={contactEmailError || (s1Attempted && !contactEmail.trim() ? "Required" : undefined)}
                 onChange={v => { setContactEmail(v); setContactEmailError(""); }}
                 onBlur={v => setContactEmailError(validateEmail(v))}
                 placeholder="jane@acme.com" />
@@ -1751,7 +1755,7 @@ export default function PublicRequestForm() {
                   </div>
                 </div>
               )}
-              <SectionFooter complete={sec1Complete} label="Your details" onCollapse={() => setS1(true)} missing={sec1Missing} />
+              <SectionFooter complete={sec1Complete} label="Your details" onCollapse={() => { if (!sec1Complete) setS1Attempted(true); setS1(true); }} missing={sec1Missing} />
             </div>
           )}
         </div>
@@ -1761,7 +1765,7 @@ export default function PublicRequestForm() {
           <SectionHeader num={2} icon="🗺️"
             title={sec2Summary ? `Stops — ${sec2Summary}` : "Collection & delivery stops"}
             subtitle="Where to collect from and deliver to"
-            active collapsed={s2} onToggle={() => setS2(o => !o)}
+            active collapsed={s2} onToggle={() => { if (!s2 && !sec2Complete) setS2Attempted(true); setS2(o => !o); }}
             complete={sec2Complete} started={sec2Started}
             summary={sec2Summary || undefined}
             missingCount={sec2Missing.length} />
@@ -1771,7 +1775,7 @@ export default function PublicRequestForm() {
                 <StopCard key={stop.id} stop={stop} index={idx} total={stops.length}
                   onChange={patch => updStop(stop.id, patch)}
                   onRemove={() => removeStop(stop.id)}
-                  highlightErrors={showStopErrors} />
+                  highlightErrors={s2Attempted || showStopErrors} />
               ))}
 
               {/* Add stop — user picks type in the new card */}
@@ -1788,7 +1792,7 @@ export default function PublicRequestForm() {
                 </div>
               )}
 
-              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => setS2(true)} missing={sec2Missing} />
+              <SectionFooter complete={sec2Complete} label="Stops" onCollapse={() => { if (!sec2Complete) setS2Attempted(true); setS2(true); }} missing={sec2Missing} />
             </div>
           )}
         </div>
@@ -1796,7 +1800,7 @@ export default function PublicRequestForm() {
         {/* ── Sec 3: Load ──────────────────────────────────────────────────── */}
         <div className="card overflow-hidden">
           <SectionHeader num={3} icon="🏗️" title="Load details" subtitle="What is being transported"
-            active collapsed={s3} onToggle={() => setS3(o => !o)}
+            active collapsed={s3} onToggle={() => { if (!s3 && !sec3Complete) setS3Attempted(true); setS3(o => !o); }}
             complete={sec3Complete} started={sec3Started}
             summary={goodsTypes.length > 0
               ? `${goodsTypes.map(t => LOAD_TYPES.find(([v]) => v === t)?.[1] ?? t).join(" + ")}${goodsDesc ? ` · ${goodsDesc.slice(0, 30)}` : ""}`
@@ -1809,9 +1813,9 @@ export default function PublicRequestForm() {
               <div>
                 <FieldLabel required>What are you moving? <span className="font-normal text-muted">(select all that apply)</span></FieldLabel>
                 <div className="mt-1">
-                  <MultiChips options={LOAD_TYPES} value={goodsTypes} onChange={setGoodsTypes} error={showStopErrors && !goodsTypes.length} />
+                  <MultiChips options={LOAD_TYPES} value={goodsTypes} onChange={setGoodsTypes} error={s3Attempted && !goodsTypes.length} />
                 </div>
-                {showStopErrors && !goodsTypes.length && (
+                {s3Attempted && !goodsTypes.length && (
                   <p className="text-xs text-red-600 mt-1">Select at least one goods type</p>
                 )}
                 {goodsTypes.includes("other") && (
@@ -1824,7 +1828,7 @@ export default function PublicRequestForm() {
               {/* Description */}
               <div>
                 <FieldLabel required>Description of goods</FieldLabel>
-                <textarea className={`input mt-1 w-full ${showStopErrors && goodsDesc.trim().length < 15 ? "border-red-400 focus:border-red-500" : ""}`} rows={2}
+                <textarea className={`input mt-1 w-full ${s3Attempted && goodsDesc.trim().length < 15 ? "border-red-400 focus:border-red-500" : ""}`} rows={2}
                   value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
                   placeholder={goodsTypes.includes("pallets")       ? "Engine parts on euro pallets, double-stacked" :
                                 goodsTypes.includes("bulk_material") ? "Type 1 MOT crushed limestone, dry, loose" :
@@ -1841,7 +1845,7 @@ export default function PublicRequestForm() {
               <div className="grid grid-cols-2 gap-3">
                 <TextField label="Quantity" required type="number" min="0" step="1" value={quantity}
                   onChange={setQuantity} placeholder="24"
-                  error={showStopErrors && !quantity ? "Required" : undefined} />
+                  error={s3Attempted && !quantity ? "Required" : undefined} />
                 <div>
                   <FieldLabel required>Unit</FieldLabel>
                   <select className="input mt-1 w-full" value={unit} onChange={e => setUnit(e.target.value)}>
@@ -1856,7 +1860,7 @@ export default function PublicRequestForm() {
               {/* Estimated weight — required */}
               <TextField label="Estimated total weight (kg)" required type="number" min="0" step="1"
                 value={estWeight} onChange={setEstWeight} placeholder="14000"
-                error={showStopErrors && !(parseFloat(estWeight) > 0) ? "Required" : undefined}
+                error={s3Attempted && !(parseFloat(estWeight) > 0) ? "Required" : undefined}
                 hint="Approximate is fine, but do not leave blank." />
 
               {/* Overall load height — all types */}
@@ -2110,7 +2114,7 @@ export default function PublicRequestForm() {
                   placeholder="Stacked 3 high. Do not tip. Handle with care near top." />
               </div>
 
-              <SectionFooter complete={sec3Complete} label="Load details" onCollapse={() => setS3(true)} missing={sec3Missing} />
+              <SectionFooter complete={sec3Complete} label="Load details" onCollapse={() => { if (!sec3Complete) setS3Attempted(true); setS3(true); }} missing={sec3Missing} />
             </div>
           )}
         </div>
@@ -2265,7 +2269,7 @@ export default function PublicRequestForm() {
         {/* ── Sec 6: Billing & insurance ───────────────────────────────────── */}
         <div className="card overflow-hidden">
           <SectionHeader num={6} icon="📄" title="Billing" subtitle="Declared goods value and reference numbers"
-            active collapsed={s6} onToggle={() => setS6(o => !o)}
+            active collapsed={s6} onToggle={() => { if (!s6 && !sec6Complete) setS6Attempted(true); setS6(o => !o); }}
             complete={sec6Complete} started={!!declaredValue || !!poNumber}
             summary={declaredValue ? `£${declaredValue}${poNumber ? ` · PO: ${poNumber}` : ""}` : undefined}
             missingCount={sec6Missing.length} />
@@ -2274,7 +2278,7 @@ export default function PublicRequestForm() {
               <TextField label="Declared value of goods (£)" required type="number" min="0"
                 value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
                 hint="For insurance and liability purposes — not the transport price."
-                error={showStopErrors && !(parseFloat(declaredValue) > 0) ? "Required" : undefined} />
+                error={s6Attempted && !(parseFloat(declaredValue) > 0) ? "Required" : undefined} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Purchase order number" value={poNumber}
                   onChange={setPoNumber} placeholder="PO-2026-12345"
@@ -2282,7 +2286,7 @@ export default function PublicRequestForm() {
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
-              <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => setS6(true)} missing={sec6Missing} />
+              <SectionFooter complete={sec6Complete} label="Billing" onCollapse={() => { if (!sec6Complete) setS6Attempted(true); setS6(true); }} missing={sec6Missing} />
             </div>
           )}
         </div>
