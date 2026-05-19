@@ -321,7 +321,7 @@ export function sharedStopComplete(s: SharedStopState): boolean {
     s.navigationInstructions.trim() &&
     s.date && s.earliestArrivalTime && s.latestArrivalTime &&
     s.serviceTime &&
-    (!needsRef || s.referenceNumber.trim())
+    true /* reference optional */
   );
 }
 
@@ -340,7 +340,6 @@ export function sharedStopMissingFields(s: SharedStopState): string[] {
   if (!s.earliestArrivalTime)           missing.push("earliest arrival time");
   if (!s.latestArrivalTime)             missing.push("latest arrival time");
   if (!s.serviceTime)                   missing.push("loading / unloading time");
-  if (needsRef && !s.referenceNumber.trim()) missing.push("reference number");
   return missing;
 }
 
@@ -719,18 +718,16 @@ export default function SharedStopCard({
             </div>
           )}
 
-          {/* Reference number — required for collection/delivery */}
+          {/* Reference number — optional */}
           {needsRef && (
             <TextField
               label={stop.type === "collection" ? "Collection reference" : "Delivery reference"}
-              required
               value={stop.referenceNumber}
               onChange={v => onChange({ referenceNumber: v })}
               placeholder={stop.type === "collection" ? "COL-2026-001" : "DEL-2026-001"}
               hint={stop.type === "collection"
                 ? "Warehouse release number or booking ref. Driver shows this on arrival."
-                : "Goods-in booking number or PO. Driver shows this to unload."}
-              error={highlightErrors && needsRef && !stop.referenceNumber.trim() ? "Required" : undefined} />
+                : "Goods-in booking number or PO. Driver shows this to unload."} />
           )}
 
           {/* Quantity at this stop */}
