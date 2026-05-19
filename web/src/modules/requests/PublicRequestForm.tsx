@@ -394,6 +394,10 @@ interface StopState {
 let _uid = 0;
 function uid() { return `s${++_uid}`; }
 
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function blankStop(type: string): StopState {
   return {
     id: uid(), type, collapsed: false, showOptional: false,
@@ -401,7 +405,7 @@ function blankStop(type: string): StopState {
     country: "GB",
     lat: "", lng: "", navigationInstructions: "",
     referenceNumber: "",
-    date: "", earliestArrivalTime: "", latestArrivalTime: "",
+    date: today(), earliestArrivalTime: "", latestArrivalTime: "",
     serviceTime: "30", serviceTimeCustom: "0",
     quantityRequired: "", quantityUnit: "pallets", stopNotes: "",
     exchangeDropQty: "", exchangeCollectQty: "", exchangeUnit: "pallets",
@@ -1191,9 +1195,9 @@ export default function PublicRequestForm() {
   const [customerRef, setCustomerRef] = useState("");
 
   // ── Sec 2: Stops ──────────────────────────────────────────────────────────
-  // Start with one blank collection stop; user adds more via "+ Add stop"
   const [stops, setStops] = useState<StopState[]>([
     blankStop("collection"),
+    blankStop("delivery"),
   ]);
   const updStop = (id: string, patch: Partial<StopState>) =>
     setStops(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
@@ -1317,7 +1321,7 @@ export default function PublicRequestForm() {
   const [rejectionNotes,                 setRejectionNotes]                 = useState("");
 
   // ── Completeness ──────────────────────────────────────────────────────────
-  const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
+  const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim() && !contactPhoneError && !contactEmailError);
   const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
   const sec3Complete = !!(goodsTypes.length > 0 && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
