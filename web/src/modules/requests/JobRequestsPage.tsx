@@ -131,6 +131,14 @@ export default function JobRequestsPage() {
     } catch { /* silent */ }
   }
 
+  async function regenerateLink() {
+    if (!linkId) return;
+    if (!window.confirm("Regenerate the security token?\n\nAny existing token-based URLs will stop working immediately. Your company slug URL (/request/...) is unaffected.")) return;
+    try {
+      await jobRequestsApi.regenerateLink(linkId);
+    } catch { /* silent */ }
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
 
@@ -142,26 +150,42 @@ export default function JobRequestsPage() {
         </p>
       </div>
 
-      {/* Intake link strip */}
+      {/* Intake link card */}
       {slugUrl && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100">
-          <span className="text-xs font-semibold shrink-0" style={{ color: "#4338ca" }}>Intake link</span>
-          <span className="font-mono text-xs text-slate-600 truncate flex-1 min-w-0">{slugUrl}</span>
-          <button
-            className={"btn text-xs px-2.5 py-1 shrink-0 " + (linkCopied ? "btn-primary" : "btn-secondary")}
-            onClick={handleLinkCopy}
-          >
-            {linkCopied ? "✓ Copied" : "Copy"}
-          </button>
-          <button
-            className={"text-xs px-2.5 py-1 rounded-lg font-medium border shrink-0 transition-colors " +
-              (linkActive
-                ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200"
-                : "bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200")}
-            onClick={toggleLink}
-          >
-            {linkActive ? "Active" : "Inactive"}
-          </button>
+        <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold shrink-0" style={{ color: "#4338ca" }}>Your intake link</span>
+            <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " +
+              (linkActive ? "bg-indigo-200 text-indigo-800" : "bg-gray-200 text-gray-500")}>
+              {linkActive ? "Active" : "Inactive"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-slate-700 truncate flex-1 min-w-0 bg-white border border-indigo-100 rounded px-2 py-1.5">{slugUrl}</span>
+            <button
+              className={"btn text-xs px-3 py-1.5 shrink-0 " + (linkCopied ? "btn-primary" : "btn-secondary")}
+              onClick={handleLinkCopy}
+            >
+              {linkCopied ? "✓ Copied" : "Copy link"}
+            </button>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              className="btn btn-secondary text-xs px-3 py-1"
+              onClick={toggleLink}
+            >
+              {linkActive ? "Deactivate" : "Activate"}
+            </button>
+            <button
+              className="btn btn-secondary text-xs px-3 py-1"
+              onClick={regenerateLink}
+            >
+              Regenerate token
+            </button>
+            <span className="text-xs" style={{ color: "#6b7280" }}>
+              Share this link so customers can submit requests directly. Deactivate to pause new submissions. Regenerate only if the old URL was exposed — your slug URL stays the same.
+            </span>
+          </div>
         </div>
       )}
 
