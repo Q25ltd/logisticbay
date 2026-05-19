@@ -93,6 +93,11 @@ export default function JobRequestsPage() {
   const [loading,  setLoading]  = useState(true);
   const [total,    setTotal]    = useState(0);
 
+  const [slugUrl,    setSlugUrl]    = useState<string | null>(null);
+  const [linkId,     setLinkId]     = useState<number | null>(null);
+  const [linkActive, setLinkActive] = useState(true);
+  const [linkCopied, setLinkCopied] = useState(false);
+
   const load = useCallback(() => {
     setLoading(true);
     jobRequestsApi.list(tab || undefined)
@@ -103,24 +108,62 @@ export default function JobRequestsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    jobRequestsApi.listLinks().then(r => {
+      const main = r.data.find(l => l.isMain);
+      if (main) { setLinkId(main.id); setLinkActive(main.isActive); }
+      if (r.companySlug) setSlugUrl(`${window.location.origin}/request/${r.companySlug}`);
+    }).catch(() => {});
+  }, []);
+
+  function handleLinkCopy() {
+    if (!slugUrl) return;
+    navigator.clipboard.writeText(slugUrl).catch(() => {});
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  }
+
+  async function toggleLink() {
+    if (!linkId) return;
+    try {
+      const updated = await jobRequestsApi.updateLink(linkId, { isActive: !linkActive });
+      setLinkActive(updated.isActive);
+    } catch { /* silent */ }
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-black" style={{ color: "#0f172a" }}>Job Requests</h1>
-          <p className="text-sm mt-0.5" style={{ color: "#6b7280" }}>
-            Incoming transport requests from customers — accept to move to planning.
-          </p>
-        </div>
-        <button
-          className="btn btn-secondary text-sm"
-          onClick={() => navigate("/app/request-links")}
-        >
-          Manage intake links
-        </button>
+      <div>
+        <h1 className="text-xl font-black" style={{ color: "#0f172a" }}>Job Requests</h1>
+        <p className="text-sm mt-0.5" style={{ color: "#6b7280" }}>
+          Incoming transport requests from customers — accept to move to planning.
+        </p>
       </div>
+
+      {/* Intake link strip */}
+      {slugUrl && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100">
+          <span className="text-xs font-semibold shrink-0" style={{ color: "#4338ca" }}>Intake link</span>
+          <span className="font-mono text-xs text-slate-600 truncate flex-1 min-w-0">{slugUrl}</span>
+          <button
+            className={"btn text-xs px-2.5 py-1 shrink-0 " + (linkCopied ? "btn-primary" : "btn-secondary")}
+            onClick={handleLinkCopy}
+          >
+            {linkCopied ? "✓ Copied" : "Copy"}
+          </button>
+          <button
+            className={"text-xs px-2.5 py-1 rounded-lg font-medium border shrink-0 transition-colors " +
+              (linkActive
+                ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200"
+                : "bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-200")}
+            onClick={toggleLink}
+          >
+            {linkActive ? "Active" : "Inactive"}
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">

@@ -23,7 +23,6 @@ import IntelligencePage from "./modules/intelligence/IntelligencePage";
 import SettingsPage          from "./modules/settings/SettingsPage";
 import PublicRequestForm    from "./modules/requests/PublicRequestForm";
 import JobRequestsPage      from "./modules/requests/JobRequestsPage";
-import RequestLinksPage     from "./modules/requests/RequestLinksPage";
 import RunsPage             from "./modules/runs/RunsPage";
 import RunDetailPage        from "./modules/runs/RunDetailPage";
 
@@ -68,7 +67,6 @@ export default function App() {
             <Route path="intelligence" element={<IntelligencePage />} />
             <Route path="settings"       element={<SettingsPage />} />
             <Route path="job-requests"   element={<JobRequestsPage />} />
-            <Route path="request-links"  element={<RequestLinksPage />} />
             <Route path="runs"           element={<RunsPage />} />
             <Route path="runs/:id"       element={<RunDetailPage />} />
           </Route>
