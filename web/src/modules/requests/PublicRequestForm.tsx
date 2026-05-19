@@ -542,11 +542,35 @@ function Chips({ options, value, onChange }: {
   );
 }
 
+function MultiChips({ options, value, onChange, error }: {
+  options: [string, string][];
+  value: string[];
+  onChange: (v: string[]) => void;
+  error?: boolean;
+}) {
+  function toggle(v: string) {
+    onChange(value.includes(v) ? value.filter(x => x !== v) : [...value, v]);
+  }
+  return (
+    <div className={`flex flex-wrap gap-2 ${error ? "rounded-lg outline outline-2 outline-red-400 p-1" : ""}`}>
+      {options.map(([v, l]) => (
+        <button key={v} type="button" onClick={() => toggle(v)}
+          className={"text-sm px-4 py-2 rounded-full border font-medium transition-colors min-h-[40px] " +
+            (value.includes(v)
+              ? "bg-accent text-white border-accent"
+              : "bg-white text-muted border-border hover:border-gray-400")}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Service time chips ────────────────────────────────────────────────────────
 
 function ServiceTimeChips({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className="grid grid-cols-8 gap-1.5 mt-1">
+    <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5 mt-1">
       {SERVICE_TIMES.map(([v, l]) => (
         <button key={v} type="button" onClick={() => onChange(v)}
           className={"py-2 rounded-lg border text-xs font-semibold text-center transition-colors " +
@@ -1176,7 +1200,7 @@ export default function PublicRequestForm() {
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
 
   // ── Sec 3: Load ───────────────────────────────────────────────────────────
-  const [goodsType,               setGoodsType]               = useState("");
+  const [goodsTypes,              setGoodsTypes]              = useState<string[]>([]);
   const [goodsTypeOther,          setGoodsTypeOther]          = useState("");
   const [goodsDesc,               setGoodsDesc]               = useState("");
   const [quantity,                setQuantity]                = useState("");
@@ -1292,14 +1316,14 @@ export default function PublicRequestForm() {
   const sec1Complete = !!(customerName.trim() && contactName.trim() && contactPhone.trim() && contactEmail.trim());
   const sec2Complete = stops.length > 0 && stops.every(stopComplete) &&
     stops.some(s => s.type === "collection") && stops.some(s => s.type === "delivery");
-  const sec3Complete = !!(goodsType && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
+  const sec3Complete = !!(goodsTypes.length > 0 && goodsDesc.trim().length >= 15 && quantity && unit && parseFloat(estWeight) > 0);
   const sec4Complete = true; // optional section
   const sec5Complete = true; // optional
   const sec6Complete = !!(parseFloat(declaredValue) > 0);
 
   const sec1Started = !!(customerName || contactName);
   const sec2Started = stops.some(stopStarted);
-  const sec3Started = !!(goodsType || goodsDesc);
+  const sec3Started = !!(goodsTypes.length > 0 || goodsDesc);
 
   // ── Human-readable missing field lists (shown in SectionFooter) ──────────────
   const sec1Missing: string[] = [
@@ -1320,7 +1344,7 @@ export default function PublicRequestForm() {
   ];
 
   const sec3Missing: string[] = [
-    !goodsType                         ? "goods type"                                    : "",
+    !goodsTypes.length                  ? "goods type"                                    : "",
     goodsDesc.trim().length < 15       ? "goods description (min 15 characters)"         : "",
     !quantity                          ? "quantity"                                       : "",
     !unit                              ? "unit"                                           : "",
@@ -1356,7 +1380,7 @@ export default function PublicRequestForm() {
         const t = info.templateData;
         if (t && typeof t === "object") {
           if (t.customerRef)       setCustomerRef(String(t.customerRef));
-          if (t.goodsType)         setGoodsType(String(t.goodsType));
+          if (t.goodsType)         setGoodsTypes([String(t.goodsType)]);
           if (t.goodsDescription)  setGoodsDesc(String(t.goodsDescription));
           if (t.unit)              setUnit(String(t.unit));
           if (t.quantity)          setQuantity(String(t.quantity));
@@ -1404,7 +1428,7 @@ export default function PublicRequestForm() {
 
     // Section 3 — load
     const s3Problems = [
-      !goodsType                   ? "Goods type is required"                              : "",
+      !goodsTypes.length           ? "Goods type is required"                              : "",
       goodsDesc.trim().length < 15 ? "Goods description must be at least 15 characters"   : "",
       !quantity                    ? "Quantity is required"                                : "",
       !unit                        ? "Unit is required"                                    : "",
@@ -1435,7 +1459,7 @@ export default function PublicRequestForm() {
     );
 
     // Derive boolean / computed fields before building the flat payload
-    const resolvedTempRange    = tempRange.trim() || (goodsType === "bulk_material" ? wetDry : tempType) || undefined;
+    const resolvedTempRange    = tempRange.trim() || (goodsTypes.includes("bulk_material") ? wetDry : tempType) || undefined;
     const isTempControlled     = !!(resolvedTempRange);
     const isFragile            = specialItems.includes("fragile");
 
@@ -1512,7 +1536,7 @@ export default function PublicRequestForm() {
       stops: stops.map((s, i) => stopToRequestStop(s, i + 1)),
 
       // Load
-      goodsType:            goodsType || undefined,
+      goodsType:            goodsTypes[0] || undefined,
       goodsDescription:     goodsDesc.trim() || undefined,
       quantity:             quantity ? parseFloat(quantity) : undefined,
       quantityUnit:         unit === "other" ? (otherUnit.trim() || "other") : unit || undefined,
@@ -1690,21 +1714,23 @@ export default function PublicRequestForm() {
             <div className="px-5 pt-5 pb-4 space-y-4">
               <TextField label="Company / organisation name" required
                 value={customerName} onChange={setCustomerName}
-                placeholder="Acme Distribution Ltd" caseRule="proper_name" />
+                placeholder="Acme Distribution Ltd" caseRule="proper_name"
+                error={showStopErrors && !customerName.trim() ? "Required" : undefined} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Contact name" required
                   value={contactName} onChange={setContactName}
-                  placeholder="Jane Smith" caseRule="proper_name" />
+                  placeholder="Jane Smith" caseRule="proper_name"
+                  error={showStopErrors && !contactName.trim() ? "Required" : undefined} />
                 <TextField label="Contact phone" required type="tel"
                   value={contactPhone}
-                  error={contactPhoneError}
+                  error={contactPhoneError || (showStopErrors && !contactPhone.trim() ? "Required" : undefined)}
                   onChange={v => { setContactPhone(v); setContactPhoneError(""); }}
                   onBlur={v => setContactPhoneError(validatePhone(v, stops[0]?.country ?? "GB"))}
                   placeholder="+44 7700 900123" />
               </div>
               <TextField label="Contact email" required type="email"
                 value={contactEmail}
-                error={contactEmailError}
+                error={contactEmailError || (showStopErrors && !contactEmail.trim() ? "Required" : undefined)}
                 onChange={v => { setContactEmail(v); setContactEmailError(""); }}
                 onBlur={v => setContactEmailError(validateEmail(v))}
                 placeholder="jane@acme.com" />
@@ -1772,8 +1798,8 @@ export default function PublicRequestForm() {
           <SectionHeader num={3} icon="🏗️" title="Load details" subtitle="What is being transported"
             active collapsed={s3} onToggle={() => setS3(o => !o)}
             complete={sec3Complete} started={sec3Started}
-            summary={goodsType
-              ? `${LOAD_TYPES.find(([v]) => v === goodsType)?.[1] ?? goodsType}${goodsDesc ? ` · ${goodsDesc.slice(0, 30)}` : ""}`
+            summary={goodsTypes.length > 0
+              ? `${goodsTypes.map(t => LOAD_TYPES.find(([v]) => v === t)?.[1] ?? t).join(" + ")}${goodsDesc ? ` · ${goodsDesc.slice(0, 30)}` : ""}`
               : undefined}
             missingCount={sec3Missing.length} />
           {!s3 && (
@@ -1781,11 +1807,14 @@ export default function PublicRequestForm() {
 
               {/* What are you moving? */}
               <div>
-                <FieldLabel required>What are you moving?</FieldLabel>
+                <FieldLabel required>What are you moving? <span className="font-normal text-muted">(select all that apply)</span></FieldLabel>
                 <div className="mt-1">
-                  <Chips options={LOAD_TYPES} value={goodsType} onChange={setGoodsType} />
+                  <MultiChips options={LOAD_TYPES} value={goodsTypes} onChange={setGoodsTypes} error={showStopErrors && !goodsTypes.length} />
                 </div>
-                {goodsType === "other" && (
+                {showStopErrors && !goodsTypes.length && (
+                  <p className="text-xs text-red-600 mt-1">Select at least one goods type</p>
+                )}
+                {goodsTypes.includes("other") && (
                   <input className="input mt-2 w-full" type="text"
                     placeholder="Describe what you are moving"
                     value={goodsTypeOther} onChange={e => setGoodsTypeOther(e.target.value)} />
@@ -1795,13 +1824,13 @@ export default function PublicRequestForm() {
               {/* Description */}
               <div>
                 <FieldLabel required>Description of goods</FieldLabel>
-                <textarea className="input mt-1 w-full" rows={2}
+                <textarea className={`input mt-1 w-full ${showStopErrors && goodsDesc.trim().length < 15 ? "border-red-400 focus:border-red-500" : ""}`} rows={2}
                   value={goodsDesc} onChange={e => setGoodsDesc(e.target.value)}
-                  placeholder={goodsType === "pallets"       ? "Engine parts on euro pallets, double-stacked" :
-                                goodsType === "bulk_material" ? "Type 1 MOT crushed limestone, dry, loose" :
-                                goodsType === "steel_long"    ? "25m galvanised RSJ beams, 6 pieces, 3.8t each" :
-                                goodsType === "machinery"     ? "CNC milling machine, 4.2t, skid-mounted, no lifting points" :
-                                goodsType === "vehicles"      ? "2019 Ford Transit Custom, white, running, keys with vehicle" :
+                  placeholder={goodsTypes.includes("pallets")       ? "Engine parts on euro pallets, double-stacked" :
+                                goodsTypes.includes("bulk_material") ? "Type 1 MOT crushed limestone, dry, loose" :
+                                goodsTypes.includes("steel_long")    ? "25m galvanised RSJ beams, 6 pieces, 3.8t each" :
+                                goodsTypes.includes("machinery")     ? "CNC milling machine, 4.2t, skid-mounted, no lifting points" :
+                                goodsTypes.includes("vehicles")      ? "2019 Ford Transit Custom, white, running, keys with vehicle" :
                                 "Describe exactly what is being transported — be specific"} />
                 <div className={`text-xs mt-1 ${goodsDesc.trim().length >= 15 ? "text-muted" : "text-amber-600 font-medium"}`}>
                   {goodsDesc.trim().length} / 15 characters minimum
@@ -1811,7 +1840,8 @@ export default function PublicRequestForm() {
               {/* Quantity + unit */}
               <div className="grid grid-cols-2 gap-3">
                 <TextField label="Quantity" required type="number" min="0" step="1" value={quantity}
-                  onChange={setQuantity} placeholder="24" />
+                  onChange={setQuantity} placeholder="24"
+                  error={showStopErrors && !quantity ? "Required" : undefined} />
                 <div>
                   <FieldLabel required>Unit</FieldLabel>
                   <select className="input mt-1 w-full" value={unit} onChange={e => setUnit(e.target.value)}>
@@ -1826,6 +1856,7 @@ export default function PublicRequestForm() {
               {/* Estimated weight — required */}
               <TextField label="Estimated total weight (kg)" required type="number" min="0" step="1"
                 value={estWeight} onChange={setEstWeight} placeholder="14000"
+                error={showStopErrors && !(parseFloat(estWeight) > 0) ? "Required" : undefined}
                 hint="Approximate is fine, but do not leave blank." />
 
               {/* Overall load height — all types */}
@@ -1834,7 +1865,7 @@ export default function PublicRequestForm() {
                 hint="Helps the planner choose the right trailer. Leave blank if unsure." />
 
               {/* ── Conditional: Pallets ── */}
-              {goodsType === "pallets" && (
+              {goodsTypes.includes("pallets") && (
                 <div className="space-y-4 pt-1">
                   <div className="grid grid-cols-2 gap-3">
                     <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
@@ -1861,7 +1892,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Roll cages / yorks ── */}
-              {goodsType === "roll_cages" && (
+              {goodsTypes.includes("roll_cages") && (
                 <div className="space-y-4 pt-1">
                   <TextField label="Number of cages" type="number" min="0" step="1"
                     value={cageCount} onChange={setCageCount} placeholder="48"
@@ -1872,7 +1903,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Building materials ── */}
-              {goodsType === "building_materials" && (
+              {goodsTypes.includes("building_materials") && (
                 <div className="space-y-4 pt-1">
                   <div>
                     <FieldLabel>Material type</FieldLabel>
@@ -1893,7 +1924,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Liquid / tanker ── */}
-              {goodsType === "liquid_bulk" && (
+              {goodsTypes.includes("liquid_bulk") && (
                 <div className="space-y-4 pt-1">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
@@ -1915,7 +1946,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Machinery ── */}
-              {goodsType === "machinery" && (
+              {goodsTypes.includes("machinery") && (
                 <div className="space-y-4 pt-1">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <TextField label="Dimensions (L × W × H)" value={dimensions}
@@ -1934,7 +1965,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Bulk material ── */}
-              {goodsType === "bulk_material" && (
+              {goodsTypes.includes("bulk_material") && (
                 <div className="space-y-4 pt-1">
                   <Toggle value={tippingReq} onChange={setTippingReq} label="Tipping required at delivery" />
                   <div>
@@ -1947,7 +1978,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Steel/long loads ── */}
-              {goodsType === "steel_long" && (
+              {goodsTypes.includes("steel_long") && (
                 <div className="space-y-4 pt-1">
                   <div className="grid grid-cols-2 gap-3">
                     <TextField label="Longest item (m)" type="number" min="0"
@@ -1969,7 +2000,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Food/refrigerated ── */}
-              {goodsType === "food_refrigerated" && (
+              {goodsTypes.includes("food_refrigerated") && (
                 <div className="space-y-4 pt-1">
                   <div>
                     <FieldLabel>Chilled, frozen or ambient?</FieldLabel>
@@ -1990,7 +2021,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Vehicles ── */}
-              {goodsType === "vehicles" && (
+              {goodsTypes.includes("vehicles") && (
                 <div className="space-y-4 pt-1">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <TextField label="Number of vehicles" type="number" min="0" step="1"
@@ -2008,7 +2039,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: Containers ── */}
-              {goodsType === "containers" && (
+              {goodsTypes.includes("containers") && (
                 <div className="space-y-4 pt-1">
                   <div>
                     <FieldLabel>Container size</FieldLabel>
@@ -2039,7 +2070,7 @@ export default function PublicRequestForm() {
               )}
 
               {/* ── Conditional: General goods ── */}
-              {goodsType === "general" && (
+              {goodsTypes.includes("general") && (
                 <div className="space-y-4 pt-1">
                   <div>
                     <FieldLabel>Packaging type</FieldLabel>
@@ -2242,7 +2273,8 @@ export default function PublicRequestForm() {
             <div className="px-5 pt-5 pb-4 space-y-4">
               <TextField label="Declared value of goods (£)" required type="number" min="0"
                 value={declaredValue} onChange={setDeclaredValue} placeholder="0.00"
-                hint="For insurance and liability purposes — not the transport price." />
+                hint="For insurance and liability purposes — not the transport price."
+                error={showStopErrors && !(parseFloat(declaredValue) > 0) ? "Required" : undefined} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Purchase order number" value={poNumber}
                   onChange={setPoNumber} placeholder="PO-2026-12345"
