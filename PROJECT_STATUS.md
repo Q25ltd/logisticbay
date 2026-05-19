@@ -1,109 +1,213 @@
 # LogisticBay — Project Status
 
-## Live URLs
-- API: https://api-production-cdc9.up.railway.app
-- Web: https://logisticbay.com / https://logisticbay.vercel.app
-- Railway: https://railway.app/project/5b039bc6-fef3-4aa6-b423-1e1088aaa94b
-
-## Stack
-- API: ~/timesheet-app/api (Fastify + Prisma + PostgreSQL)
-- Web: ~/timesheet-app/web (React + Vite + Tailwind)
-- Mobile: ~/timesheet-app/mobile (Expo SDK 54)
-
-## GitHub
-- Web+API: https://github.com/Q25ltd/logisticbay
-- Mobile: https://github.com/Q25ltd/logisticbay-mobile
-
-## Mobile Screens
-- LoginScreen — email+PIN, Face ID, company picker (multi-company)
-- HomeScreen — jobs preview, My Shifts, Holidays, Change PIN
-- StartShiftScreen — shift start, vehicle setup, week context
-- JobsScreen — Today/Upcoming tabs, viewOnly without shift
-- JobDetail (src/screens/JobDetail/index.tsx) — full delivery flow with collection/delivery forms, online/offline sync
-- ChangeVehicleScreen — mid-shift truck/trailer change
-- ChecklistScreen — truck/trailer checks
-- EndSegmentScreen — segment close
-- EndShiftScreen — shift completion + totals
-- ReviewScreen — shift review before submit
-- HistoryScreen, ShiftDetailScreen, ChangePinScreen, HolidayScreen
-
-## API Routes
-- Auth: login (multi-company), refresh, logout, me, change-password, register-company
-- Auth: forgot-password, reset-password, verify-email (built, email gated — see below)
-- Company: GET/PATCH company, drivers CRUD, locations, templates
-- Jobs: list, create, my, status updates with actual quantities + clientTimestamp + GPS metadata
-- Sync: POST /sync/events (offline event ingestion, idempotent via clientEventId)
-- Shifts: create, segments, deliveries, submit, PDF
-- Availability: weekly plan, shift preferences, holiday requests, working time
-- Health: GET /health
-
-## Key Features Done
-- Multi-company login with company picker
-- Agency driver linking (same user, multiple company profiles)
-- Full delivery flow: pending→collected→delivered with qty/POD
-- Planner sets required confirmations per job
-- Weekly availability (7-day plan, this/next week)
-- Holiday requests with allowance tracking
-- Working time compliance (60h max, 48h average warning)
-- Rest period checks (11h standard, 9h reduced max 3x/week)
-- PDF generation for shifts
-- Email reports via SendGrid
-- Offline-first job execution with queue + auto-sync
-- Idempotent event sync using clientEventId
-- GPS + clientTimestamp attached to job execution events
-- Offline retry system with failure tracking and recovery
-- Global offline/sync banner with retry UI
-
-## Web Planner TODO
-- Jobs list (core planner view)
-- Create job
-- Assign driver
-- Job detail: show planned vs actual quantities + POD
-- Manual status view/override
-- Driver profile: min hours/day, holiday allowance fields
-- Availability board: see all drivers week plan, approve
-- Holiday management: approve/reject, calendar view
-- Shift preferences board: today's driver preferences
-- Settings: max holidays per day limit
-
-## Schema Models
-Company, User, CompanyMembership, DriverProfile,
-SavedLocation, JobTemplate, PlannedJob, JobExecutionEvent, SyncEventLog,
-Shift, ShiftSegment, DeliveryTask,
-DriverAvailability, ShiftPreference, HolidayRequest, DriverWorkingTimeSummary,
-RefreshToken, PasswordResetToken, EmailVerificationToken
+> **Keep this file accurate.** After every session that adds, changes, or removes a feature,
+> update the relevant section. Use the three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
+> Last updated: 2026-05-19
 
 ---
 
-## Auth Security — Built 2026-05-18
+## Live URLs
 
-### What is done
-- **Login lockout**: 5 failed attempts in 15 min locks account for 15 min. Generic error always — never leaks lockout state. `failedLoginAttempts` + `lockedUntil` columns on `User`.
-- **Refresh token rotation + reuse detection**: tokens stored as SHA-256 hashes, rotated on every refresh. Reuse revokes the whole token family.
-- **Password reset flow**: `POST /auth/forgot-password` → email with 1-hour token → `POST /auth/reset-password` → revokes all sessions. Only `company_owner` role can self-serve reset. Drivers/planners reset via admin panel.
-- **Email verification on registration**: `POST /auth/register-company` creates company with `status=pending`, sends verification email, login blocked until verified. `POST /auth/verify-email` activates company (`pending→trial`) and auto-issues tokens.
-- **DB migration `20260518000002_auth_security`**: idempotent SQL — adds lockout columns to `User`, creates `PasswordResetToken` and `EmailVerificationToken` tables.
-- **Web pages**: `/forgot-password`, `/reset-password?token=`, `/verify-email?token=`, RegisterPage "check inbox" state.
+| Service | URL |
+|---------|-----|
+| API | https://api-production-cdc9.up.railway.app |
+| Web | https://logisticbay.com / https://logisticbay.vercel.app |
+| Railway | https://railway.app/project/5b039bc6-fef3-4aa6-b423-1e1088aaa94b |
+| Mobile (iOS/Android) | Expo — separate repo: https://github.com/Q25ltd/logisticbay-mobile |
+| Web + API repo | https://github.com/Q25ltd/logisticbay |
 
-### EMAIL IS CURRENTLY DISABLED (no SendGrid key)
-`env.EMAIL_ENABLED = !!process.env.SENDGRID_API_KEY`
+---
 
-**While disabled:**
-- `register-company` sets company `status=trial` directly, returns tokens, logs in immediately — same UX as before
-- `forgot-password` and `reset-password` routes exist but no email is sent (forgot-password silently succeeds, reset token is never delivered)
-- Login lockout still works fully (no email dependency)
+## Stack
 
-### What to do when SendGrid is re-enabled
+- **API** `api/` — Fastify + Prisma + PostgreSQL (Railway)
+- **Web** `web/` — React + Vite + Tailwind
+- **Mobile** `mobile/` — Expo SDK 54 (React Native)
 
-1. **Add `SENDGRID_API_KEY` to Railway** — this single change activates the full email flow in production automatically (`env.EMAIL_ENABLED` becomes `true`).
-2. **Add `EMAIL_FROM` to Railway** — the verified sender address in your SendGrid account (e.g. `noreply@logisticbay.com`).
-3. **Test registration end-to-end**: register → "check inbox" screen → click link → lands on dashboard.
-4. **Test forgot-password end-to-end**: request reset → email received → reset link works → all sessions revoked → login with new password.
-5. **Test expired token**: reset link older than 1 hour → 400 error shown.
-6. **Test driver/planner cannot use forgot-password**: only `company_owner` gets an email — others silently succeed with no email sent.
-7. **Consider adding a resend-verification endpoint** if users lose the email before verifying.
-8. **Consider adding MFA** for planner/owner accounts (listed in SAFETY.md security review TODO).
+---
 
-### Roles that can self-serve password reset
-- `company_owner` — yes, via `/forgot-password` email flow
-- `driver`, `planner`, `manager` — no, must be reset by company owner via admin panel (not yet built — add to settings page)
+## ✅ FULLY DONE — production-ready
+
+### Auth
+- Multi-company login with company picker (one user, multiple companies)
+- JWT access + refresh tokens with rotation and reuse detection
+- Login lockout: 5 bad attempts → 15-min lock, generic error (never leaks state)
+- Password reset (company_owner only): SHA-256 token, 1h TTL, revokes all sessions
+- Email verification on registration: `status=pending` → email → `status=trial`
+- **Email currently disabled** — `EMAIL_ENABLED = !!SENDGRID_API_KEY`. When key is added to Railway the full flow activates automatically. See `DEVLOG.md` for re-enable steps.
+- Agency driver linking (one user, multiple `CompanyMembership` rows)
+
+### Company & users
+- Register company, PATCH company settings
+- Driver CRUD (add / edit / deactivate) with `DriverProfile` (min hours, pay rate, holiday allowance)
+- Customer CRUD (name, contact, notes — all nullable `String?`)
+- Saved locations CRUD
+
+### Fleet
+- Fleet units (trucks/rigids/vans) — CRUD with status, category, GVW, reg
+- Trailers — CRUD with body type, length, status
+- Run model stores `assignedTruckId` + `assignedTrailerId` (FK to FleetUnit / FleetTrailer)
+
+### Job templates
+- CRUD for planner-managed job templates (`JobTemplate`)
+- Default stops, material type, vehicle requirements stored as JSON blobs
+- Templates available in Create Job Page (CJP) via search/apply
+
+### Job intake
+- **Create Job Page (CJP)** — full 6-section form, all fields persisted to `Job` + `JobPart`
+  - Section 1: customer, contact, planned date
+  - Section 2: stops (SharedStopCard — collection + delivery)
+  - Section 3: load details (goods type, weight, qty, load sub-type blobs)
+  - Section 4: special requirements (ADR, oversized, fragile, high-value, etc.)
+  - Section 5: vehicle requirements (category, body types, equipment, trailers)
+  - Section 6: billing (declared value, PO number, billing ref)
+  - Edit mode (restore from existing Job), template apply mode
+  - Required-field red highlighting on save attempt (all 6 sections + stops)
+  - `saveMode`: draft | ready_to_plan
+- **Public Request Form (PRF)** — `/request/:token`
+  - Full identical field set to CJP — same Zod schema, same DB columns
+  - LogisticBay "Powered by" branding badge (header, success, error screens)
+  - Required-field red highlighting + per-stop missing field list
+  - `status = pending_review` on submit
+
+### Client request links
+- Main link: one auto-created permanent link per company (for website / social)
+- Personalised links: unlimited per company
+- Raw token stored → link URL always re-copyable (no "copy only once" restriction)
+- Regenerate endpoint (`POST /request-links/:id/regenerate`)
+- Activate / deactivate toggle
+
+### Job review (PRF intake pipeline)
+- `GET /job-requests` — list `pending_review` jobs
+- `POST /job-requests/:id/accept` — sets `plannedDate` + `plannerNotes` → `ready_to_plan`
+- `POST /job-requests/:id/reject` → `cancelled` with audit entry
+- Web: `JobRequestsPage` — full review UI with accept/reject drawers
+
+### Job management (web planner)
+- `JobsPage` — list with status filter, search, pagination
+- `JobDetailPage` — full job detail view
+- `CreateJobPage` — create + edit mode
+- Job status updates via PATCH
+- Planner notes, internal notes
+
+### Runs & planning
+- `Run` model: date, driver, truck, trailer, status, publish flag, end instructions
+- `RunAssignment` model: links `JobPart` to a `Run` with sequence number, quantities, custody
+- API: full CRUD, publish (`POST /runs/:id/publish`), assignments CRUD, resequence
+- Web `RunsPage` — list runs by date, status filter, create new run modal
+- Web `RunDetailPage` — assignment management (add/remove job stops, resequence)
+- `DashboardPage` — today's runs overview by status, driver names, assignment counts
+
+### Mobile (driver app)
+- Login, multi-company picker, Face ID / biometric unlock, Change PIN
+- Home screen: jobs preview, My Shifts, Holidays
+- Start shift: vehicle setup, truck/trailer selection, checklist
+- Jobs screen: Today / Upcoming tabs, view-only without active shift
+- Job detail: full collection → delivery execution flow
+  - Collect: confirm qty, site check-in
+  - Deliver: confirm qty, POD (signature / photo / pod number / timestamp)
+  - Per-job POD requirements enforced
+- Change vehicle mid-shift
+- End segment, End shift, Review screen, Submit shift
+- History screen, Shift detail
+- Holiday requests
+- **Offline-first**: events queued in AsyncStorage, auto-synced on reconnect
+- Idempotent sync via `clientEventId` — no duplicate events
+- GPS + `clientTimestamp` attached to every execution event
+- Offline/sync status banner with retry UI
+
+### Shifts & availability (web)
+- `ShiftsPage` — basic list view (driver, date, hours, status)
+- Driver availability: weekly plan, shift preferences
+- Holiday requests: submit, approve/reject, allowance tracking
+- Working time compliance: 60h max, 48h average warning, 11h rest check
+
+---
+
+## 🔶 PARTIALLY DONE — works but has gaps
+
+| Area | What works | What's missing |
+|------|-----------|----------------|
+| **Jobs list (web)** | List, filter by status, search | Filter by date range, customer filter |
+| **Job detail (web)** | All fields displayed | POD viewer, audit log display, stop-level execution status |
+| **Run detail (web)** | Add/remove assignments, resequence | Truck/trailer picker UI (schema supports it, UI doesn't wire it), live status from mobile |
+| **Planning dashboard** | Today's runs, driver names | "Ready to plan" jobs backlog panel, drag-to-assign |
+| **Driver profiles (web)** | CRUD — name, pay rate, min hours | Availability board (see all drivers week view), working time compliance display |
+| **Shifts (web)** | Basic list | Full shift detail with PDF, delivery task breakdown |
+| **LoadTrack** | Schema + model fully defined | No write path from mobile or API yet — custody chain not recorded |
+| **Job audit log** | `JobAudit` rows written on accept/reject | No viewer in web planner UI |
+| **Fleet ↔ Run linkage** | Schema has `assignedTruckId` / `assignedTrailerId` | Run creation UI does not yet offer truck/trailer picker |
+| **Job status guards** | PATCH /jobs/:id/status exists | Role-based edit restrictions post-assignment not enforced in code |
+
+---
+
+## 🔲 NOT STARTED — future phases
+
+### Load movement & execution (next priority area)
+- Handover / relay confirmation flow (driver B accepts load from driver A)
+- Breakdown event type + workflow
+- Incident / RTA event type
+- Damage report at collection or delivery
+- Customer refusal workflow
+- Stop reorder by driver (decision needed — see `QUESTIONS_OPERATIONS.md`)
+- Partial collection approval flow (driver vs planner decision)
+- Live ETA calculation from GPS events
+- Live driver location feed on planner dashboard
+
+### Notifications
+- Driver receives alert when run is published
+- Driver receives alert when run is modified mid-execution
+- Planner receives alert when driver reports delay
+- Customer receives alert when delivery is complete (optional)
+
+### Reporting & documents
+- POD viewer — web page showing proof items per delivery
+- Shift PDF (built in API, no web UI to download it)
+- Job-level PDF / delivery note
+- Customer delivery report
+
+### Customer portal
+- Email OTP or account login for customers
+- Customer can view job status
+- Customer can access their POD
+- Customer-side saved templates (needs identity first)
+
+### Platform — future phases
+- Intelligence page (AI route suggestions, anomaly detection) — stub only
+- Marketplace (load posting / subcontracting) — stub only
+- MFA for planner / owner accounts (listed in `SAFETY.md`)
+- Admin panel: owner resets driver / planner passwords (no email needed)
+- Resend-verification endpoint (currently no way to resend if email lost)
+- Night out allowance amount — fixed or per-company config (not in schema yet)
+- Vehicle / driver overlap guard at run publish time (architecture decided, not coded)
+- Maximum discrepancy threshold before escalation (field exists, no threshold logic)
+
+---
+
+## Schema models (current)
+
+```
+Company, Customer, User, CompanyMembership, DriverProfile
+PasswordResetToken, EmailVerificationToken, RefreshToken
+SavedLocation, JobTemplate
+Job, JobPart, JobAudit, JobExecutionEvent
+Run, RunAssignment, LoadTrack
+SyncEventLog
+Shift, ShiftSegment, DeliveryTask
+DriverAvailability, ShiftPreference, HolidayRequest, DriverWorkingTimeSummary
+FleetUnit, FleetTrailer
+AuditLog
+ClientRequestLink
+```
+
+---
+
+## Open question files
+
+| File | Topic |
+|------|-------|
+| `QUESTIONS_OPERATIONS.md` | Job execution, driver actions, load tracking, failures, relay, POD |
+| `QUESTIONS_COMPANY.md` | Company setup, roles, multi-company |
+| `QUESTIONS_FINANCIAL.md` | Billing, invoicing, pay rates |
+| `QUESTIONS_PLATFORM.md` | Auth, security, notifications, infrastructure |
+| `QUESTIONS_PRODUCT.md` | Product direction, customer-facing features |

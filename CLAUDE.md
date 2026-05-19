@@ -8,6 +8,22 @@
 
 **PHASE1_DATA_MODEL.md** is the agreed data model contract for Job, JobPart, Run, RunAssignment, LoadTrack, and Event. No code touches these models without reading this first. Special attention: partial quantities, load possession, custody chain, handover logic.
 
+**PROJECT_STATUS.md** is the live status of every feature — ✅ Done · 🔶 Partial · 🔲 Not started. Read it before proposing what to build next. Do NOT rely on memory or assumptions about what exists — scan the actual routes and pages.
+
+## Doc-update rule — mandatory after every significant change
+
+After any session that:
+- adds a new feature or screen
+- changes a data model or route
+- completes or partially completes something from the 🔲 or 🔶 lists
+- identifies a new gap or open question
+
+**You MUST update PROJECT_STATUS.md** before the session ends. Move items between tiers (🔲 → 🔶 → ✅), add new rows to the partial table, note new gaps in the not-started list.
+
+If a new open question surfaces that belongs in one of the QUESTIONS_*.md files, add it there too.
+
+The rule in one sentence: **the docs must always reflect what the code actually does, not what it was planned to do.**
+
 ## Field naming rule — mandatory before adding any new field
 
 Before naming any new field, state, variable, or JSON blob key, **check DATA_DICTIONARY.md first**.
