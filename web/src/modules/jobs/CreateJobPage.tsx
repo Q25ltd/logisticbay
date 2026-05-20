@@ -1067,13 +1067,16 @@ export default function CreateJobPage() {
             missingCount={sec2Missing.length} />
           {!s2 && (
             <div className="p-4 space-y-3">
-              {stops.map((stop, idx) => (
-                <SharedStopCard key={stop.id} stop={stop} index={idx} total={stops.length}
-                  savedLocations={locations}
-                  onChange={patch => updateStop(stop.id, patch)}
-                  onRemove={() => removeStop(stop.id)}
-                  highlightErrors={showStopErrors} />
-              ))}
+              {stops.map((stop, idx) => {
+                const typeCount = stop.type === "collection" ? collectionCount : deliveryCount;
+                return (
+                  <SharedStopCard key={stop.id} stop={stop} index={idx} total={stops.length}
+                    savedLocations={locations}
+                    onChange={patch => updateStop(stop.id, patch)}
+                    onRemove={typeCount > 1 ? () => removeStop(stop.id) : undefined}
+                    highlightErrors={showStopErrors} />
+                );
+              })}
               <button type="button" onClick={addStop}
                 className="w-full py-3 border-2 border-dashed border-border rounded-xl text-sm font-semibold text-muted hover:border-accent hover:text-accent transition-colors">
                 + Add another stop
@@ -1165,9 +1168,11 @@ export default function CreateJobPage() {
               {/* ── Pallets ── */}
               {goodsType === "pallets" && (
                 <div className="space-y-4 pt-1">
-                  <div className="grid grid-cols-2 gap-3">
-                    <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
-                      onChange={setPalletCount} placeholder="24" />
+                  <div className={`grid ${unit !== "pallets" ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
+                    {unit !== "pallets" && (
+                      <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
+                        onChange={setPalletCount} placeholder="24" />
+                    )}
                     <div>
                       <FieldLabel>Pallet type</FieldLabel>
                       <select className="input mt-1 w-full" value={palletType} onChange={e => setPalletType(e.target.value)}>
@@ -1560,7 +1565,7 @@ export default function CreateJobPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Purchase order number" value={purchaseOrderNumber}
                   onChange={setPurchaseOrderNumber} placeholder="PO-2026-12345"
-                  hint="Required on your invoice by your finance team." />
+                  hint="Your internal PO number if needed for invoicing." />
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>

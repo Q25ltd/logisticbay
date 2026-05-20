@@ -6,6 +6,8 @@ const ACRONYMS = new Set(["UK", "EU", "USA", "DPD", "DHL", "ASDA", "B&Q", "M&S",
 function capWord(word: string): string {
   if (!word) return word;
   if (ACRONYMS.has(word.toUpperCase())) return word.toUpperCase();
+  // Preserve any all-caps sequence as an acronym (e.g. DC, BMW, PLC, UK)
+  if (word.length > 1 && /^[A-Z]+$/.test(word)) return word;
   if (SMALL_WORDS.has(word.toLowerCase())) return word.toLowerCase();
   return word
     .split(/(['-])/)

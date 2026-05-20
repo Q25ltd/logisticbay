@@ -590,7 +590,7 @@ export default function SharedStopCard({
   index: number;
   total: number;
   onChange: (patch: Partial<SharedStopState>) => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   savedLocations?: SavedLocation[];
   highlightErrors?: boolean;
 }) {
@@ -655,7 +655,7 @@ export default function SharedStopCard({
             : null
           }
         </div>
-        {total > 1 && (
+        {onRemove && (
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onRemove(); }}
@@ -1077,21 +1077,19 @@ export default function SharedStopCard({
             <div className="text-xs text-muted mt-1">Anything specific to this stop not covered by the fields above.</div>
           </div>
 
-          {/* Booking required — always visible for delivery stops, hidden in optional for collection */}
-          {stop.type === "delivery" && (
-            <div className="space-y-3">
-              <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
-                label="Booking / goods-in slot required before arrival" />
-              {stop.bookingRequired && (
-                <TextField label="Booking reference" value={stop.bookingRef}
-                  onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
-              )}
-            </div>
-          )}
+          {/* Booking required — always visible for both stop types */}
+          <div className="space-y-3">
+            <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
+              label="Booking / goods-in slot required before arrival" />
+            {stop.bookingRequired && (
+              <TextField label="Booking reference" value={stop.bookingRef}
+                onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
+            )}
+          </div>
 
           <OptionalToggle open={stop.showOptional}
             onToggle={() => onChange({ showOptional: !stop.showOptional })}
-            label={stop.type === "delivery" ? "site contact, opening hours & proof" : "site contact, opening hours, booking & proof"} />
+            label="site contact, opening hours & proof" />
 
           {stop.showOptional && (
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">
@@ -1107,17 +1105,6 @@ export default function SharedStopCard({
                   onChange={v => { onChange({ contactEmail: v }); setStopEmailError(""); }}
                   onBlur={v => setStopEmailError(validateEmail(v))} />
               </div>
-              {/* Booking for collection stops stays in optional */}
-              {stop.type === "collection" && (
-                <>
-                  <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
-                    label="Booking required before arrival" />
-                  {stop.bookingRequired && (
-                    <TextField label="Booking reference" value={stop.bookingRef}
-                      onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
-                  )}
-                </>
-              )}
               <TextField label="Opening hours" value={stop.openingHours}
                 onChange={v => onChange({ openingHours: v })} placeholder="Mon–Fri 06:00–18:00" />
 

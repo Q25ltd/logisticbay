@@ -604,7 +604,7 @@ function StopCard({
   index: number;
   total: number;
   onChange: (patch: Partial<StopState>) => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   highlightErrors?: boolean;
 }) {
   const [showCoordHelp, setShowCoordHelp] = useState(false);
@@ -674,7 +674,7 @@ function StopCard({
             : null
           }
         </div>
-        {total > 1 && (
+        {onRemove && (
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onRemove(); }}
@@ -1096,21 +1096,19 @@ function StopCard({
           </div>
 
           {/* Optional fields */}
-          {/* Booking required — always visible for delivery stops, hidden in optional for collection */}
-          {stop.type === "delivery" && (
-            <div className="space-y-3">
-              <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
-                label="Booking / goods-in slot required before arrival" />
-              {stop.bookingRequired && (
-                <TextField label="Booking reference" value={stop.bookingRef}
-                  onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
-              )}
-            </div>
-          )}
+          {/* Booking required — always visible for both stop types */}
+          <div className="space-y-3">
+            <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
+              label="Booking / goods-in slot required before arrival" />
+            {stop.bookingRequired && (
+              <TextField label="Booking reference" value={stop.bookingRef}
+                onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
+            )}
+          </div>
 
           <OptionalToggle open={stop.showOptional}
             onToggle={() => onChange({ showOptional: !stop.showOptional })}
-            label={stop.type === "delivery" ? "site contact, opening hours & proof" : "site contact, opening hours, booking & proof"} />
+            label="site contact, opening hours & proof" />
 
           {stop.showOptional && (
             <div className="space-y-4 border-l-2 border-blue-100 pl-4">
@@ -1126,17 +1124,6 @@ function StopCard({
                   onChange={v => { onChange({ contactEmail: v }); setStopEmailError(""); }}
                   onBlur={v => setStopEmailError(validateEmail(v))} />
               </div>
-              {/* Booking for collection stops stays in optional */}
-              {stop.type === "collection" && (
-                <>
-                  <Toggle value={stop.bookingRequired} onChange={v => onChange({ bookingRequired: v })}
-                    label="Booking required before arrival" />
-                  {stop.bookingRequired && (
-                    <TextField label="Booking reference" value={stop.bookingRef}
-                      onChange={v => onChange({ bookingRef: v })} placeholder="BKG-2026-5678" />
-                  )}
-                </>
-              )}
               <TextField label="Opening hours" value={stop.openingHours}
                 onChange={v => onChange({ openingHours: v })} placeholder="Mon–Fri 06:00–18:00" />
 
@@ -1772,12 +1759,15 @@ export default function PublicRequestForm() {
             missingCount={sec2Missing.length} />
           {!s2 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
-              {stops.map((stop, idx) => (
-                <StopCard key={stop.id} stop={stop} index={idx} total={stops.length}
-                  onChange={patch => updStop(stop.id, patch)}
-                  onRemove={() => removeStop(stop.id)}
-                  highlightErrors={s2Attempted || showStopErrors} />
-              ))}
+              {stops.map((stop, idx) => {
+                const typeCount = stops.filter(s => s.type === stop.type).length;
+                return (
+                  <StopCard key={stop.id} stop={stop} index={idx} total={stops.length}
+                    onChange={patch => updStop(stop.id, patch)}
+                    onRemove={typeCount > 1 ? () => removeStop(stop.id) : undefined}
+                    highlightErrors={s2Attempted || showStopErrors} />
+                );
+              })}
 
               {/* Add stop — user picks type in the new card */}
               <button type="button"
@@ -1872,9 +1862,11 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Pallets ── */}
               {goodsTypes.includes("pallets") && (
                 <div className="space-y-4 pt-1">
-                  <div className="grid grid-cols-2 gap-3">
-                    <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
-                      onChange={setPalletCount} placeholder="24" />
+                  <div className={`grid ${unit !== "pallets" ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
+                    {unit !== "pallets" && (
+                      <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
+                        onChange={setPalletCount} placeholder="24" />
+                    )}
                     <div>
                       <FieldLabel>Pallet type</FieldLabel>
                       <select className="input mt-1 w-full" value={palletType} onChange={e => setPalletType(e.target.value)}>
@@ -2283,7 +2275,7 @@ export default function PublicRequestForm() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <TextField label="Purchase order number" value={poNumber}
                   onChange={setPoNumber} placeholder="PO-2026-12345"
-                  hint="Required on your invoice by your finance team." />
+                  hint="Your internal PO number if needed for invoicing." />
                 <TextField label="Billing reference / cost code" value={billingRef}
                   onChange={setBillingRef} placeholder="COST-CENTRE-123" />
               </div>
