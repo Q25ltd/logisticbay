@@ -1411,7 +1411,7 @@ export default function CreateJobPage() {
 
         {/* ── Sec 4: Special requirements ───────────────────────────────────── */}
         <div className="card overflow-hidden">
-          <SectionHeader num={4} icon="⚠️" title="Special requirements" subtitle="ADR, fragile, high value, oversized, secure transport" active
+          <SectionHeader num={4} icon="⚠️" iconTitle="Review carefully — select any that apply. Undeclared ADR or oversized loads can result in refused collection or legal liability." title="Special requirements" subtitle="ADR, fragile, high value, oversized, secure transport" active
             collapsed={s4} onToggle={() => setS4(o => !o)}
             complete optional
             summary={specialItems.length > 0

@@ -102,8 +102,8 @@ export function StatusDot({ complete, started }: { complete?: boolean; started?:
   return <span className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white flex-shrink-0" />;
 }
 
-export function SectionHeader({ num, icon, title, subtitle, active, collapsed, summary, onToggle, complete, started, optional, missingCount }: {
-  num: number; icon: string; title: string; subtitle: string;
+export function SectionHeader({ num, icon, iconTitle, title, subtitle, active, collapsed, summary, onToggle, complete, started, optional, missingCount }: {
+  num: number; icon: string; iconTitle?: string; title: string; subtitle: string;
   active?: boolean; collapsed?: boolean; summary?: string; onToggle?: () => void;
   complete?: boolean; started?: boolean; optional?: boolean;
   missingCount?: number; // shows a red "N missing" badge when collapsed + incomplete
@@ -122,7 +122,7 @@ export function SectionHeader({ num, icon, title, subtitle, active, collapsed, s
       onClick={onToggle}
     >
       <StatusDot complete={complete} started={started} />
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 transition-all duration-200 ${complete ? "bg-green-50 border border-green-200" : started ? "bg-blue-50 border border-blue-200" : "bg-white border border-slate-200 shadow-sm"}`}>
+      <div title={iconTitle} className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 transition-all duration-200 ${complete ? "bg-green-50 border border-green-200" : started ? "bg-blue-50 border border-blue-200" : "bg-white border border-slate-200 shadow-sm"}`}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
