@@ -434,7 +434,7 @@ export default function JobsPage() {
         ] as { back: number; fwdLabel: string; backLabel: string }[]).map(({ back, fwdLabel, backLabel }) => {
           const backActive = dateRange.from === addDays(today(), -back) && dateRange.to === today();
           const fwdActive  = dateRange.from === today() && dateRange.to === addDays(today(), back);
-          const base = "px-2.5 py-1 text-xs font-semibold border transition-colors";
+          const base = "px-2.5 py-1 text-xs font-semibold border transition-colors whitespace-nowrap";
           const on   = "bg-primary text-white border-primary z-10";
           const off  = "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary";
           return (
