@@ -141,7 +141,8 @@ export default function JobDetailPage() {
   const planningInfo = PLANNING_STATUS_LABEL[job.planningStatus ?? "not_planned"]
     ?? PLANNING_STATUS_LABEL.not_planned;
 
-  const hasLoad = !!(job.goodsDescription || job.goodsType || job.quantity != null || job.weight != null);
+  const hasLoad = !!(job.goodsDescription || job.goodsType || job.quantity != null || job.weight != null ||
+    (job.loadData && Object.keys(job.loadData as object).length > 0));
   const hasVehicle = !!(job.vehicleCategory || (job.bodyTypes?.length) || job.minGvwClass ||
     (job.equipment as string[] | null)?.length || (job.trailersAllowed as string[] | null)?.length);
   const hasNotes = !!(job.plannerNotes || job.driverVisibleNotes || job.safetyInstructions ||
@@ -248,6 +249,9 @@ export default function JobDetailPage() {
               {(job.specialRequirements as string[] | null)?.length ? (
                 <ChipRow label="Special requirements" items={job.specialRequirements as string[]} className="mt-2" />
               ) : null}
+              {job.loadData && Object.keys(job.loadData as object).length > 0 && (
+                <LoadDataSection data={job.loadData as Record<string, unknown>} />
+              )}
             </Card>
           )}
 
@@ -395,6 +399,79 @@ export default function JobDetailPage() {
   );
 }
 
+// ── Load data detail section ─────────────────────────────────────────────────
+
+const LOAD_DATA_LABELS: Record<string, string> = {
+  loadHeight:             "Load height",
+  loadNotes:              "Load notes",
+  palletCount:            "Pallet count",
+  palletType:             "Pallet type",
+  palletTypeOther:        "Pallet type (other)",
+  stackable:              "Pallets stackable",
+  cageCount:              "Cage count",
+  cageFolded:             "Cages folded / nested",
+  machineryPieceWeight:   "Machine weight (kg)",
+  liftingPoints:          "Has lifting points",
+  skidMounted:            "Skid mounted",
+  craneRequired:          "Crane required",
+  buildingMaterialType:   "Material type",
+  buildingPalletised:     "Load palletised",
+  longestItem:            "Longest item (m)",
+  weatherSensitive:       "Weather sensitive",
+  chilledFrozenAmbient:   "Temperature type",
+  temperatureRange:       "Temperature range",
+  foodPreCooled:          "Pre-cooling required",
+  tippingRequired:        "Tipping required",
+  wetDry:                 "Wet or dry",
+  liquidProductType:      "Product type",
+  liquidVolumeLitres:     "Volume (litres)",
+  steelPieceCount:        "Number of pieces",
+  steelWidth:             "Widest piece (m)",
+  vehicleCount:           "Number of vehicles",
+  vehicleMakeModel:       "Make & model",
+  vehicleKeysWithVehicle: "Keys with vehicle",
+  vehicleDriveable:       "Driveable (RORO)",
+  containerSize:          "Container size",
+  containerSizeOther:     "Container size (other)",
+  loadedOrEmpty:          "Loaded or empty",
+  containerNum:           "Container number",
+  generalPackagingType:   "Packaging type",
+  generalPieceCount:      "Number of pieces",
+  unNumber:               "UN number",
+  packingGroup:           "Packing group",
+  hazardousQuantityKg:    "Hazardous quantity (kg)",
+  hazardousPaperworkAvailable: "Hazardous paperwork",
+  oversizedWidth:         "Overall width (m)",
+  oversizedHeight:        "Overall height (m)",
+  oversizedLength:        "Overall length (m)",
+};
+
+function fmtLoadValue(v: unknown): string {
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (v === null || v === undefined) return "—";
+  return String(v);
+}
+
+function LoadDataSection({ data }: { data: Record<string, unknown> }) {
+  const entries = Object.entries(data).filter(([, v]) => v !== null && v !== undefined && v !== "");
+  if (!entries.length) return null;
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#94a3b8" }}>Load details</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+        {entries.map(([k, v]) => (
+          <div key={k}>
+            <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "#94a3b8" }}>
+              {LOAD_DATA_LABELS[k] ?? cap(k)}
+            </div>
+            <div style={{ color: "#0f172a" }}>{fmtLoadValue(v)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Stop row ─────────────────────────────────────────────────────────────────
 
 function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
@@ -467,10 +544,85 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
             {s.contactEmail}
           </div>
         )}
+        {s.openingHours && (
+          <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
+            🕒 {s.openingHours}
+          </div>
+        )}
 
         {s.bookingRequired && (
           <div className="text-xs mt-0.5 text-amber-600 font-medium">
             Booking required{s.bookingRef ? ` · ${s.bookingRef}` : ""}
+          </div>
+        )}
+
+        {/* Handling & access */}
+        {(s.handlingMethods as string[] | null)?.length ? (
+          <div className="mt-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#94a3b8" }}>Handling</div>
+            <div className="flex flex-wrap gap-1">
+              {(s.handlingMethods as string[]).map(m => (
+                <span key={m} className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{cap(m)}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {(s.accessRequirements as string[] | null)?.length ? (
+          <div className="mt-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#94a3b8" }}>Access</div>
+            <div className="flex flex-wrap gap-1">
+              {(s.accessRequirements as string[]).map(r => (
+                <span key={r} className="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">{cap(r)}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {(s.proofRequirements as string[] | null)?.length ? (
+          <div className="mt-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#94a3b8" }}>Proof required</div>
+            <div className="flex flex-wrap gap-1">
+              {(s.proofRequirements as string[]).map(r => (
+                <span key={r} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{cap(r)}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Vehicle restrictions */}
+        {(s.heightRestriction || s.weightRestriction || (s as any).lengthRestriction) && (
+          <div className="text-xs mt-1.5 flex flex-wrap gap-2">
+            {s.heightRestriction && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">H: {s.heightRestriction}</span>}
+            {s.weightRestriction && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">W: {s.weightRestriction}</span>}
+            {(s as any).lengthRestriction && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">L: {(s as any).lengthRestriction}</span>}
+          </div>
+        )}
+
+        {/* Navigation & instructions */}
+        {s.navigationInstructions && (
+          <div className="text-xs mt-1.5 bg-slate-50 rounded p-2" style={{ color: "#374151" }}>
+            <span className="font-semibold">Entrance: </span>{s.navigationInstructions}
+          </div>
+        )}
+        {(s.instructions || (s as any).stopNotes) && (
+          <div className="text-xs mt-1.5 bg-blue-50 rounded p-2 text-blue-900">
+            <span className="font-semibold">Instructions: </span>{s.instructions || (s as any).stopNotes}
+          </div>
+        )}
+
+        {/* Load readiness */}
+        {(s as any).loadReadiness && (
+          <div className="text-xs mt-0.5 font-medium" style={{ color: "#6b7280" }}>
+            Load ready: {cap((s as any).loadReadiness)}
+          </div>
+        )}
+
+        {/* Exchange quantities */}
+        {((s as any).exchangeDropQty || (s as any).exchangeCollectQty) && (
+          <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
+            {(s as any).exchangeDropQty ? `Drop ${(s as any).exchangeDropQty}` : ""}
+            {(s as any).exchangeDropQty && (s as any).exchangeCollectQty ? " · " : ""}
+            {(s as any).exchangeCollectQty ? `Collect ${(s as any).exchangeCollectQty}` : ""}
+            {(s as any).exchangeUnit ? ` ${(s as any).exchangeUnit}` : ""}
           </div>
         )}
       </div>

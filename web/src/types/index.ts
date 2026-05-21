@@ -206,6 +206,7 @@ export interface Job {
   weighbridgeRequired?: boolean;
   securingRequirements?: string[] | null;
   specialRequirements?:  string[] | null;
+  loadData?:             Record<string, unknown> | null;
 
   // vehicle requirements (what the job NEEDS — matched against fleet at assignment)
   vehicleCategory?:    string;
