@@ -5,7 +5,7 @@ import type { UserRole } from "./constants.js";
 const ACCESS_TOKEN_SECRET  = process.env.JWT_ACCESS_SECRET!;
 const REFRESH_TOKEN_SECRET = process.env.JWT_REFRESH_SECRET!;
 
-const ACCESS_TOKEN_TTL  = "15m";
+const ACCESS_TOKEN_TTL  = "8h";
 const REFRESH_TOKEN_TTL = "30d";
 
 const BCRYPT_ROUNDS = 12;
