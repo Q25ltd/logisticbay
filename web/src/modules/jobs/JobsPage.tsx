@@ -22,13 +22,13 @@ function addDays(dateStr: string, n: number) {
   return d.toISOString().slice(0, 10);
 }
 
-/** "2026-05-27" → "27 May" */
+/** "2026-05-27" or "2026-05-27T00:00:00.000Z" → "27 May" */
 const fmtShort = (iso: string) =>
-  new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
-/** "2026-05-27" → "Wed" */
+/** "2026-05-27" or "2026-05-27T00:00:00.000Z" → "Wed" */
 const fmtWeekday = (iso: string) =>
-  new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" });
+  new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" });
 
 /** "some_snake" → "Some snake" */
 function cap(s: string): string {
