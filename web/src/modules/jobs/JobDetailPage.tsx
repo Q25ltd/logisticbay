@@ -62,6 +62,43 @@ const JOB_STATUSES = [
   "planned", "in_progress", "completed", "cancelled",
 ] as const;
 
+const JOB_STATUS_LABEL: Record<string, string> = {
+  draft:          "Draft",
+  pending_review: "Pending review",
+  ready_to_plan:  "Ready to plan",
+  in_planning:    "In planning",
+  planned:        "Planned",
+  in_progress:    "In progress",
+  completed:      "Completed",
+  cancelled:      "Cancelled",
+};
+
+const JOB_TYPE_LABEL: Record<string, string> = {
+  single_drop:   "Single drop",
+  multi_drop:    "Multi-drop",
+  multi_collect: "Multi-collect",
+  collection:    "Collection",
+  delivery:      "Delivery",
+  express:       "Express",
+  groupage:      "Groupage",
+  container:     "Container",
+};
+
+const STOP_STATUS_LABEL: Record<string, string> = {
+  pending:   "Pending",
+  completed: "Completed",
+  skipped:   "Skipped",
+  failed:    "Failed",
+  arrived:   "Arrived",
+  loading:   "Loading",
+};
+
+/** "some_snake_case" → "Some snake case" */
+function cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function JobDetailPage() {
@@ -174,8 +211,8 @@ export default function JobDetailPage() {
           <Card title="Overview">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
               <Field label="Customer"       value={job.customerName} />
-              <Field label="Job type"       value={job.jobType || job.serviceType} />
-              <Field label="Priority"       value={job.priority} />
+              <Field label="Job type"       value={job.jobType ? (JOB_TYPE_LABEL[job.jobType] ?? cap(job.jobType)) : job.serviceType ? cap(job.serviceType) : undefined} />
+              <Field label="Priority"       value={job.priority ? cap(job.priority) : undefined} />
               <Field label="Customer ref"   value={job.customerRef} mono />
               <Field label="PO number"      value={job.purchaseOrderNumber} mono />
               <Field label="Planned date"   value={fmtDate(job.plannedDate)} />
@@ -191,7 +228,7 @@ export default function JobDetailPage() {
             <Card title="Load">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
                 <Field label="Description"  value={job.goodsDescription} />
-                <Field label="Goods type"   value={job.goodsType?.replace(/_/g, " ")} />
+                <Field label="Goods type"   value={job.goodsType ? cap(job.goodsType) : undefined} />
                 <Field label="Quantity"     value={job.quantity != null ? `${job.quantity} ${job.quantityUnit ?? ""}`.trim() : undefined} />
                 <Field label="Weight"       value={job.weight  != null ? `${job.weight} kg`  : undefined} />
                 <Field label="Volume"       value={job.volume  != null ? `${job.volume} m³`  : undefined} />
@@ -275,7 +312,7 @@ export default function JobDetailPage() {
           {hasException && (
             <Card title="Exception policy">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-                <Field label="Failure action"  value={job.failureAction?.replace(/_/g, " ")} />
+                <Field label="Failure action"  value={job.failureAction ? cap(job.failureAction) : undefined} />
                 <Field label="Assistance phone" value={job.assistancePhone} />
                 <Field label="Approval contact" value={job.approvalContactName} />
                 <Field label="Approval phone"   value={job.approvalContactPhone} />
@@ -297,7 +334,7 @@ export default function JobDetailPage() {
                       {fmtDateTime(ev.createdAt)}
                     </div>
                     <div>
-                      <span className="font-semibold" style={{ color: "#0f172a" }}>{ev.eventType.replace(/_/g, " ")}</span>
+                      <span className="font-semibold" style={{ color: "#0f172a" }}>{cap(ev.eventType)}</span>
                       {ev.note && <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{ev.note}</div>}
                     </div>
                   </div>
@@ -385,7 +422,7 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
               : s.status === "skipped"  ? "bg-slate-100 text-slate-500"
               : "bg-amber-100 text-amber-700"
             }`}>
-              {s.status}
+              {STOP_STATUS_LABEL[s.status] ?? cap(s.status)}
             </span>
           )}
         </div>
@@ -471,7 +508,7 @@ function StatusPanel({ job, onSaved }: { job: Job; onSaved: () => void }) {
         onChange={e => setStatus(e.target.value)}
       >
         {JOB_STATUSES.map(s => (
-          <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+          <option key={s} value={s}>{JOB_STATUS_LABEL[s]}</option>
         ))}
       </select>
 
@@ -550,7 +587,7 @@ function ChipRow({
       <div className="flex gap-1 flex-wrap">
         {items.map(item => (
           <span key={item} className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-            {item.replace(/_/g, " ")}
+            {cap(item)}
           </span>
         ))}
       </div>

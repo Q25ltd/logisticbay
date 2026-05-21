@@ -84,6 +84,12 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** "some_snake_case" → "Some snake case" */
+function cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function JobRequestsPage() {
@@ -105,6 +111,19 @@ export default function JobRequestsPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [tab]);
+
+  const handleAccepted = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await jobRequestsApi.list(tab || undefined);
+      setJobs(r.data);
+      setTotal(r.total);
+      if (tab === "pending_review" && r.data.length === 0) {
+        navigate("/app/jobs");
+      }
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [tab, navigate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -221,7 +240,7 @@ export default function JobRequestsPage() {
       ) : (
         <div className="space-y-2">
           {jobs.map(j => (
-            <RequestRow key={j.id} job={j} onRefresh={load} onNavigate={navigate} />
+            <RequestRow key={j.id} job={j} onRefresh={load} onAccepted={handleAccepted} onNavigate={navigate} />
           ))}
           {total > jobs.length && (
             <p className="text-xs text-center text-muted pt-2">
@@ -239,10 +258,12 @@ export default function JobRequestsPage() {
 function RequestRow({
   job: j,
   onRefresh,
+  onAccepted,
   onNavigate,
 }: {
   job:         Job;
   onRefresh:   () => void;
+  onAccepted:  () => void;
   onNavigate:  ReturnType<typeof useNavigate>;
 }) {
   const [rejecting,    setRejecting]    = useState(false);
@@ -264,9 +285,8 @@ function RequestRow({
     if (!plannedDate) { setErr("Planned date is required"); return; }
     setBusy(true); setErr("");
     try {
-      const result = await jobRequestsApi.accept(j.id, plannedDate, plannerNotes.trim() || undefined);
-      onRefresh();
-      onNavigate(`/app/jobs/${result.jobId}`);
+      await jobRequestsApi.accept(j.id, plannedDate, plannerNotes.trim() || undefined);
+      onAccepted();
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
   }
 
@@ -295,7 +315,7 @@ function RequestRow({
               </span>
               <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " +
                 (STATUS_BADGE[j.status] ?? "bg-gray-100 text-gray-600")}>
-                {STATUS_LABEL[j.status] ?? j.status}
+                {STATUS_LABEL[j.status] ?? cap(j.status)}
               </span>
               {j.jobReference && (
                 <span className="text-xs font-mono text-slate-400">{j.jobReference}</span>
@@ -417,7 +437,7 @@ function RequestRow({
                     onClick={accept}
                     disabled={busy || !plannedDate}
                   >
-                    {busy ? "Creating job…" : "✓ Accept & open job"}
+                    {busy ? "Accepting…" : "✓ Accept"}
                   </button>
                   <button
                     className="btn btn-secondary text-sm"
@@ -526,7 +546,7 @@ function JobDetailModal({
             <div className="text-xs mt-0.5 flex items-center gap-2" style={{ color: "#6b7280" }}>
               <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " +
                 (STATUS_BADGE[j.status] ?? "bg-gray-100 text-gray-600")}>
-                {STATUS_LABEL[j.status] ?? j.status}
+                {STATUS_LABEL[j.status] ?? cap(j.status)}
               </span>
               {j.jobReference && <span className="font-mono">{j.jobReference}</span>}
               <span>·</span>
@@ -571,8 +591,8 @@ function JobDetailModal({
                   key={s.id ?? i}
                   title={
                     stops.length > 1
-                      ? `${STOP_TYPE_LABEL[s.type] ?? s.type} ${stops.filter((x, j) => x.type === s.type && j <= i).length}`
-                      : (STOP_TYPE_LABEL[s.type] ?? s.type)
+                      ? `${STOP_TYPE_LABEL[s.type] ?? cap(s.type)} ${stops.filter((x, j) => x.type === s.type && j <= i).length}`
+                      : (STOP_TYPE_LABEL[s.type] ?? cap(s.type))
                   }
                   stop={s}
                 />
@@ -585,7 +605,7 @@ function JobDetailModal({
 
           {/* Load */}
           <Section title="Load">
-            <Field label="Goods type"    value={j.goodsType?.replace(/_/g, " ")} />
+            <Field label="Goods type"    value={j.goodsType ? cap(j.goodsType) : undefined} />
             <Field label="Description"   value={j.goodsDescription} />
             <Field label="Quantity"      value={j.quantity != null ? `${j.quantity} ${j.quantityUnit ?? ""}` : undefined} />
             <Field label="Weight"        value={j.weight   != null ? `${j.weight} kg`  : undefined} />
@@ -636,7 +656,7 @@ function JobDetailModal({
           {/* Exception policy */}
           {hasException && (
             <Section title="Exception policy">
-              <Field label="Failure action"     value={j.failureAction?.replace(/_/g, " ")} />
+              <Field label="Failure action"     value={j.failureAction ? cap(j.failureAction) : undefined} />
               <Field label="Assistance phone"   value={j.assistancePhone} />
               <Field label="Approval contact"   value={j.approvalContactName} />
               <Field label="Approval phone"     value={j.approvalContactPhone} />
@@ -771,7 +791,7 @@ function ChipRow({
       <div className="flex gap-1 flex-wrap">
         {items.map(item => (
           <span key={item} className={"px-2 py-0.5 rounded-full text-xs font-medium " + cls}>
-            {item.replace(/_/g, " ")}
+            {cap(item)}
           </span>
         ))}
       </div>

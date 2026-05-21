@@ -12,14 +12,31 @@ import {
   PROGRESSABLE_JOB_STATUSES,
 } from "../../constants/jobStatuses";
 
+// ── Formatters ────────────────────────────────────────────────────────────────
+
 const today = () => new Date().toISOString().split("T")[0];
-const fmt   = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day:"2-digit", month:"short" });
 
 function addDays(dateStr: string, n: number) {
   const d = new Date(dateStr + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
+
+/** "2026-05-27" → "27 May" */
+const fmtShort = (iso: string) =>
+  new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+/** "2026-05-27" → "Wed" */
+const fmtWeekday = (iso: string) =>
+  new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" });
+
+/** "some_snake" → "Some snake" */
+function cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const RANGE_PRESETS = [
   { label: "Today",  back: 0,  fwd: 0  },
@@ -49,9 +66,23 @@ const PLANNING_COLORS: Record<string, string> = {
   done:              "bg-green-100 text-green-700",
 };
 
+const STATUS_OPTIONS = [
+  { value: "all",            label: "All statuses"   },
+  { value: "draft",          label: "Draft"          },
+  { value: "pending_review", label: "Pending review" },
+  { value: "ready_to_plan",  label: "Ready to plan"  },
+  { value: "in_planning",    label: "In planning"    },
+  { value: "planned",        label: "Planned"        },
+  { value: "in_progress",    label: "In progress"    },
+  { value: "completed",      label: "Completed"      },
+  { value: "cancelled",      label: "Cancelled"      },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function PlanningBadge({ status }: { status?: string }) {
   if (!status) return null;
-  const label = PLANNING_LABELS[status] ?? status;
+  const label = PLANNING_LABELS[status] ?? cap(status);
   const cls   = PLANNING_COLORS[status] ?? "bg-slate-100 text-slate-500";
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}>
@@ -65,48 +96,56 @@ function hasStatus(statuses: readonly string[], status: string) {
 }
 
 function nextJobStatus(status: string) {
-  const index = JOB_STATUS_FLOW.findIndex(value => value === status);
+  const index = JOB_STATUS_FLOW.findIndex(v => v === status);
   return index >= 0 ? JOB_STATUS_FLOW[index + 1] : undefined;
 }
 
 function statusActionLabel(status: string) {
   switch (status) {
     case "in_progress": return "▶ Start";
-    case "arrived_pickup": return "📍 At Pickup";
-    case "collected": return "✅ Collected";
-    case "arrived_dropoff": return "📍 At Dropoff";
-    case "completed": return "✅ Complete";
-    default: return status;
+    case "completed":   return "✓ Complete";
+    default:            return cap(status);
   }
 }
 
-function firstStopText(job: PlannedJob, type: "pickup" | "dropoff") {
-  const stop = job.stops
-    ?.filter(s => s.type === type)
-    .sort((a, b) => a.sequenceNumber - b.sequenceNumber)[type === "pickup" ? 0 : Math.max(0, (job.stops?.filter(s => s.type === type).length ?? 1) - 1)];
-  return stop?.locationTextSnapshot || "—";
+/** Return the first/last stop for a given role, checking all relevant type names. */
+function firstStop(job: PlannedJob, role: "from" | "to") {
+  const types = role === "from" ? ["pickup", "collection"] : ["dropoff", "delivery"];
+  const matching = (job.stops ?? [])
+    .filter(s => types.includes(s.type))
+    .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+  return role === "from" ? (matching[0] ?? null) : (matching[matching.length - 1] ?? null);
+}
+
+function stopName(stop: ReturnType<typeof firstStop>): string {
+  return (stop as any)?.siteName || stop?.locationTextSnapshot || (stop as any)?.town || "—";
+}
+
+function stopSubtext(stop: ReturnType<typeof firstStop>): string {
+  const s = stop as any;
+  return [s?.town, s?.postcode].filter(Boolean).join(" ") || "";
 }
 
 function jobMaterial(job: PlannedJob) {
-  return job.goodsDescription || job.goodsType || "—";
+  return job.goodsDescription || (job.goodsType ? cap(job.goodsType) : null);
 }
 
 function jobQuantity(job: PlannedJob) {
-  const quantity = job.quantity;
-  const unit = job.quantityUnit;
-  return quantity != null ? `${quantity} ${unit || ""}`.trim() : "";
+  return job.quantity != null ? `${job.quantity} ${job.quantityUnit || ""}`.trim() : "";
 }
+
+// ── Job row ───────────────────────────────────────────────────────────────────
 
 function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
   job: PlannedJob;
-  onNote: (id: number) => void;
-  onEdit: (id: number) => void;
+  onNote:   (id: number) => void;
+  onEdit:   (id: number) => void;
   onDelete: (job: PlannedJob) => void;
-  onView: (id: number) => void;
+  onView:   (id: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
+    <div className="relative" onClick={e => e.stopPropagation()}>
       <button
         onClick={() => setOpen(o => !o)}
         className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none"
@@ -128,12 +167,12 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
             </button>
             <button onClick={() => { setOpen(false); onNote(job.id); }}
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-muted">
-              📝 Add Note
+              📝 Add note
             </button>
             <div className="border-t border-slate-100 my-1" />
             <button onClick={() => { setOpen(false); onDelete(job); }}
               className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600 font-medium">
-              🗑 Delete
+              🗑 Cancel job
             </button>
           </div>
         </>
@@ -145,46 +184,105 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
 function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
   job: PlannedJob;
   onStatusChange: (id: number, status: string) => void;
-  onNote: (id: number) => void;
-  onEdit: (id: number) => void;
+  onNote:   (id: number) => void;
+  onEdit:   (id: number) => void;
   onDelete: (job: PlannedJob) => void;
-  onView: (id: number) => void;
+  onView:   (id: number) => void;
 }) {
   const canProgress = hasStatus(PROGRESSABLE_JOB_STATUSES, job.status);
   const nextStatus  = nextJobStatus(job.status);
   const lastEvent   = job.events?.[job.events.length - 1];
   const hasNote     = job.events?.some(e => e.eventType === "note_added" && e.note);
 
+  const from = firstStop(job, "from");
+  const to   = firstStop(job, "to");
+  const fromName = stopName(from);
+  const toName   = stopName(to);
+  const fromSub  = stopSubtext(from);
+  const toSub    = stopSubtext(to);
+  const material = jobMaterial(job);
+
   return (
-    <tr className={"hover:bg-gray-50 transition-colors " + (hasNote ? "bg-yellow-50" : "")}>
-      <td className="px-4 py-3 text-sm text-primary">{job.plannedDate ? fmt(job.plannedDate) : "Draft"}</td>
-      <td className="px-4 py-3 cursor-pointer" onClick={() => onView(job.id)}>
-        <div className="text-sm font-medium text-primary truncate max-w-48 hover:underline">{firstStopText(job, "pickup")}</div>
-        <div className="text-xs text-muted">→ {firstStopText(job, "dropoff")}</div>
+    <tr
+      className={"hover:bg-blue-50/40 transition-colors cursor-pointer " + (hasNote ? "bg-yellow-50" : "")}
+      onClick={() => onView(job.id)}
+    >
+      {/* Date */}
+      <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "#6b7280" }}>
+        {job.plannedDate ? (
+          <>
+            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#9ca3af" }}>
+              {fmtWeekday(job.plannedDate)}
+            </div>
+            <div className="font-medium" style={{ color: "#0f172a" }}>
+              {fmtShort(job.plannedDate)}
+            </div>
+          </>
+        ) : (
+          <span className="text-xs italic" style={{ color: "#9ca3af" }}>Draft</span>
+        )}
       </td>
-      <td className="px-4 py-3 text-sm font-mono">
+
+      {/* Route */}
+      <td className="px-4 py-3 max-w-xs">
+        <div className="text-sm font-medium truncate" style={{ color: "#0f172a" }}>{fromName}</div>
+        <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "#6b7280" }}>
+          <span>→</span>
+          <span className="truncate">{toName}</span>
+        </div>
+        {(fromSub || toSub) && (
+          <div className="text-xs mt-0.5 truncate" style={{ color: "#9ca3af" }}>
+            {fromSub}{fromSub && toSub ? " → " : ""}{toSub}
+          </div>
+        )}
+      </td>
+
+      {/* Job ref + planning */}
+      <td className="px-4 py-3">
         <div className="flex items-center gap-2 flex-wrap">
           {job.jobReference
-            ? <span className="text-primary font-semibold">{job.jobReference}</span>
-            : <span className="text-muted italic text-xs">Assigned when ready</span>}
+            ? <span className="font-mono font-semibold text-sm" style={{ color: "#0f172a" }}>{job.jobReference}</span>
+            : <span className="text-xs italic" style={{ color: "#9ca3af" }}>No ref yet</span>}
           <PlanningBadge status={job.planningStatus} />
         </div>
+        {job.customerName && (
+          <div className="text-xs mt-0.5 truncate" style={{ color: "#6b7280" }}>{job.customerName}</div>
+        )}
       </td>
-      <td className="px-4 py-3 text-sm text-muted">{job.customerRef || "—"}</td>
-      <td className="px-4 py-3 text-sm text-muted">
-        <div>{jobMaterial(job)}</div>
-        {jobQuantity(job) && <div className="text-xs text-muted">⚖️ {jobQuantity(job)}</div>}
+
+      {/* Material */}
+      <td className="px-4 py-3 text-sm max-w-xs">
+        {material ? (
+          <>
+            <div className="truncate" style={{ color: "#374151" }}>{material}</div>
+            {jobQuantity(job) && (
+              <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>{jobQuantity(job)}</div>
+            )}
+          </>
+        ) : (
+          <span style={{ color: "#d1d5db" }}>—</span>
+        )}
       </td>
+
+      {/* Status */}
       <td className="px-4 py-3"><Badge status={job.status} /></td>
-      <td className="px-4 py-3 text-xs text-muted">
-        {lastEvent ? new Date(lastEvent.createdAt).toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" }) : "—"}
-        {hasNote && <span className="ml-1 text-yellow-600">⚠</span>}
+
+      {/* Last update */}
+      <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: "#9ca3af" }}>
+        {lastEvent
+          ? new Date(lastEvent.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+          : "—"}
+        {hasNote && <span className="ml-1 text-yellow-500">●</span>}
       </td>
+
+      {/* Actions */}
       <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
           {canProgress && nextStatus && (
-            <button onClick={() => onStatusChange(job.id, nextStatus)}
-              className="text-xs text-accent hover:underline font-semibold whitespace-nowrap">
+            <button
+              onClick={e => { e.stopPropagation(); onStatusChange(job.id, nextStatus); }}
+              className="text-xs text-accent hover:underline font-semibold whitespace-nowrap"
+            >
               {statusActionLabel(nextStatus)}
             </button>
           )}
@@ -194,6 +292,8 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
     </tr>
   );
 }
+
+// ── Note modal ────────────────────────────────────────────────────────────────
 
 function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
   const [note, setNote] = useState("");
@@ -210,11 +310,11 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-        <h3 className="font-bold text-primary mb-4">Add Note to Job #{jobId}</h3>
+        <h3 className="font-bold text-primary mb-4">Add note to job #{jobId}</h3>
         <textarea className="input min-h-24 mb-4" value={note} onChange={e => setNote(e.target.value)}
           placeholder="Site closed, delay, issue..." autoFocus />
         <div className="flex gap-3">
-          <Button className="flex-1" onClick={submit} loading={loading}>Send Note</Button>
+          <Button className="flex-1" onClick={submit} loading={loading}>Save note</Button>
           <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
         </div>
       </div>
@@ -222,6 +322,7 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function JobsPage() {
   const navigate = useNavigate();
@@ -231,7 +332,7 @@ export default function JobsPage() {
   const [error,        setError]        = useState("");
   const [dateRange,    setDateRange]    = useState({ from: today(), to: today() });
   const [statusFilter, setStatusFilter] = useState("all");
-  const [noteJobId,    setNoteJobId]    = useState<number|null>(null);
+  const [noteJobId,    setNoteJobId]    = useState<number | null>(null);
   const [success,      setSuccess]      = useState("");
 
   function applyRange(back: number, fwd: number) {
@@ -256,7 +357,7 @@ export default function JobsPage() {
   async function handleStatusChange(id: number, status: string) {
     try {
       await jobsApi.updateStatus(id, status);
-      setSuccess("Job updated");
+      setSuccess("Status updated");
       setTimeout(() => setSuccess(""), 3000);
       load();
     } catch (err: any) { alert(err.message); }
@@ -264,7 +365,7 @@ export default function JobsPage() {
 
   async function handleDelete(job: PlannedJob) {
     const label = job.jobReference || `job #${job.id}`;
-    if (!window.confirm(`Cancel ${label}? It will be hidden from active planning but kept for audit/history.`)) return;
+    if (!window.confirm(`Cancel ${label}?\n\nIt will be hidden from active planning but kept for audit history.`)) return;
     try {
       await jobsApi.remove(job.id);
       setSuccess("Job cancelled");
@@ -282,13 +383,16 @@ export default function JobsPage() {
     pending:   jobs.filter(j => hasStatus(PENDING_JOB_STATUSES, j.status)).length,
   };
 
-  const rangeLabel = dateRange.from === dateRange.to ? dateRange.from : `${dateRange.from} → ${dateRange.to}`;
+  const rangeLabel = dateRange.from === dateRange.to
+    ? fmtShort(dateRange.from)
+    : `${fmtShort(dateRange.from)} – ${fmtShort(dateRange.to)}`;
 
-  // suppress unused warning for templates — kept for future use
   void templates;
 
   return (
     <div className="p-4 sm:p-6">
+
+      {/* Header */}
       <div className="flex items-start justify-between mb-4 gap-4">
         <div>
           <h1 className="text-xl font-black text-primary">Jobs</h1>
@@ -297,25 +401,26 @@ export default function JobsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button onClick={load} className="btn btn-outline text-sm px-3">↻</button>
+          <button onClick={load} className="btn btn-outline text-sm px-3" title="Refresh">↻</button>
           <Button onClick={() => navigate("/app/jobs/create")}>+ New Job</Button>
         </div>
       </div>
 
-      {/* Quick range pills */}
+      {/* Date range presets */}
       <div className="mb-4 flex flex-wrap gap-1.5">
         {RANGE_PRESETS.map(({ label, back, fwd }) => {
           const isActive = dateRange.from === addDays(today(), -back) && dateRange.to === addDays(today(), fwd);
           return (
             <button key={label} type="button" onClick={() => applyRange(back, fwd)}
               className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                isActive ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
+                isActive
+                  ? "bg-primary text-white border-primary"
+                  : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
               }`}>
               {label}
             </button>
           );
         })}
-        {/* Manual from/to */}
         <div className="flex items-center gap-1 ml-1">
           <input type="date" value={dateRange.from}
             onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))}
@@ -330,28 +435,28 @@ export default function JobsPage() {
       {success && <Alert type="success" message={success} />}
       {error   && <Alert type="error"   message={error}   />}
 
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <select className="input flex-1 sm:flex-none sm:w-auto text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="accepted">Accepted</option>
-          <option value="in_progress">In Progress</option>
-          <option value="arrived_pickup">At Pickup</option>
-          <option value="collected">Collected</option>
-          <option value="arrived_dropoff">At Dropoff</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
+      {/* Status filter */}
+      <div className="flex items-center gap-2 mb-4">
+        <select
+          className="input flex-1 sm:flex-none sm:w-48 text-sm"
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+        >
+          {STATUS_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
         </select>
       </div>
 
+      {/* Content */}
       {loading ? (
-        <div className="text-center py-12 text-muted">Loading jobs...</div>
+        <div className="text-center py-12 text-muted">Loading jobs…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📋</div>
           <div className="font-bold text-primary mb-1">No jobs for this period</div>
-          <div className="text-sm text-muted mb-4">Create a job or select a different date range</div>
-          <Button onClick={() => navigate("/app/jobs/create")}>Create Job</Button>
+          <div className="text-sm text-muted mb-4">Try a different date range or create a new job</div>
+          <Button onClick={() => navigate("/app/jobs/create")}>Create job</Button>
         </div>
       ) : (
         <>
@@ -361,8 +466,10 @@ export default function JobsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    {["Date","Route","Job Ref / Planning","Customer Ref","Material","Status","Last Update","Actions"].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    {["Date", "Route", "Job ref / Planning", "Load", "Status", "Updated", ""].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -387,26 +494,28 @@ export default function JobsPage() {
           <div className="sm:hidden space-y-3">
             {filtered.map(job => {
               const canProgress = hasStatus(PROGRESSABLE_JOB_STATUSES, job.status);
-              const nextStatus = nextJobStatus(job.status);
+              const nextStatus  = nextJobStatus(job.status);
+              const from = firstStop(job, "from");
+              const to   = firstStop(job, "to");
+              const material = jobMaterial(job);
               return (
                 <div key={job.id} className="card p-4 space-y-2.5">
                   <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => navigate(`/app/jobs/${job.id}`)}>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-primary truncate">{firstStopText(job, "pickup")}</div>
-                      <div className="text-xs text-muted truncate">→ {firstStopText(job, "dropoff")}</div>
+                      <div className="text-sm font-semibold text-primary truncate">{stopName(from)}</div>
+                      <div className="text-xs text-muted truncate">→ {stopName(to)}</div>
                     </div>
                     <Badge status={job.status} />
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
-                    {job.plannedDate && <span>📅 {fmt(job.plannedDate)}</span>}
-                    {jobMaterial(job) !== "—" && <span>📦 {jobMaterial(job)}</span>}
+                    {job.plannedDate && <span>📅 {fmtWeekday(job.plannedDate)} {fmtShort(job.plannedDate)}</span>}
+                    {material && <span>📦 {material}</span>}
                     <div className="flex items-center gap-2">
                       {job.jobReference
                         ? <span className="font-mono font-semibold text-primary">{job.jobReference}</span>
-                        : <span className="italic text-muted">Assigned when ready</span>}
+                        : <span className="italic text-muted">No ref yet</span>}
                       <PlanningBadge status={job.planningStatus} />
                     </div>
-                    {job.customerRef && <span className="text-muted">#{job.customerRef}</span>}
                   </div>
                   <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
                     {canProgress && nextStatus && (
