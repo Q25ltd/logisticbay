@@ -147,7 +147,7 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-20 w-36 bg-white border border-border rounded-lg shadow-lg py-1 text-sm">
+          <div className="absolute right-0 bottom-8 z-20 w-36 bg-white border border-border rounded-lg shadow-lg py-1 text-sm">
             <button onClick={() => { setOpen(false); onView(job.id); }}
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-primary font-medium">
               👁 View
