@@ -38,15 +38,6 @@ function cap(s: string): string {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const RANGE_PRESETS = [
-  { label: "Today",  back: 0,  fwd: 0  },
-  { label: "← 7d",  back: 7,  fwd: 0  },
-  { label: "7d →",  back: 0,  fwd: 7  },
-  { label: "← 14d", back: 14, fwd: 0  },
-  { label: "14d →", back: 0,  fwd: 14 },
-  { label: "← 30d", back: 30, fwd: 0  },
-  { label: "30d →", back: 0,  fwd: 30 },
-];
 
 const PLANNING_LABELS: Record<string, string> = {
   no_stops:          "No stops",
@@ -420,47 +411,65 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Date range presets */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {RANGE_PRESETS.map(({ label, back, fwd }) => {
-          const isActive = dateRange.from === addDays(today(), -back) && dateRange.to === addDays(today(), fwd);
+      {/* Filter bar — single row */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {/* Today */}
+        {(() => {
+          const isActive = dateRange.from === today() && dateRange.to === today();
           return (
-            <button key={label} type="button" onClick={() => applyRange(back, fwd)}
+            <button type="button" onClick={() => applyRange(0, 0)}
               className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                isActive
-                  ? "bg-primary text-white border-primary"
-                  : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
+                isActive ? "bg-primary text-white border-primary" : "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary"
               }`}>
-              {label}
+              Today
             </button>
           );
+        })()}
+
+        {/* Paired ← / → presets */}
+        {([
+          { back: 7,  fwdLabel: "7d →",  backLabel: "← 7d"  },
+          { back: 14, fwdLabel: "14d →", backLabel: "← 14d" },
+          { back: 30, fwdLabel: "30d →", backLabel: "← 30d" },
+        ] as { back: number; fwdLabel: string; backLabel: string }[]).map(({ back, fwdLabel, backLabel }) => {
+          const backActive = dateRange.from === addDays(today(), -back) && dateRange.to === today();
+          const fwdActive  = dateRange.from === today() && dateRange.to === addDays(today(), back);
+          const base = "px-2.5 py-1 text-xs font-semibold border transition-colors";
+          const on   = "bg-primary text-white border-primary z-10";
+          const off  = "bg-white text-slate-600 border-slate-300 hover:border-primary hover:text-primary";
+          return (
+            <div key={back} className="flex">
+              <button type="button" onClick={() => applyRange(back, 0)}
+                className={`${base} rounded-l-full border-r-0 ${backActive ? on : off}`}>
+                {backLabel}
+              </button>
+              <button type="button" onClick={() => applyRange(0, back)}
+                className={`${base} rounded-r-full ${fwdActive ? on : off}`}>
+                {fwdLabel}
+              </button>
+            </div>
+          );
         })}
-        <div className="flex items-center gap-1 ml-1">
+
+        {/* Custom date range */}
+        <div className="flex items-center gap-1">
           <input type="date" value={dateRange.from}
             onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-            className="input py-1 text-xs w-36" />
+            className="input py-1 text-xs w-32" />
           <span className="text-xs text-muted">→</span>
           <input type="date" value={dateRange.to}
             onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-            className="input py-1 text-xs w-36" />
+            className="input py-1 text-xs w-32" />
         </div>
+
+        {/* Status filter — inline, pushed right */}
+        <select className="input py-1 text-xs w-40 ml-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </div>
 
       {success && <Alert type="success" message={success} />}
       {error   && <Alert type="error"   message={error}   />}
-
-      {/* Status filter */}
-      <div className="flex items-center gap-2 mb-4">
-        <select
-          className="input flex-1 sm:flex-none sm:w-48 text-sm"
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-        >
-          {STATUS_OPTIONS.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      </div>
 
       {/* Content */}
       {loading ? (
