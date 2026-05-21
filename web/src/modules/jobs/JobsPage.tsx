@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
 import type { PlannedJob, JobTemplate } from "../../types";
@@ -135,19 +136,30 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
   onView:   (id: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos,  setPos]  = useState({ top: 0, right: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setOpen(o => !o);
+  }
+
   return (
-    <div className="relative" onClick={e => e.stopPropagation()}>
-      <button
-        onClick={() => setOpen(o => !o)}
+    <div onClick={e => e.stopPropagation()}>
+      <button ref={btnRef} onClick={handleOpen}
         className="w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none"
-        title="Actions"
-      >
+        title="Actions">
         ⋮
       </button>
-      {open && (
+      {open && createPortal(
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 bottom-8 z-20 w-36 bg-white border border-border rounded-lg shadow-lg py-1 text-sm">
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed z-50 w-40 bg-white border border-border rounded-lg shadow-xl py-1 text-sm"
+               style={{ top: pos.top, right: pos.right }}>
             <button onClick={() => { setOpen(false); onView(job.id); }}
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-primary font-medium">
               👁 View
@@ -166,7 +178,8 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
               🗑 Cancel job
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
