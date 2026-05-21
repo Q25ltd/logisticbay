@@ -219,6 +219,9 @@ export default function JobDetailPage() {
               {job.bookingContactName && (
                 <Field label="Booking contact" value={`${job.bookingContactName}${job.bookingContactPhone ? ` · ${job.bookingContactPhone}` : ""}`} />
               )}
+              {job.bookingContactEmail && (
+                <Field label="Contact email" value={job.bookingContactEmail} />
+              )}
               {job.jobTitle && <Field label="Job title" value={job.jobTitle} />}
             </div>
           </Card>
@@ -457,6 +460,11 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
         {s.contactName && (
           <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
             {s.contactName}{s.contactPhone ? ` · ${s.contactPhone}` : ""}
+          </div>
+        )}
+        {s.contactEmail && (
+          <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>
+            {s.contactEmail}
           </div>
         )}
 
