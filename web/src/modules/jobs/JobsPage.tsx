@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
 import type { PlannedJob, JobTemplate } from "../../types";
@@ -396,9 +396,23 @@ export default function JobsPage() {
       <div className="flex items-start justify-between mb-4 gap-4">
         <div>
           <h1 className="text-xl font-black text-primary">Jobs</h1>
-          <p className="text-sm text-muted mt-0.5">
-            {stats.total} total · {stats.completed} done · {stats.active} active · {stats.pending} pending · {rangeLabel}
-          </p>
+          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+            {([
+              { n: stats.total,     label: "total"  , hi: ""                                              },
+              { n: stats.completed, label: "done"   , hi: stats.completed > 0 ? "text-green-600" : ""    },
+              { n: stats.active,    label: "active" , hi: stats.active    > 0 ? "text-blue-600"  : ""    },
+              { n: stats.pending,   label: "pending", hi: stats.pending   > 0 ? "text-amber-600" : ""    },
+            ] as { n: number; label: string; hi: string }[]).map(({ n, label, hi }, i) => (
+              <React.Fragment key={label}>
+                {i > 0 && <span className="text-slate-300 select-none">·</span>}
+                <span className="text-sm text-muted">
+                  <span className={`font-bold ${hi || "text-slate-700"}`}>{n}</span> {label}
+                </span>
+              </React.Fragment>
+            ))}
+            <span className="text-slate-300 select-none mx-0.5">·</span>
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{rangeLabel}</span>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button onClick={load} className="btn btn-outline text-sm px-3" title="Refresh">↻</button>
