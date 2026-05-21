@@ -412,7 +412,7 @@ export default function JobsPage() {
       </div>
 
       {/* Filter bar — single row */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-0.5">
         {/* Today */}
         {(() => {
           const isActive = dateRange.from === today() && dateRange.to === today();
@@ -463,7 +463,7 @@ export default function JobsPage() {
         </div>
 
         {/* Status filter — inline, pushed right */}
-        <select className="input py-1 text-xs w-40 ml-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+        <select className="input py-1 text-xs w-40 flex-shrink-0 ml-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
