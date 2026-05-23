@@ -7,6 +7,33 @@
 
 ---
 
+## Session log — 2026-05-23 (3)
+
+### AI vehicle suggestion + bug fixes + model update
+
+**Done:**
+
+New files:
+- `api/src/services/suggestVehicleService.ts` — Claude Haiku analyses load (weight, qty, goods type, temp, hazmat) → recommends vehicle category + one-line reason + confidence
+
+Changes:
+- `api/src/routes/ai.ts` — added `POST /ai/suggest-vehicle` endpoint (rate limit 60/min); improved error classification (auth errors → 503 `AI_AUTH_ERROR`, others → 502 `AI_ERROR`)
+- `web/src/api/ai.ts` — added `VehicleSuggestionInput`, `VehicleSuggestion` types, `aiApi.suggestVehicle()`
+- `web/src/modules/jobs/CreateJobPage.tsx` — Section 5 now has violet "✨ AI vehicle suggestion" panel; `handleSuggestVehicle` + `acceptVehicleSuggestion` handlers; disabled until goods type or weight filled
+- `web/src/modules/jobs/ParseRequestPanel.tsx` — friendly error messages for auth vs service errors
+- `api/src/services/parseRequestService.ts` — **model updated from retired `claude-3-5-haiku-20241022` to `claude-haiku-4-5`** (old model returned 404 not_found_error)
+- `web/src/modules/jobs/CreateJobPage.tsx` — `applyParsedData` now async; searches customer DB by name when AI extracts customer; if exact match found → sets `customerId` + fills contact fields from stored account
+- `web/src/modules/templates/TemplatesPage.tsx` — fixed 3× `jobs/new` → `jobs/create` (wrong route caused `parseInt("new")=NaN` → GET `/jobs/NaN` → 500)
+- `web/src/modules/jobs/JobDetailPage.tsx` — added `isNaN` guard so bad URL params show "Job not found" instead of hitting API with NaN
+
+**Key decisions:**
+- Vehicle suggestion is planner-only (not on PRF) — customers don't choose vehicles
+- Suggestion panel hidden in edit mode — no value in re-suggesting on an existing confirmed job
+- Model: `claude-haiku-4-5` — cheapest/fastest current Anthropic model ($1/MTok input, $5/MTok output)
+- Customer match: exact name match wins; single result wins; multiple non-exact → leaves as text (safer than guessing wrong customer)
+
+---
+
 ## Session log — 2026-05-23 (2)
 
 ### AI email/message → job form parser
@@ -39,7 +66,7 @@ Changes:
 **To activate on Railway:**
 Add environment variable: `ANTHROPIC_API_KEY = sk-ant-...`
 Get key from: https://console.anthropic.com/settings/keys
-Model: `claude-3-5-haiku-20241022` (~£0.002 per parse)
+Model: `claude-haiku-4-5` — updated from retired `claude-3-5-haiku-20241022` (~£0.001 per parse at new pricing)
 AI is disabled gracefully if key is missing — returns 503, no crash.
 
 **Key decisions:**

@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-19
+> Last updated: 2026-05-23
 
 ---
 
@@ -78,6 +78,14 @@
   - Temperature-controlled trailer: `tempControlled` load with non-fridge trailer types → error
   - Weight vs payload: declared weight vs approximate vehicle max payload → warning
   - Cancellation cascade: cancelling a job in active run assignments returns run IDs + warning
+  - Accept flow (`POST /job-requests/:id/accept`) now runs full `validateStructuredJob` before accepting
+- **AI-assisted job creation** (requires `ANTHROPIC_API_KEY`, model: `claude-haiku-4-5`):
+  - `POST /ai/parse-request` — paste email/WhatsApp/note → structured job data → pre-fills CJP form
+  - Customer name auto-matched against database; contact fields filled from stored account
+  - `POST /ai/suggest-vehicle` — analyses load (weight, qty, goods type, temp, hazmat) → recommends vehicle category with one-line reason
+  - CJP Section 5 shows violet "AI vehicle suggestion" panel — planner can accept or dismiss
+  - `GET /ai/status` — returns `{ enabled: boolean }` for frontend feature gating
+  - AI panel hidden in edit mode and not present on PRF (planner-only feature)
 
 ### Client request links
 - Main link: one auto-created permanent link per company (for website / social)
