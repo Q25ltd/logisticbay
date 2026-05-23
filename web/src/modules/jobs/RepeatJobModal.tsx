@@ -76,6 +76,18 @@ export default function RepeatJobModal({ job, onClose }: Props) {
 
   async function handleCreate() {
     if (!date) { setError("Select a date"); return; }
+
+    // Booking refs are required for stops that need them
+    const missingRefs = stops.filter(s => s.bookingRequired && !s.bookingRef.trim());
+    if (missingRefs.length > 0) {
+      setError(
+        `Booking reference required for: ${missingRefs.map(s =>
+          `${s.type === "collection" ? "Collection" : "Delivery"} ${s.sequenceNumber}`
+        ).join(", ")}`
+      );
+      return;
+    }
+
     setSaving(true); setError("");
     try {
       const newJob = await jobsApi.repeat(job.id, {
@@ -90,9 +102,11 @@ export default function RepeatJobModal({ job, onClose }: Props) {
           bookingRef:      s.bookingRef.trim() || undefined,
         })),
       });
+      onClose();
       navigate(`/app/jobs/${newJob.id}`);
     } catch (e: unknown) {
-      setError((e as Error).message ?? "Failed to create job");
+      const msg = (e as Error).message ?? "Failed to create job";
+      setError(msg);
     } finally {
       setSaving(false);
     }

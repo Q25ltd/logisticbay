@@ -513,6 +513,23 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(400).send({ error: "plannedDate is required" });
     }
 
+    // Block duplicate repeats: one non-cancelled copy per source job per date
+    const existing = await prisma.job.findFirst({
+      where: {
+        companyId,
+        parentJobId: id,
+        plannedDate: new Date(body.plannedDate),
+        status: { notIn: ["cancelled"] },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return reply.status(409).send({
+        error: "DUPLICATE_REPEAT",
+        message: `A repeat of this job already exists for ${body.plannedDate} (Job #${existing.id}). Cancel that job first if you need to replace it.`,
+      });
+    }
+
     // Build stop overrides indexed by sequenceNumber
     const stopOverrides: Record<number, StopOverride> = {};
     if (Array.isArray(body.stops)) {
@@ -524,6 +541,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       data: {
         companyId,
         createdByUserId:      request.user!.userId,
+        parentJobId:          id,   // track which job this was repeated from
         customerId:           source.customerId,
         customerName:         source.customerName,
         bookingContactName:   source.bookingContactName,
