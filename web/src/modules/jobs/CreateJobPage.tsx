@@ -822,11 +822,12 @@ export default function CreateJobPage() {
     try {
       const body = buildPayload("draft");
       if (editJobId) {
-        await jobsApi.update(editJobId, body);
+        const updated = await jobsApi.update(editJobId, body);
+        navigate(`/app/jobs/${updated.id}`);
       } else {
-        await jobsApi.create(body);
+        const newJob = await jobsApi.create(body);
+        navigate(`/app/jobs/${newJob.id}`);
       }
-      navigate("/app/jobs");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save draft");
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -839,14 +840,32 @@ export default function CreateJobPage() {
     setTriedSave(true);
     setShowStopErrors(true);
     setS1Attempted(true); setS3Attempted(true); setS6Attempted(true);
+
+    // Validate phone/email synchronously — don't rely on setState having flushed yet
     const phoneErr = validatePhone(bookingContactPhone);
     const emailErr = validateEmail(bookingContactEmail);
     if (phoneErr) setBookingContactPhoneError(phoneErr);
     if (emailErr) setBookingContactEmailError(emailErr);
-    if (MISSING.length > 0) {
+
+    // Re-compute sec1 with the fresh validation result (not stale state)
+    const sec1OK = !!(
+      customerName.trim() && bookingContactName.trim() &&
+      bookingContactPhone.trim() && bookingContactEmail.trim() &&
+      !phoneErr && !emailErr
+    );
+
+    const missingNow = [
+      !sec1OK       && "Customer details",
+      !sec2Complete && "Stops",
+      !sec3Complete && "Load details",
+      !sec6Complete && "Billing",
+    ].filter(Boolean) as string[];
+
+    if (missingNow.length > 0) {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
+
     const stopKeys = stops.map(s => `${s.postcode.trim().toUpperCase()}|${s.date}`);
     const dupIdx = stopKeys.findIndex((k, i) => k !== "|" && stopKeys.indexOf(k) !== i);
     if (dupIdx !== -1) {
@@ -855,16 +874,18 @@ export default function CreateJobPage() {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
+
     setSaving("ready");
     setError("");
     try {
       const body = buildPayload("ready_to_plan");
       if (editJobId) {
-        await jobsApi.update(editJobId, body);
+        const updated = await jobsApi.update(editJobId, body);
+        navigate(`/app/jobs/${updated.id}`);
       } else {
-        await jobsApi.create(body);
+        const newJob = await jobsApi.create(body);
+        navigate(`/app/jobs/${newJob.id}`);
       }
-      navigate("/app/jobs");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save job");
       window.scrollTo({ top: 0, behavior: "smooth" });
