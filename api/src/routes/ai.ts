@@ -64,7 +64,14 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         return reply.send(parsed);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "AI request failed";
-        return reply.status(502).send({ error: "AI_ERROR", message });
+        // Anthropic auth errors → 503 (config problem, not caller's fault)
+        const isAuthError = message.toLowerCase().includes("authentication") ||
+                            message.toLowerCase().includes("invalid api key") ||
+                            message.toLowerCase().includes("api key");
+        const status = isAuthError ? 503 : 502;
+        const code   = isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR";
+        app.log.error({ err, code }, "AI route error");
+        return reply.status(status).send({ error: code, message });
       }
     },
   );

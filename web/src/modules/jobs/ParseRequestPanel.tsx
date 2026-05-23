@@ -41,7 +41,14 @@ export default function ParseRequestPanel({ onParsed }: Props) {
       setResult(data);
       onParsed(data);
     } catch (e: unknown) {
-      setError((e as Error).message ?? "Parse failed — please try again");
+      const msg = (e as Error).message ?? "";
+      if (msg.includes("AI_AUTH_ERROR") || msg.includes("invalid api key") || msg.includes("authentication")) {
+        setError("AI service is misconfigured — please contact your administrator.");
+      } else if (msg.includes("AI_UNAVAILABLE")) {
+        setError("AI features are not enabled on this server.");
+      } else {
+        setError(msg || "Parse failed — please try again");
+      }
     } finally {
       setBusy(false);
     }
