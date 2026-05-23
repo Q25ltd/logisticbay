@@ -14,6 +14,7 @@ import { customersApi } from "../../api/customers";
 import { api } from "../../api/client";
 import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
 import ParseRequestPanel from "./ParseRequestPanel";
+import { aiApi } from "../../api/ai";
 import type { ParsedJobData } from "../../api/ai";
 
 import {
@@ -333,6 +334,10 @@ export default function CreateJobPage() {
   const [bodyTypes,          setBodyTypes]         = useState<string[]>([]);
   const [equipment,          setEquipment]         = useState<string[]>([]);
   const [trailersAllowed,    setTrailersAllowed]   = useState<string[]>([]);
+  // AI vehicle suggestion
+  const [vehicleSuggestBusy,       setVehicleSuggestBusy]       = useState(false);
+  const [vehicleSuggestion,        setVehicleSuggestion]        = useState<{ vehicleCategory: string; reasoning: string; confidence: string } | null>(null);
+  const [vehicleSuggestError,      setVehicleSuggestError]      = useState("");
 
   // ── Section 06 — Billing ─────────────────────────────────────────────────────
   const [declaredValue,       setDeclaredValue]      = useState("");
@@ -536,6 +541,39 @@ export default function CreateJobPage() {
 
     // Expand all sections so planner sees what was filled
     setS1(true); setS2(true); setS3(true); setS4(true); setS5(true); setS6(true);
+  }
+
+  // ── AI vehicle suggestion ────────────────────────────────────────────────────
+  async function handleSuggestVehicle() {
+    setVehicleSuggestBusy(true);
+    setVehicleSuggestion(null);
+    setVehicleSuggestError("");
+    try {
+      const suggestion = await aiApi.suggestVehicle({
+        weight:              parseFloat(estWeight) > 0 ? parseFloat(estWeight) : undefined,
+        quantity:            parseFloat(quantity)  > 0 ? parseFloat(quantity)  : undefined,
+        quantityUnit:        unit || undefined,
+        goodsType:           goodsType || undefined,
+        goodsDescription:    goodsDesc || undefined,
+        tempControlled:      !!tempType,
+        hazardClass:         hazardClass || undefined,
+        specialRequirements: specialItems.length ? specialItems : undefined,
+        stopCount:           stops.length || undefined,
+      });
+      setVehicleSuggestion(suggestion);
+    } catch (e: unknown) {
+      setVehicleSuggestError((e as Error).message ?? "Could not get suggestion — try again");
+    } finally {
+      setVehicleSuggestBusy(false);
+    }
+  }
+
+  function acceptVehicleSuggestion() {
+    if (!vehicleSuggestion) return;
+    setVehicleCategory(vehicleSuggestion.vehicleCategory);
+    setPlannerDecides(false);
+    setBodyTypes([]);
+    setVehicleSuggestion(null);
   }
 
   // ── Edit mode: load job and populate all state ───────────────────────────────
@@ -1563,6 +1601,70 @@ export default function CreateJobPage() {
             )} />
           {!s5 && (
             <div className="px-5 pt-5 pb-4 space-y-4">
+
+              {/* ── AI vehicle suggestion ── */}
+              {!isEditMode && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">✨</span>
+                      <span className="text-sm font-semibold text-violet-800">AI vehicle suggestion</span>
+                      <span className="text-xs text-violet-500 hidden sm:inline">— based on load details above</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSuggestVehicle}
+                      disabled={vehicleSuggestBusy || !(goodsType || parseFloat(estWeight) > 0)}
+                      className="px-4 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-lg
+                                 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed
+                                 transition-colors flex items-center gap-1.5"
+                    >
+                      {vehicleSuggestBusy ? (
+                        <>
+                          <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                          Thinking…
+                        </>
+                      ) : "Suggest vehicle"}
+                    </button>
+                  </div>
+
+                  {vehicleSuggestError && (
+                    <p className="text-xs text-red-700">{vehicleSuggestError}</p>
+                  )}
+
+                  {vehicleSuggestion && (
+                    <div className="bg-white rounded-lg border border-violet-200 px-3 py-2.5 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <span className="text-green-500 font-bold mt-0.5">✓</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-slate-800">
+                            {BODY_CATEGORIES.find(c => c.value === vehicleSuggestion.vehicleCategory)?.label ?? vehicleSuggestion.vehicleCategory}
+                          </span>
+                          <span className="text-xs text-slate-500 ml-2">recommended</span>
+                          <p className="text-xs text-slate-600 mt-0.5">{vehicleSuggestion.reasoning}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={acceptVehicleSuggestion}
+                          className="px-3 py-1 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-700 transition-colors"
+                        >
+                          Use this
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVehicleSuggestion(null)}
+                          className="px-3 py-1 text-xs text-violet-600 border border-violet-200 rounded-lg hover:border-violet-400 transition-colors"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <Toggle value={plannerDecides} onChange={v => { setPlannerDecides(v); }}
                 label="Let the planner choose the best transport for this load" />
 

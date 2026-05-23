@@ -42,9 +42,29 @@ export interface ParsedJobData {
   warnings:              string[];
 }
 
+export interface VehicleSuggestionInput {
+  weight?:              number;
+  quantity?:            number;
+  quantityUnit?:        string;
+  goodsType?:           string;
+  goodsDescription?:    string;
+  tempControlled?:      boolean;
+  hazardClass?:         string;
+  specialRequirements?: string[];
+  stopCount?:           number;
+}
+
+export interface VehicleSuggestion {
+  vehicleCategory: string;
+  reasoning:       string;
+  confidence:      "high" | "medium" | "low";
+}
+
 export const aiApi = {
   parseRequest: (text: string) =>
     api.post<ParsedJobData>("/ai/parse-request", { text }),
+  suggestVehicle: (input: VehicleSuggestionInput) =>
+    api.post<VehicleSuggestion>("/ai/suggest-vehicle", input),
   status: () =>
     api.get<{ enabled: boolean }>("/ai/status"),
 };
