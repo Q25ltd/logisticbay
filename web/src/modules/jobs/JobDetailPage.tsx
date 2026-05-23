@@ -255,25 +255,43 @@ export default function JobDetailPage() {
             </Card>
           )}
 
-          {/* Vehicle requirements */}
-          {hasVehicle && (
-            <Card title="Vehicle requirements">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-                <Field label="Category"   value={job.vehicleCategory} />
-                <Field label="Min GVW"    value={job.minGvwClass} />
-                <Field label="Access"     value={job.vehicleAccessNotes} />
+          {/* Vehicle requirements — always visible; warns when missing */}
+          <Card title="Vehicle requirements">
+            {!hasVehicle ? (
+              <div className="flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                <span className="text-amber-500 text-base leading-none mt-0.5">⚠</span>
+                <div>
+                  <div className="font-semibold text-amber-800">No vehicle type set</div>
+                  <div className="text-xs text-amber-700 mt-0.5">
+                    Vehicle requirements must be added before this job can be marked as Ready to plan.
+                    <button
+                      className="ml-1 underline font-medium hover:no-underline"
+                      onClick={() => (window.location.href = `/app/jobs/${job.id}/edit`)}
+                    >
+                      Edit job →
+                    </button>
+                  </div>
+                </div>
               </div>
-              {(job.bodyTypes as string[] | null)?.length ? (
-                <ChipRow label="Body types" items={job.bodyTypes as string[]} className="mt-3" />
-              ) : null}
-              {(job.equipment as string[] | null)?.length ? (
-                <ChipRow label="Equipment" items={job.equipment as string[]} className="mt-2" />
-              ) : null}
-              {(job.trailersAllowed as string[] | null)?.length ? (
-                <ChipRow label="Trailers allowed" items={job.trailersAllowed as string[]} className="mt-2" />
-              ) : null}
-            </Card>
-          )}
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                  <Field label="Category"   value={job.vehicleCategory} />
+                  <Field label="Min GVW"    value={job.minGvwClass} />
+                  <Field label="Access"     value={job.vehicleAccessNotes} />
+                </div>
+                {(job.bodyTypes as string[] | null)?.length ? (
+                  <ChipRow label="Body types" items={job.bodyTypes as string[]} className="mt-3" />
+                ) : null}
+                {(job.equipment as string[] | null)?.length ? (
+                  <ChipRow label="Equipment" items={job.equipment as string[]} className="mt-2" />
+                ) : null}
+                {(job.trailersAllowed as string[] | null)?.length ? (
+                  <ChipRow label="Trailers allowed" items={job.trailersAllowed as string[]} className="mt-2" />
+                ) : null}
+              </>
+            )}
+          </Card>
 
           {/* Stops */}
           <Card title={`Stops (${stops.length})`}>
@@ -638,15 +656,21 @@ function StatusPanel({ job, onSaved }: { job: Job; onSaved: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
 
+  const needsVehicle = status === "ready_to_plan" && !job.vehicleCategory;
+
   async function save() {
     if (status === job.status && !note.trim()) return;
+    if (needsVehicle) return;
     setLoading(true); setError("");
     try {
       await jobsApi.updateStatus(job.id, status, note.trim() || undefined);
       setNote("");
       onSaved();
     } catch (err: unknown) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg.includes("VEHICLE_REQUIRED") || msg.includes("Vehicle type")
+        ? "Vehicle type must be selected before marking this job as Ready to plan. Use Edit job to add vehicle requirements."
+        : msg);
     } finally {
       setLoading(false);
     }
@@ -658,14 +682,20 @@ function StatusPanel({ job, onSaved }: { job: Job; onSaved: () => void }) {
     <div className="card p-4 space-y-3">
       <h2 className="font-bold text-sm" style={{ color: "#0f172a" }}>Status</h2>
 
-      {error && (
+      {needsVehicle && (
+        <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-lg leading-snug">
+          ⚠ <strong>Vehicle type required.</strong> Set a vehicle category on this job before marking it as Ready to plan.
+        </div>
+      )}
+
+      {error && !needsVehicle && (
         <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
       )}
 
       <select
         className="input text-sm"
         value={status}
-        onChange={e => setStatus(e.target.value)}
+        onChange={e => { setStatus(e.target.value); setError(""); }}
       >
         {JOB_STATUSES.map(s => (
           <option key={s} value={s}>{JOB_STATUS_LABEL[s]}</option>
@@ -683,7 +713,7 @@ function StatusPanel({ job, onSaved }: { job: Job; onSaved: () => void }) {
       <button
         className="btn btn-primary text-sm w-full"
         onClick={save}
-        disabled={unchanged || loading}
+        disabled={unchanged || loading || needsVehicle}
       >
         {loading ? "Saving…" : "Update status"}
       </button>

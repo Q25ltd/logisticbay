@@ -352,9 +352,21 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.send({ status: job.status, id, duplicate: true });
     }
 
-    const allowed = ALLOWED_JOB_TRANSITIONS[job.status] ?? [];
-    if (!allowed.includes(body.status)) {
-      return reply.status(400).send({ error: `Cannot move from ${job.status} to ${body.status}` });
+    if (role === "driver") {
+      // Drivers must follow the strict execution-state machine
+      const allowed = ALLOWED_JOB_TRANSITIONS[job.status] ?? [];
+      if (!allowed.includes(body.status)) {
+        return reply.status(400).send({ error: `Cannot move from ${job.status} to ${body.status}` });
+      }
+    } else {
+      // Planners / company owners: free to set any planner status, but
+      // moving to ready_to_plan requires a vehicle category to be set.
+      if (body.status === "ready_to_plan" && !job.vehicleCategory) {
+        return reply.status(400).send({
+          error:   "VEHICLE_REQUIRED",
+          message: "Vehicle type must be selected before this job can be marked as Ready to plan.",
+        });
+      }
     }
 
     let clientTs = new Date();
