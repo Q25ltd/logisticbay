@@ -1,8 +1,12 @@
 /**
  * RepeatJobModal — creates a new job by copying an existing one.
- * Asks for everything that typically changes between runs:
- *   date, quantity, weight, customer ref, and per-stop times/refs/quantities.
- * Everything else (customer, addresses, load type, vehicle) copies silently.
+ *
+ * Per-stop dates: the modal preserves the original day-gap between stops.
+ * e.g. if the source job collected on day 0 and delivered on day 1, the
+ * repeat defaults collection to the chosen date and delivery to date+1.
+ * The user can override any stop's date independently.
+ * When the main "Collection / start date" changes all stop dates shift
+ * by the same delta so relative gaps are maintained.
  */
 
 import { useState } from "react";
@@ -12,6 +16,18 @@ import type { PlannedJob } from "../../types";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000,
+  );
 }
 
 // Human-readable unit labels
@@ -38,6 +54,7 @@ interface StopRow {
   siteName:         string | null;
   town:             string | null;
   postcode:         string | null;
+  stopDate:         string;   // YYYY-MM-DD — each stop can have its own date
   timeWindowStart:  string;   // HH:MM or ""
   timeWindowEnd:    string;
   bookedTime:       string;
@@ -63,6 +80,12 @@ function toHHMM(dt: string | null | undefined): string {
   } catch { return ""; }
 }
 
+function toDateStr(dt: string | null | undefined): string | null {
+  if (!dt) return null;
+  try { return new Date(dt).toISOString().slice(0, 10); }
+  catch { return null; }
+}
+
 export default function RepeatJobModal({ job, onClose }: Props) {
   const navigate = useNavigate();
   const [saving,   setSaving]  = useState(false);
@@ -70,43 +93,80 @@ export default function RepeatJobModal({ job, onClose }: Props) {
   const [date,     setDate]    = useState(today());
   const [custRef,  setCustRef] = useState(job.customerRef ?? "");
   const [quantity, setQuantity] = useState(job.quantity != null ? String(job.quantity) : "");
-  const [weight,   setWeight]   = useState(job.weight   != null ? String(job.weight)   : "");
+  const [weight,   setWeight]  = useState(job.weight   != null ? String(job.weight)   : "");
 
-  const [stops, setStops] = useState<StopRow[]>(() =>
-    (job.stops ?? []).map(s => ({
-      sequenceNumber:   s.sequenceNumber,
-      type:             s.type ?? "delivery",
-      siteName:         s.siteName  ?? null,
-      town:             s.town      ?? null,
-      postcode:         s.postcode  ?? null,
-      timeWindowStart:  toHHMM(s.timeWindowStart),
-      timeWindowEnd:    toHHMM(s.timeWindowEnd),
-      bookedTime:       toHHMM(s.bookedTime),
-      referenceNumber:  "",
-      bookingRef:       "",
-      bookingRequired:  s.bookingRequired ?? false,
-      quantityRequired: s.quantityRequired != null ? String(s.quantityRequired) : "",
-      quantityUnit:     s.quantityUnit ?? job.quantityUnit ?? "",
-    }))
-  );
+  // Compute the "base date" from the earliest stop datetime in the source job,
+  // then derive each stop's offset in days from that base.
+  const [stops, setStops] = useState<StopRow[]>(() => {
+    const sourceDates = (job.stops ?? [])
+      .map(s => toDateStr(s.timeWindowStart))
+      .filter((d): d is string => d !== null)
+      .sort();
+    const baseSourceDate = sourceDates[0] ?? null; // earliest original stop date
+
+    return (job.stops ?? []).map(s => {
+      const origDate = toDateStr(s.timeWindowStart);
+      let stopDate = today(); // default: same as main date
+      if (baseSourceDate && origDate) {
+        const offset = daysBetween(baseSourceDate, origDate);
+        stopDate = addDays(today(), offset);
+      }
+      return {
+        sequenceNumber:   s.sequenceNumber,
+        type:             s.type ?? "delivery",
+        siteName:         s.siteName  ?? null,
+        town:             s.town      ?? null,
+        postcode:         s.postcode  ?? null,
+        stopDate,
+        timeWindowStart:  toHHMM(s.timeWindowStart),
+        timeWindowEnd:    toHHMM(s.timeWindowEnd),
+        bookedTime:       toHHMM(s.bookedTime),
+        referenceNumber:  "",
+        bookingRef:       "",
+        bookingRequired:  s.bookingRequired ?? false,
+        quantityRequired: s.quantityRequired != null ? String(s.quantityRequired) : "",
+        quantityUnit:     s.quantityUnit ?? job.quantityUnit ?? "",
+      };
+    });
+  });
 
   function updateStop(seq: number, patch: Partial<StopRow>) {
     setStops(prev => prev.map(s => s.sequenceNumber === seq ? { ...s, ...patch } : s));
   }
 
+  /** When the main date changes, shift all stop dates by the same delta. */
+  function handleMainDateChange(newDate: string) {
+    if (!newDate) { setDate(newDate); return; }
+    const delta = daysBetween(date, newDate);
+    if (delta !== 0) {
+      setStops(prev => prev.map(s => ({
+        ...s,
+        stopDate: addDays(s.stopDate, delta),
+      })));
+    }
+    setDate(newDate);
+  }
+
   function buildDateTime(dateStr: string, timeStr: string): string | undefined {
-    if (!timeStr) return undefined;
+    if (!timeStr || !dateStr) return undefined;
     return `${dateStr}T${timeStr}:00.000Z`;
   }
 
   async function handleCreate() {
     if (!date) { setError("Please select a date."); return; }
 
+    // Validate all stop dates are set
+    const missingDates = stops.filter(s => !s.stopDate);
+    if (missingDates.length > 0) {
+      setError("Please set a date for every stop.");
+      return;
+    }
+
     // Booking refs are required for stops that need them
     const missingRefs = stops.filter(s => s.bookingRequired && !s.bookingRef.trim());
     if (missingRefs.length > 0) {
       setError(
-        `Booking reference is required for: ${missingRefs.map(s =>
+        `Booking reference required for: ${missingRefs.map(s =>
           `${s.type === "collection" ? "Collection" : "Delivery"} ${s.sequenceNumber}`
         ).join(", ")}`
       );
@@ -122,9 +182,9 @@ export default function RepeatJobModal({ job, onClose }: Props) {
         weight:      weight   ? parseFloat(weight)   : undefined,
         stops: stops.map(s => ({
           sequenceNumber:   s.sequenceNumber,
-          timeWindowStart:  buildDateTime(date, s.timeWindowStart),
-          timeWindowEnd:    buildDateTime(date, s.timeWindowEnd),
-          bookedTime:       buildDateTime(date, s.bookedTime),
+          timeWindowStart:  buildDateTime(s.stopDate, s.timeWindowStart),
+          timeWindowEnd:    buildDateTime(s.stopDate, s.timeWindowEnd),
+          bookedTime:       buildDateTime(s.stopDate, s.bookedTime),
           referenceNumber:  s.referenceNumber.trim() || undefined,
           bookingRef:       s.bookingRef.trim()      || undefined,
           quantityRequired: s.quantityRequired ? parseFloat(s.quantityRequired) : undefined,
@@ -140,6 +200,9 @@ export default function RepeatJobModal({ job, onClose }: Props) {
   }
 
   const jobUnit = unitLabel(job.quantityUnit);
+
+  // Are any stops on a different date from the main date?
+  const isMultiDay = stops.some(s => s.stopDate !== date);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -161,10 +224,22 @@ export default function RepeatJobModal({ job, onClose }: Props) {
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</div>
           )}
 
-          {/* Date */}
+          {/* Main / collection date */}
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1">Date *</label>
-            <input type="date" className="input w-full" value={date} onChange={e => setDate(e.target.value)} />
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-1">
+              {stops.some(s => s.type === "collection") ? "Collection date" : "Job date"} *
+            </label>
+            <input
+              type="date"
+              className="input w-full"
+              value={date}
+              onChange={e => handleMainDateChange(e.target.value)}
+            />
+            {isMultiDay && (
+              <p className="text-xs text-blue-600 mt-1">
+                ℹ Delivery date(s) adjusted automatically — check below
+              </p>
+            )}
           </div>
 
           {/* Customer ref */}
@@ -202,6 +277,19 @@ export default function RepeatJobModal({ job, onClose }: Props) {
                 {(s.siteName || s.town) && (
                   <span className="text-xs text-muted truncate">{[s.siteName, s.town, s.postcode].filter(Boolean).join(", ")}</span>
                 )}
+              </div>
+
+              {/* Stop date — always visible so planner can change delivery to next day */}
+              <div>
+                <label className="text-xs text-slate-500 block mb-0.5">
+                  {s.type === "collection" ? "Collection date" : "Delivery date"} *
+                </label>
+                <input
+                  type="date"
+                  className="input w-full !py-1.5 !text-sm"
+                  value={s.stopDate}
+                  onChange={e => updateStop(s.sequenceNumber, { stopDate: e.target.value })}
+                />
               </div>
 
               {/* Time window */}
