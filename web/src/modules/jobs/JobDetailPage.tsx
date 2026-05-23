@@ -612,14 +612,19 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
           </div>
         )}
 
-        {(s.timeWindowStart || s.bookedTime) && (
+        {s.timeWindowStart && (
           <div className="text-xs mt-1" style={{ color: "#6b7280" }}>
-            {s.bookedTime
-              ? `🕐 Booked ${new Date(s.bookedTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
-              : `🕐 ${fmtWindow(s.timeWindowStart, s.timeWindowEnd)}`}
+            🕐 {fmtWindow(s.timeWindowStart, s.timeWindowEnd)}
           </div>
         )}
-
+        {s.bookedTime && (
+          <div className="text-xs mt-0.5 font-medium text-green-700">
+            ✅ Booked {new Date(s.bookedTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+          </div>
+        )}
+        {s.earliestArrivalMinutes != null && s.earliestArrivalMinutes > 0 && (
+          <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>Earliest arrival: {s.earliestArrivalMinutes} min before window</div>
+        )}
         {s.unloadingAllowanceMinutes != null && s.unloadingAllowanceMinutes > 0 && (
           <div className="text-xs" style={{ color: "#9ca3af" }}>{s.unloadingAllowanceMinutes} min on site</div>
         )}
@@ -685,11 +690,11 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
         ) : null}
 
         {/* Vehicle restrictions */}
-        {(s.heightRestriction || s.weightRestriction || (s as any).lengthRestriction) && (
+        {(s.heightRestriction || s.weightRestriction || s.lengthRestriction) && (
           <div className="text-xs mt-1.5 flex flex-wrap gap-2">
             {s.heightRestriction && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">H: {s.heightRestriction}</span>}
             {s.weightRestriction && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">W: {s.weightRestriction}</span>}
-            {(s as any).lengthRestriction && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">L: {(s as any).lengthRestriction}</span>}
+            {s.lengthRestriction  && <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded">L: {s.lengthRestriction}</span>}
           </div>
         )}
 
@@ -699,26 +704,26 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
             <span className="font-semibold">Entrance: </span>{s.navigationInstructions}
           </div>
         )}
-        {(s.instructions || (s as any).stopNotes) && (
+        {(s.instructions || s.stopNotes) && (
           <div className="text-xs mt-1.5 bg-blue-50 rounded p-2 text-blue-900">
-            <span className="font-semibold">Instructions: </span>{s.instructions || (s as any).stopNotes}
+            <span className="font-semibold">Instructions: </span>{s.instructions || s.stopNotes}
           </div>
         )}
 
         {/* Load readiness */}
-        {(s as any).loadReadiness && (
+        {s.loadReadiness && (
           <div className="text-xs mt-0.5 font-medium" style={{ color: "#6b7280" }}>
-            Load ready: {cap((s as any).loadReadiness)}
+            Load ready: {cap(s.loadReadiness)}
           </div>
         )}
 
         {/* Exchange quantities */}
-        {((s as any).exchangeDropQty || (s as any).exchangeCollectQty) && (
+        {(s.exchangeDropQty || s.exchangeCollectQty) && (
           <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-            {(s as any).exchangeDropQty ? `Drop ${(s as any).exchangeDropQty}` : ""}
-            {(s as any).exchangeDropQty && (s as any).exchangeCollectQty ? " · " : ""}
-            {(s as any).exchangeCollectQty ? `Collect ${(s as any).exchangeCollectQty}` : ""}
-            {(s as any).exchangeUnit ? ` ${(s as any).exchangeUnit}` : ""}
+            {s.exchangeDropQty    ? `Drop ${s.exchangeDropQty}` : ""}
+            {s.exchangeDropQty && s.exchangeCollectQty ? " · " : ""}
+            {s.exchangeCollectQty ? `Collect ${s.exchangeCollectQty}` : ""}
+            {s.exchangeUnit       ? ` ${s.exchangeUnit}` : ""}
           </div>
         )}
 
