@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import { aiApi, type AreaInfo, type VehicleSuggestion } from "../../api/ai";
+import { aiApi, type AreaInfo, type VehicleSuggestion, type LoadVehicleCheckResult } from "../../api/ai";
 import type { Job, JobPart } from "../../types";
 import RepeatJobModal from "./RepeatJobModal";
 import { Badge } from "../../components/Badge";
@@ -1068,8 +1068,44 @@ function VehiclePanel({
   const [saving,     setSaving]     = useState(false);
   const [saveErr,    setSaveErr]    = useState("");
 
-  // Live compatibility warnings — recalculate whenever category OR body types change
+  // Live compatibility warnings (instant, rule-based)
   const compatWarnings = category ? checkVehicleWarnings(category, bodyTypes, job) : [];
+
+  // AI load ↔ vehicle check — fires automatically whenever category or body
+  // types change (debounced 600 ms). Advisory only — planner can always save.
+  const [aiCheck,     setAiCheck]     = useState<LoadVehicleCheckResult | null>(null);
+  const [aiChecking,  setAiChecking]  = useState(false);
+  const [aiCheckDismissed, setAiCheckDismissed] = useState(false);
+
+  useEffect(() => {
+    // Need at least a category and some goods info to check
+    if (!category || (!job.goodsDescription && !job.goodsType)) return;
+
+    setAiCheckDismissed(false); // new selection → show result again
+    const timer = setTimeout(async () => {
+      setAiChecking(true);
+      try {
+        const result = await aiApi.checkVehicleLoad({
+          vehicleCategory:  category,
+          bodyTypes:        bodyTypes.length ? bodyTypes : undefined,
+          goodsDescription: job.goodsDescription  ?? undefined,
+          goodsType:        job.goodsType          ?? undefined,
+          weight:           job.weight             ?? undefined,
+          quantity:         job.quantity           ?? undefined,
+          quantityUnit:     (job as any).quantityUnit ?? undefined,
+          hazardClass:      (job as any).hazardClass  ?? undefined,
+          tempControlled:   (job as any).tempControlled ?? undefined,
+        });
+        setAiCheck(result);
+      } catch {
+        setAiCheck(null); // silently fail — check is advisory
+      } finally {
+        setAiChecking(false);
+      }
+    }, 600);
+
+    return () => { clearTimeout(timer); };
+  }, [category, bodyTypes.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // AI suggestion state
   const [suggesting,  setSuggesting]  = useState(false);
@@ -1282,6 +1318,67 @@ function VehiclePanel({
               <span>{w}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* AI load ↔ vehicle check result */}
+      {aiChecking && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          <span className="animate-spin inline-block">⟳</span>
+          <span>Checking if this vehicle suits the load…</span>
+        </div>
+      )}
+      {!aiChecking && aiCheck && !aiCheckDismissed && (
+        <div className={`mb-3 rounded-xl border px-3 py-2.5 text-sm ${
+          aiCheck.concern && aiCheck.severity === "high"   ? "bg-red-50 border-red-300"    :
+          aiCheck.concern && aiCheck.severity === "medium" ? "bg-amber-50 border-amber-300":
+          aiCheck.concern && aiCheck.severity === "low"    ? "bg-yellow-50 border-yellow-200":
+                                                             "bg-green-50 border-green-200"
+        }`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <span className="text-base leading-none mt-0.5 flex-shrink-0">
+                {aiCheck.concern
+                  ? aiCheck.severity === "high" ? "🚫" : "⚠️"
+                  : "✅"}
+              </span>
+              <div>
+                <span className={`text-xs font-bold uppercase tracking-wide block mb-0.5 ${
+                  aiCheck.concern && aiCheck.severity === "high"   ? "text-red-700"    :
+                  aiCheck.concern && aiCheck.severity === "medium" ? "text-amber-700"  :
+                  aiCheck.concern && aiCheck.severity === "low"    ? "text-yellow-700" :
+                                                                     "text-green-700"
+                }`}>
+                  {aiCheck.concern
+                    ? aiCheck.severity === "high"   ? "Not suitable for this load"
+                    : aiCheck.severity === "medium" ? "Possible mismatch"
+                                                    : "Worth checking"
+                    : "Looks suitable"}
+                </span>
+                <p className={`text-xs ${
+                  aiCheck.concern && aiCheck.severity === "high"   ? "text-red-800"    :
+                  aiCheck.concern && aiCheck.severity === "medium" ? "text-amber-800"  :
+                  aiCheck.concern                                  ? "text-yellow-800" :
+                                                                     "text-green-800"
+                }`}>
+                  {aiCheck.message}
+                </p>
+                {aiCheck.suggestion && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    <span className="font-medium">Try instead:</span> {aiCheck.suggestion}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setAiCheckDismissed(true)}
+              className="text-slate-400 hover:text-slate-600 text-lg leading-none flex-shrink-0 mt-0.5"
+              title="Dismiss"
+            >×</button>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1.5">
+            AI advisory — the planner makes the final decision
+          </p>
         </div>
       )}
 

@@ -67,6 +67,25 @@ export interface VehicleSuggestion {
   confidence:      "high" | "medium" | "low";
 }
 
+export interface LoadVehicleCheckInput {
+  vehicleCategory:   string;
+  bodyTypes?:        string[];
+  goodsDescription?: string;
+  goodsType?:        string;
+  weight?:           number;
+  quantity?:         number;
+  quantityUnit?:     string;
+  hazardClass?:      string;
+  tempControlled?:   boolean;
+}
+
+export interface LoadVehicleCheckResult {
+  concern:     boolean;
+  severity:    "high" | "medium" | "low" | "none";
+  message:     string;
+  suggestion?: string;
+}
+
 export type AreaType =
   | "industrial"
   | "residential"
@@ -90,6 +109,8 @@ export const aiApi = {
     api.post<ParsedJobData>("/ai/parse-request", { text }),
   suggestVehicle: (input: VehicleSuggestionInput) =>
     api.post<VehicleSuggestion>("/ai/suggest-vehicle", input),
+  checkVehicleLoad: (input: LoadVehicleCheckInput) =>
+    api.post<LoadVehicleCheckResult>("/ai/check-vehicle-load", input),
   lookupAreas:   (postcodes: string[]) =>
     api.post<AreaInfo[]>("/ai/area-lookup", { postcodes }),
   status:        () =>

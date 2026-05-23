@@ -19,6 +19,7 @@ import { env }                  from "../lib/env.js";
 import { parseTransportRequest, type SavedLocationHint } from "../services/parseRequestService.js";
 import { suggestVehicle, type VehicleSuggestionInput }   from "../services/suggestVehicleService.js";
 import { lookupAreaTypes } from "../services/areaLookupService.js";
+import { checkLoadVehicle, type LoadVehicleCheckInput } from "../services/checkLoadVehicleService.js";
 
 export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
 
@@ -123,6 +124,56 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         const code   = isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR";
         app.log.error({ err, code }, "AI suggest-vehicle error");
         return reply.status(status).send({ error: code, message });
+      }
+    },
+  );
+
+  // ── POST /ai/check-vehicle-load ───────────────────────────────────────────
+  //
+  // Claude reads the goods description and chosen vehicle/trailer and
+  // returns a plain-English advisory. NOT a hard block — planner decides.
+  app.post(
+    "/ai/check-vehicle-load",
+    {
+      preHandler: [authenticate, requireRole("company_owner", "planner")],
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      if (!env.AI_ENABLED) {
+        return reply.status(503).send({
+          error:   "AI_UNAVAILABLE",
+          message: "AI features are not enabled on this server.",
+        });
+      }
+
+      const body = request.body as LoadVehicleCheckInput;
+
+      if (typeof body.vehicleCategory !== "string" || !body.vehicleCategory) {
+        return reply.status(400).send({ error: "vehicleCategory is required" });
+      }
+
+      try {
+        const result = await checkLoadVehicle({
+          vehicleCategory:   body.vehicleCategory,
+          bodyTypes:         Array.isArray(body.bodyTypes)         ? body.bodyTypes         : undefined,
+          goodsDescription:  typeof body.goodsDescription === "string" ? body.goodsDescription  : undefined,
+          goodsType:         typeof body.goodsType         === "string" ? body.goodsType         : undefined,
+          weight:            typeof body.weight            === "number" ? body.weight            : undefined,
+          quantity:          typeof body.quantity          === "number" ? body.quantity          : undefined,
+          quantityUnit:      typeof body.quantityUnit      === "string" ? body.quantityUnit      : undefined,
+          hazardClass:       typeof body.hazardClass       === "string" ? body.hazardClass       : undefined,
+          tempControlled:    typeof body.tempControlled    === "boolean"? body.tempControlled    : undefined,
+        });
+        return reply.send(result);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "AI check failed";
+        const isAuthError = message.toLowerCase().includes("authentication") ||
+                            message.toLowerCase().includes("invalid api key");
+        app.log.error({ err }, "check-vehicle-load error");
+        return reply.status(isAuthError ? 503 : 502).send({
+          error:   isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR",
+          message,
+        });
       }
     },
   );
