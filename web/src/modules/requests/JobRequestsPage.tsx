@@ -2,7 +2,7 @@
  * Internal review queue for incoming transport requests (pending_review jobs).
  * Planner/office staff see all pending jobs from the PRF and can accept or reject.
  *
- * Accept = sets plannedDate (required) + plannerNotes (optional) → ready_to_plan
+ * Accept = sets plannedDate (required) + vehicleCategory (required if not set) + plannerNotes (optional) → ready_to_plan
  * Reject = cancels the job and logs a reason
  */
 
@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Job, JobPart } from "../../types";
 import { jobRequestsApi } from "../../api/jobRequests";
+import { BODY_CATEGORIES } from "../../constants/vehicleTaxonomy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -266,15 +267,21 @@ function RequestRow({
   onAccepted:  () => void;
   onNavigate:  ReturnType<typeof useNavigate>;
 }) {
-  const [rejecting,    setRejecting]    = useState(false);
-  const [rejectReason, setRejectReason] = useState("no_capacity");
-  const [rejectNotes,  setRejectNotes]  = useState("");
-  const [accepting,    setAccepting]    = useState(false);
-  const [plannedDate,  setPlannedDate]  = useState("");
-  const [plannerNotes, setPlannerNotes] = useState("");
+  const [rejecting,       setRejecting]       = useState(false);
+  const [rejectReason,    setRejectReason]    = useState("no_capacity");
+  const [rejectNotes,     setRejectNotes]     = useState("");
+  const [accepting,       setAccepting]       = useState(false);
+  const [plannedDate,     setPlannedDate]     = useState("");
+  const [plannerNotes,    setPlannerNotes]    = useState("");
+  const [vehicleCategory, setVehicleCategory] = useState(j.vehicleCategory ?? "");
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState("");
   const [showModal, setShowModal] = useState(false);
+
+  // Vehicle category is required to accept — either already on the job (customer specified)
+  // or the planner must choose it now.
+  const vehicleAlreadySet = !!j.vehicleCategory;
+  const canAccept = !!plannedDate && (vehicleAlreadySet || !!vehicleCategory);
 
   const stops      = j.stops ?? [];
   const collections = stops.filter(s => s.type === "collection" || s.type === "pickup");
@@ -283,9 +290,15 @@ function RequestRow({
 
   async function accept() {
     if (!plannedDate) { setErr("Planned date is required"); return; }
+    if (!vehicleAlreadySet && !vehicleCategory) { setErr("Vehicle type is required"); return; }
     setBusy(true); setErr("");
     try {
-      await jobRequestsApi.accept(j.id, plannedDate, plannerNotes.trim() || undefined);
+      await jobRequestsApi.accept(
+        j.id,
+        plannedDate,
+        plannerNotes.trim() || undefined,
+        vehicleAlreadySet ? undefined : vehicleCategory,
+      );
       onAccepted();
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
   }
@@ -417,6 +430,36 @@ function RequestRow({
                   />
                 </div>
 
+                {/* Vehicle type — required if customer didn't specify */}
+                {vehicleAlreadySet ? (
+                  <div className="text-xs bg-green-100 border border-green-200 rounded-lg px-3 py-2 text-green-800">
+                    ✓ Vehicle type: <strong>{BODY_CATEGORIES.find(c => c.value === j.vehicleCategory)?.label ?? j.vehicleCategory}</strong>
+                    <span className="text-green-600 ml-1">(specified by customer)</span>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs font-medium" style={{ color: "#374151" }}>
+                      Vehicle type <span className="text-red-500">*</span>
+                      <span className="text-xs font-normal text-slate-400 ml-1">— customer left this to the planner</span>
+                    </label>
+                    <select
+                      className="input mt-1 text-sm"
+                      value={vehicleCategory}
+                      onChange={e => { setVehicleCategory(e.target.value); setErr(""); }}
+                    >
+                      <option value="">Select vehicle type…</option>
+                      {BODY_CATEGORIES.map(c => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                    {!vehicleCategory && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        Required — wrong vehicle type means wrong trailer, wrong rate, failed job.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Planner notes — optional */}
                 <div>
                   <label className="text-xs font-medium" style={{ color: "#374151" }}>
@@ -435,7 +478,7 @@ function RequestRow({
                   <button
                     className="btn btn-primary text-sm"
                     onClick={accept}
-                    disabled={busy || !plannedDate}
+                    disabled={busy || !canAccept}
                   >
                     {busy ? "Accepting…" : "✓ Accept"}
                   </button>

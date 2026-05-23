@@ -291,7 +291,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id   = parseInt((request.params as { id: string }).id, 10);
-      const body = request.body as { plannedDate?: string; plannerNotes?: string };
+      const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string };
 
       const job = await prisma.job.findFirst({
         where: { id, companyId: request.user!.companyId },
@@ -304,15 +304,26 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         return reply.status(400).send({ error: "plannedDate is required to accept a job" });
       }
 
+      // Vehicle category must be known before a job can enter planning.
+      // Accept body may supply it when the customer left it blank in the PRF.
+      const vehicleCategory = body.vehicleCategory?.trim() || (job.vehicleCategory as string | null) || null;
+      if (!vehicleCategory) {
+        return reply.status(400).send({
+          error:   "VEHICLE_REQUIRED",
+          message: "Vehicle type must be set before this job can be accepted into planning.",
+        });
+      }
+
       const note = body.plannerNotes?.trim() || "";
 
       await prisma.$transaction([
         prisma.job.update({
           where: { id },
           data: {
-            status:       "ready_to_plan",
-            plannedDate:  new Date(body.plannedDate),
-            plannerNotes: note || job.plannerNotes,
+            status:          "ready_to_plan",
+            plannedDate:     new Date(body.plannedDate),
+            plannerNotes:    note || job.plannerNotes,
+            vehicleCategory,
           },
         }),
         prisma.jobAudit.create({
