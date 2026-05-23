@@ -214,6 +214,7 @@ export default function RunDetailPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -260,6 +261,7 @@ export default function RunDetailPage() {
   async function handleSave() {
     setSaving(true);
     setError("");
+    setWarning("");
     try {
       const body: PatchRunBody = {
         plannedDate: plannedDate || null,
@@ -271,8 +273,10 @@ export default function RunDetailPage() {
         endInstructionNote: endInstructionNote || undefined,
       };
       const updated = await runsApi.update(runId, body);
+      const w = (updated as any).warning as string | undefined;
       setRun(updated);
       setDirty(false);
+      if (w) setWarning(w);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save run");
     } finally {
@@ -395,7 +399,13 @@ export default function RunDetailPage() {
         </div>
       </div>
 
-      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+      {error   && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+      {warning && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+          <span className="text-amber-500 text-base leading-none mt-0.5 flex-shrink-0">⚠</span>
+          <span>{warning}</span>
+        </div>
+      )}
 
       {/* Details card */}
       <div className="card p-5 mb-5">

@@ -145,9 +145,9 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const plannedDate = body.plannedDate ? new Date(body.plannedDate) : null;
 
+    let driverWarning: string | null = null;
+
     const run = await prisma.$transaction(async (tx) => {
-      // Validate driver and check for same-day conflict inside the transaction
-      // so the check + write are atomic (minimises the race window).
       if (body.assignedDriverId != null) {
         const driver = await tx.driverProfile.findFirst({
           where: { id: body.assignedDriverId, companyId, status: "active" },
@@ -159,10 +159,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
         if (plannedDate) {
           const conflict = await findDriverConflict(tx, companyId, body.assignedDriverId, plannedDate);
           if (conflict) {
-            throw Object.assign(
-              new Error(`Driver is already assigned to run ${conflict.runReference} on this date — remove that assignment first or choose a different driver.`),
-              { statusCode: 409, code: "DRIVER_CONFLICT", conflictingRunId: conflict.id, conflictingRunRef: conflict.runReference },
-            );
+            driverWarning = `Driver already has run ${conflict.runReference} on this date — make sure the times don't overlap.`;
           }
         }
       }
@@ -191,7 +188,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     });
 
-    return reply.status(201).send(run);
+    return reply.status(201).send(driverWarning ? { ...run, warning: driverWarning } : run);
   });
 
   // ── GET /runs — list runs ─────────────────────────────────────────────────
@@ -304,6 +301,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if ("compatibilityOverridden"     in body) updateData.compatibilityOverridden     = body.compatibilityOverridden;
     if ("compatibilityOverrideReason" in body) updateData.compatibilityOverrideReason = body.compatibilityOverrideReason ?? null;
 
+    let driverWarning: string | null = null;
+
     const updated = await prisma.$transaction(async (tx) => {
       // Validate driver exists and is active
       if (newDriverId != null && "assignedDriverId" in body) {
@@ -315,14 +314,11 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
         }
       }
 
-      // Conflict check: driver+date pair must be unique across non-cancelled runs
+      // Warn (don't block) if this driver already has another run on the same date
       if (newDriverId != null && newDate != null) {
         const conflict = await findDriverConflict(tx, companyId, newDriverId, newDate, id);
         if (conflict) {
-          throw Object.assign(
-            new Error(`Driver is already assigned to run ${conflict.runReference} on this date — remove that assignment first or choose a different driver.`),
-            { statusCode: 409, code: "DRIVER_CONFLICT", conflictingRunId: conflict.id, conflictingRunRef: conflict.runReference },
-          );
+          driverWarning = `Driver already has run ${conflict.runReference} on this date — make sure the times don't overlap.`;
         }
       }
 
@@ -333,7 +329,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     });
 
-    return reply.send(updated);
+    return reply.send(driverWarning ? { ...updated, warning: driverWarning } : updated);
   });
 
   // ── DELETE /runs/:id — cancel (non-cancelled) or hard-delete (cancelled) ──
