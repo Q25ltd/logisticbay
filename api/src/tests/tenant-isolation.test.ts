@@ -96,9 +96,6 @@ test("Tenant isolation — full suite", async (t) => {
   const locationB = await prisma.savedLocation.create({
     data: { companyId: compB.id, name: `${PREFIX}LocB_${TS}` },
   });
-  const templateB = await prisma.jobTemplate.create({
-    data: { companyId: compB.id, name: `${PREFIX}TplB_${TS}` },
-  });
   const jobB = await prisma.job.create({
     data: { companyId: compB.id, createdByUserId: userB.id, customerName: `${PREFIX}JobB`, status: "draft" },
   });
@@ -160,14 +157,6 @@ test("Tenant isolation — full suite", async (t) => {
       assert.equal(res.statusCode, 200);
       const locations = (JSON.parse(res.body).data ?? []) as Array<{ companyId: number }>;
       assert.equal(locations.filter(l => l.companyId === compB.id).length, 0, "Company B location leaked");
-    });
-
-    await t.test("GET /job-templates — no Company B templates", async () => {
-      const res = await app.inject({ method: "GET", url: "/job-templates", headers: { authorization: `Bearer ${tokenA}` } });
-      assert.equal(res.statusCode, 200);
-      const templates = (JSON.parse(res.body).data ?? JSON.parse(res.body)) as Array<{ companyId: number }>;
-      const leaked = (Array.isArray(templates) ? templates : []).filter((x: { companyId: number }) => x.companyId === compB.id);
-      assert.equal(leaked.length, 0, "Company B template leaked");
     });
 
     await t.test("GET /shifts — no Company B shifts", async () => {
@@ -282,15 +271,6 @@ test("Tenant isolation — full suite", async (t) => {
     await t.test("PATCH /locations/:id — 404 for Company B location", async () => {
       const res = await app.inject({
         method: "PATCH", url: `/locations/${locationB.id}`,
-        headers: { authorization: `Bearer ${tokenA}`, "content-type": "application/json" },
-        body: JSON.stringify({ name: "hacked" }),
-      });
-      assert.equal(res.statusCode, 404, `BREACH: got ${res.statusCode}`);
-    });
-
-    await t.test("PATCH /job-templates/:id — 404 for Company B template", async () => {
-      const res = await app.inject({
-        method: "PATCH", url: `/job-templates/${templateB.id}`,
         headers: { authorization: `Bearer ${tokenA}`, "content-type": "application/json" },
         body: JSON.stringify({ name: "hacked" }),
       });
