@@ -73,6 +73,28 @@ async function recalculateDerivedRequirements(
   });
 }
 
+// ── Driver conflict check ─────────────────────────────────────────────────────
+// Returns the conflicting run if the driver is already assigned to a non-cancelled
+// run on the same planned date (excluding the run being updated, if any).
+async function findDriverConflict(
+  tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
+  companyId:    number,
+  driverId:     number,
+  plannedDate:  Date,
+  excludeRunId: number | null = null,
+): Promise<{ id: number; runReference: string } | null> {
+  return tx.run.findFirst({
+    where: {
+      companyId,
+      assignedDriverId: driverId,
+      plannedDate,
+      status: { notIn: ["cancelled"] },
+      ...(excludeRunId != null ? { id: { not: excludeRunId } } : {}),
+    },
+    select: { id: true, runReference: true },
+  });
+}
+
 // ── Standard run include ──────────────────────────────────────────────────────
 const RUN_DETAIL_INCLUDE = {
   driver: {
@@ -117,18 +139,34 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     };
     const { companyId, userId } = request.user!;
 
-    if (body.assignedDriverId != null) {
-      const driver = await prisma.driverProfile.findFirst({
-        where: { id: body.assignedDriverId, companyId, status: "active" },
-      });
-      if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
-    }
-
     const year = body.plannedDate
       ? new Date(body.plannedDate).getFullYear()
       : new Date().getFullYear();
 
+    const plannedDate = body.plannedDate ? new Date(body.plannedDate) : null;
+
     const run = await prisma.$transaction(async (tx) => {
+      // Validate driver and check for same-day conflict inside the transaction
+      // so the check + write are atomic (minimises the race window).
+      if (body.assignedDriverId != null) {
+        const driver = await tx.driverProfile.findFirst({
+          where: { id: body.assignedDriverId, companyId, status: "active" },
+        });
+        if (!driver) {
+          throw Object.assign(new Error("Driver not found or inactive"), { statusCode: 400, code: "DRIVER_NOT_FOUND" });
+        }
+
+        if (plannedDate) {
+          const conflict = await findDriverConflict(tx, companyId, body.assignedDriverId, plannedDate);
+          if (conflict) {
+            throw Object.assign(
+              new Error(`Driver is already assigned to run ${conflict.runReference} on this date — remove that assignment first or choose a different driver.`),
+              { statusCode: 409, code: "DRIVER_CONFLICT", conflictingRunId: conflict.id, conflictingRunRef: conflict.runReference },
+            );
+          }
+        }
+      }
+
       const runReference = await generateRunReference(companyId, year, tx);
 
       return tx.run.create({
@@ -242,12 +280,11 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const run = await prisma.run.findFirst({ where: { id, companyId } });
     if (!run) return reply.status(404).send({ error: "Run not found" });
 
-    if (body.assignedDriverId != null) {
-      const driver = await prisma.driverProfile.findFirst({
-        where: { id: body.assignedDriverId, companyId, status: "active" },
-      });
-      if (!driver) return reply.status(400).send({ error: "Driver not found or inactive" });
-    }
+    // Determine the effective driver + date after this patch (may not be changing)
+    const newDriverId  = "assignedDriverId" in body ? (body.assignedDriverId ?? null) : run.assignedDriverId;
+    const newDate      = "plannedDate"      in body
+      ? (body.plannedDate ? new Date(body.plannedDate) : null)
+      : run.plannedDate;
 
     // Use Record to avoid Prisma's InputType union confusion between relation and scalar forms
     const updateData: Record<string, unknown> = {};
@@ -267,10 +304,33 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if ("compatibilityOverridden"     in body) updateData.compatibilityOverridden     = body.compatibilityOverridden;
     if ("compatibilityOverrideReason" in body) updateData.compatibilityOverrideReason = body.compatibilityOverrideReason ?? null;
 
-    const updated = await prisma.run.update({
-      where:   { id },
-      data:    updateData,
-      include: RUN_DETAIL_INCLUDE,
+    const updated = await prisma.$transaction(async (tx) => {
+      // Validate driver exists and is active
+      if (newDriverId != null && "assignedDriverId" in body) {
+        const driver = await tx.driverProfile.findFirst({
+          where: { id: newDriverId, companyId, status: "active" },
+        });
+        if (!driver) {
+          throw Object.assign(new Error("Driver not found or inactive"), { statusCode: 400, code: "DRIVER_NOT_FOUND" });
+        }
+      }
+
+      // Conflict check: driver+date pair must be unique across non-cancelled runs
+      if (newDriverId != null && newDate != null) {
+        const conflict = await findDriverConflict(tx, companyId, newDriverId, newDate, id);
+        if (conflict) {
+          throw Object.assign(
+            new Error(`Driver is already assigned to run ${conflict.runReference} on this date — remove that assignment first or choose a different driver.`),
+            { statusCode: 409, code: "DRIVER_CONFLICT", conflictingRunId: conflict.id, conflictingRunRef: conflict.runReference },
+          );
+        }
+      }
+
+      return tx.run.update({
+        where:   { id },
+        data:    updateData,
+        include: RUN_DETAIL_INCLUDE,
+      });
     });
 
     return reply.send(updated);
