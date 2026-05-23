@@ -559,6 +559,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         weight:               body.weight  != null ? body.weight  : source.weight,
         tempControlled:       source.tempControlled,
         hazardClass:          source.hazardClass,
+        tunnelCode:           source.tunnelCode,
         vehicleCategory:      source.vehicleCategory,
         loadData:             source.loadData ?? Prisma.JsonNull,
         specialRequirements:  source.specialRequirements ?? Prisma.JsonNull,

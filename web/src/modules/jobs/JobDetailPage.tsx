@@ -302,6 +302,7 @@ export default function JobDetailPage() {
                 <Field label="Dimensions"   value={job.dimensions} />
                 {job.tempControlled && <Field label="Temperature" value={job.tempRange || "Temp-controlled"} />}
                 {job.hazardClass    && <Field label="ADR class"   value={job.hazardClass} />}
+                {(job as any).tunnelCode && <Field label="Tunnel code" value={(job as any).tunnelCode} />}
                 {job.fragile        && <Field label="Fragile"     value="Yes" />}
                 {job.stackable      && <Field label="Stackable"   value="Yes" />}
                 {job.weighbridgeRequired    && <Field label="Weighbridge"       value="Required" />}

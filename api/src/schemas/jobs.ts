@@ -92,6 +92,7 @@ const JobCreateBaseSchema = z.object({
   tempControlled:          z.boolean().optional(),
   tempRange:               z.string().optional(),
   hazardClass:             z.string().optional(),
+  tunnelCode:              z.string().nullable().optional(),
   photosRequired:          z.boolean().optional(),
   weighbridgeRequired:     z.boolean().optional(),
   securingRequirements:    z.array(z.string()).nullable().optional(),

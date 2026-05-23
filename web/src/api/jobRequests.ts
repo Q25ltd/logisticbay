@@ -191,6 +191,7 @@ export interface SubmitRequestBody {
   tempRange?:              string;
   fragile?:                boolean;
   hazardClass?:            string;
+  tunnelCode?:             string;
   securingRequirements?:   string[];
   specialRequirements?:    string[];
   dimensions?:             string;

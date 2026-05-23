@@ -191,6 +191,7 @@ export async function createJob(
         tempControlled:      body.tempControlled ?? false,
         tempRange:           body.tempRange?.trim() || null,
         hazardClass:         body.hazardClass?.trim() || null,
+        tunnelCode:          body.tunnelCode?.trim()  || null,
         photosRequired:      body.photosRequired ?? false,
         weighbridgeRequired: body.weighbridgeRequired ?? false,
         securingRequirements: jsonOrNull(Array.isArray(body.securingRequirements) ? body.securingRequirements : []),
@@ -419,6 +420,7 @@ export async function patchJob(
         tempControlled:      p(body.tempControlled, job.tempControlled),
         tempRange:           body.tempRange  !== undefined ? (body.tempRange?.trim()  || null) : job.tempRange,
         hazardClass:         body.hazardClass !== undefined ? (body.hazardClass?.trim() || null) : job.hazardClass,
+        tunnelCode:          body.tunnelCode  !== undefined ? (body.tunnelCode?.trim()  || null) : (job as any).tunnelCode,
         photosRequired:      p(body.photosRequired, job.photosRequired),
         weighbridgeRequired: p(body.weighbridgeRequired, job.weighbridgeRequired),
         driverNoteChips: body.driverNoteChips !== undefined

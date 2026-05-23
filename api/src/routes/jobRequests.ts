@@ -91,6 +91,7 @@ function buildPRFJobData(
     tempControlled:      b.tempControlled      ?? false,
     tempRange:           b.tempRange?.trim()           || null,
     hazardClass:         b.hazardClass?.trim()         || null,
+    tunnelCode:          b.tunnelCode?.trim()           || null,
     priority:            b.priority            ?? "normal",
     serviceType:         (() => {
       const ss = b.stops ?? [];

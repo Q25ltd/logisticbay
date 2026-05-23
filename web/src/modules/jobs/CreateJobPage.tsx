@@ -296,6 +296,7 @@ export default function CreateJobPage() {
   // ── Section 04 — Special requirements ───────────────────────────────────────
   const [specialItems,       setSpecialItems]      = useState<string[]>([]);
   const [hazardClass,        setHazardClass]        = useState("");
+  const [tunnelCode,         setTunnelCode]         = useState("");
   const [unNumber,           setUnNumber]          = useState("");
   const [packingGroup,       setPackingGroup]      = useState("");
   const [hazardousQtyKg,     setHazardousQtyKg]    = useState("");
@@ -779,7 +780,8 @@ export default function CreateJobPage() {
       canSplitShipment,
       // Special requirements — flat canonical names
       specialRequirements:      specialItems.length ? specialItems : undefined,
-      hazardClass:              hazardClass.trim() || undefined,
+      hazardClass:              hazardClass.trim()  || undefined,
+      tunnelCode:               tunnelCode.trim()   || undefined,
       // Transport requirements — flat canonical names
       vehicleCategory:          plannerDecides ? undefined : vehicleCategory || undefined,
       bodyTypes:                plannerDecides ? undefined : bodyTypes.length ? bodyTypes : undefined,
@@ -1375,6 +1377,20 @@ export default function CreateJobPage() {
                 <div className="space-y-3 border-l-2 border-red-200 pl-4">
                   <TextField label="ADR class" value={hazardClass} onChange={setHazardClass}
                     placeholder="Class 3 — Flammable liquids" />
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted">ADR tunnel restriction code</label>
+                    <select value={tunnelCode} onChange={e => setTunnelCode(e.target.value)}
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+                      <option value="">Not specified</option>
+                      <option value="B">B — Most restricted (explosives etc.)</option>
+                      <option value="C">C</option>
+                      <option value="C/D">C/D</option>
+                      <option value="C/E">C/E</option>
+                      <option value="D">D</option>
+                      <option value="D/E">D/E</option>
+                      <option value="E">E — Least restricted</option>
+                    </select>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <TextField label="UN number" value={unNumber} onChange={setUnNumber} placeholder="UN 1993" />
                     <TextField label="Packing group" value={packingGroup} onChange={setPackingGroup} placeholder="I, II or III" />

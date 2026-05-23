@@ -345,6 +345,7 @@ model Job {
   tempControlled       Boolean @default(false)
   tempRange            String?
   hazardClass          String?
+  tunnelCode           String?                // ADR tunnel restriction code (B / C / C/D / C/E / D / D/E / E)
   photosRequired       Boolean @default(false)
   weighbridgeRequired  Boolean @default(false)
   securingRequirements Json?   // string[]
