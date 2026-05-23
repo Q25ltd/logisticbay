@@ -1850,7 +1850,7 @@ export default function PublicRequestForm() {
                 hint="Helps the planner choose the right trailer. Leave blank if unsure." />
 
               {/* ── Conditional: Pallets ── */}
-              {goodsTypes.includes("pallets") && (
+              {(goodsTypes.includes("pallets") || unit === "pallets") && (
                 <div className="space-y-4 pt-1">
                   <div className={`grid ${unit !== "pallets" ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
                     {unit !== "pallets" && (
