@@ -43,6 +43,7 @@ const SERVICE_TIMES: [string, string][] = [
 const LOAD_UNITS: [string, string][] = [
   ["pallets",      "Pallets"],
   ["roll_cages",   "Roll cages / yorks"],
+  ["ldm",          "Loading metres (ldm)"],
   ["tonnes",       "Tonnes"],
   ["kg",           "Kilograms"],
   ["bags",         "Bags"],

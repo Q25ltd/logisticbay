@@ -57,10 +57,11 @@ export const DRIVER_ENDORSEMENT_OPTS: [string, string][] = DRIVER_ENDORSEMENTS.m
 export const TRAILER_LENGTH_OPTS: [string, string][] = TRAILER_LENGTHS.map(x => [x.value, x.label]);
 
 export const LOAD_UNITS: [string, string][] = [
-  ["tonnes",       "Tonnes"],
-  ["kg",           "Kg"],
   ["pallets",      "Pallets"],
   ["roll_cages",   "Roll cages / yorks"],
+  ["ldm",          "Loading metres (ldm)"],
+  ["tonnes",       "Tonnes"],
+  ["kg",           "Kg"],
   ["bags",         "Bags"],
   ["loads",        "Loads"],
   ["litres",       "Litres"],
