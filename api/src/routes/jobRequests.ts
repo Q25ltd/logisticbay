@@ -2,6 +2,7 @@
  * Job intake routes.
  *
  * Public (no auth):
+ *   GET  /og/request/:token       — OG meta tag HTML for social-media link previews
  *   GET  /public/request/:token   — resolve link, return company/customer info + template
  *   POST /public/request/:token   — submit PRF → writes directly to Job + JobPart
  *
@@ -21,6 +22,7 @@ import type { FastifyInstance }  from "fastify";
 import type { ZodType }          from "zod";
 import { PrismaClient, Prisma }  from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
+import { env }                   from "../lib/env.js";
 import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
 import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
@@ -34,6 +36,14 @@ import {
 
 function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function parseBody<T>(schema: ZodType<T>, body: unknown): { data: T } | { error: string; errors: string[] } {
@@ -163,6 +173,70 @@ async function resolveLink(prisma: PrismaClient, param: string) {
 // ─── routes ─────────────────────────────────────────────────────────────────
 
 export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
+
+  // ── GET /og/request/:token ────────────────────────────────────────────────
+  //
+  // Social-media crawlers (Facebook, WhatsApp, iMessage, LinkedIn, Slack…)
+  // call this endpoint to get Open Graph meta tags. Browsers and apps are
+  // immediately redirected to the SPA via <meta http-equiv="refresh">.
+  //
+  // Vercel Edge Middleware detects bot User-Agents on /request/:token and
+  // proxies the request here so the crawler gets real OG tags.
+  app.get("/og/request/:token", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const appUrl    = env.APP_URL ?? "https://www.logisticbay.com";
+
+    const link = await resolveLink(prisma, token).catch(() => null);
+    const isValid =
+      link &&
+      link.isActive &&
+      !(link.expiresAt && link.expiresAt < new Date());
+
+    const companyName = isValid ? link!.company.name : null;
+    const title       = companyName
+      ? `${companyName} — Transport Request`
+      : "Submit a Transport Request";
+    const description = companyName
+      ? `Submit a transport job request to ${companyName} via LogisticBay.`
+      : "Submit a transport job request via LogisticBay.";
+    const redirectUrl = `${appUrl}/request/${encodeURIComponent(token)}`;
+    const imageUrl    = `${appUrl}/og-image.png`;
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}" />
+
+  <meta property="og:type"        content="website" />
+  <meta property="og:site_name"   content="LogisticBay" />
+  <meta property="og:title"       content="${escapeHtml(title)}" />
+  <meta property="og:description" content="${escapeHtml(description)}" />
+  <meta property="og:image"       content="${imageUrl}" />
+  <meta property="og:image:width"  content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:url"         content="${redirectUrl}" />
+
+  <meta name="twitter:card"        content="summary_large_image" />
+  <meta name="twitter:title"       content="${escapeHtml(title)}" />
+  <meta name="twitter:description" content="${escapeHtml(description)}" />
+  <meta name="twitter:image"       content="${imageUrl}" />
+
+  <!-- Redirect real browsers to the SPA immediately -->
+  <meta http-equiv="refresh" content="0; url=${redirectUrl}" />
+</head>
+<body>
+  <p>Redirecting… <a href="${redirectUrl}">Click here if not redirected</a></p>
+  <script>window.location.replace("${redirectUrl.replace(/"/g, '\\"')}");</script>
+</body>
+</html>`;
+
+    return reply
+      .header("Content-Type", "text/html; charset=utf-8")
+      .header("Cache-Control", "public, max-age=300")
+      .send(html);
+  });
 
   // ── GET /public/request/:token ─────────────────────────────────────────────
   app.get("/public/request/:token", async (request, reply) => {
