@@ -42,6 +42,12 @@ export interface ParsedJobData {
   warnings:              string[];
 }
 
+export interface StopAreaHint {
+  type:      string;   // "collection" | "delivery"
+  areaType?: string;
+  label?:    string;
+}
+
 export interface VehicleSuggestionInput {
   weight?:              number;
   quantity?:            number;
@@ -52,6 +58,7 @@ export interface VehicleSuggestionInput {
   hazardClass?:         string;
   specialRequirements?: string[];
   stopCount?:           number;
+  stops?:               StopAreaHint[];  // area context per stop
 }
 
 export interface VehicleSuggestion {
@@ -60,11 +67,31 @@ export interface VehicleSuggestion {
   confidence:      "high" | "medium" | "low";
 }
 
+export type AreaType =
+  | "industrial"
+  | "residential"
+  | "rural"
+  | "urban"
+  | "retail"
+  | "port"
+  | "unknown";
+
+export interface AreaInfo {
+  postcode:  string;
+  areaType:  AreaType;
+  label:     string;
+  emoji:     string;
+  lat?:      number;
+  lng?:      number;
+}
+
 export const aiApi = {
-  parseRequest: (text: string) =>
+  parseRequest:  (text: string) =>
     api.post<ParsedJobData>("/ai/parse-request", { text }),
   suggestVehicle: (input: VehicleSuggestionInput) =>
     api.post<VehicleSuggestion>("/ai/suggest-vehicle", input),
-  status: () =>
+  lookupAreas:   (postcodes: string[]) =>
+    api.post<AreaInfo[]>("/ai/area-lookup", { postcodes }),
+  status:        () =>
     api.get<{ enabled: boolean }>("/ai/status"),
 };

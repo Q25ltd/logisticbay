@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
+import { aiApi, type AreaInfo, type VehicleSuggestion } from "../../api/ai";
 import type { Job, JobPart } from "../../types";
 import RepeatJobModal from "./RepeatJobModal";
 import { Badge } from "../../components/Badge";
+import { BODY_CATEGORIES, BODY_TYPES_BY_CATEGORY, GVW_CLASSES } from "../../constants/vehicleTaxonomy";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -129,21 +131,37 @@ export default function JobDetailPage() {
   const [error,       setError]       = useState("");
   const [toast,       setToast]       = useState("");
   const [showRepeat,  setShowRepeat]  = useState(false);
+  // stop area types: keyed by normalised postcode (no spaces, uppercase)
+  const [stopAreas, setStopAreas] = useState<Record<string, AreaInfo>>({});
 
-  async function load() {
+  const load = useCallback(async () => {
     const numId = parseInt(id!, 10);
     if (!id || isNaN(numId)) { setError("Job not found."); setLoading(false); return; }
     setLoading(true); setError("");
     try {
-      setJob(await jobsApi.get(numId));
+      const loaded = await jobsApi.get(numId);
+      setJob(loaded);
+      // Async area lookup — non-blocking, silently ignored on failure
+      const postcodes = ((loaded as any).stops ?? [])
+        .map((s: any) => s.postcode)
+        .filter((p: unknown): p is string => typeof p === "string" && p.trim().length > 0);
+      if (postcodes.length > 0) {
+        aiApi.lookupAreas(postcodes)
+          .then(areas => {
+            const map: Record<string, AreaInfo> = {};
+            areas.forEach(a => { map[a.postcode.replace(/\s+/g, "").toUpperCase()] = a; });
+            setStopAreas(map);
+          })
+          .catch(() => {}); // silently fail — not critical
+      }
     } catch (err: unknown) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }
+  }, [id]);
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [load]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -303,43 +321,12 @@ export default function JobDetailPage() {
             </Card>
           )}
 
-          {/* Vehicle requirements — always visible; warns when missing */}
-          <Card title="Vehicle requirements">
-            {!hasVehicle ? (
-              <div className="flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                <span className="text-amber-500 text-base leading-none mt-0.5">⚠</span>
-                <div>
-                  <div className="font-semibold text-amber-800">No vehicle type set</div>
-                  <div className="text-xs text-amber-700 mt-0.5">
-                    Vehicle requirements must be added before this job can be marked as Ready to plan.
-                    <button
-                      className="ml-1 underline font-medium hover:no-underline"
-                      onClick={() => (window.location.href = `/app/jobs/${job.id}/edit`)}
-                    >
-                      Edit job →
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-                  <Field label="Category"   value={job.vehicleCategory} />
-                  <Field label="Min GVW"    value={job.minGvwClass} />
-                  <Field label="Access"     value={job.vehicleAccessNotes} />
-                </div>
-                {(job.bodyTypes as string[] | null)?.length ? (
-                  <ChipRow label="Body types" items={job.bodyTypes as string[]} className="mt-3" />
-                ) : null}
-                {(job.equipment as string[] | null)?.length ? (
-                  <ChipRow label="Equipment" items={job.equipment as string[]} className="mt-2" />
-                ) : null}
-                {(job.trailersAllowed as string[] | null)?.length ? (
-                  <ChipRow label="Trailers allowed" items={job.trailersAllowed as string[]} className="mt-2" />
-                ) : null}
-              </>
-            )}
-          </Card>
+          {/* Vehicle requirements — interactive picker with AI suggestion */}
+          <VehiclePanel
+            job={job}
+            stopAreas={stopAreas}
+            onSaved={() => { showToast("Vehicle updated ✓"); load(); }}
+          />
 
           {/* Stops */}
           <Card title={`Stops (${stops.length})`}>
@@ -347,9 +334,13 @@ export default function JobDetailPage() {
               <p className="text-sm" style={{ color: "#9ca3af" }}>No stops added yet.</p>
             ) : (
               <div className="space-y-0">
-                {stops.map((s, i) => (
-                  <StopRow key={s.id ?? i} stop={s} isLast={i === stops.length - 1} />
-                ))}
+                {stops.map((s, i) => {
+                  const normPC = s.postcode?.replace(/\s+/g, "").toUpperCase() ?? "";
+                  const area   = normPC ? stopAreas[normPC] : undefined;
+                  return (
+                    <StopRow key={s.id ?? i} stop={s} isLast={i === stops.length - 1} area={area} />
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -555,7 +546,7 @@ function LoadDataSection({ data }: { data: Record<string, unknown> }) {
 
 // ── Stop row ─────────────────────────────────────────────────────────────────
 
-function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
+function StopRow({ stop: s, isLast, area }: { stop: JobPart; isLast: boolean; area?: AreaInfo }) {
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
@@ -605,6 +596,19 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
               (s.country && s.country !== "United Kingdom" && s.country !== "GB") ? s.country : null,
             ].filter(Boolean).join(", ")}
           </div>
+        )}
+        {/* Area-type badge (loaded async from postcodes.io + OSM) */}
+        {area && area.areaType !== "unknown" && (
+          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full mt-1 ${
+            area.areaType === "industrial"  ? "bg-orange-50 text-orange-700" :
+            area.areaType === "residential" ? "bg-blue-50 text-blue-700" :
+            area.areaType === "rural"       ? "bg-green-50 text-green-700" :
+            area.areaType === "port"        ? "bg-cyan-50 text-cyan-700" :
+            area.areaType === "retail"      ? "bg-purple-50 text-purple-700" :
+            "bg-slate-100 text-slate-600"
+          }`}>
+            {area.emoji} {area.label || area.areaType}
+          </span>
         )}
         {s.locationType && (
           <div className="text-xs mt-0.5 text-slate-400 italic">
@@ -872,5 +876,342 @@ function ChipRow({
         ))}
       </div>
     </div>
+  );
+}
+
+// ── Vehicle panel ─────────────────────────────────────────────────────────────
+
+const VEHICLE_BUTTONS = [
+  { value: "van",        label: "Van",        sub: "≤3.5t LCV",        emoji: "🚐" },
+  { value: "luton_van",  label: "Luton van",  sub: "≤3.5t box",        emoji: "📦" },
+  { value: "pickup",     label: "Pickup",     sub: "4×4 / dropside",   emoji: "🛻" },
+  { value: "rigid",      label: "Rigid HGV",  sub: "7.5t–26t",         emoji: "🚛" },
+  { value: "tractor",    label: "Artic",       sub: "44t tractor unit", emoji: "🚚" },
+  { value: "drawbar",    label: "Drawbar",     sub: "Rigid + trailer",  emoji: "🔗" },
+] as const;
+
+const SPECIALIST_CATS = BODY_CATEGORIES.filter(
+  c => !VEHICLE_BUTTONS.some(b => b.value === c.value),
+);
+
+function VehiclePanel({
+  job,
+  stopAreas,
+  onSaved,
+}: {
+  job:       Job;
+  stopAreas: Record<string, AreaInfo>;
+  onSaved:   () => void;
+}) {
+  const hasVehicle = !!(job.vehicleCategory || (job.bodyTypes as string[] | null)?.length);
+  const [editMode, setEditMode] = useState(!hasVehicle);
+
+  // Picker state (pre-fill from job when editing)
+  const [category,   setCategory]   = useState(job.vehicleCategory ?? "");
+  const [bodyTypes,  setBodyTypes]  = useState<string[]>((job.bodyTypes as string[] | null) ?? []);
+  const [minGvw,     setMinGvw]     = useState(job.minGvwClass ?? "");
+  const [saving,     setSaving]     = useState(false);
+  const [saveErr,    setSaveErr]    = useState("");
+
+  // AI suggestion state
+  const [suggesting,  setSuggesting]  = useState(false);
+  const [suggestion,  setSuggestion]  = useState<VehicleSuggestion | null>(null);
+  const [suggestErr,  setSuggestErr]  = useState("");
+
+  // Sync state if job reloads
+  useEffect(() => {
+    setCategory(job.vehicleCategory ?? "");
+    setBodyTypes((job.bodyTypes as string[] | null) ?? []);
+    setMinGvw(job.minGvwClass ?? "");
+    setEditMode(!hasVehicle);
+    setSuggestion(null);
+  }, [job.id, job.vehicleCategory]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Body types available for selected category
+  const availableBodyTypes: string[] =
+    category ? (BODY_TYPES_BY_CATEGORY as Record<string, string[]>)[category] ?? [] : [];
+
+  // GVW options for selected category
+  const availableGvw = GVW_CLASSES.filter(g =>
+    (g.applicableTo as readonly string[]).includes(category),
+  );
+
+  function toggleBodyType(bt: string) {
+    setBodyTypes(prev =>
+      prev.includes(bt) ? prev.filter(x => x !== bt) : [...prev, bt],
+    );
+  }
+
+  async function handleSuggest() {
+    setSuggesting(true); setSuggestion(null); setSuggestErr("");
+    try {
+      const stops = ((job.stops ?? []) as JobPart[]).map(s => {
+        const norm = s.postcode?.replace(/\s+/g, "").toUpperCase() ?? "";
+        const area = norm ? stopAreas[norm] : undefined;
+        return {
+          type:     s.type ?? "delivery",
+          areaType: area?.areaType,
+          label:    area?.label,
+        };
+      });
+      const sug = await aiApi.suggestVehicle({
+        weight:           job.weight           ?? undefined,
+        quantity:         job.quantity         ?? undefined,
+        quantityUnit:     job.quantityUnit      ?? undefined,
+        goodsType:        job.goodsType         ?? undefined,
+        goodsDescription: job.goodsDescription  ?? undefined,
+        tempControlled:   (job as any).tempControlled ?? undefined,
+        hazardClass:      (job as any).hazardClass    ?? undefined,
+        specialRequirements: ((job as any).specialRequirements as string[] | null) ?? undefined,
+        stopCount:        (job.stops ?? []).length || undefined,
+        stops:            stops.length ? stops : undefined,
+      });
+      setSuggestion(sug);
+    } catch (e: unknown) {
+      setSuggestErr((e as Error).message ?? "Could not get suggestion — try again");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  function applySuggestion() {
+    if (!suggestion) return;
+    setCategory(suggestion.vehicleCategory);
+    setBodyTypes([]);
+    setMinGvw("");
+    setSuggestion(null);
+  }
+
+  async function handleSave() {
+    if (!category) { setSaveErr("Please select a vehicle type."); return; }
+    setSaving(true); setSaveErr("");
+    try {
+      await jobsApi.update(job.id, {
+        vehicleCategory: category,
+        bodyTypes:       bodyTypes.length ? bodyTypes : null,
+        minGvwClass:     minGvw || null,
+      });
+      setEditMode(false);
+      onSaved();
+    } catch (e: unknown) {
+      setSaveErr((e as Error).message ?? "Could not save — please try again");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── View mode (vehicle already set) ──────────────────────────────────────────
+  if (!editMode && hasVehicle) {
+    const catBtn = VEHICLE_BUTTONS.find(b => b.value === job.vehicleCategory);
+    const specCat = SPECIALIST_CATS.find(c => c.value === job.vehicleCategory);
+    const catLabel = catBtn
+      ? `${catBtn.emoji} ${catBtn.label}`
+      : specCat
+        ? specCat.label
+        : job.vehicleCategory ?? "";
+
+    return (
+      <Card title="Vehicle requirements">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <div className="text-sm font-bold" style={{ color: "#0f172a" }}>{catLabel}</div>
+            {job.minGvwClass && (
+              <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>Min GVW: {job.minGvwClass}</div>
+            )}
+            {job.vehicleAccessNotes && (
+              <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{job.vehicleAccessNotes}</div>
+            )}
+          </div>
+          <button
+            onClick={() => setEditMode(true)}
+            className="text-xs text-blue-600 hover:underline shrink-0"
+          >
+            Change
+          </button>
+        </div>
+        {(job.bodyTypes as string[] | null)?.length ? (
+          <ChipRow label="Body types" items={job.bodyTypes as string[]} className="mt-3" />
+        ) : null}
+        {(job.equipment as string[] | null)?.length ? (
+          <ChipRow label="Equipment" items={job.equipment as string[]} className="mt-2" />
+        ) : null}
+        {(job.trailersAllowed as string[] | null)?.length ? (
+          <ChipRow label="Trailers allowed" items={job.trailersAllowed as string[]} className="mt-2" />
+        ) : null}
+      </Card>
+    );
+  }
+
+  // ── Edit / set mode ───────────────────────────────────────────────────────────
+  return (
+    <Card title="Vehicle requirements">
+      {saveErr && (
+        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+          {saveErr}
+        </div>
+      )}
+
+      {/* AI suggestion banner */}
+      {suggestion && (
+        <div className={`mb-3 rounded-xl border px-3 py-2.5 text-sm ${
+          suggestion.confidence === "high"   ? "bg-green-50  border-green-200" :
+          suggestion.confidence === "medium" ? "bg-blue-50   border-blue-200" :
+                                               "bg-amber-50  border-amber-200"
+        }`}>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="font-semibold">
+                🤖 {VEHICLE_BUTTONS.find(b => b.value === suggestion.vehicleCategory)?.emoji}{" "}
+                {VEHICLE_BUTTONS.find(b => b.value === suggestion.vehicleCategory)?.label
+                  ?? BODY_CATEGORIES.find(c => c.value === suggestion.vehicleCategory)?.label
+                  ?? suggestion.vehicleCategory}
+              </span>
+              <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${
+                suggestion.confidence === "high"   ? "bg-green-100 text-green-700" :
+                suggestion.confidence === "medium" ? "bg-blue-100  text-blue-700" :
+                                                     "bg-amber-100 text-amber-700"
+              }`}>
+                {suggestion.confidence === "high" ? "High confidence" :
+                 suggestion.confidence === "medium" ? "Medium confidence" : "Low confidence"}
+              </span>
+            </div>
+            <button
+              onClick={() => setSuggestion(null)}
+              className="text-slate-400 hover:text-slate-600 text-base leading-none"
+            >×</button>
+          </div>
+          <p className="text-xs mt-1" style={{ color: "#374151" }}>{suggestion.reasoning}</p>
+          <button
+            onClick={applySuggestion}
+            className="mt-2 btn bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5"
+          >
+            Apply this suggestion
+          </button>
+        </div>
+      )}
+
+      {suggestErr && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          {suggestErr}
+        </div>
+      )}
+
+      {/* Category picker */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#94a3b8" }}>
+            Vehicle type
+          </span>
+          <button
+            onClick={handleSuggest}
+            disabled={suggesting}
+            className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1"
+          >
+            {suggesting ? (
+              <><span className="animate-spin">⟳</span> Thinking…</>
+            ) : (
+              <>🤖 Suggest for this job</>
+            )}
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {VEHICLE_BUTTONS.map(btn => (
+            <button
+              key={btn.value}
+              onClick={() => { setCategory(btn.value); setBodyTypes([]); setMinGvw(""); }}
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 py-2.5 px-1 text-center transition-all ${
+                category === btn.value
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white hover:border-slate-300 text-slate-600"
+              }`}
+            >
+              <span className="text-xl">{btn.emoji}</span>
+              <span className="text-xs font-bold leading-tight">{btn.label}</span>
+              <span className="text-[10px] leading-tight" style={{ color: "#9ca3af" }}>{btn.sub}</span>
+            </button>
+          ))}
+        </div>
+        {/* Specialist vehicles dropdown */}
+        <div className="mt-2">
+          <select
+            className="input text-sm"
+            value={VEHICLE_BUTTONS.some(b => b.value === category) ? "" : category}
+            onChange={e => { if (e.target.value) { setCategory(e.target.value); setBodyTypes([]); setMinGvw(""); } }}
+          >
+            <option value="">Specialist / other vehicle…</option>
+            {SPECIALIST_CATS.map(c => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Body type chips (for the selected category) */}
+      {category && availableBodyTypes.length > 0 && (
+        <div className="mb-3">
+          <span className="text-xs font-semibold uppercase tracking-wide block mb-1.5" style={{ color: "#94a3b8" }}>
+            Body type (optional)
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {availableBodyTypes.map(bt => (
+              <button
+                key={bt}
+                onClick={() => toggleBodyType(bt)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                  bodyTypes.includes(bt)
+                    ? "border-blue-400 bg-blue-50 text-blue-700 font-medium"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                {cap(bt.replace(/_/g, " "))}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Min GVW */}
+      {availableGvw.length > 0 && (
+        <div className="mb-3">
+          <span className="text-xs font-semibold uppercase tracking-wide block mb-1" style={{ color: "#94a3b8" }}>
+            Minimum GVW (optional)
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {availableGvw.map(g => (
+              <button
+                key={g.value}
+                onClick={() => setMinGvw(prev => prev === g.value ? "" : g.value)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                  minGvw === g.value
+                    ? "border-blue-400 bg-blue-50 text-blue-700 font-medium"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={saving || !category}
+          className="btn bg-primary hover:opacity-90 text-white text-sm px-4 py-2 disabled:opacity-40"
+        >
+          {saving ? "Saving…" : "Save vehicle"}
+        </button>
+        {hasVehicle && (
+          <button
+            onClick={() => { setEditMode(false); setCategory(job.vehicleCategory ?? ""); setBodyTypes((job.bodyTypes as string[] | null) ?? []); setMinGvw(job.minGvwClass ?? ""); setSuggestion(null); setSaveErr(""); }}
+            className="text-sm text-slate-400 hover:text-slate-700"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </Card>
   );
 }

@@ -18,6 +18,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { env }                  from "../lib/env.js";
 import { parseTransportRequest, type SavedLocationHint } from "../services/parseRequestService.js";
 import { suggestVehicle, type VehicleSuggestionInput }   from "../services/suggestVehicleService.js";
+import { lookupAreaTypes } from "../services/areaLookupService.js";
 
 export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
 
@@ -110,6 +111,7 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
           hazardClass:         typeof body.hazardClass === "string"  ? body.hazardClass  : undefined,
           specialRequirements: Array.isArray(body.specialRequirements) ? body.specialRequirements : undefined,
           stopCount:           typeof body.stopCount === "number" ? body.stopCount : undefined,
+          stops:               Array.isArray(body.stops) ? body.stops : undefined,
         });
         return reply.send(suggestion);
       } catch (err: unknown) {
@@ -121,6 +123,38 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         const code   = isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR";
         app.log.error({ err, code }, "AI suggest-vehicle error");
         return reply.status(status).send({ error: code, message });
+      }
+    },
+  );
+
+  // ── POST /ai/area-lookup ───────────────────────────────────────────────────
+  //
+  // Classifies UK postcode(s) as industrial / residential / rural / urban / port.
+  // Uses postcodes.io (lat/lng) + Nominatim OSM (reverse geocode).
+  // No API key required. Max 20 postcodes per request.
+  app.post(
+    "/ai/area-lookup",
+    {
+      preHandler: [authenticate, requireRole("company_owner", "planner")],
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      const body = request.body as { postcodes?: unknown };
+      if (!Array.isArray(body.postcodes)) {
+        return reply.status(400).send({ error: "postcodes must be an array of strings" });
+      }
+      const postcodes = body.postcodes
+        .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+        .slice(0, 20);
+
+      if (!postcodes.length) return reply.send([]);
+
+      try {
+        const results = await lookupAreaTypes(postcodes);
+        return reply.send(results);
+      } catch (err: unknown) {
+        app.log.error({ err }, "area-lookup error");
+        return reply.status(500).send({ error: "Area lookup failed" });
       }
     },
   );

@@ -2,6 +2,12 @@ import { getAnthropicClient } from "../lib/anthropic.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface StopAreaHint {
+  type:      string;   // "collection" | "delivery"
+  areaType?: string;   // "industrial" | "residential" | "rural" | "urban" | "port" | "retail" | "unknown"
+  label?:    string;   // e.g. "Trafford Park Industrial Estate"
+}
+
 export interface VehicleSuggestionInput {
   weight?:               number;    // kg
   quantity?:             number;
@@ -12,6 +18,7 @@ export interface VehicleSuggestionInput {
   hazardClass?:          string;
   specialRequirements?:  string[];
   stopCount?:            number;
+  stops?:                StopAreaHint[];  // area context for each stop
 }
 
 export interface VehicleSuggestion {
@@ -40,7 +47,19 @@ export async function suggestVehicle(
 
   const loadBlock = lines.length > 0 ? lines.join("\n") : "No load details provided.";
 
-  const systemPrompt = `You are a UK road freight expert. Given a load description, recommend the most appropriate vehicle category.
+  // Build stop area block
+  let stopBlock = "";
+  if (input.stops?.length) {
+    const stopLines = input.stops.map((s, i) => {
+      const area = (s.areaType && s.areaType !== "unknown")
+        ? ` — ${s.areaType}${s.label ? ` (${s.label})` : ""}`
+        : "";
+      return `  Stop ${i + 1}: ${s.type}${area}`;
+    });
+    stopBlock = `\nSTOP AREAS:\n${stopLines.join("\n")}`;
+  }
+
+  const systemPrompt = `You are a UK road freight expert. Given a load description and stop locations, recommend the most appropriate vehicle category.
 Return ONLY a valid JSON object — no markdown, no explanation.`;
 
   const userPrompt = `VEHICLE CATEGORIES (pick exactly one):
@@ -54,10 +73,12 @@ NOTES:
 - Temperature-controlled loads usually need a fridge rigid or fridge artic.
 - Pallet count: 1 euro-pallet ≈ 300 kg average; a rigid fits up to ~26 pallets; an artic fits up to ~33.
 - When weight and pallet count conflict, use whichever requires the larger vehicle.
+- Residential and rural areas often have narrow roads — prefer smaller vehicles unless weight demands larger.
+- Industrial, port and distribution centre stops typically allow full-size artics.
 - If very little data is given, set confidence "low".
 
 LOAD DETAILS:
-${loadBlock}
+${loadBlock}${stopBlock}
 
 RESPONSE SCHEMA:
 {
