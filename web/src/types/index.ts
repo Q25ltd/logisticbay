@@ -228,7 +228,8 @@ export interface Job {
   alternativeReturnContactPhone?: string | null;
 
   // proof / quality
-  requirePOD?:       boolean;
+  requirePOD?:                  boolean;
+  photosRequiredOnRejection?:   boolean;
   validationStatus?: string;
   qualityScore?:     number;
 

@@ -85,6 +85,25 @@ const JOB_TYPE_LABEL: Record<string, string> = {
   container:     "Container",
 };
 
+const CAN_SPLIT_LABEL: Record<string, string> = {
+  must_stay_together: "Must stay together",
+  can_split:          "Can split",
+  preferred_together: "Prefer together",
+};
+
+const LOCATION_TYPE_LABEL: Record<string, string> = {
+  warehouse:        "Warehouse",
+  distribution_centre: "Distribution centre",
+  retail:           "Retail",
+  residential:      "Residential",
+  industrial:       "Industrial",
+  construction:     "Construction site",
+  farm:             "Farm",
+  port:             "Port / terminal",
+  airport:          "Airport",
+  other:            "Other",
+};
+
 const STOP_STATUS_LABEL: Record<string, string> = {
   pending:   "Pending",
   completed: "Completed",
@@ -149,11 +168,11 @@ export default function JobDetailPage() {
     (job.loadData && Object.keys(job.loadData as object).length > 0));
   const hasVehicle = !!(job.vehicleCategory || (job.bodyTypes?.length) || job.minGvwClass ||
     (job.equipment as string[] | null)?.length || (job.trailersAllowed as string[] | null)?.length);
-  const hasNotes = !!(job.plannerNotes || job.driverVisibleNotes || job.safetyInstructions ||
-    (job.driverNoteChips as string[] | null)?.length);
+  const hasNotes = !!(job.plannerNotes || job.internalNotes || job.driverVisibleNotes ||
+    job.safetyInstructions || (job.driverNoteChips as string[] | null)?.length);
   const hasException = !!(
     (job.failureAction && job.failureAction !== "call_assistance") ||
-    job.approvalContactName || job.alternativeReturnAddress
+    job.assistanceNote || job.approvalContactName || job.alternativeReturnAddress
   );
 
   return (
@@ -236,6 +255,20 @@ export default function JobDetailPage() {
                 <Field label="Contact email" value={job.bookingContactEmail} />
               )}
               {job.jobTitle && <Field label="Job title" value={job.jobTitle} />}
+              {job.canSplitShipment && job.canSplitShipment !== "must_stay_together" && (
+                <Field label="Split shipment" value={CAN_SPLIT_LABEL[job.canSplitShipment] ?? cap(job.canSplitShipment)} />
+              )}
+              {job.parentJobId && (
+                <div>
+                  <div className="text-xs uppercase tracking-wide" style={{ color: "#9ca3af" }}>Repeated from</div>
+                  <button
+                    className="font-medium text-sm mt-0.5 text-blue-600 hover:underline"
+                    onClick={() => navigate(`/app/jobs/${job.parentJobId}`)}
+                  >
+                    Job #{job.parentJobId}
+                  </button>
+                </div>
+              )}
             </div>
           </Card>
 
@@ -253,7 +286,10 @@ export default function JobDetailPage() {
                 {job.hazardClass    && <Field label="ADR class"   value={job.hazardClass} />}
                 {job.fragile        && <Field label="Fragile"     value="Yes" />}
                 {job.stackable      && <Field label="Stackable"   value="Yes" />}
-                {job.weighbridgeRequired && <Field label="Weighbridge" value="Required" />}
+                {job.weighbridgeRequired    && <Field label="Weighbridge"       value="Required" />}
+                {job.requirePOD             && <Field label="Proof of delivery" value="Required" />}
+                {job.photosRequired         && <Field label="Photos"            value="Required" />}
+                {job.photosRequiredOnRejection && <Field label="Photos on rejection" value="Required" />}
               </div>
               {(job.securingRequirements as string[] | null)?.length ? (
                 <ChipRow label="Securing" items={job.securingRequirements as string[]} className="mt-3" />
@@ -321,6 +357,12 @@ export default function JobDetailPage() {
           {/* Notes */}
           {hasNotes && (
             <Card title="Notes">
+              {job.internalNotes && (
+                <div className="text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3">
+                  <span className="font-semibold text-slate-600">🔒 Internal: </span>
+                  <span className="text-slate-700">{job.internalNotes}</span>
+                </div>
+              )}
               {job.plannerNotes && (
                 <div className="text-sm bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2 mb-3">
                   <span className="font-semibold text-yellow-800">Planner: </span>
@@ -349,7 +391,7 @@ export default function JobDetailPage() {
           {hasException && (
             <Card title="Exception policy">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-                <Field label="Failure action"  value={job.failureAction ? cap(job.failureAction) : undefined} />
+                <Field label="Failure action"   value={job.failureAction ? cap(job.failureAction) : undefined} />
                 <Field label="Assistance phone" value={job.assistancePhone} />
                 <Field label="Approval contact" value={job.approvalContactName} />
                 <Field label="Approval phone"   value={job.approvalContactPhone} />
@@ -358,6 +400,12 @@ export default function JobDetailPage() {
                 <Field label="Alt contact"      value={job.alternativeReturnContactName} />
                 <Field label="Alt phone"        value={job.alternativeReturnContactPhone} />
               </div>
+              {job.assistanceNote && (
+                <div className="mt-3 text-sm bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  <span className="font-semibold text-amber-800">Assistance note: </span>
+                  <span className="text-amber-900">{job.assistanceNote}</span>
+                </div>
+              )}
             </Card>
           )}
 
@@ -543,9 +591,24 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
         <div className="text-sm font-semibold mt-0.5" style={{ color: "#0f172a" }}>
           {s.siteName || s.locationTextSnapshot || "—"}
         </div>
-        {s.siteName && s.street && (
+        {s.unitName && s.unitName !== s.siteName && (
+          <div className="text-xs" style={{ color: "#374151" }}>{s.unitName}</div>
+        )}
+        {(s.street || s.town || s.postcode) && (
           <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-            {[s.street, s.town, s.postcode].filter(Boolean).join(", ")}
+            {[
+              s.street,
+              s.addressLine2,
+              s.town,
+              s.countyRegion,
+              s.postcode,
+              (s.country && s.country !== "United Kingdom" && s.country !== "GB") ? s.country : null,
+            ].filter(Boolean).join(", ")}
+          </div>
+        )}
+        {s.locationType && (
+          <div className="text-xs mt-0.5 text-slate-400 italic">
+            {LOCATION_TYPE_LABEL[s.locationType] ?? cap(s.locationType)}
           </div>
         )}
 
@@ -656,6 +719,13 @@ function StopRow({ stop: s, isLast }: { stop: JobPart; isLast: boolean }) {
             {(s as any).exchangeDropQty && (s as any).exchangeCollectQty ? " · " : ""}
             {(s as any).exchangeCollectQty ? `Collect ${(s as any).exchangeCollectQty}` : ""}
             {(s as any).exchangeUnit ? ` ${(s as any).exchangeUnit}` : ""}
+          </div>
+        )}
+
+        {/* Planner-only internal note */}
+        {s.internalNotes && (
+          <div className="text-xs mt-1.5 bg-slate-50 border border-slate-200 rounded p-2" style={{ color: "#374151" }}>
+            <span className="font-semibold text-slate-500">🔒 </span>{s.internalNotes}
           </div>
         )}
       </div>
