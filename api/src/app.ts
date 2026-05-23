@@ -15,6 +15,7 @@ import { runRoutes }           from "./routes/runs.js";
 import { locationRoutes }      from "./routes/locations.js";
 import { templateRoutes }      from "./routes/templates.js";
 import { scheduleRoutes }      from "./routes/schedule.js";
+import { aiRoutes }            from "./routes/ai.js";
 import cors                    from "@fastify/cors";
 
 export async function buildApp(
@@ -107,6 +108,7 @@ export async function buildApp(
   await locationRoutes(app, prisma);
   await templateRoutes(app, prisma);
   await scheduleRoutes(app, prisma);
+  await aiRoutes(app, prisma);
 
   return app;
 }

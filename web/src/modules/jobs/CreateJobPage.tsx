@@ -12,6 +12,8 @@ import { isValidPhoneNumber, type CountryCode } from "libphonenumber-js";
 import { jobsApi } from "../../api/jobs";
 import { api } from "../../api/client";
 import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
+import ParseRequestPanel from "./ParseRequestPanel";
+import type { ParsedJobData } from "../../api/ai";
 
 import {
   GOODS_TYPES, SECURING_REQUIREMENTS, SPECIAL_REQUIREMENTS_OPTS,
@@ -453,6 +455,64 @@ export default function CreateJobPage() {
     setS4(false);
     setS5(false);
     setS6(false);
+  }
+
+  // ── AI parse — apply extracted data to form ──────────────────────────────────
+  function applyParsedData(d: ParsedJobData) {
+    // Section 1 — customer & contact
+    if (d.customerName)        setCustomerName(d.customerName);
+    if (d.bookingContactName)  setBookingContactName(d.bookingContactName);
+    if (d.bookingContactPhone) setBookingContactPhone(d.bookingContactPhone);
+    if (d.bookingContactEmail) setBookingContactEmail(d.bookingContactEmail);
+    if (d.customerRef)         setCustomerRef(d.customerRef);
+
+    // Section 2 — stops
+    if (d.stops && d.stops.length > 0) {
+      setStops(d.stops.map(s => ({
+        ...blankSharedStop(s.type),
+        collapsed:        false,
+        savedLocationId:  s.savedLocationId ?? null,
+        siteName:         s.siteName         ?? "",
+        street:           s.street           ?? "",
+        addressLine2:     s.addressLine2      ?? "",
+        town:             s.town             ?? "",
+        postcode:         s.postcode         ?? "",
+        country:          s.country          ?? "GB",
+        date:             s.date             ?? "",
+        earliestArrivalTime: s.earliestArrivalTime ?? "",
+        latestArrivalTime:   s.latestArrivalTime   ?? "",
+        bookedTime:          s.bookedTime          ?? "",
+        contactName:      s.contactName  ?? "",
+        contactPhone:     s.contactPhone ?? "",
+        contactEmail:     s.contactEmail ?? "",
+        referenceNumber:  s.referenceNumber ?? "",
+        bookingRequired:  s.bookingRequired ?? false,
+        bookingRef:       s.bookingRef ?? "",
+        stopNotes:        s.stopNotes ?? "",
+        locationQuery:    s.siteName ?? "",
+      })));
+    }
+
+    // Section 3 — load
+    if (d.goodsType)        setGoodsType(d.goodsType);
+    if (d.goodsDescription) setGoodsDesc(d.goodsDescription);
+    if (d.quantity != null) setQuantity(String(d.quantity));
+    if (d.quantityUnit)     setUnit(d.quantityUnit);
+    if (d.weight != null)   setEstWeight(String(d.weight));
+    if (d.tempControlled)   setTempType("chilled"); // flag temp controlled; planner picks exact type
+
+    // Section 4 — special requirements
+    if (d.specialRequirements?.length) setSpecialItems(prev => [...new Set([...prev, ...d.specialRequirements!])]);
+    if (d.hazardClass) setHazardClass(d.hazardClass);
+
+    // Section 5 — transport (only if Claude is confident about vehicle)
+    if (d.vehicleCategory) {
+      setVehicleCategory(d.vehicleCategory);
+      setPlannerDecides(false);
+    }
+
+    // Expand all sections so planner sees what was filled
+    setS1(true); setS2(true); setS3(true); setS4(true); setS5(true); setS6(true);
   }
 
   // ── Edit mode: load job and populate all state ───────────────────────────────
@@ -995,6 +1055,9 @@ export default function CreateJobPage() {
             </ul>
           </div>
         )}
+
+        {/* ── AI parse panel ────────────────────────────────────────────────── */}
+        {!isEditMode && <ParseRequestPanel onParsed={applyParsedData} />}
 
         {/* ── Sec 1: Customer details ───────────────────────────────────────── */}
         <div className="card overflow-hidden">

@@ -3,7 +3,86 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-19
+> Last updated: 2026-05-23
+
+---
+
+## Session log — 2026-05-23 (2)
+
+### AI email/message → job form parser
+
+**Done:**
+
+New files:
+- `api/src/lib/anthropic.ts` — lazy Anthropic client singleton
+- `api/src/services/parseRequestService.ts` — Claude Haiku prompt + JSON extraction + coercion
+- `api/src/routes/ai.ts` — `POST /ai/parse-request` + `GET /ai/status`
+- `web/src/api/ai.ts` — frontend API client
+- `web/src/modules/jobs/ParseRequestPanel.tsx` — collapsible UI panel (paste text → parse → fill form)
+
+Changes:
+- `api/src/app.ts` — registered `aiRoutes`
+- `api/src/lib/env.ts` — added optional `ANTHROPIC_API_KEY` / `AI_ENABLED`
+- `api/package.json` — added `@anthropic-ai/sdk ^0.98.0`
+- `web/src/modules/jobs/CreateJobPage.tsx` — added `applyParsedData()` function + `<ParseRequestPanel>` above Section 1 (new jobs only, hidden in edit mode)
+
+**How it works:**
+1. Planner opens Create Job → sees "✨ Fill from email or message" panel (collapsed by default)
+2. Pastes any free text — email, WhatsApp, phone note
+3. Clicks "Extract job details" → calls `POST /ai/parse-request`
+4. API fetches company's saved locations, builds prompt with today's date + location hints, calls Claude Haiku
+5. Claude returns structured JSON (customer, stops with addresses + times, load, vehicle)
+6. Frontend maps to form state — all sections expand so planner can review
+7. Confidence badge (high/medium/low) + warnings list tell planner what to check
+8. Planner reviews, adjusts, saves
+
+**To activate on Railway:**
+Add environment variable: `ANTHROPIC_API_KEY = sk-ant-...`
+Get key from: https://console.anthropic.com/settings/keys
+Model: `claude-3-5-haiku-20241022` (~£0.002 per parse)
+AI is disabled gracefully if key is missing — returns 503, no crash.
+
+**Key decisions:**
+- New jobs only (hidden in edit mode) — parsing into an existing job would overwrite intentional edits
+- Rate limited: 30 calls/minute/company
+- Saved locations sent as hints (top 200 by creation date) so Claude can match known depots/sites
+- `tempControlled` from Claude → sets `tempType = "chilled"` as a flag; planner picks exact type (chilled/frozen/ambient)
+- `vehicleCategory` from Claude → only applied if Claude extracts it; `plannerDecides` flipped to false
+- Special requirements merged (additive) not replaced — so manual selections aren't wiped
+
+---
+
+## Session log — 2026-05-23
+
+### Validation gate hardening — job creation completeness
+
+**Done:**
+
+All outstanding validation gaps in the job registration flow fixed before moving to runs phase.
+
+Changes to `api/src/services/jobValidation.ts`:
+- Extended `StructuredJobValidationInput` with `loadData?: Record<string, unknown> | null`
+- **ADR completeness gate**: when `hazardClass` is set, `unNumber` and `packingGroup` from `loadData` are required (hard error for `ready_to_plan`, warning for draft)
+- **Booking reference gate**: stop with `bookingRequired=true` must have `bookingRef` (hard error for `ready_to_plan`, warning for draft)
+- **Time window sanity**: within-stop `end < start` is a hard error; cross-stop collection-end after delivery-start is a warning
+- **Temperature-controlled trailer check**: `tempControlled` load with trailer types selected that include no cold-chain types → hard error for `ready_to_plan`, warning for draft
+- **Weight vs payload check**: declared weight compared to approximate category/GVW max payload table → warning only (not a hard block due to estimate uncertainty)
+
+Changes to `api/src/services/jobService.ts`:
+- Both `createJob` and `patchJob` now pass `loadData` (the JSON blob) to `validateStructuredJob` so ADR fields are validated
+
+Changes to `api/src/routes/jobs.ts`:
+- `DELETE /jobs/:id` now checks for active `RunAssignment` rows before cancellation; if found returns 200 with `{ cancelled: true, warnings, affectedRunIds }` instead of 204
+- `PATCH /jobs/:id/status` with `status=cancelled` returns `warnings + affectedRunIds` if job is in active runs
+
+Changes to `web/src/modules/jobs/JobsPage.tsx`:
+- `handleDelete` and `handleStatusChange` now check for `warnings` in the response and display an amber `Alert` banner (8s timeout) listing affected run IDs
+
+**Key decisions:**
+- Weight/GVW check is a **warning, not an error** — declared weights are estimates and we don't want to block planners. The lookup table uses conservative UK HGV payload figures.
+- Fridge trailer check only triggers when trailer types are explicitly set AND none are cold-chain. If no trailer types set at all, the existing "tractor requires trailer type" check covers that.
+- Cancellation cascade does NOT block cancellation — planners may need to cancel in an emergency. It returns the run IDs so the planner knows exactly which runs to update.
+- Run-level checks (site access vs vehicle, driver qualifications, split quantity balance) deferred to planning board phase — they require run context that doesn't exist at job-creation time.
 
 ---
 

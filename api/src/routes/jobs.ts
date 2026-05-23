@@ -245,6 +245,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
+    // Cascade check: job assigned to active runs
+    const activeAssignments = await prisma.runAssignment.findMany({
+      where:  { companyId, jobId: id, removedAt: null },
+      select: { run: { select: { id: true, status: true } } },
+    });
+    const affectedRunIds = [...new Set(activeAssignments.map(a => a.run.id))];
+
     await prisma.$transaction(async (tx) => {
       await tx.fleetTrailer.updateMany({
         where: { companyId, linkedJobId: id },
@@ -269,6 +276,17 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         },
       });
     });
+
+    if (affectedRunIds.length > 0) {
+      // Return 200 with warnings so the frontend can alert the planner
+      return reply.status(200).send({
+        cancelled: true,
+        warnings:  [
+          `This job was assigned to ${affectedRunIds.length} run(s) — remove it from those runs before dispatching.`,
+        ],
+        affectedRunIds,
+      });
+    }
 
     return reply.status(204).send();
   });
@@ -393,6 +411,22 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(400).send({ error: "BAD_REQUEST", message: "gpsLat and gpsLng must be provided together" });
     }
 
+    // Cascade check: if cancelling, warn planner if job is still in active runs
+    let cancellationWarnings: string[] = [];
+    let cancellationAffectedRunIds: number[] = [];
+    if (body.status === "cancelled" && role !== "driver") {
+      const activeAssignments = await prisma.runAssignment.findMany({
+        where:  { companyId, jobId: id, removedAt: null },
+        select: { run: { select: { id: true } } },
+      });
+      cancellationAffectedRunIds = [...new Set(activeAssignments.map(a => a.run.id))];
+      if (cancellationAffectedRunIds.length > 0) {
+        cancellationWarnings = [
+          `This job was assigned to ${cancellationAffectedRunIds.length} run(s) — remove it from those runs before dispatching.`,
+        ];
+      }
+    }
+
     await prisma.$transaction([
       prisma.job.update({ where: { id }, data: { status: body.status } }),
       prisma.jobExecutionEvent.create({
@@ -410,7 +444,13 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       }),
     ]);
 
-    return reply.send({ status: body.status, id });
+    return reply.send({
+      status: body.status,
+      id,
+      ...(cancellationWarnings.length > 0
+        ? { warnings: cancellationWarnings, affectedRunIds: cancellationAffectedRunIds }
+        : {}),
+    });
   });
 
   // ── POST /jobs/:id/note ───────────────────────────────────────────────────

@@ -98,6 +98,8 @@ export interface StructuredJobValidationInput {
   trailersAllowed?: unknown;
   stops?: StructuredJobPartInput[];
   loadDetails?: StructuredLoadDetailsInput | null;
+  /** Raw loadData JSON blob — used for ADR completeness checks (unNumber, packingGroup, etc.) */
+  loadData?: Record<string, unknown> | null;
 }
 
 export interface JobValidationResult {
@@ -268,6 +270,120 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
 
   if (firstPickupIndex >= 0 && lastDropoffIndex >= 0 && firstPickupIndex > lastDropoffIndex) {
     errors.push("Pickup must occur before final dropoff");
+  }
+
+  // ── ADR completeness ─────────────────────────────────────────────────────
+
+  if (hasText(input.loadDetails?.hazardClass)) {
+    const loadData = (input.loadData ?? {}) as Record<string, unknown>;
+    const missingUnNumber     = !hasText(loadData.unNumber);
+    const missingPackingGroup = !hasText(loadData.packingGroup);
+    if (saveMode === "ready_to_plan") {
+      if (missingUnNumber)     errors.push("Dangerous goods: UN number is required");
+      if (missingPackingGroup) errors.push("Dangerous goods: packing group is required");
+    } else {
+      if (missingUnNumber || missingPackingGroup) {
+        warnings.push("Dangerous goods declared — UN number and packing group must be set before the job can be planned");
+      }
+    }
+  }
+
+  // ── Booking reference gate ────────────────────────────────────────────────
+
+  for (const stop of stops) {
+    if (stop.bookingRequired && !hasText(stop.bookingRef)) {
+      if (saveMode === "ready_to_plan") {
+        errors.push(`Stop ${stop.sequenceNumber ?? "?"} requires a booking reference (booking required is ticked)`);
+      } else {
+        warnings.push(`Stop ${stop.sequenceNumber ?? "?"} is marked as booking required but has no booking reference`);
+      }
+    }
+  }
+
+  // ── Time window sanity ────────────────────────────────────────────────────
+
+  // Within-stop: end must not be before start
+  for (const stop of stops) {
+    if (stop.timeWindowStart && stop.timeWindowEnd) {
+      const start = new Date(stop.timeWindowStart as string).getTime();
+      const end   = new Date(stop.timeWindowEnd   as string).getTime();
+      if (!Number.isNaN(start) && !Number.isNaN(end) && end < start) {
+        errors.push(`Stop ${stop.sequenceNumber ?? "?"} time window end is before its start`);
+      }
+    }
+  }
+
+  // Cross-stop: collection window end must not be after delivery window start
+  const collectionStops = orderedStops.filter(s => isPickupType(s.type));
+  const deliveryStops   = orderedStops.filter(s => isDropoffType(s.type));
+  for (const col of collectionStops) {
+    for (const del of deliveryStops) {
+      if ((col.sequenceNumber ?? 0) < (del.sequenceNumber ?? 0) && col.timeWindowEnd && del.timeWindowStart) {
+        const colEnd   = new Date(col.timeWindowEnd   as string).getTime();
+        const delStart = new Date(del.timeWindowStart as string).getTime();
+        if (!Number.isNaN(colEnd) && !Number.isNaN(delStart) && colEnd > delStart) {
+          warnings.push(
+            `Stop ${col.sequenceNumber} collection window ends after stop ${del.sequenceNumber} delivery window starts — check timing`,
+          );
+        }
+      }
+    }
+  }
+
+  // ── Temperature-controlled trailer check ─────────────────────────────────
+
+  const COLD_CHAIN_TYPES = new Set(["fridge", "fridge_multi_temp", "fridge_pharma", "insulated"]);
+  if (input.loadDetails?.tempControlled && trailerTypes.length > 0) {
+    const hasColdTrailer = trailerTypes.some(t => COLD_CHAIN_TYPES.has(String(t)));
+    if (!hasColdTrailer) {
+      if (saveMode === "ready_to_plan") {
+        errors.push("Temperature-controlled load requires a refrigerated trailer type (fridge, multi-temp, pharma, or insulated)");
+      } else {
+        warnings.push("Temperature-controlled load but no refrigerated trailer type is specified");
+      }
+    }
+  }
+
+  // ── Weight vs vehicle payload check ──────────────────────────────────────
+
+  const weight = typeof input.loadDetails?.weight === "number" ? input.loadDetails.weight
+    : typeof input.loadDetails?.weight === "string" ? parseFloat(input.loadDetails.weight as string) : null;
+
+  if (weight !== null && !Number.isNaN(weight) && weight > 0 && hasText(vehicleCategory)) {
+    // Approximate max payload (kg) per vehicle category / GVW class
+    const GVW_MAX_PAYLOAD: Record<string, number> = {
+      "3.5t":  1_100,
+      "7.5t":  3_500,
+      "12t":   7_500,
+      "18t":  12_000,
+      "26t":  18_000,
+      "32t":  24_000,
+      "44t":  26_500,
+    };
+    const CATEGORY_MAX_PAYLOAD: Record<string, number> = {
+      "van":          1_100,
+      "luton_van":    1_200,
+      "pickup":         700,
+      "tractor":     26_500,
+      "drawbar":     26_500,
+      "heavy_haulage": 150_000,
+      "spmt":        999_999,
+      "plant":       999_999,
+    };
+
+    let maxPayload: number | null = null;
+    if (vehicleCategory === "rigid") {
+      const gvw = hasText(input.minGvwClass) ? String(input.minGvwClass) : null;
+      maxPayload = gvw ? (GVW_MAX_PAYLOAD[gvw] ?? null) : null;
+    } else {
+      maxPayload = CATEGORY_MAX_PAYLOAD[vehicleCategory] ?? null;
+    }
+
+    if (maxPayload !== null && weight > maxPayload) {
+      warnings.push(
+        `Declared weight (${weight.toLocaleString()} kg) may exceed the payload capacity of the selected vehicle type — verify before planning`,
+      );
+    }
   }
 
   // ── Load details unit check ───────────────────────────────────────────────

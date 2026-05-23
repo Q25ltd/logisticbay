@@ -16,4 +16,7 @@ export const env = {
   DATABASE_URL:       process.env.DATABASE_URL!,
   APP_URL:            process.env.APP_URL ?? "https://logisticbay.com",
   EMAIL_ENABLED:      !!process.env.SENDGRID_API_KEY,
+  /** Optional — AI features disabled when missing */
+  ANTHROPIC_API_KEY:  process.env.ANTHROPIC_API_KEY ?? null,
+  AI_ENABLED:         !!process.env.ANTHROPIC_API_KEY,
 };

@@ -409,7 +409,16 @@ function RequestRow({
         {(accepting || rejecting || err) && (
           <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
             {err && (
-              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</div>
+              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg space-y-1">
+                <p>{err}</p>
+                {err.includes("required information is missing") && (
+                  <p className="text-xs">
+                    <a href={`/app/jobs/${j.id}/edit`} className="underline font-medium">
+                      Edit this job
+                    </a>{" "}to fill in the missing fields, then try accepting again.
+                  </p>
+                )}
+              </div>
             )}
 
             {accepting && (

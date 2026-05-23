@@ -123,6 +123,7 @@ export async function createJob(
     trailersAllowed,
     stops,
     loadDetails:     loadDetailsForValidation,
+    loadData:        (body.loadData as Record<string, unknown> | null) ?? null,
   });
 
   if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {
@@ -324,6 +325,10 @@ export async function patchJob(
     patchCustomerName = body.customerName?.trim() || null;
   }
 
+  const effectiveLoadData = (
+    body.loadData !== undefined ? body.loadData : (job as any).loadData
+  ) as Record<string, unknown> | null | undefined;
+
   const structuredValidation = validateStructuredJob({
     saveMode,
     customerId:  effectiveCustomerId,
@@ -336,6 +341,7 @@ export async function patchJob(
     trailersAllowed,
     stops,
     loadDetails:  loadDetailsForValidation,
+    loadData:     effectiveLoadData ?? null,
   });
 
   if (saveMode === "ready_to_plan" && !structuredValidation.isValid) {

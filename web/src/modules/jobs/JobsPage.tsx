@@ -338,6 +338,7 @@ export default function JobsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [noteJobId,    setNoteJobId]    = useState<number | null>(null);
   const [success,      setSuccess]      = useState("");
+  const [warning,      setWarning]      = useState("");
 
   function applyRange(back: number, fwd: number) {
     setDateRange({ from: addDays(today(), -back), to: addDays(today(), fwd) });
@@ -360,9 +361,13 @@ export default function JobsPage() {
 
   async function handleStatusChange(id: number, status: string) {
     try {
-      await jobsApi.updateStatus(id, status);
+      const result = await jobsApi.updateStatus(id, status) as any;
       setSuccess("Status updated");
       setTimeout(() => setSuccess(""), 3000);
+      if (result?.warnings?.length) {
+        setWarning(result.warnings.join(" "));
+        setTimeout(() => setWarning(""), 8000);
+      }
       load();
     } catch (err: any) { alert(err.message); }
   }
@@ -371,9 +376,13 @@ export default function JobsPage() {
     const label = job.jobReference || `job #${job.id}`;
     if (!window.confirm(`Cancel ${label}?\n\nIt will be hidden from active planning but kept for audit history.`)) return;
     try {
-      await jobsApi.remove(job.id);
+      const result = await jobsApi.remove(job.id);
       setSuccess("Job cancelled");
       setTimeout(() => setSuccess(""), 3000);
+      if (result?.warnings?.length) {
+        setWarning(result.warnings.join(" "));
+        setTimeout(() => setWarning(""), 8000);
+      }
       load();
     } catch (err: any) { alert(err.message); }
   }
@@ -482,6 +491,7 @@ export default function JobsPage() {
       </div>
 
       {success && <Alert type="success" message={success} />}
+      {warning && <Alert type="warning" message={warning} />}
       {error   && <Alert type="error"   message={error}   />}
 
       {/* Content */}

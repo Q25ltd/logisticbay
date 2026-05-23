@@ -70,6 +70,14 @@
   - LogisticBay "Powered by" branding badge (header, success, error screens)
   - Required-field red highlighting + per-stop missing field list
   - `status = pending_review` on submit
+- **Validation gates** in `validateStructuredJob` (enforced for `ready_to_plan`):
+  - Vehicle type required before job moves to ready-to-plan (all paths)
+  - ADR completeness: hazard class requires UN number + packing group (from `loadData`)
+  - Booking reference: `bookingRequired=true` stop requires `bookingRef`
+  - Time window sanity: within-stop end ≥ start; cross-stop collection-end vs delivery-start overlap warning
+  - Temperature-controlled trailer: `tempControlled` load with non-fridge trailer types → error
+  - Weight vs payload: declared weight vs approximate vehicle max payload → warning
+  - Cancellation cascade: cancelling a job in active run assignments returns run IDs + warning
 
 ### Client request links
 - Main link: one auto-created permanent link per company (for website / social)

@@ -24,7 +24,11 @@ import { authenticate, requireRole } from "../middleware.js";
 import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
 import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
-import { findInvalidStopLocationId } from "../services/jobValidation.js";
+import {
+  validateStructuredJob,
+  findInvalidStopLocationId,
+  type StructuredJobPartInput,
+} from "../services/jobValidation.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -294,7 +298,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string };
 
       const job = await prisma.job.findFirst({
-        where: { id, companyId: request.user!.companyId },
+        where:   { id, companyId: request.user!.companyId },
+        include: { stops: { orderBy: { sequenceNumber: "asc" } } },
       });
       if (!job) return reply.status(404).send({ error: "Job not found" });
       if (job.status !== "pending_review") {
@@ -314,6 +319,58 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         });
       }
 
+      // Full validation — same gates as CJP ready_to_plan save
+      const stopInputs: StructuredJobPartInput[] = job.stops.map(s => ({
+        sequenceNumber:       s.sequenceNumber,
+        type:                 s.type,
+        savedLocationId:      s.savedLocationId,
+        locationTextSnapshot: s.locationTextSnapshot,
+        lat:                  s.lat,
+        lng:                  s.lng,
+        timeWindowStart:      s.timeWindowStart?.toISOString() ?? null,
+        timeWindowEnd:        s.timeWindowEnd?.toISOString()   ?? null,
+        bookedTime:           s.bookedTime?.toISOString()       ?? null,
+        contactName:          s.contactName  ?? undefined,
+        contactPhone:         s.contactPhone ?? undefined,
+        bookingRequired:      (s as any).bookingRequired ?? undefined,
+        bookingRef:           (s as any).bookingRef      ?? undefined,
+      }));
+
+      const validation = validateStructuredJob({
+        saveMode:       "ready_to_plan",
+        customerId:     job.customerId,
+        customerName:   job.customerName,
+        plannedDate:    body.plannedDate,
+        vehicleCategory,
+        minGvwClass:    job.minGvwClass ?? "",
+        bodyType:       Array.isArray(job.bodyTypes)      ? (job.bodyTypes      as string[])[0] ?? "" : "",
+        equipment:      Array.isArray(job.equipment)      ? job.equipment       as string[] : [],
+        trailersAllowed:Array.isArray(job.trailersAllowed)? job.trailersAllowed as string[] : [],
+        stops:          stopInputs,
+        loadDetails: {
+          quantity:            job.quantity,
+          unit:                job.quantityUnit,
+          weight:              job.weight,
+          materialType:        job.goodsDescription,
+          hazardClass:         job.hazardClass,
+          goodsType:           job.goodsType,
+          fragile:             job.fragile,
+          stackable:           job.stackable,
+          tempControlled:      job.tempControlled,
+          securingRequirements: Array.isArray(job.securingRequirements) ? job.securingRequirements as string[] : null,
+          specialRequirements:  Array.isArray(job.specialRequirements)  ? job.specialRequirements  as string[] : null,
+        },
+        loadData: job.loadData as Record<string, unknown> | null,
+      });
+
+      if (!validation.isValid) {
+        return reply.status(400).send({
+          error:    "Job cannot be accepted — required information is missing",
+          errors:   validation.errors,
+          warnings: validation.warnings,
+        });
+      }
+
       const note = body.plannerNotes?.trim() || "";
 
       await prisma.$transaction([
@@ -324,6 +381,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             plannedDate:     new Date(body.plannedDate),
             plannerNotes:    note || job.plannerNotes,
             vehicleCategory,
+            validationStatus: validation.validationStatus,
           },
         }),
         prisma.jobAudit.create({
