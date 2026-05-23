@@ -183,7 +183,7 @@ export default function TemplatesPage() {
           </p>
         </div>
         <button
-          onClick={() => navigate("/app/jobs/new")}
+          onClick={() => navigate("/app/jobs/create")}
           className="btn btn-primary text-sm px-4 py-2">
           + New Job
         </button>
@@ -244,8 +244,8 @@ export default function TemplatesPage() {
             <TemplateCard
               key={t.id}
               t={t}
-              onUse={()    => navigate(`/app/jobs/new?templateId=${t.id}`)}
-              onEdit={()   => navigate(`/app/jobs/new?editTemplateId=${t.id}`)}
+              onUse={()    => navigate(`/app/jobs/create?templateId=${t.id}`)}
+              onEdit={()   => navigate(`/app/jobs/create?editTemplateId=${t.id}`)}
               onArchive={() => handleArchive(t)}
               onRestore={() => handleRestore(t)}
             />

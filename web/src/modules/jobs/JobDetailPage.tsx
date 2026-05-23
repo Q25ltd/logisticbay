@@ -110,9 +110,11 @@ export default function JobDetailPage() {
   const [toast,     setToast]   = useState("");
 
   async function load() {
+    const numId = parseInt(id!, 10);
+    if (!id || isNaN(numId)) { setError("Job not found."); setLoading(false); return; }
     setLoading(true); setError("");
     try {
-      setJob(await jobsApi.get(parseInt(id!, 10)));
+      setJob(await jobsApi.get(numId));
     } catch (err: unknown) {
       setError((err as Error).message);
     } finally {
