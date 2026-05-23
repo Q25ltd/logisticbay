@@ -151,17 +151,41 @@ failed       — could not complete — attention needed
 
 ## 3. Run — execution container
 
-One driver, one vehicle, one trailer, one period of work. Planner puts JobParts into Runs.
+One trailer, one route, one period of work. Planner puts JobParts into Runs.
+For the full planning board design, run types, and build phases → see **PLANNING_BOARD.md**.
+
+### Assignment order — trailer first, driver second
+
+```
+LOAD  ← what we always track
+  └─ in      TRAILER   ← assigned at planning (required before confirming run)
+       └─ pulled by UNIT  ← driver phase (future)
+            └─ driven by DRIVER ← assigned when confirmed (can be after trailer)
+                 └─ on  RUN
+```
+
+A run CAN exist in `draft` with a trailer but no driver — that is correct and expected.
+Driver is assigned when availability is confirmed. Unit/truck is a later phase entirely.
+
+### Run types
+| Type | Description |
+|---|---|
+| `direct` | Collect A → Deliver B. Same driver/trailer. Never split unless capacity forces it. |
+| `relay` | Collect A → depot → Deliver B. Can split between two drivers. Run B locked until Run A confirms depot drop. |
+| `split` | Same job, multiple runs for capacity (e.g. 80 pallets across 4 runs). All belong to same Job. |
+| `consolidation` | Multi-collection → depot sort → multi-delivery. Delivery runs locked until collection runs complete. |
 
 | Field | Type | Notes |
 |---|---|---|
 | id | Int PK | |
 | companyId | Int | tenant isolation |
 | runReference | String | system-generated `RUN-26-000001` |
+| runType | String? | direct / relay / split / consolidation — **to be added** |
+| dependsOnRunId | Int? | FK Run — locked until that run completes — **to be added** |
 | status | String | see below |
-| assignedDriverId | Int? | FK DriverProfile |
-| assignedTruckId | Int? | FK FleetUnit |
-| assignedTrailerId | Int? | FK FleetTrailer |
+| assignedTrailerId | Int? | FK FleetTrailer — **assigned first** |
+| assignedDriverId | Int? | FK DriverProfile — assigned when confirmed |
+| assignedTruckId | Int? | FK FleetUnit — driver phase |
 | plannedDate | DateTime? | |
 | estimatedStartTime | String? | |
 | estimatedEndTime | String? | |

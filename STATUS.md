@@ -144,6 +144,39 @@
 
 ## 🔲 NOT STARTED — future phases
 
+### Planning board — NEXT BUILD PRIORITY
+Full spec in **PLANNING_BOARD.md**. Three phases.
+
+**Phase 1 — Planning board (Types 1, 2, 3)**
+- [ ] 1.1  Schema: add `runType` + `dependsOnRunId` to Run (migration)
+- [ ] 1.2  API: geographic clustering endpoint (groups ready-to-plan stops by GPS/postcode)
+- [ ] 1.3  Page: `/app/planning` — date picker, two-panel layout
+- [ ] 1.4  Left panel: unplanned stops, auto-grouped clusters
+- [ ] 1.5  Right panel: run cards, drag stops onto runs
+- [ ] 1.6  Trailer assignment UI on run card (required)
+- [ ] 1.7  Driver assignment UI on run card (optional at planning)
+- [ ] 1.8  Run dependency locking (relay: run B locked until run A done)
+- [ ] 1.9  Split load UI — assign quantity per run, balance check
+- [ ] 1.10 AI validation (Claude API) — green/amber/red per run with reason
+- [ ] 1.11 AI grouping suggestion — "Suggest runs for today" button
+- [ ] 1.12 Job progress update — job status derived from RunAssignment completion
+- [ ] 1.13 Publish run → driver notification
+
+**Phase 2 — Depot operations (Type 4)**
+- [ ] 2.1  LoadTrack write path (API: POST /load-track)
+- [ ] 2.2  Depot buffer panel — confirmed loads vs expected
+- [ ] 2.3  Depot sort event — assign collected loads to delivery runs
+- [ ] 2.4  Delivery run locked until collection runs complete
+- [ ] 2.5  Load availability check when building delivery runs
+
+**Phase 3 — Live monitoring + reassignment (Type 5)**
+- [ ] 3.1  Live run status board (GPS positions, run progress)
+- [ ] 3.2  Collection reassignment UI
+- [ ] 3.3  Trailer swap event UI + API
+- [ ] 3.4  Run handover flow (Driver A → Driver B with load)
+- [ ] 3.5  AI late-run detection (background agent, planner alerts)
+- [ ] 3.6  Driver no-show alert
+
 ### Load movement & execution (next priority area)
 - Handover / relay confirmation flow (driver B accepts load from driver A)
 - Breakdown event type + workflow

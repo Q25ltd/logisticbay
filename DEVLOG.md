@@ -7,6 +7,50 @@
 
 ---
 
+## Session log — 2026-05-21
+
+### Planning board design + transport enforcement
+
+**Done:**
+
+Jobs page and detail page improvements (deployed):
+- Fixed "INVALID DATE" in jobs table (fmtShort/fmtWeekday slicing ISO string to first 10 chars)
+- Stats subtitle: bold numbers with contextual colours + date pill chip
+- Filter bar: paired ← / → preset buttons, status filter on same row, overflow-x-auto
+- Badge: added whitespace-nowrap to prevent "Ready to plan" wrapping
+- JobMenu context menu: converted to React portal (createPortal) with getBoundingClientRect — escapes table overflow clipping
+- Job detail: booking contact email, all loadData fields via LoadDataSection, stop-level handling/access/proof/restriction/navigation chips and fields
+- JWT access token TTL extended from 15 min → 8h; proactive silent refresh added to useAuth
+
+Vehicle type enforcement before Ready to plan (deployed):
+- API: planners bypass driver-only ALLOWED_JOB_TRANSITIONS; hard block on transition to ready_to_plan when vehicleCategory is null
+- UI: StatusPanel warns + disables Update button when vehicle missing and Ready to plan selected
+- UI: Vehicle requirements card always visible; amber warning + Edit job link when no vehicle set
+
+Planning board — full design agreed and documented:
+- Created PLANNING_BOARD.md with complete spec (load hierarchy, 5 run types, screen design, AI validation rules, job progress tracking, schema additions, 3-phase build plan)
+- Updated ARCHITECTURE.md: run section rewritten to reflect trailer-first assignment order, run types table, dependsOnRunId field
+- Updated STATUS.md: planning board added as next build priority with all 13 Phase 1 steps, Phase 2 (5 steps), Phase 3 (6 steps)
+
+**Key decisions made this session:**
+
+1. **Load is the primary tracking entity** — not trailer, not driver. We always know: load → trailer → driver → run → job.
+2. **Assignment order is fixed:** trailer first (at planning), driver second (when confirmed), unit/truck third (driver phase).
+3. **Run types defined:** direct / relay / split / consolidation / live-reassignment.
+4. **Split loads:** same job spread across multiple runs using RunAssignment.quantityAssigned. Job complete when sum(quantityConfirmed) >= job.quantity.
+5. **Run dependencies:** Run.dependsOnRunId — relay delivery run locked until collection run confirms depot drop.
+6. **Trailer swap** is its own immutable event type — load custody transfers to new driver permanently.
+7. **Collections can be freely reassigned** if not yet collected. Deliveries with load on truck require trailer swap.
+8. **Planning board starts from jobs** (all ready-to-plan stops visible), not from drivers. Build runs first, assign driver later.
+9. **AI integration planned** for: grouping suggestions, per-run validation (green/amber/red), late-run detection (Phase 3).
+
+**Still outstanding:**
+- Phase 1 planning board build (steps 1.1–1.13 in STATUS.md)
+- Phase 2 depot operations
+- Phase 3 live monitoring
+
+---
+
 ## Session log — 2026-05-19
 
 ### PRF improvements + doc consolidation
