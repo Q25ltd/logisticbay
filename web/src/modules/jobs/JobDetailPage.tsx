@@ -910,19 +910,41 @@ const VEHICLE_NAME: Record<string, string> = {
   heavy_haulage:"Heavy haulage",
 };
 
-function checkVehicleWarnings(category: string, job: Job): string[] {
+/** Body types that are suitable for liquid / tanker loads */
+const TANKER_BODY_TYPES = new Set([
+  "tanker_food", "tanker_fuel", "tanker_chemical",
+  "tanker_water", "tanker_vacuum", "tanker_bitumen", "tanker_other",
+]);
+
+/** Body types that are suitable for temperature-controlled loads */
+const FRIDGE_BODY_TYPES = new Set([
+  "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+]);
+
+/**
+ * Returns plain-English warnings when the selected vehicle category and/or
+ * body types look wrong for the job's load. Called live as the planner picks.
+ *
+ * @param category  selected vehicle category (e.g. "rigid")
+ * @param bodyTypes selected body types (may be empty while planner is choosing)
+ * @param job       the job being planned
+ */
+function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): string[] {
   const warnings: string[] = [];
-  const name = VEHICLE_NAME[category] ?? "this vehicle";
+  const name = VEHICLE_NAME[category] ?? "This vehicle";
+
+  const goodsText = `${job.goodsType ?? ""} ${job.goodsDescription ?? ""}`.toLowerCase();
 
   // ── Weight ────────────────────────────────────────────────────────────────
   const maxKg = VEHICLE_MAX_KG[category];
   if (maxKg && job.weight && job.weight > maxKg) {
     const better =
       job.weight > 16_000 ? "an Artic or Drawbar" :
-      job.weight > 700    ? "a Rigid HGV"        :
+      job.weight > 700    ? "a Rigid HGV"         :
                             "a Luton van";
     warnings.push(
-      `This job carries ${job.weight.toLocaleString("en-GB")} kg. ${cap(name.replace(/^a(n?) /, ""))} can only handle about ${maxKg.toLocaleString("en-GB")} kg — you probably need ${better}.`,
+      `This job carries ${job.weight.toLocaleString("en-GB")} kg. ` +
+      `${name} can only handle about ${maxKg.toLocaleString("en-GB")} kg — you probably need ${better}.`,
     );
   }
 
@@ -939,36 +961,74 @@ function checkVehicleWarnings(category: string, job: Job): string[] {
       job.quantity > 3  ? "a Rigid HGV"         :
                           "a Luton van";
     warnings.push(
-      `This job has ${job.quantity} pallets. ${cap(name.replace(/^a(n?) /, ""))} can carry up to ${maxPallets} — you probably need ${better}.`,
+      `This job has ${job.quantity} pallets. ` +
+      `${name} can carry up to ${maxPallets} — you probably need ${better}.`,
     );
   }
 
-  // ── Tanker / liquid goods ─────────────────────────────────────────────────
-  const goodsText = `${job.goodsType ?? ""} ${job.goodsDescription ?? ""}`.toLowerCase();
+  // ── Liquid / tanker goods ─────────────────────────────────────────────────
+  //  Checks BOTH vehicle class AND body type — a Rigid HGV with a box body
+  //  is just as wrong as a van for liquid loads.
   const looksLikeFluid =
-    goodsText.includes("tanker") || goodsText.includes("liquid") ||
-    goodsText.includes("fuel") || goodsText.includes("chemical") ||
-    goodsText.includes("ibc") || goodsText.includes("tote");
-  if (looksLikeFluid && ["van", "luton_van", "pickup"].includes(category)) {
-    warnings.push(
-      "This load looks like a liquid or bulk fluid. A van-type vehicle isn't suitable — you'll need a Rigid HGV or Artic with a tanker body.",
-    );
+    goodsText.includes("tanker")   || goodsText.includes("liquid")   ||
+    goodsText.includes("fuel")     || goodsText.includes("chemical")  ||
+    goodsText.includes("ibc")      || goodsText.includes("tote")      ||
+    goodsText.includes("solvent")  || goodsText.includes("oil")       ||
+    goodsText.includes("acid")     || goodsText.includes("bitumen");
+
+  if (looksLikeFluid) {
+    if (["van", "luton_van", "pickup"].includes(category)) {
+      warnings.push(
+        "This looks like a liquid or tanker load. " +
+        "A van can't carry liquids in bulk — you'll need a Rigid HGV or Artic with a tanker body.",
+      );
+    } else if (bodyTypes.length > 0 && !bodyTypes.some(bt => TANKER_BODY_TYPES.has(bt))) {
+      // HGV/artic is fine but the chosen body type is wrong
+      const chosen = bodyTypes.map(bt => cap(bt.replace(/_/g, " "))).join(", ");
+      warnings.push(
+        `This is a liquid or tanker load but the body type you've chosen ("${chosen}") isn't suitable for carrying liquids. ` +
+        `You'll need a tanker body type such as Chemical tanker, Food tanker, or Liquid tanker.`,
+      );
+    } else if (bodyTypes.length === 0) {
+      // Category is fine, no body type picked yet — remind them
+      warnings.push(
+        "This looks like a liquid or tanker load. " +
+        "Remember to select a tanker body type (Chemical tanker, Food tanker, etc.).",
+      );
+    }
   }
 
-  // ── Hazardous goods ───────────────────────────────────────────────────────
+  // ── Hazardous / ADR ───────────────────────────────────────────────────────
+  // Check the hazardClass field AND scan the description for "class N" mentions
   const hazardClass = (job as any).hazardClass as string | null | undefined;
-  if (hazardClass) {
+  const adrFromDesc = goodsText.match(/\badr\b|\bclass\s*([1-9])\b|\bun\s*\d{4}\b/);
+  const adrClass    = hazardClass || (adrFromDesc?.[1] ? `${adrFromDesc[1]}` : null);
+
+  if (adrClass || adrFromDesc) {
     warnings.push(
-      `This load is classified as hazardous (ADR class ${hazardClass}). The driver and vehicle will need the correct ADR certification.`,
+      `This load contains hazardous goods` +
+      (adrClass ? ` (ADR class ${adrClass})` : "") +
+      `. The driver and vehicle must have the correct ADR certification — ` +
+      `and an ADR safety kit must be on board.`,
     );
   }
 
   // ── Temperature-controlled ────────────────────────────────────────────────
   const tempControlled = (job as any).tempControlled as boolean | null | undefined;
-  if (tempControlled && ["van", "pickup"].includes(category)) {
-    warnings.push(
-      "This is a temperature-controlled load. A standard van won't keep the goods at the right temperature — you'll need a refrigerated body.",
-    );
+  if (tempControlled) {
+    if (["van", "pickup"].includes(category)) {
+      warnings.push(
+        "This is a temperature-controlled load. " +
+        "A standard van won't keep the goods at the right temperature — " +
+        "you'll need a vehicle with a refrigerated body.",
+      );
+    } else if (bodyTypes.length > 0 && !bodyTypes.some(bt => FRIDGE_BODY_TYPES.has(bt))) {
+      const chosen = bodyTypes.map(bt => cap(bt.replace(/_/g, " "))).join(", ");
+      warnings.push(
+        `This is a temperature-controlled load but "${chosen}" isn't a refrigerated body type. ` +
+        `You'll need a Fridge or Insulated body.`,
+      );
+    }
   }
 
   return warnings;
@@ -1008,8 +1068,8 @@ function VehiclePanel({
   const [saving,     setSaving]     = useState(false);
   const [saveErr,    setSaveErr]    = useState("");
 
-  // Live compatibility warnings — recalculate whenever category changes
-  const compatWarnings = category ? checkVehicleWarnings(category, job) : [];
+  // Live compatibility warnings — recalculate whenever category OR body types change
+  const compatWarnings = category ? checkVehicleWarnings(category, bodyTypes, job) : [];
 
   // AI suggestion state
   const [suggesting,  setSuggesting]  = useState(false);
@@ -1110,7 +1170,11 @@ function VehiclePanel({
 
     // Show warnings even in view mode so planner sees problems without editing
     const viewWarnings = job.vehicleCategory
-      ? checkVehicleWarnings(job.vehicleCategory, job)
+      ? checkVehicleWarnings(
+          job.vehicleCategory,
+          (job.bodyTypes as string[] | null) ?? [],
+          job,
+        )
       : [];
 
     return (
