@@ -879,6 +879,101 @@ function ChipRow({
   );
 }
 
+// ── Vehicle compatibility check ───────────────────────────────────────────────
+// Runs client-side, instant, no API call. Returns plain-English warnings.
+
+const VEHICLE_MAX_KG: Record<string, number> = {
+  van:       500,
+  luton_van: 700,
+  pickup:    900,
+  rigid:     16_000,
+  tractor:   26_000,
+  drawbar:   26_000,
+};
+
+const VEHICLE_MAX_PALLETS: Record<string, number> = {
+  van:       2,
+  luton_van: 3,
+  pickup:    1,
+  rigid:     26,
+  tractor:   33,
+  drawbar:   33,
+};
+
+const VEHICLE_NAME: Record<string, string> = {
+  van:          "a Van",
+  luton_van:    "a Luton van",
+  pickup:       "a Pickup",
+  rigid:        "a Rigid HGV",
+  tractor:      "an Artic",
+  drawbar:      "a Drawbar",
+  heavy_haulage:"Heavy haulage",
+};
+
+function checkVehicleWarnings(category: string, job: Job): string[] {
+  const warnings: string[] = [];
+  const name = VEHICLE_NAME[category] ?? "this vehicle";
+
+  // ── Weight ────────────────────────────────────────────────────────────────
+  const maxKg = VEHICLE_MAX_KG[category];
+  if (maxKg && job.weight && job.weight > maxKg) {
+    const better =
+      job.weight > 16_000 ? "an Artic or Drawbar" :
+      job.weight > 700    ? "a Rigid HGV"        :
+                            "a Luton van";
+    warnings.push(
+      `This job carries ${job.weight.toLocaleString("en-GB")} kg. ${cap(name.replace(/^a(n?) /, ""))} can only handle about ${maxKg.toLocaleString("en-GB")} kg — you probably need ${better}.`,
+    );
+  }
+
+  // ── Pallets ───────────────────────────────────────────────────────────────
+  const maxPallets = VEHICLE_MAX_PALLETS[category];
+  if (
+    maxPallets &&
+    job.quantity != null &&
+    (job as any).quantityUnit === "pallets" &&
+    job.quantity > maxPallets
+  ) {
+    const better =
+      job.quantity > 26 ? "an Artic or Drawbar" :
+      job.quantity > 3  ? "a Rigid HGV"         :
+                          "a Luton van";
+    warnings.push(
+      `This job has ${job.quantity} pallets. ${cap(name.replace(/^a(n?) /, ""))} can carry up to ${maxPallets} — you probably need ${better}.`,
+    );
+  }
+
+  // ── Tanker / liquid goods ─────────────────────────────────────────────────
+  const goodsText = `${job.goodsType ?? ""} ${job.goodsDescription ?? ""}`.toLowerCase();
+  const looksLikeFluid =
+    goodsText.includes("tanker") || goodsText.includes("liquid") ||
+    goodsText.includes("fuel") || goodsText.includes("chemical") ||
+    goodsText.includes("ibc") || goodsText.includes("tote");
+  if (looksLikeFluid && ["van", "luton_van", "pickup"].includes(category)) {
+    warnings.push(
+      "This load looks like a liquid or bulk fluid. A van-type vehicle isn't suitable — you'll need a Rigid HGV or Artic with a tanker body.",
+    );
+  }
+
+  // ── Hazardous goods ───────────────────────────────────────────────────────
+  const hazardClass = (job as any).hazardClass as string | null | undefined;
+  if (hazardClass) {
+    warnings.push(
+      `This load is classified as hazardous (ADR class ${hazardClass}). The driver and vehicle will need the correct ADR certification.`,
+    );
+  }
+
+  // ── Temperature-controlled ────────────────────────────────────────────────
+  const tempControlled = (job as any).tempControlled as boolean | null | undefined;
+  if (tempControlled && ["van", "pickup"].includes(category)) {
+    warnings.push(
+      "This is a temperature-controlled load. A standard van won't keep the goods at the right temperature — you'll need a refrigerated body.",
+    );
+  }
+
+  return warnings;
+}
+
 // ── Vehicle panel ─────────────────────────────────────────────────────────────
 
 const VEHICLE_BUTTONS = [
@@ -912,6 +1007,9 @@ function VehiclePanel({
   const [minGvw,     setMinGvw]     = useState(job.minGvwClass ?? "");
   const [saving,     setSaving]     = useState(false);
   const [saveErr,    setSaveErr]    = useState("");
+
+  // Live compatibility warnings — recalculate whenever category changes
+  const compatWarnings = category ? checkVehicleWarnings(category, job) : [];
 
   // AI suggestion state
   const [suggesting,  setSuggesting]  = useState(false);
@@ -987,9 +1085,9 @@ function VehiclePanel({
     setSaving(true); setSaveErr("");
     try {
       await jobsApi.update(job.id, {
-        vehicleCategory: category,
+        vehicleCategory: category || undefined,
         bodyTypes:       bodyTypes.length ? bodyTypes : null,
-        minGvwClass:     minGvw || null,
+        minGvwClass:     minGvw || null,   // schema now accepts null
       });
       setEditMode(false);
       onSaved();
@@ -1002,13 +1100,18 @@ function VehiclePanel({
 
   // ── View mode (vehicle already set) ──────────────────────────────────────────
   if (!editMode && hasVehicle) {
-    const catBtn = VEHICLE_BUTTONS.find(b => b.value === job.vehicleCategory);
+    const catBtn  = VEHICLE_BUTTONS.find(b => b.value === job.vehicleCategory);
     const specCat = SPECIALIST_CATS.find(c => c.value === job.vehicleCategory);
     const catLabel = catBtn
       ? `${catBtn.emoji} ${catBtn.label}`
       : specCat
         ? specCat.label
         : job.vehicleCategory ?? "";
+
+    // Show warnings even in view mode so planner sees problems without editing
+    const viewWarnings = job.vehicleCategory
+      ? checkVehicleWarnings(job.vehicleCategory, job)
+      : [];
 
     return (
       <Card title="Vehicle requirements">
@@ -1038,6 +1141,16 @@ function VehiclePanel({
         {(job.trailersAllowed as string[] | null)?.length ? (
           <ChipRow label="Trailers allowed" items={job.trailersAllowed as string[]} className="mt-2" />
         ) : null}
+        {viewWarnings.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            {viewWarnings.map((w, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800">
+                <span className="text-amber-500 text-sm leading-none mt-0.5 flex-shrink-0">⚠</span>
+                <span>{w}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     );
   }
@@ -1093,6 +1206,18 @@ function VehiclePanel({
       {suggestErr && (
         <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
           {suggestErr}
+        </div>
+      )}
+
+      {/* Compatibility warnings — shown as soon as a category is selected */}
+      {compatWarnings.length > 0 && (
+        <div className="space-y-1.5 mb-3">
+          {compatWarnings.map((w, i) => (
+            <div key={i} className="flex items-start gap-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800">
+              <span className="text-amber-500 text-sm leading-none mt-0.5 flex-shrink-0">⚠</span>
+              <span>{w}</span>
+            </div>
+          ))}
         </div>
       )}
 

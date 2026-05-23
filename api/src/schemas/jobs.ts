@@ -100,9 +100,9 @@ const JobCreateBaseSchema = z.object({
   loadData:                              z.record(z.string(), z.unknown()).nullable().optional(),
 
   // Vehicle requirements
-  vehicleCategory:         z.string().optional(),
+  vehicleCategory:         z.string().nullable().optional(),
   bodyTypes:               z.array(z.string()).nullable().optional(),
-  minGvwClass:             z.string().optional(),
+  minGvwClass:             z.string().nullable().optional(),
   equipment:               z.array(z.string()).nullable().optional(),
   trailersAllowed:         z.array(z.string()).nullable().optional(),
   vehicleAccessNotes:      z.string().optional(),
