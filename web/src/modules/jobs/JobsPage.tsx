@@ -136,14 +136,23 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
   onView:   (id: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos,  setPos]  = useState({ top: 0, right: 0 });
+  const [pos,  setPos]  = useState<{ top?: number; bottom?: number; right: number }>({ right: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
+
+  // Approximate menu height: 4 items × 34px + divider + padding ≈ 180px
+  const MENU_H = 180;
 
   function handleOpen(e: React.MouseEvent) {
     e.stopPropagation();
     if (btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      const spaceBelow = window.innerHeight - r.bottom;
+      if (spaceBelow < MENU_H) {
+        // Not enough room below — open upward
+        setPos({ bottom: window.innerHeight - r.top + 4, right: window.innerWidth - r.right });
+      } else {
+        setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      }
     }
     setOpen(o => !o);
   }
@@ -159,7 +168,7 @@ function JobMenu({ job, onNote, onEdit, onDelete, onView }: {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="fixed z-50 w-40 bg-white border border-border rounded-lg shadow-xl py-1 text-sm"
-               style={{ top: pos.top, right: pos.right }}>
+               style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}>
             <button onClick={() => { setOpen(false); onView(job.id); }}
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-primary font-medium">
               👁 View
