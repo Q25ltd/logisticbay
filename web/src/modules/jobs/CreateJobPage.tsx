@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { isValidPhoneNumber, type CountryCode } from "libphonenumber-js";
 import { jobsApi } from "../../api/jobs";
+import { customersApi } from "../../api/customers";
 import { api } from "../../api/client";
 import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
 import ParseRequestPanel from "./ParseRequestPanel";
@@ -458,9 +459,31 @@ export default function CreateJobPage() {
   }
 
   // ── AI parse — apply extracted data to form ──────────────────────────────────
-  function applyParsedData(d: ParsedJobData) {
+  async function applyParsedData(d: ParsedJobData) {
     // Section 1 — customer & contact
-    if (d.customerName)        setCustomerName(d.customerName);
+    if (d.customerName) {
+      // Try to match against existing customers in the database
+      try {
+        const result = await customersApi.list(d.customerName);
+        const matches = result.data ?? [];
+        // Exact name match (case-insensitive), or the only result returned
+        const match =
+          matches.find(c => c.name.toLowerCase() === d.customerName!.toLowerCase()) ??
+          (matches.length === 1 ? matches[0] : null);
+        if (match) {
+          setCustomerName(match.name);
+          setCustomerId(match.id);
+          // Fill contact fields from customer record if AI didn't extract them
+          if (!d.bookingContactName  && match.contactName)  setBookingContactName(match.contactName);
+          if (!d.bookingContactPhone && match.contactPhone) setBookingContactPhone(match.contactPhone);
+          if (!d.bookingContactEmail && match.contactEmail) setBookingContactEmail(match.contactEmail);
+        } else {
+          setCustomerName(d.customerName);
+        }
+      } catch {
+        setCustomerName(d.customerName);
+      }
+    }
     if (d.bookingContactName)  setBookingContactName(d.bookingContactName);
     if (d.bookingContactPhone) setBookingContactPhone(d.bookingContactPhone);
     if (d.bookingContactEmail) setBookingContactEmail(d.bookingContactEmail);
