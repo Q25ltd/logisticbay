@@ -29,6 +29,7 @@ import {
   MultiCheck,
   StatusDot,
 } from "../jobs/CreateJobFormComponents";
+import { LatLngInput } from "../jobs/SharedStopCard";
 
 // ── Vehicle taxonomy helpers ──────────────────────────────────────────────────
 // For tractor / drawbar the body type lives on the trailer, so show all trailer
@@ -863,26 +864,12 @@ function StopCard({
 
           {/* Entrance pin */}
           <div>
-            <FieldLabel required>Exact entrance pin — latitude / longitude</FieldLabel>
-            <div className="grid grid-cols-2 gap-3 mt-1">
-              <div>
-                <FieldLabel>Latitude</FieldLabel>
-                <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : stop.lat ? "border-green-400 focus:border-green-500" : ""}`} type="number" step="0.000001"
-                  placeholder="e.g. 53.483959"
-                  value={stop.lat}
-                  onChange={e => onChange({ lat: e.target.value })} />
-              </div>
-              <div>
-                <FieldLabel>Longitude</FieldLabel>
-                <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : stop.lng ? "border-green-400 focus:border-green-500" : ""}`} type="number" step="0.000001"
-                  placeholder="e.g. -2.244644"
-                  value={stop.lng}
-                  onChange={e => onChange({ lng: e.target.value })} />
-              </div>
-            </div>
-            {highlightErrors && (!stop.lat || !stop.lng) && (
-              <p className="text-xs text-red-600 mt-1">Entrance pin coordinates are required</p>
-            )}
+            <LatLngInput
+              lat={stop.lat} lng={stop.lng}
+              onChange={(lat, lng) => onChange({ lat, lng })}
+              highlightErrors={highlightErrors}
+              required
+            />
 
             {/* Distance-from-postcode warning */}
             {checkingDist && (
@@ -2393,27 +2380,10 @@ export default function PublicRequestForm() {
                   </div>
                   {/* Entrance pin */}
                   <div>
-                    <FieldLabel>Exact entrance pin — latitude / longitude</FieldLabel>
-                    <div className="grid grid-cols-2 gap-3 mt-1">
-                      <div>
-                        <FieldLabel>Latitude</FieldLabel>
-                        <input className="input font-mono" type="number" step="0.000001"
-                          placeholder="e.g. 53.483959"
-                          value={alternativeReturnLat}
-                          onChange={e => setAlternativeReturnLat(e.target.value)} />
-                      </div>
-                      <div>
-                        <FieldLabel>Longitude</FieldLabel>
-                        <input className="input font-mono" type="number" step="0.000001"
-                          placeholder="e.g. -2.244644"
-                          value={alternativeReturnLng}
-                          onChange={e => setAlternativeReturnLng(e.target.value)} />
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
-                      <span className="text-amber-500 text-base leading-none mt-px flex-shrink-0">⚠</span>
-                      <p className="text-xs font-semibold text-amber-800 leading-snug">Must be the truck gate, not the building centre.</p>
-                    </div>
+                    <LatLngInput
+                      lat={alternativeReturnLat} lng={alternativeReturnLng}
+                      onChange={(lat, lng) => { setAlternativeReturnLat(lat); setAlternativeReturnLng(lng); }}
+                    />
                   </div>
 
                   {/* Entrance instructions */}

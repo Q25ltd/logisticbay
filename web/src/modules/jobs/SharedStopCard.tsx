@@ -8,7 +8,7 @@
  * are appended inside the optional section.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SavedLocation, JobPart } from "../../types";
 import type { RequestStop } from "../../api/jobRequests";
 import {
@@ -487,6 +487,93 @@ export function jobPartToSharedStopState(stop: JobPart): SharedStopState {
   };
 }
 
+// ── LatLngInput ────────────────────────────────────────────────────────────────
+// Single paste-friendly field: accepts "53.483959, -2.244644" from Google Maps.
+// Exported so PublicRequestForm can import and reuse it.
+
+function parseLatLng(raw: string): { lat: string; lng: string } | null {
+  const m = raw.trim().match(/^(-?\d{1,3}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
+  if (isNaN(lat) || isNaN(lng)) return null;
+  if (lat < -90  || lat > 90)  return null;
+  if (lng < -180 || lng > 180) return null;
+  return { lat: m[1], lng: m[2] };
+}
+
+export function LatLngInput({ lat, lng, onChange, highlightErrors, required }: {
+  lat: string;
+  lng: string;
+  onChange: (lat: string, lng: string) => void;
+  highlightErrors?: boolean;
+  required?: boolean;
+}) {
+  const [raw, setRaw]   = useState(lat && lng ? `${lat}, ${lng}` : "");
+  const focused         = useRef(false);
+
+  // Sync when parent changes (e.g. saved location selected) — but not while typing
+  useEffect(() => {
+    if (!focused.current) {
+      setRaw(lat && lng ? `${lat}, ${lng}` : "");
+    }
+  }, [lat, lng]);
+
+  const parsed   = parseLatLng(raw);
+  const hasValue = raw.trim().length > 0;
+  const isValid  = parsed !== null;
+  const isError  = highlightErrors && !lat && !lng;
+
+  function handleChange(value: string) {
+    setRaw(value);
+    const p = parseLatLng(value);
+    if (p) {
+      onChange(p.lat, p.lng);
+    } else if (!value.trim()) {
+      onChange("", "");
+    }
+    // partial / invalid — keep existing parsed values so validation doesn't thrash
+  }
+
+  const borderClass = isError
+    ? "border-red-400 focus:border-red-500"
+    : hasValue && isValid
+      ? "border-green-400 focus:border-green-500"
+      : hasValue && !isValid
+        ? "border-amber-400 focus:border-amber-500"
+        : "";
+
+  return (
+    <div>
+      <FieldLabel required={required}>Exact entrance pin — lat, lng</FieldLabel>
+      <div className="relative mt-1">
+        <input
+          type="text"
+          className={`input font-mono pr-8 ${borderClass}`}
+          placeholder="53.483959, -2.244644  (paste from Google Maps)"
+          value={raw}
+          onFocus={() => { focused.current = true; }}
+          onBlur={() =>  { focused.current = false; }}
+          onChange={e => handleChange(e.target.value)}
+        />
+        {hasValue && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-base pointer-events-none select-none">
+            {isValid ? "✅" : "❌"}
+          </span>
+        )}
+      </div>
+      {hasValue && !isValid && (
+        <p className="text-xs text-amber-700 mt-1">
+          Paste as <span className="font-mono">lat, lng</span> — e.g. <span className="font-mono">53.483959, -2.244644</span>
+        </p>
+      )}
+      {isError && !hasValue && (
+        <p className="text-xs text-red-600 mt-1">Entrance pin coordinates are required</p>
+      )}
+    </div>
+  );
+}
+
 // ── LocationSearch (copied from StopCard.tsx) ─────────────────────────────────
 
 export function LocationSearch({ value, linkedId, locations, onSelect, onClear }: {
@@ -870,26 +957,12 @@ export default function SharedStopCard({
 
           {/* Entrance pin */}
           <div>
-            <FieldLabel required>Exact entrance pin — latitude / longitude</FieldLabel>
-            <div className="grid grid-cols-2 gap-3 mt-1">
-              <div>
-                <FieldLabel>Latitude</FieldLabel>
-                <input className={`input font-mono ${highlightErrors && !stop.lat ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
-                  placeholder="e.g. 53.483959"
-                  value={stop.lat}
-                  onChange={e => onChange({ lat: e.target.value })} />
-              </div>
-              <div>
-                <FieldLabel>Longitude</FieldLabel>
-                <input className={`input font-mono ${highlightErrors && !stop.lng ? "border-red-400 focus:border-red-500" : ""}`} type="number" step="0.000001"
-                  placeholder="e.g. -2.244644"
-                  value={stop.lng}
-                  onChange={e => onChange({ lng: e.target.value })} />
-              </div>
-            </div>
-            {highlightErrors && (!stop.lat || !stop.lng) && (
-              <p className="text-xs text-red-600 mt-1">Entrance pin coordinates are required</p>
-            )}
+            <LatLngInput
+              lat={stop.lat} lng={stop.lng}
+              onChange={(lat, lng) => onChange({ lat, lng })}
+              highlightErrors={highlightErrors}
+              required
+            />
 
             {/* Always-visible operational warning */}
             <div className="flex items-start gap-2 mt-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-300">
