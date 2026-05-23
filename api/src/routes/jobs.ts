@@ -496,17 +496,20 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!source) return reply.status(404).send({ error: "Job not found" });
 
     interface StopOverride {
-      sequenceNumber:       number;
-      timeWindowStart?:     string;   // ISO datetime or HH:MM
-      timeWindowEnd?:       string;
-      bookedTime?:          string;
-      referenceNumber?:     string;
-      bookingRef?:          string;
+      sequenceNumber:    number;
+      timeWindowStart?:  string;
+      timeWindowEnd?:    string;
+      bookedTime?:       string;
+      referenceNumber?:  string;
+      bookingRef?:       string;
+      quantityRequired?: number;
     }
     const body = request.body as {
-      plannedDate:   string;
-      customerRef?:  string;
-      stops?:        StopOverride[];
+      plannedDate:  string;
+      customerRef?: string;
+      quantity?:    number;
+      weight?:      number;
+      stops?:       StopOverride[];
     };
 
     if (!body.plannedDate) {
@@ -551,9 +554,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         plannedDate:          new Date(body.plannedDate),
         goodsType:            source.goodsType,
         goodsDescription:     source.goodsDescription,
-        quantity:             source.quantity,
+        quantity:             body.quantity != null ? body.quantity : source.quantity,
         quantityUnit:         source.quantityUnit,
-        weight:               source.weight,
+        weight:               body.weight  != null ? body.weight  : source.weight,
         tempControlled:       source.tempControlled,
         hazardClass:          source.hazardClass,
         vehicleCategory:      source.vehicleCategory,
@@ -584,6 +587,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
               referenceNumber:  ov.referenceNumber  ?? null,
               bookingRequired:  s.bookingRequired,
               bookingRef:       ov.bookingRef       ?? null,
+              quantityRequired: ov.quantityRequired != null ? ov.quantityRequired : s.quantityRequired,
               contactName:      s.contactName,
               contactPhone:     s.contactPhone,
               contactEmail:     s.contactEmail,

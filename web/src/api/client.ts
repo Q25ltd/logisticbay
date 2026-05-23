@@ -95,7 +95,7 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
       : Array.isArray(data.details) && data.details.length
         ? `: ${data.details.join(", ")}`
         : "";
-    throw new Error(`${data.error || data.message || `Request failed (${res.status})`}${detail}`);
+    throw new Error(`${data.message || data.error || `Request failed (${res.status})`}${detail}`);
   }
   return data;
 }
