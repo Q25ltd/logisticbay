@@ -14,8 +14,6 @@ import CreateJobPage    from "./modules/jobs/CreateJobPage";
 import JobDetailPage   from "./modules/jobs/JobDetailPage";
 import DriversPage      from "./modules/drivers/DriversPage";
 import HolidaysPage     from "./modules/holidays/HolidaysPage";
-import TemplatesPage    from "./modules/templates/TemplatesPage";
-import LocationsPage    from "./modules/locations/LocationsPage";
 import ShiftsPage       from "./modules/shifts/ShiftsPage";
 import FleetPage        from "./modules/fleet/FleetPage";
 import MarketplacePage  from "./modules/marketplace/MarketplacePage";
@@ -59,8 +57,6 @@ export default function App() {
             <Route path="jobs/:id/edit" element={<CreateJobPage />} />
             <Route path="drivers"      element={<DriversPage />} />
             <Route path="holidays"     element={<HolidaysPage />} />
-            <Route path="templates"    element={<TemplatesPage />} />
-            <Route path="locations"    element={<LocationsPage />} />
             <Route path="shifts"       element={<ShiftsPage />} />
             <Route path="fleet"        element={<FleetPage />} />
             <Route path="marketplace"  element={<MarketplacePage />} />

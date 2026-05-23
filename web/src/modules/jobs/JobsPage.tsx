@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
-import type { PlannedJob, JobTemplate } from "../../types";
+import type { PlannedJob } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
@@ -331,7 +331,6 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
 export default function JobsPage() {
   const navigate = useNavigate();
   const [jobs,         setJobs]         = useState<PlannedJob[]>([]);
-  const [templates,    setTemplates]    = useState<JobTemplate[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState("");
   const [dateRange,    setDateRange]    = useState({ from: today(), to: today() });
@@ -347,11 +346,8 @@ export default function JobsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [j, t] = await Promise.all([
-        jobsApi.listRange(dateRange.from, dateRange.to),
-        jobsApi.templates(),
-      ]);
-      setJobs(j.data); setTemplates(t.data);
+      const j = await jobsApi.listRange(dateRange.from, dateRange.to);
+      setJobs(j.data);
     } catch (err: any) { setError(err.message); }
     setLoading(false);
   }, [dateRange]);
@@ -400,7 +396,6 @@ export default function JobsPage() {
     ? fmtShort(dateRange.from)
     : `${fmtShort(dateRange.from)} – ${fmtShort(dateRange.to)}`;
 
-  void templates;
 
   return (
     <div className="p-4 sm:p-6">

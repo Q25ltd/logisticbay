@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
 import type { Job, JobPart } from "../../types";
+import RepeatJobModal from "./RepeatJobModal";
 import { Badge } from "../../components/Badge";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -104,10 +105,11 @@ function cap(s: string): string {
 export default function JobDetailPage() {
   const { id }      = useParams<{ id: string }>();
   const navigate    = useNavigate();
-  const [job,       setJob]     = useState<Job | null>(null);
-  const [loading,   setLoading] = useState(true);
-  const [error,     setError]   = useState("");
-  const [toast,     setToast]   = useState("");
+  const [job,         setJob]         = useState<Job | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState("");
+  const [toast,       setToast]       = useState("");
+  const [showRepeat,  setShowRepeat]  = useState(false);
 
   async function load() {
     const numId = parseInt(id!, 10);
@@ -196,12 +198,20 @@ export default function JobDetailPage() {
             )}
           </div>
         </div>
-        <button
-          className="btn btn-secondary text-sm shrink-0"
-          onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
-        >
-          Edit job
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            className="btn btn-secondary text-sm"
+            onClick={() => navigate(`/app/jobs/${job.id}/edit`)}
+          >
+            Edit job
+          </button>
+          <button
+            className="btn bg-green-600 hover:bg-green-700 text-white text-sm font-semibold"
+            onClick={() => setShowRepeat(true)}
+          >
+            🔁 Repeat
+          </button>
+        </div>
       </div>
 
       {/* Two-column layout */}
@@ -411,10 +421,13 @@ export default function JobDetailPage() {
             <div>Created: {fmtDateTime(job.createdAt)}</div>
             <div>Updated: {fmtDateTime(job.updatedAt)}</div>
             <div className="font-mono">ID: #{job.id}</div>
-            {job.templateId && <div>Template: #{job.templateId}</div>}
           </div>
         </div>
       </div>
+
+      {showRepeat && (
+        <RepeatJobModal job={job as any} onClose={() => setShowRepeat(false)} />
+      )}
     </div>
   );
 }

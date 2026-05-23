@@ -12,7 +12,7 @@ import { isValidPhoneNumber, type CountryCode } from "libphonenumber-js";
 import { jobsApi } from "../../api/jobs";
 import { customersApi } from "../../api/customers";
 import { api } from "../../api/client";
-import type { Customer, JobTemplate, PlannedJob, SavedLocation } from "../../types";
+import type { Customer, PlannedJob, SavedLocation } from "../../types";
 import ParseRequestPanel from "./ParseRequestPanel";
 import { aiApi } from "../../api/ai";
 import type { ParsedJobData } from "../../api/ai";
@@ -176,47 +176,23 @@ export default function CreateJobPage() {
   const editJobId = jobIdParam ? parseInt(jobIdParam, 10) : null;
   const isEditMode = !!editJobId;
 
-  // Template-edit mode: /jobs/template/:templateId
-  const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const editTemplateIdParam = searchParams.get("editTemplateId");
-  const editTemplateId = editTemplateIdParam ? parseInt(editTemplateIdParam, 10) : null;
-  const isTemplateMode = !!editTemplateId;
-
   const [saving, setSaving] = useState<"draft" | "ready" | null>(null);
   const [error, setError] = useState("");
-  const [loadingJob, setLoadingJob] = useState(isEditMode || isTemplateMode);
+  const [loadingJob, setLoadingJob] = useState(isEditMode);
   const [triedSave, setTriedSave] = useState(false);
   const [showStopErrors, setShowStopErrors] = useState(false);
   const [s1Attempted, setS1Attempted] = useState(false);
   const [s3Attempted, setS3Attempted] = useState(false);
   const [s6Attempted, setS6Attempted] = useState(false);
-  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
-  const [templateName, setTemplateName] = useState("");
 
-  // Saved locations (loaded once)
+  // Saved locations (loaded once for stop address autocomplete)
   const [locations, setLocations] = useState<SavedLocation[]>([]);
-  const [templates, setTemplates] = useState<JobTemplate[]>([]);
-  const [tplQuery, setTplQuery] = useState("");
   const [companyTicker, setCompanyTicker] = useState<string | null>(null);
   const [jobReference, setJobReference] = useState<string | null>(null);
-
-  // templateId in URL = open blank job pre-filled with template (Use → button)
-  const preloadTemplateId = searchParams.get("templateId");
 
   useEffect(() => {
     jobsApi.locations().then(r => setLocations(r.data)).catch(() => {});
     api.get<{ ticker?: string | null }>("/company").then(c => setCompanyTicker(c.ticker ?? null)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    jobsApi.templates().then(r => {
-      setTemplates(r.data);
-      if (preloadTemplateId) {
-        const t = r.data.find((t: JobTemplate) => t.id === parseInt(preloadTemplateId, 10));
-        if (t) applyTemplate(t);
-      }
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Section collapse state ───────────────────────────────────────────────────
@@ -420,49 +396,6 @@ export default function CreateJobPage() {
   ].filter(Boolean) as string[];
 
   // ── Template apply ───────────────────────────────────────────────────────────
-  function applyTemplate(t: JobTemplate) {
-    const jd = t.defaultJobData as Record<string, unknown> | null | undefined;
-    if (jd?.customerName)        { setCustomerName(String(jd.customerName)); setCustomerId((jd.customerId as number) ?? null); }
-    if (jd?.bookingContactName)  setBookingContactName(String(jd.bookingContactName));
-    if (jd?.bookingContactPhone) setBookingContactPhone(String(jd.bookingContactPhone));
-    if (jd?.bookingContactEmail) setBookingContactEmail(String(jd.bookingContactEmail));
-    if (jd?.customerRef)         setCustomerRef(String(jd.customerRef));
-
-    const goodsDescVal = (jd?.goodsDescription ?? t.defaultMaterialType ?? "") as string;
-    if (goodsDescVal) setGoodsDesc(goodsDescVal);
-    if (jd?.quantity != null) setQuantity(String(jd.quantity));
-    if (jd?.quantityUnit)     setUnit(String(jd.quantityUnit));
-    if (jd?.weight != null)   setEstWeight(String(jd.weight));
-
-    const ds = Array.isArray(t.defaultStops) ? t.defaultStops : [];
-    if (ds.length > 0) {
-      setStops(ds.map((s: Record<string, unknown>) => ({
-        ...blankSharedStop((() => { const v = (s.type as string) || (s.stopType as string) || ""; return (v === "pickup" || v === "collection") ? "collection" : "delivery"; })()),
-        collapsed:       true,
-        savedLocationId: (s.savedLocationId as number) ?? null,
-        locationQuery:   (s.locationQuery as string) || (s.siteName as string) || "",
-        siteName:        (s.siteName as string) || "",
-        street:          (s.street as string) || "",
-        town:            (s.town as string) || "",
-        postcode:        (s.postcode as string) || "",
-        country:         (s.country as string) || "GB",
-        lat:             s.lat != null ? String(s.lat) : "",
-        lng:             s.lng != null ? String(s.lng) : "",
-        date:            today(),
-        referenceNumber: "",
-        bookingRef:      "",
-      })));
-    }
-
-    setTplQuery(t.name);
-    setS1(false);
-    setS2(false);
-    setS3(false);
-    setS4(false);
-    setS5(false);
-    setS6(false);
-  }
-
   // ── AI parse — apply extracted data to form ──────────────────────────────────
   async function applyParsedData(d: ParsedJobData) {
     // Section 1 — customer & contact
@@ -694,23 +627,6 @@ export default function CreateJobPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editJobId]);
 
-  // ── Template-edit mode ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!editTemplateId) return;
-    setLoadingJob(true);
-    jobsApi.templates().then(r => {
-      const t = r.data.find((t: JobTemplate) => t.id === editTemplateId);
-      if (!t) { setError("Template not found."); return; }
-      applyTemplate(t);
-      setTemplateName(t.name);
-    }).catch(() => {
-      setError("Could not load template for editing.");
-    }).finally(() => {
-      setLoadingJob(false);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editTemplateId]);
-
   // ── Build payload ────────────────────────────────────────────────────────────
   function buildPayload(saveMode: "draft" | "ready_to_plan"): Record<string, unknown> {
     const effectiveUnit = unit === "other" ? otherUnit : unit;
@@ -895,19 +811,12 @@ export default function CreateJobPage() {
       loadData,
       stops:                    mappedStops,
       plannerNotes:             plannerNotes.trim() || undefined,
-      saveAsTemplate:           !isEditMode && saveAsTemplate,
-      templateName:             !isEditMode && saveAsTemplate ? templateName.trim() : undefined,
     };
   }
 
   // ── Save handlers ────────────────────────────────────────────────────────────
   async function handleSaveDraft() {
     setShowStopErrors(true);
-    if (!isEditMode && saveAsTemplate && !templateName.trim()) {
-      setError("Enter a template name, or uncheck 'Save as template'");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
     setSaving("draft");
     setError("");
     try {
@@ -934,11 +843,6 @@ export default function CreateJobPage() {
     const emailErr = validateEmail(bookingContactEmail);
     if (phoneErr) setBookingContactPhoneError(phoneErr);
     if (emailErr) setBookingContactEmailError(emailErr);
-    if (!isEditMode && saveAsTemplate && !templateName.trim()) {
-      setError("Enter a template name, or uncheck 'Save as template'");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
     if (MISSING.length > 0) {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
@@ -969,57 +873,8 @@ export default function CreateJobPage() {
     }
   }
 
-  async function handleSaveTemplate() {
-    if (!templateName.trim()) {
-      setError("Enter a template name");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    setSaving("ready");
-    setError("");
-    try {
-      const payload = buildPayload("ready_to_plan");
-      const stopData = (payload.stops as any[]).map((s: Record<string, unknown>) => ({
-        ...s,
-        date:                undefined,
-        earliestArrivalTime: undefined,
-        latestArrivalTime:   undefined,
-        bookedTime:          undefined,
-        timeWindowStart:     undefined,
-        timeWindowEnd:       undefined,
-        referenceNumber:     undefined,
-        bookingRef:          undefined,
-      }));
-      const patchBody = {
-        name:               templateName.trim(),
-        defaultMaterialType: goodsDesc.trim(),
-        defaultStops:       stopData,
-        defaultJobData: {
-          customerId,
-          customerName,
-          contactName: bookingContactName,
-          contactPhone: bookingContactPhone,
-          contactEmail: bookingContactEmail,
-          customerRef,
-          purchaseOrderNumber,
-        },
-      };
-      if (editTemplateId) {
-        await jobsApi.updateTemplate(editTemplateId, patchBody);
-      } else {
-        await jobsApi.createTemplate(patchBody);
-      }
-      navigate("/app/templates");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save template");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } finally {
-      setSaving(null);
-    }
-  }
-
   if (loadingJob) {
-    return <div className="flex h-64 items-center justify-center text-muted">{isTemplateMode ? "Loading template…" : "Loading job…"}</div>;
+    return <div className="flex h-64 items-center justify-center text-muted">Loading job…</div>;
   }
 
   // ── JSX ───────────────────────────────────────────────────────────────────────
@@ -1033,12 +888,10 @@ export default function CreateJobPage() {
             className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-muted hover:text-primary hover:border-slate-300 hover:bg-slate-50 transition-all flex-shrink-0" title="Back">←</button>
           <div>
             <h1 className="text-xl font-black text-primary">
-              {isTemplateMode ? "Edit Template" : isEditMode ? "Edit Job" : "New Job"}
+              {isEditMode ? "Edit Job" : "New Job"}
             </h1>
             <p className="text-sm text-muted mt-0.5">
-              {isTemplateMode
-                ? "Change any details — dates and reference numbers are not stored in templates"
-                : isEditMode
+              {isEditMode
                 ? "Update the fields below — changes won't be lost until you save"
                 : "Fill in the sections below — save as draft any time"}
             </p>
@@ -1049,54 +902,6 @@ export default function CreateJobPage() {
       {error && <div className="px-4 sm:px-6 pt-4"><div className="bg-red-50 border border-red-300 text-red-800 rounded-xl px-4 py-3 text-sm font-medium">{error}</div></div>}
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4">
-
-        {/* Template name input (template-edit mode) */}
-        {isTemplateMode && (
-          <div className="card px-5 py-4 border-l-4 border-l-blue-500">
-            <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">Template Name</label>
-            <input type="text" className="input" placeholder="e.g. Tesco Luton Daily Run"
-              value={templateName} onChange={e => setTemplateName(e.target.value)} />
-            <p className="text-xs text-muted mt-1.5">
-              Dates, time slots and reference numbers are <strong>not stored</strong> — fill them in when creating a job from this template.
-            </p>
-          </div>
-        )}
-
-        {/* Template picker */}
-        {!isEditMode && !isTemplateMode && templates.length > 0 && (
-          <div className="card px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <label className="text-xs font-bold text-muted uppercase tracking-widest mb-1.5 block">Start from a template</label>
-                <div className="relative">
-                  <input type="text" className="input pr-8" placeholder="Type to search templates…"
-                    value={tplQuery} onChange={e => setTplQuery(e.target.value)} />
-                  {tplQuery && (
-                    <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary text-lg leading-none"
-                      onClick={() => setTplQuery("")}>×</button>
-                  )}
-                </div>
-                {tplQuery && (() => {
-                  const matches = templates.filter(t =>
-                    t.name.toLowerCase().includes(tplQuery.toLowerCase()) && t.status === "active"
-                  );
-                  if (!matches.length) return <p className="text-xs text-muted mt-2">No templates match "{tplQuery}"</p>;
-                  return (
-                    <div className="mt-1.5 border border-border rounded-xl overflow-hidden shadow-sm">
-                      {matches.slice(0, 6).map(t => (
-                        <button key={t.id} type="button" onClick={() => applyTemplate(t)}
-                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 border-b border-border last:border-0 flex items-center justify-between gap-2">
-                          <span className="font-medium text-primary">{t.name}</span>
-                          {t.defaultMaterialType && <span className="text-xs text-muted">{t.defaultMaterialType}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Missing required fields indicator */}
         {triedSave && MISSING.length > 0 && (
@@ -1926,49 +1731,19 @@ export default function CreateJobPage() {
             </button>
             <div className="flex-1" />
 
-            {isTemplateMode ? (
-              <button onClick={handleSaveTemplate} disabled={saving !== null}
-                className="btn bg-blue-600 hover:bg-blue-700 text-white text-sm px-6 py-2.5 font-bold flex-shrink-0">
-                {saving !== null ? "Saving…" : "Save Template"}
+            <>
+              <button onClick={handleSaveDraft} disabled={saving !== null}
+                className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
+                {saving === "draft" ? "Saving…" : isEditMode ? "Save as draft" : "Save Draft"}
               </button>
-            ) : (
-              <>
-                {!isEditMode && (
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 space-y-1.5">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                      <input type="checkbox" checked={saveAsTemplate}
-                        onChange={e => setSaveAsTemplate(e.target.checked)} />
-                      Also save as new template
-                    </label>
-                    {saveAsTemplate && (
-                      <>
-                        <input
-                          className={"input !py-1.5 !text-xs w-full " + (!templateName.trim() ? "border-red-300 focus:ring-red-200" : "")}
-                          placeholder="Template name (required)"
-                          value={templateName}
-                          onChange={e => setTemplateName(e.target.value)}
-                          autoFocus
-                        />
-                        {!templateName.trim() && (
-                          <p className="text-xs text-red-600">Enter a name to save this job as a template</p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-                <button onClick={handleSaveDraft} disabled={saving !== null}
-                  className="btn btn-outline text-sm px-5 py-2.5 flex-shrink-0">
-                  {saving === "draft" ? "Saving…" : isEditMode ? "Save as draft" : "Save Draft"}
-                </button>
-                <button onClick={handleSaveReady} disabled={saving !== null}
-                  className={"btn text-sm px-6 py-2.5 font-bold flex-shrink-0 " +
-                    (MISSING.length === 0
-                      ? "bg-green-600 hover:bg-green-700 text-white"
-                      : "btn-primary")}>
-                  {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Save changes") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
-                </button>
-              </>
-            )}
+              <button onClick={handleSaveReady} disabled={saving !== null}
+                className={"btn text-sm px-6 py-2.5 font-bold flex-shrink-0 " +
+                  (MISSING.length === 0
+                    ? "bg-green-600 hover:bg-green-700 text-white"
+                    : "btn-primary")}>
+                {saving === "ready" ? "Saving…" : isEditMode ? (MISSING.length === 0 ? "Update job" : "Save changes") : (MISSING.length === 0 ? "Save & Plan" : "Ready for Planner")}
+              </button>
+            </>
           </div>
         </div>
       </div>

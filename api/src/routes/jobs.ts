@@ -479,5 +479,106 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.status(201).send({ ok: true });
   });
 
+  // ── POST /jobs/:id/repeat ──────────────────────────────────────────────────
+  // Creates a new job by copying an existing one.
+  // Only the date, per-stop times/refs, and customerRef are replaced.
+  // Everything else (customer, addresses, load, vehicle, etc.) copies silently.
+  app.post("/jobs/:id/repeat", {
+    preHandler: [authenticate, requireRole("company_owner", "planner")],
+  }, async (request, reply) => {
+    const id = parseInt((request.params as { id: string }).id, 10);
+    const { companyId } = request.user!;
+
+    const source = await prisma.job.findFirst({
+      where:   { id, companyId },
+      include: { stops: { orderBy: { sequenceNumber: "asc" } } },
+    });
+    if (!source) return reply.status(404).send({ error: "Job not found" });
+
+    interface StopOverride {
+      sequenceNumber:       number;
+      timeWindowStart?:     string;   // ISO datetime or HH:MM
+      timeWindowEnd?:       string;
+      bookedTime?:          string;
+      referenceNumber?:     string;
+      bookingRef?:          string;
+    }
+    const body = request.body as {
+      plannedDate:   string;
+      customerRef?:  string;
+      stops?:        StopOverride[];
+    };
+
+    if (!body.plannedDate) {
+      return reply.status(400).send({ error: "plannedDate is required" });
+    }
+
+    // Build stop overrides indexed by sequenceNumber
+    const stopOverrides: Record<number, StopOverride> = {};
+    if (Array.isArray(body.stops)) {
+      for (const s of body.stops) stopOverrides[s.sequenceNumber] = s;
+    }
+
+    // Create the new job
+    const newJob = await prisma.job.create({
+      data: {
+        companyId,
+        createdByUserId:      request.user!.userId,
+        customerId:           source.customerId,
+        customerName:         source.customerName,
+        bookingContactName:   source.bookingContactName,
+        bookingContactPhone:  source.bookingContactPhone,
+        bookingContactEmail:  source.bookingContactEmail,
+        customerRef:          body.customerRef ?? source.customerRef,
+        plannedDate:          new Date(body.plannedDate),
+        goodsType:            source.goodsType,
+        goodsDescription:     source.goodsDescription,
+        quantity:             source.quantity,
+        quantityUnit:         source.quantityUnit,
+        weight:               source.weight,
+        tempControlled:       source.tempControlled,
+        hazardClass:          source.hazardClass,
+        vehicleCategory:      source.vehicleCategory,
+        loadData:             source.loadData ?? Prisma.JsonNull,
+        specialRequirements:  source.specialRequirements ?? Prisma.JsonNull,
+        declaredGoodsValue:   source.declaredGoodsValue,
+        purchaseOrderNumber:  source.purchaseOrderNumber,
+        billingReference:     source.billingReference,
+        plannerNotes:         source.plannerNotes,
+        status:               "draft",
+        stops: {
+          create: source.stops.map(s => {
+            const ov = stopOverrides[s.sequenceNumber] ?? {};
+            return {
+              companyId,
+              sequenceNumber:   s.sequenceNumber,
+              type:             s.type,
+              siteName:         s.siteName,
+              street:           s.street,
+              addressLine2:     s.addressLine2,
+              town:             s.town,
+              postcode:         s.postcode,
+              country:          s.country,
+              savedLocationId:  s.savedLocationId,
+              timeWindowStart:  ov.timeWindowStart  ? new Date(ov.timeWindowStart)  : s.timeWindowStart,
+              timeWindowEnd:    ov.timeWindowEnd    ? new Date(ov.timeWindowEnd)    : s.timeWindowEnd,
+              bookedTime:       ov.bookedTime       ? new Date(ov.bookedTime)       : s.bookedTime,
+              referenceNumber:  ov.referenceNumber  ?? null,
+              bookingRequired:  s.bookingRequired,
+              bookingRef:       ov.bookingRef       ?? null,
+              contactName:      s.contactName,
+              contactPhone:     s.contactPhone,
+              contactEmail:     s.contactEmail,
+              stopNotes:        s.stopNotes,
+            };
+          }),
+        },
+      },
+      include: { stops: { orderBy: { sequenceNumber: "asc" } } },
+    });
+
+    return reply.status(201).send(newJob);
+  });
+
 }
 

@@ -13,7 +13,6 @@ import { jobRequestRoutes }    from "./routes/jobRequests.js";
 import { requestLinkRoutes }   from "./routes/requestLinks.js";
 import { runRoutes }           from "./routes/runs.js";
 import { locationRoutes }      from "./routes/locations.js";
-import { templateRoutes }      from "./routes/templates.js";
 import { scheduleRoutes }      from "./routes/schedule.js";
 import { aiRoutes }            from "./routes/ai.js";
 import cors                    from "@fastify/cors";
@@ -106,7 +105,6 @@ export async function buildApp(
   await requestLinkRoutes(app, prisma);
   await runRoutes(app, prisma);
   await locationRoutes(app, prisma);
-  await templateRoutes(app, prisma);
   await scheduleRoutes(app, prisma);
   await aiRoutes(app, prisma);
 
