@@ -370,6 +370,15 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const run = await prisma.run.findFirst({ where: { id, companyId } });
       if (!run) return reply.status(404).send({ error: "Run not found" });
 
+      // When cancelling a run, release all active assignments so the job parts
+      // return to the unplanned pool immediately.
+      if (b.status === "cancelled") {
+        await prisma.runAssignment.updateMany({
+          where: { runId: id, companyId, removedAt: null },
+          data:  { removedAt: new Date() },
+        });
+      }
+
       const updated = await prisma.run.update({
         where: { id },
         data: {

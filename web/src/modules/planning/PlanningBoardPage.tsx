@@ -265,6 +265,8 @@ function JobCard({
 
 function RunCard({
   run,
+  isExpanded,
+  onToggleExpand,
   trailers,
   drivers,
   allRuns,
@@ -276,6 +278,8 @@ function RunCard({
   onDelete,
 }: {
   run:               PlanningRun;
+  isExpanded:        boolean;
+  onToggleExpand:    () => void;
   trailers:          FleetTrailer[];
   drivers:           PlanningDriver[];
   allRuns:           PlanningRun[];
@@ -286,8 +290,6 @@ function RunCard({
   onPublish:         (runId: number) => Promise<void>;
   onDelete:          (runId: number) => Promise<void>;
 }) {
-  // Collapse by default when the run already has stops — keeps the board tidy
-  const [collapsed, setCollapsed]   = useState(() => run.assignments.length > 0);
   const [saving,    setSaving]      = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [err,       setErr]         = useState("");
@@ -305,11 +307,6 @@ function RunCard({
   // AI feasibility check
   const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-
-  // Auto-expand when all stops are removed
-  useEffect(() => {
-    if (run.assignments.length === 0) setCollapsed(false);
-  }, [run.assignments.length]);
 
   // AI route feasibility — re-runs whenever stops or start time change
   useEffect(() => {
@@ -416,7 +413,7 @@ function RunCard({
       {/* ── Always-visible collapsed header ── */}
       <div
         className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none hover:bg-slate-50 rounded-t"
-        onClick={() => setCollapsed(c => !c)}
+        onClick={onToggleExpand}
       >
         <span className="font-bold text-sm text-primary flex-shrink-0">{run.runReference}</span>
         <StatusBadge status={run.status} />
@@ -446,11 +443,11 @@ function RunCard({
         >✕</button>
 
         {/* Expand/collapse arrow */}
-        <span className="text-slate-400 text-xs flex-shrink-0">{collapsed ? "▼" : "▲"}</span>
+        <span className="text-slate-400 text-xs flex-shrink-0">{isExpanded ? "▲" : "▼"}</span>
       </div>
 
       {/* ── Expanded body ── */}
-      {!collapsed && (
+      {isExpanded && (
         <div className="px-4 pb-4 pt-3 border-t border-slate-100">
 
           {err && <div className="text-xs text-red-600 mb-2">{err}</div>}
@@ -766,6 +763,25 @@ export default function PlanningBoardPage() {
   const [creatingRun,  setCreatingRun]  = useState(false);
   const [aiSuggesting, setAiSuggesting] = useState(false);
 
+  // Collapse state for run cards, keyed by run ID.
+  // Kept in the parent so it survives data refreshes — local state in RunCard
+  // would reset to the initializer value every time the runs array updates.
+  // undefined = use default (collapsed when has stops, expanded when empty).
+  const [runExpandOverrides, setRunExpandOverrides] = useState<Map<number, boolean>>(new Map());
+
+  function isRunExpanded(run: PlanningRun): boolean {
+    if (runExpandOverrides.has(run.id)) return runExpandOverrides.get(run.id)!;
+    return run.assignments.length === 0; // default: expand empty, collapse with stops
+  }
+
+  function toggleRunExpand(run: PlanningRun) {
+    setRunExpandOverrides(prev => {
+      const next = new Map(prev);
+      next.set(run.id, !isRunExpanded(run));
+      return next;
+    });
+  }
+
   // Derive job groups from clusters — no extra fetch needed
   const jobGroups = useMemo(() => buildJobGroups(clusters), [clusters]);
 
@@ -1041,6 +1057,8 @@ export default function PlanningBoardPage() {
                 <RunCard
                   key={run.id}
                   run={run}
+                  isExpanded={isRunExpanded(run)}
+                  onToggleExpand={() => toggleRunExpand(run)}
                   trailers={trailers}
                   drivers={drivers}
                   allRuns={runs}
