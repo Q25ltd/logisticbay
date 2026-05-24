@@ -475,72 +475,201 @@ export default function JobDetailPage() {
 // ── Load data detail section ─────────────────────────────────────────────────
 
 const LOAD_DATA_LABELS: Record<string, string> = {
+  // General
   loadHeight:             "Load height",
   loadNotes:              "Load notes",
+  // Pallets (legacy single-type — kept for old jobs)
   palletCount:            "Pallet count",
   palletType:             "Pallet type",
   palletTypeOther:        "Pallet type (other)",
+  // Pallets (new multi-type — palletLines rendered specially below)
+  palletLines:            "Pallet types",
   stackable:              "Pallets stackable",
+  weightPerUnit:          "Weight per pallet (kg)",
+  ispm15Required:         "ISPM-15 certified packaging",
+  // Roll cages
   cageCount:              "Cage count",
   cageFolded:             "Cages folded / nested",
+  // Machinery
   machineryPieceWeight:   "Machine weight (kg)",
   liftingPoints:          "Has lifting points",
   skidMounted:            "Skid mounted",
   craneRequired:          "Crane required",
+  // Building materials
   buildingMaterialType:   "Material type",
   buildingPalletised:     "Load palletised",
   longestItem:            "Longest item (m)",
   weatherSensitive:       "Weather sensitive",
+  // Food / refrigerated
   chilledFrozenAmbient:   "Temperature type",
   temperatureRange:       "Temperature range",
   foodPreCooled:          "Pre-cooling required",
+  foodCleanVehicle:       "Clean vehicle required",
+  foodHaccp:              "HACCP compliance required",
+  foodAllergenFree:       "Allergen-free vehicle",
+  foodTempLogger:         "Temperature logger required",
+  // Bulk
   tippingRequired:        "Tipping required",
   wetDry:                 "Wet or dry",
+  // Liquid
   liquidProductType:      "Product type",
   liquidVolumeLitres:     "Volume (litres)",
+  // Steel / long
   steelPieceCount:        "Number of pieces",
   steelWidth:             "Widest piece (m)",
+  // Vehicles
   vehicleCount:           "Number of vehicles",
   vehicleMakeModel:       "Make & model",
   vehicleKeysWithVehicle: "Keys with vehicle",
   vehicleDriveable:       "Driveable (RORO)",
+  // Containers
   containerSize:          "Container size",
   containerSizeOther:     "Container size (other)",
   loadedOrEmpty:          "Loaded or empty",
   containerNum:           "Container number",
+  containerIsoType:       "ISO container type",
+  containerBookingRef:    "Container booking ref",
+  containerTerminal:      "Terminal",
+  containerCutOff:        "Cut-off date / time",
+  containerSealNumber:    "Seal number",
+  // General goods
   generalPackagingType:   "Packaging type",
   generalPieceCount:      "Number of pieces",
+  // Hazmat / ADR basics
   unNumber:               "UN number",
   packingGroup:           "Packing group",
   hazardousQuantityKg:    "Hazardous quantity (kg)",
-  hazardousPaperworkAvailable: "Hazardous paperwork",
+  hazardousPaperworkAvailable: "Hazardous paperwork available",
+  // ADR extended
+  adrProperShippingName:  "Proper shipping name",
+  adrSubsidiaryRisk:      "ADR subsidiary risk",
+  adrFlashPoint:          "Flash point",
+  adrEmsCode:             "EMS code",
+  adrEmergencyContact:    "ADR emergency contact",
+  // Oversized
   oversizedWidth:         "Overall width (m)",
   oversizedHeight:        "Overall height (m)",
   oversizedLength:        "Overall length (m)",
+  // STGO / abnormal load
+  stgoCategory:           "STGO category",
+  movementOrderNumber:    "Movement order number",
+  // Waste
+  isWaste:                "Waste consignment",
+  ewcCode:                "EWC code",
+  wasteTrnNumber:         "Waste consignment note (TRN)",
+  // Transport / subcontracting
+  subcontractingAllowed:  "Subcontracting",
+  // driverQualifications and crossBorderData rendered specially below
 };
+
+// Pallet type code → display label
+const PALLET_TYPE_LABEL: Record<string, string> = {
+  euro: "Euro (800×1200mm)",
+  uk:   "UK (1000×1200mm)",
+  half: "Half pallets",
+  chep: "CHEP",
+};
+
+function fmtPalletLines(lines: unknown): string {
+  if (!Array.isArray(lines) || lines.length === 0) return "—";
+  return lines
+    .map((l: { type?: string; typeOther?: string; count?: number }) => {
+      const label = l.type ? (PALLET_TYPE_LABEL[l.type] ?? l.typeOther ?? l.type) : "Unknown";
+      return l.count != null ? `${l.count}× ${label}` : label;
+    })
+    .join(", ");
+}
 
 function fmtLoadValue(v: unknown): string {
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (v === null || v === undefined) return "—";
+  if (Array.isArray(v)) return "—"; // arrays handled specially
+  if (typeof v === "object") return "—"; // objects handled specially
   return String(v);
 }
 
-function LoadDataSection({ data }: { data: Record<string, unknown> }) {
-  const entries = Object.entries(data).filter(([, v]) => v !== null && v !== undefined && v !== "");
-  if (!entries.length) return null;
+// Keys that are rendered as their own expanded sub-sections, not as plain key-value pairs
+const SPECIAL_KEYS = new Set(["palletLines", "driverQualifications", "crossBorderData"]);
+
+const CROSS_BORDER_LABELS: Record<string, string> = {
+  shipperEori:         "Shipper EORI",
+  consigneeEori:       "Consignee EORI",
+  hsCode:              "HS / commodity code",
+  customsMovementType: "Customs movement type",
+  incoterms:           "Incoterms",
+  crossingRequired:    "Port / tunnel crossing",
+  crossingType:        "Crossing type",
+  crossingBookingRef:  "Crossing booking ref",
+};
+
+const DRIVER_QUAL_LABELS: Record<string, string> = {
+  cscsRequired:   "CSCS card required",
+  bs7858Required: "BS 7858 vetting required",
+  dbsLevel:       "DBS check level",
+};
+
+function SubSection({ title, entries, labels }: {
+  title: string;
+  entries: [string, unknown][];
+  labels: Record<string, string>;
+}) {
+  const rows = entries.filter(([, v]) => v !== null && v !== undefined && v !== "");
+  if (!rows.length) return null;
   return (
-    <div className="mt-3 pt-3 border-t border-slate-100">
-      <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#94a3b8" }}>Load details</div>
+    <div className="pt-2 border-t border-slate-100">
+      <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#94a3b8" }}>{title}</div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
-        {entries.map(([k, v]) => (
+        {rows.map(([k, v]) => (
           <div key={k}>
             <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "#94a3b8" }}>
-              {LOAD_DATA_LABELS[k] ?? cap(k)}
+              {labels[k] ?? cap(k)}
             </div>
             <div style={{ color: "#0f172a" }}>{fmtLoadValue(v)}</div>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function LoadDataSection({ data }: { data: Record<string, unknown> }) {
+  const plain  = Object.entries(data).filter(([k, v]) => !SPECIAL_KEYS.has(k) && v !== null && v !== undefined && v !== "");
+  const hasPL  = Array.isArray(data.palletLines) && (data.palletLines as unknown[]).length > 0;
+  const dqObj  = (data.driverQualifications && typeof data.driverQualifications === "object" && !Array.isArray(data.driverQualifications))
+    ? (data.driverQualifications as Record<string, unknown>) : null;
+  const cbObj  = (data.crossBorderData && typeof data.crossBorderData === "object" && !Array.isArray(data.crossBorderData))
+    ? (data.crossBorderData as Record<string, unknown>) : null;
+
+  if (!plain.length && !hasPL && !dqObj && !cbObj) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100 space-y-4">
+      <div className="text-xs font-bold uppercase tracking-wide" style={{ color: "#94a3b8" }}>Load details</div>
+
+      {/* Pallet lines — single summary line */}
+      {hasPL && (
+        <div>
+          <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "#94a3b8" }}>Pallet types</div>
+          <div className="text-sm" style={{ color: "#0f172a" }}>{fmtPalletLines(data.palletLines)}</div>
+        </div>
+      )}
+
+      {/* Standard key-value grid */}
+      {plain.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+          {plain.map(([k, v]) => (
+            <div key={k}>
+              <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "#94a3b8" }}>
+                {LOAD_DATA_LABELS[k] ?? cap(k)}
+              </div>
+              <div style={{ color: "#0f172a" }}>{fmtLoadValue(v)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dqObj && <SubSection title="Driver qualifications" entries={Object.entries(dqObj)} labels={DRIVER_QUAL_LABELS} />}
+      {cbObj && <SubSection title="Cross-border / customs" entries={Object.entries(cbObj)} labels={CROSS_BORDER_LABELS} />}
     </div>
   );
 }
