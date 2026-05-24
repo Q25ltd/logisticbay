@@ -296,7 +296,7 @@ export default function JobDetailPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
                 <Field label="Description"  value={job.goodsDescription} />
                 <Field label="Goods type"   value={job.goodsType ? cap(job.goodsType) : undefined} />
-                <Field label="Quantity"     value={job.quantity != null ? `${job.quantity} ${job.quantityUnit ?? ""}`.trim() : undefined} />
+                <Field label="Quantity"     value={job.quantity != null ? `${job.quantity}${job.quantityUnit ? " " + cap(job.quantityUnit) : ""}` : undefined} />
                 <Field label="Weight"       value={job.weight  != null ? `${job.weight} kg`  : undefined} />
                 <Field label="Volume"       value={job.volume  != null ? `${job.volume} m³`  : undefined} />
                 <Field label="Dimensions"   value={job.dimensions} />
@@ -765,7 +765,7 @@ function StopRow({ stop: s, isLast, area }: { stop: JobPart; isLast: boolean; ar
 
         {(s.quantityRequired != null) && (
           <div className="text-xs mt-0.5" style={{ color: "#374151" }}>
-            {s.quantityRequired} {s.quantityUnit ?? ""}
+            {s.quantityRequired}{s.quantityUnit ? " " + cap(s.quantityUnit) : ""}
           </div>
         )}
 
@@ -1114,7 +1114,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
       );
     } else if (bodyTypes.length > 0 && !bodyTypes.some(bt => TANKER_BODY_TYPES.has(bt))) {
       // HGV/artic is fine but the chosen body type is wrong
-      const chosen = bodyTypes.map(bt => cap(bt.replace(/_/g, " "))).join(", ");
+      const chosen = bodyTypes.map(bt => BODY_TYPES.find(b => b.value === bt)?.label ?? cap(bt.replace(/_/g, " "))).join(", ");
       warnings.push(
         `This is a liquid or tanker load but the body type you've chosen ("${chosen}") isn't suitable for carrying liquids. ` +
         `You'll need a tanker body type such as Chemical tanker, Food tanker, or Liquid tanker.`,
@@ -1153,7 +1153,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
         "you'll need a vehicle with a refrigerated body.",
       );
     } else if (bodyTypes.length > 0 && !bodyTypes.some(bt => FRIDGE_BODY_TYPES.has(bt))) {
-      const chosen = bodyTypes.map(bt => cap(bt.replace(/_/g, " "))).join(", ");
+      const chosen = bodyTypes.map(bt => BODY_TYPES.find(b => b.value === bt)?.label ?? cap(bt.replace(/_/g, " "))).join(", ");
       warnings.push(
         `This is a temperature-controlled load but "${chosen}" isn't a refrigerated body type. ` +
         `You'll need a Fridge or Insulated body.`,

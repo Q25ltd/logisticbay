@@ -271,7 +271,7 @@ export default function DriverSnapshot({
                       />
                       {matchedTrailer && (
                         <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
-                          ✓ In fleet · {trailerClassLabel(matchedTrailer.bodyType || matchedTrailer.trailerType) || matchedTrailer.bodyType || matchedTrailer.trailerType} · {matchedTrailer.status}
+                          ✓ In fleet · {trailerClassLabel(matchedTrailer.bodyType || matchedTrailer.trailerType) || (matchedTrailer.bodyType || matchedTrailer.trailerType)?.replace(/_/g, " ")} · {({"available":"Available","off_road":"Off Road","vor":"VOR","loaded":"Loaded","in_use":"In Use","repair":"In Repair","decommissioned":"Decommissioned"} as Record<string,string>)[matchedTrailer.status] ?? matchedTrailer.status}
                         </p>
                       )}
                       {isExternalTrailer && (

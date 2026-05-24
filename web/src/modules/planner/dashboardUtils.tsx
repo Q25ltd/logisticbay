@@ -346,7 +346,7 @@ export function buildWarnings(
     if (unit.status === "vor") {
       warnings.push({ level: "critical", type: "unit_vor", message: `${unit.registration} is VOR.` });
     } else if (unit.status !== "available") {
-      warnings.push({ level: "warning", type: "unit_unavailable", message: `${unit.registration} is marked ${unit.status}.` });
+      warnings.push({ level: "warning", type: "unit_unavailable", message: `${unit.registration} is marked ${({"off_road":"Off Road","loaded":"Loaded","in_use":"In Use","repair":"In Repair","decommissioned":"Decommissioned"} as Record<string,string>)[unit.status] ?? unit.status}.` });
     }
     if (!unitMatchesRequirement(job, unit)) {
       warnings.push({

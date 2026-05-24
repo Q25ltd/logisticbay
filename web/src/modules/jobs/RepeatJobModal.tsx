@@ -32,14 +32,14 @@ function daysBetween(a: string, b: string): number {
 
 // Human-readable unit labels
 const UNIT_LABELS: Record<string, string> = {
-  pallets:      "pallets",
-  roll_cages:   "roll cages",
-  tonnes:       "tonnes",
+  pallets:      "Pallets",
+  roll_cages:   "Roll cages",
+  tonnes:       "Tonnes",
   kg:           "kg",
-  bags:         "bags",
-  items:        "items",
-  loads:        "loads",
-  litres:       "litres",
+  bags:         "Bags",
+  items:        "Items",
+  loads:        "Loads",
+  litres:       "Litres",
   cubic_metres: "m³",
 };
 

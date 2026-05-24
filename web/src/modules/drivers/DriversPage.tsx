@@ -143,8 +143,8 @@ export default function DriversPage() {
                   </div>
 
                   <div className="mt-3 text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
-                    <span>Type: {driver.driverType || "permanent"}</span>
-                    <span>Licence: {driver.licenceClass || "not set"}</span>
+                    <span>Type: {({"permanent":"Permanent","agency":"Agency","subcontractor":"Subcontractor"} as Record<string,string>)[driver.driverType ?? "permanent"] ?? (driver.driverType ?? "Permanent")}</span>
+                    <span>Licence: {driver.licenceClass ? driver.licenceClass.replace(/_/g, " ").toUpperCase() : "Not set"}</span>
                     <span>Preferred start: {driver.preferredStartTime || "not set"}</span>
                     <span>Days: {driver.normalWorkingDays?.length ? driver.normalWorkingDays.join(", ") : "not set"}</span>
                     <span>Trailer: {driver.canUseTrailer ? "yes" : "no"}</span>

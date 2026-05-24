@@ -8,6 +8,17 @@ export function statusBadgeClass(status: string): string {
   }
 }
 
+const FLEET_STATUS_LABELS: Record<string, string> = {
+  available:      "Available",
+  assigned:       "Assigned",
+  off_road:       "Off Road",
+  vor:            "VOR",
+  loaded:         "Loaded",
+  in_use:         "In Use",
+  repair:         "In Repair",
+  decommissioned: "Decommissioned",
+};
+
 export function statusLabel(status: string): string {
-  return status === "vor" ? "VOR" : status.charAt(0).toUpperCase() + status.slice(1);
+  return FLEET_STATUS_LABELS[status] ?? (status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " "));
 }

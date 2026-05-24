@@ -38,7 +38,7 @@ export function Badge({ status, label }: { status: string; label?: string }) {
   const colour = COLOURS[status] ?? "bg-gray-100 text-gray-600";
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${colour}`}>
-      {label ?? LABELS[status] ?? status.replace(/_/g, " ")}
+      {label ?? LABELS[status] ?? (s => s.charAt(0).toUpperCase() + s.slice(1))(status.replace(/_/g, " "))}
     </span>
   );
 }

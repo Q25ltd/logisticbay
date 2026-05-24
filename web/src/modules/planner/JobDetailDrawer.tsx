@@ -108,8 +108,8 @@ export default function JobDetailDrawer({
 
           <DrawerSection title="Load">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <DetailRow label="Goods/material" value={job.goodsDescription || job.goodsType} />
-              <DetailRow label="Total quantity" value={job.quantity != null ? `${job.quantity} ${job.quantityUnit || ""}`.trim() : ""} />
+              <DetailRow label="Goods/material" value={job.goodsDescription || (job.goodsType ? job.goodsType.charAt(0).toUpperCase() + job.goodsType.replace(/_/g, " ").slice(1) : undefined)} />
+              <DetailRow label="Total quantity" value={job.quantity != null ? `${job.quantity}${job.quantityUnit ? " " + job.quantityUnit.charAt(0).toUpperCase() + job.quantityUnit.slice(1) : ""}` : ""} />
               <DetailRow label="Total weight" value={job.weight != null ? `${job.weight}` : ""} />
               <DetailRow label="Per-stop allocation" value={sortedStops(job).some((stop) => stop.numPallets != null) ? "Present" : "Missing/unused"} />
               <DetailRow label="POD required" value={job.requirePOD ? "Yes" : "No"} />

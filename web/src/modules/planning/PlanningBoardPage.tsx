@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver } from "../../api/planning";
 import { aiApi } from "../../api/ai";
+import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,25 @@ function fmtTime(iso: string | null | undefined): string {
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
+
+function cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function bodyTypeLabel(v: string): string {
+  return BODY_TYPES.find(b => b.value === v)?.label ?? cap(v);
+}
+
+const FLEET_STATUS_LABEL: Record<string, string> = {
+  available:      "Available",
+  off_road:       "Off Road",
+  vor:            "VOR",
+  loaded:         "Loaded",
+  in_use:         "In Use",
+  repair:         "In Repair",
+  decommissioned: "Decommissioned",
+};
 
 function prevDay(d: string): string {
   const dt = new Date(d); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10);
@@ -92,7 +112,7 @@ function ClusterCard({
               <span className="text-xs text-muted">{cluster.totalWeightKg.toLocaleString()} kg</span>
             )}
             {cluster.totalQty > 0 && (
-              <span className="text-xs text-muted">{cluster.totalQty} {cluster.primaryQtyUnit ?? ""}</span>
+              <span className="text-xs text-muted">{cluster.totalQty}{cluster.primaryQtyUnit ? " " + cap(cluster.primaryQtyUnit) : ""}</span>
             )}
             {cluster.hasTimeWindows && cluster.earliestWindow && (
               <Badge colour="bg-amber-50 text-amber-700">
@@ -300,8 +320,8 @@ function RunCard({
           <option value="">— assign trailer —</option>
           {trailers.map(t => (
             <option key={t.id} value={t.id}>
-              {t.registration} · {t.bodyType || t.trailerType}
-              {t.status !== "available" ? ` (${t.status})` : ""}
+              {t.registration} · {bodyTypeLabel(t.bodyType || t.trailerType)}
+              {t.status !== "available" ? ` (${FLEET_STATUS_LABEL[t.status] ?? cap(t.status)})` : ""}
             </option>
           ))}
         </select>

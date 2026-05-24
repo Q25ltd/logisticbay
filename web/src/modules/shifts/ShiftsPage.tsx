@@ -82,7 +82,7 @@ export default function ShiftsPage() {
                     <td className="px-4 py-3 text-sm">{s.nightOut ? "✓ Yes" : "No"}</td>
                     <td className="px-4 py-3">
                       <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (s.status === "submitted" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")}>
-                        {s.status}
+                        {s.status === "submitted" ? "Submitted" : s.status === "draft" ? "Draft" : s.status}
                       </span>
                     </td>
                   </tr>

@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Job, JobPart } from "../../types";
 import { jobRequestsApi } from "../../api/jobRequests";
-import { BODY_CATEGORIES } from "../../constants/vehicleTaxonomy";
+import { BODY_CATEGORIES, BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -367,7 +367,7 @@ function RequestRow({
                 <><span className="mx-2">·</span><span>{j.goodsDescription}</span></>
               )}
               {j.quantity != null && j.quantityUnit && (
-                <span className="ml-1 text-slate-500">{j.quantity} {j.quantityUnit}</span>
+                <span className="ml-1 text-slate-500">{j.quantity} {cap(j.quantityUnit)}</span>
               )}
             </div>
 
@@ -659,7 +659,7 @@ function JobDetailModal({
           <Section title="Load">
             <Field label="Goods type"    value={j.goodsType ? cap(j.goodsType) : undefined} />
             <Field label="Description"   value={j.goodsDescription} />
-            <Field label="Quantity"      value={j.quantity != null ? `${j.quantity} ${j.quantityUnit ?? ""}` : undefined} />
+            <Field label="Quantity"      value={j.quantity != null ? `${j.quantity}${j.quantityUnit ? " " + cap(j.quantityUnit) : ""}` : undefined} />
             <Field label="Weight"        value={j.weight   != null ? `${j.weight} kg`  : undefined} />
             <Field label="Volume"        value={j.volume   != null ? `${j.volume} m³`  : undefined} />
             <Field label="Dimensions"    value={j.dimensions} />
@@ -679,16 +679,16 @@ function JobDetailModal({
           {/* Vehicle requirements */}
           {hasVehicle && (
             <Section title="Vehicle requirements">
-              <Field label="Category"  value={j.vehicleCategory} />
+              <Field label="Category"  value={j.vehicleCategory ? (BODY_CATEGORIES.find(c => c.value === j.vehicleCategory)?.label ?? cap(j.vehicleCategory)) : undefined} />
               {Array.isArray(j.bodyTypes) && j.bodyTypes.length > 0 && (
-                <ChipRow label="Body types" items={j.bodyTypes as string[]} />
+                <ChipRow label="Body types" items={j.bodyTypes as string[]} labelFn={bodyTypeLabel} />
               )}
               <Field label="Min GVW"   value={j.minGvwClass} />
               {Array.isArray(j.equipment) && j.equipment.length > 0 && (
                 <ChipRow label="Equipment" items={j.equipment as string[]} />
               )}
               {Array.isArray(j.trailersAllowed) && j.trailersAllowed.length > 0 && (
-                <ChipRow label="Trailers" items={j.trailersAllowed as string[]} />
+                <ChipRow label="Trailers" items={j.trailersAllowed as string[]} labelFn={bodyTypeLabel} />
               )}
               <Field label="Access notes" value={j.vehicleAccessNotes} />
             </Section>
@@ -777,12 +777,12 @@ function StopBlock({ title, stop: s }: { title: string; stop: JobPart }) {
       {s.openingHours && <Field label="Opening hours" value={s.openingHours} />}
 
       {s.quantityRequired != null && (
-        <Field label="Quantity" value={`${s.quantityRequired} ${s.quantityUnit ?? ""}`} />
+        <Field label="Quantity" value={`${s.quantityRequired}${s.quantityUnit ? " " + cap(s.quantityUnit) : ""}`} />
       )}
       {(s.exchangeDropQty != null || s.exchangeCollectQty != null) && (
         <Field
           label="Exchange"
-          value={`Drop ${s.exchangeDropQty ?? 0} · Collect ${s.exchangeCollectQty ?? 0}${s.exchangeUnit ? ` ${s.exchangeUnit}` : ""}`}
+          value={`Drop ${s.exchangeDropQty ?? 0} · Collect ${s.exchangeCollectQty ?? 0}${s.exchangeUnit ? " " + cap(s.exchangeUnit) : ""}`}
         />
       )}
 
@@ -828,25 +828,33 @@ function ChipRow({
   label,
   items,
   variant,
+  labelFn,
 }: {
   label:    string;
   items:    string[];
   variant?: "amber";
+  labelFn?: (v: string) => string;
 }) {
   if (!items || items.length === 0) return null;
   const cls = variant === "amber"
     ? "bg-amber-50 text-amber-700 border border-amber-200"
     : "bg-slate-100 text-slate-700";
+  const fmt = labelFn ?? cap;
   return (
     <div>
       <div className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>{label}</div>
       <div className="flex gap-1 flex-wrap">
         {items.map(item => (
           <span key={item} className={"px-2 py-0.5 rounded-full text-xs font-medium " + cls}>
-            {cap(item)}
+            {fmt(item)}
           </span>
         ))}
       </div>
     </div>
   );
+}
+
+/** Label lookup for body/trailer type values */
+function bodyTypeLabel(v: string): string {
+  return BODY_TYPES.find(b => b.value === v)?.label ?? cap(v);
 }

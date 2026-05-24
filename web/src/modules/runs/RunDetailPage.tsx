@@ -7,6 +7,7 @@ import { driversApi } from "../../api/drivers";
 import type { Run, RunAssignment, Driver, PlannedJob, JobPart } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
+import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 const RUN_STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -38,6 +39,22 @@ const ASSIGNMENT_STATUS_BADGE: Record<string, string> = {
   pending: "pending",
   completed: "completed",
   skipped: "cancelled",
+};
+
+const ASSIGNMENT_STATUS_LABEL: Record<string, string> = {
+  pending:   "Pending",
+  completed: "Completed",
+  skipped:   "Skipped",
+};
+
+const FLEET_STATUS_LABEL: Record<string, string> = {
+  available:      "Available",
+  off_road:       "Off Road",
+  vor:            "VOR",
+  loaded:         "Loaded",
+  in_use:         "In Use",
+  repair:         "In Repair",
+  decommissioned: "Decommissioned",
 };
 
 const END_INSTRUCTIONS = [
@@ -531,14 +548,14 @@ export default function RunDetailPage() {
                       <span className="font-semibold text-sm text-primary">{job?.jobReference ?? `Job #${assignment.jobId}`}</span>
                       {job?.customerName && <span className="text-xs text-muted">{job.customerName}</span>}
                       {part && <span className="badge badge-pending text-xs">{STOP_TYPE_LABELS[part.type] ?? part.type}</span>}
-                      <Badge status={ASSIGNMENT_STATUS_BADGE[assignment.status] ?? assignment.status} label={assignment.status} />
+                      <Badge status={ASSIGNMENT_STATUS_BADGE[assignment.status] ?? assignment.status} label={ASSIGNMENT_STATUS_LABEL[assignment.status] ?? assignment.status} />
                     </div>
                     {part && (
                       <div className="text-sm text-muted truncate">{part.locationTextSnapshot || "—"}</div>
                     )}
                     {(assignment.quantityAssigned !== undefined && assignment.quantityUnit) && (
                       <div className="text-xs text-muted mt-0.5">
-                        {assignment.quantityAssigned} {assignment.quantityUnit}
+                        {assignment.quantityAssigned} {assignment.quantityUnit.charAt(0).toUpperCase() + assignment.quantityUnit.slice(1)}
                       </div>
                     )}
                   </div>
@@ -606,7 +623,7 @@ export default function RunDetailPage() {
               {run.requiredTrailerType && (
                 <div>
                   <span className="text-muted block text-xs">Required Trailer</span>
-                  <span className="font-medium text-primary">{run.requiredTrailerType}</span>
+                  <span className="font-medium text-primary">{BODY_TYPES.find(b => b.value === run.requiredTrailerType)?.label ?? run.requiredTrailerType}</span>
                 </div>
               )}
               {run.requiredEquipment && run.requiredEquipment.length > 0 && (

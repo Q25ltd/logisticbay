@@ -123,7 +123,9 @@ function jobMaterial(job: PlannedJob) {
 }
 
 function jobQuantity(job: PlannedJob) {
-  return job.quantity != null ? `${job.quantity} ${job.quantityUnit || ""}`.trim() : "";
+  if (job.quantity == null) return "";
+  const unit = job.quantityUnit ? cap(job.quantityUnit) : "";
+  return unit ? `${job.quantity} ${unit}` : `${job.quantity}`;
 }
 
 // ── Job row ───────────────────────────────────────────────────────────────────
