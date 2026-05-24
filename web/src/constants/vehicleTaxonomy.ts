@@ -5,7 +5,7 @@ export const BODY_CATEGORIES = [
   { value: "van", label: "Van (<=3.5t LCV)", needsTrailer: false, group: "van" },
   { value: "luton_van", label: "Luton van (3.5t)", needsTrailer: false, group: "van" },
   { value: "pickup", label: "Pickup / 4x4", needsTrailer: false, group: "van" },
-  { value: "rigid", label: "Rigid HGV", needsTrailer: false, group: "hgv" },
+  { value: "rigid", label: "Rigid", needsTrailer: false, group: "hgv" },
   { value: "tractor", label: "Tractor unit (artic head)", needsTrailer: true, group: "hgv" },
   { value: "drawbar", label: "Drawbar (rigid + trailer)", needsTrailer: true, group: "hgv" },
   { value: "heavy_haulage", label: "Heavy haulage tractor", needsTrailer: true, group: "specialist" },

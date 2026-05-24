@@ -1034,7 +1034,7 @@ const VEHICLE_NAME: Record<string, string> = {
   van:          "a Van",
   luton_van:    "a Luton van",
   pickup:       "a Pickup",
-  rigid:        "a Rigid HGV",
+  rigid:        "a Rigid",
   tractor:      "an Artic",
   drawbar:      "a Drawbar",
   heavy_haulage:"Heavy haulage",
@@ -1070,7 +1070,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
   if (maxKg && job.weight && job.weight > maxKg) {
     const better =
       job.weight > 16_000 ? "an Artic or Drawbar" :
-      job.weight > 700    ? "a Rigid HGV"         :
+      job.weight > 700    ? "a Rigid"         :
                             "a Luton van";
     warnings.push(
       `This job carries ${job.weight.toLocaleString("en-GB")} kg. ` +
@@ -1088,7 +1088,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
   ) {
     const better =
       job.quantity > 26 ? "an Artic or Drawbar" :
-      job.quantity > 3  ? "a Rigid HGV"         :
+      job.quantity > 3  ? "a Rigid"         :
                           "a Luton van";
     warnings.push(
       `This job has ${job.quantity} pallets. ` +
@@ -1097,7 +1097,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
   }
 
   // ── Liquid / tanker goods ─────────────────────────────────────────────────
-  //  Checks BOTH vehicle class AND body type — a Rigid HGV with a box body
+  //  Checks BOTH vehicle class AND body type — a Rigid with a box body
   //  is just as wrong as a van for liquid loads.
   const looksLikeFluid =
     goodsText.includes("tanker")   || goodsText.includes("liquid")   ||
@@ -1110,7 +1110,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
     if (["van", "luton_van", "pickup"].includes(category)) {
       warnings.push(
         "This looks like a liquid or tanker load. " +
-        "A van can't carry liquids in bulk — you'll need a Rigid HGV or Artic with a tanker body.",
+        "A van can't carry liquids in bulk — you'll need a Rigid or Artic with a tanker body.",
       );
     } else if (bodyTypes.length > 0 && !bodyTypes.some(bt => TANKER_BODY_TYPES.has(bt))) {
       // HGV/artic is fine but the chosen body type is wrong
@@ -1184,7 +1184,7 @@ const VEHICLE_BUTTONS = [
   { value: "van",        label: "Van",        sub: "≤3.5t LCV",        emoji: "🚐" },
   { value: "luton_van",  label: "Luton van",  sub: "≤3.5t box",        emoji: "📦" },
   { value: "pickup",     label: "Pickup",     sub: "4×4 / dropside",   emoji: "🛻" },
-  { value: "rigid",      label: "Rigid HGV",  sub: "7.5t–26t",         emoji: "🚛" },
+  { value: "rigid",      label: "Rigid",  sub: "7.5t–26t",         emoji: "🚛" },
   { value: "tractor",    label: "Artic",       sub: "44t tractor unit", emoji: "🚚" },
   { value: "drawbar",    label: "Drawbar",     sub: "Rigid + trailer",  emoji: "🔗" },
 ] as const;

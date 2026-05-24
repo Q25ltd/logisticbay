@@ -33,7 +33,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   van:          "Van (light goods, ≤3.5t GVW, ~500 kg payload)",
   luton_van:    "Luton van (box van ≤3.5t, ~700 kg payload)",
   pickup:       "Pickup / 4×4 (open bed, ~900 kg payload)",
-  rigid:        "Rigid HGV (no trailer, 7.5–26t GVW, up to ~16t payload)",
+  rigid:        "Rigid (no trailer, 7.5–26t GVW, up to ~16t payload)",
   tractor:      "Artic tractor unit (44t GVW with trailer, up to ~26t payload)",
   drawbar:      "Drawbar (rigid truck + drawbar trailer, ~44t GVW)",
   heavy_haulage:"Heavy haulage tractor (STGO, abnormal loads)",
