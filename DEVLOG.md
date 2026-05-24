@@ -7,6 +7,54 @@
 
 ---
 
+## Session log — 2026-05-24 (continued)
+
+### Planning Board: multi-day jobs, depot waypoints, route feasibility AI, UI polish
+
+**Commits:** `61bb895`, `09aaff6`, `464f90f`
+
+**Route feasibility AI check (replaces vehicle/load check on RunCard):**
+- New `api/src/services/checkRunService.ts` — haversine leg distances between stops (×1.25 road factor), HGV 60 km/h speed, 30 min dwell/stop, time window assessment by Claude
+- New `POST /ai/check-run` in `api/src/routes/ai.ts` — rate-limited 60/min, requires auth + planner role
+- Frontend: `aiApi.checkRun()` in `web/src/api/ai.ts`; RunCard useEffect now calls `checkRun` instead of `checkVehicleLoad`; trigger on `assignments.length` + `estimatedStartTime` changes
+- **Decision:** Original plan intended vehicle-load AND time-window checks. Route feasibility was built first. ADR/temp/weight checks still needed (see STATUS.md 1.10).
+
+**Multi-day job filtering:**
+- `GET /planning/unplanned` now filters by each stop's own `timeWindowStart` date (not `job.plannedDate`). Falls back to `bookedTime`, then `job.plannedDate` for stops with no time window.
+- Two-query approach to avoid Prisma OR + nested relation conflicts; results deduplicated.
+- ClusterCard: shows `📅 Fri 31 Jan` label when stop's date ≠ planning date; shows `🔗 Delivery also in [cluster]` amber chip when same job has companion stops in other clusters.
+
+**RunWaypoint — depot/yard stops:**
+- New `RunWaypoint` model in schema: `waypointType` (depot_start | yard_pickup | hub_drop | return_to_base | custom), `locationId` (FK → SavedLocation optional), `locationText`, `postcode`, `lat`, `lng`, `scheduledTime`, `notes`, `sequenceNumber`
+- Migration `20260524130000_add_run_waypoints` applied locally
+- `POST /planning/runs/:id/waypoints` — creates waypoint, auto-fills lat/lng/postcode from SavedLocation if `locationId` given
+- `DELETE /planning/runs/:id/waypoints/:wId`
+- `RUN_INCLUDE` updated to include `waypoints` (with location)
+- RunCard: "Depot / yard stops" section — "+ Add" toggle, type select with plain-English labels, location text input, "After which stop?" dropdown (shows actual stop names for mid-route types; depot_start/return_to_base auto-positioned).
+- **Note:** This is Phase 2 depot infrastructure pulled forward as a lightweight Phase 1 addition.
+
+**UI polish (prior sub-session):**
+- All raw snake_case enum values removed from every page (body types, fleet status, goods type, quantity units, run status, assignment status, driver type, licence class)
+- `FLEET_STATUS_LABELS`, `BODY_TYPES` lookup, `ASSIGNMENT_STATUS_LABEL` maps added across fleet, run, planning, request pages
+- Badge component fallback now capitalises first letter and replaces underscores
+- RepeatJobModal: `UNIT_LABELS` all proper-cased
+- ShiftsPage: status labels fixed
+
+**Key decisions this session:**
+- **Trailer made optional** (was required in PLANNING_BOARD.md spec). Real-world: planners often don't know trailer at planning time. Changed: removed red warning, removed API enforcement. Trailer can be assigned later. PLANNING_BOARD.md spec should be updated to reflect this.
+- **Single run creation path**: "New Run" button removed from RunsPage. Planning Board is the only place runs are created.
+- **AI suggest is job-aware**: all stops from the same job (jobId) are grouped into the same run regardless of geographic cluster, because collection + delivery of one job must travel together. Collections sorted before deliveries within each run.
+- **Depot/yard waypoints not in Phase 1 spec** — built anyway as it was a clear practical need. Phase 2 depot buffer (LoadTrack, depot sort UI) remains unbuilt.
+
+**Gaps vs PLANNING_BOARD.md spec:**
+- 1.6 Trailer required at publish — REMOVED deliberately
+- 1.8 Dependency lock enforcement — UI badge exists, API does not enforce
+- 1.10 AI checks — route feasibility only; ADR/temp/weight/split-load checks missing
+- 1.12 Job progress from RunAssignment — not built
+- 1.13 Driver push notification on publish — not built
+
+---
+
 ## Session log — 2026-05-24
 
 ### Planning Board Phase 1 + forms polish

@@ -30,12 +30,17 @@ The job is not done until every quantity on every run is delivered.
 | Step | What | When |
 |------|------|------|
 | 1 | Build run (group stops) | At planning |
-| 2 | Assign **trailer** | At planning — required before confirming run |
+| 2 | Assign **trailer** | At planning or later — **optional, not enforced** (see note) |
 | 3 | Assign **driver** | When driver availability confirmed (can be day before or morning of) |
 | 4 | Assign **unit/truck** | Driver phase — any unit can pull any trailer |
 | 5 | Publish to driver | When run is fully confirmed |
 
-A run in `draft` status can exist with trailer set but no driver. That is correct and expected.
+> **Decision 2026-05-24:** Trailer was originally required before publish. Changed to optional.
+> Real-world planners often don't know which trailer will be available at planning time (trailers
+> are assigned day-of based on availability). Trailer can be assigned at any time before or after publish.
+> The API no longer enforces trailer presence at publish. Red warning removed from UI.
+
+A run in `draft` status can exist with no trailer and no driver. That is correct and expected.
 
 ---
 

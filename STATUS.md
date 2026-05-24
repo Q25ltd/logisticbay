@@ -167,20 +167,25 @@
 ### Planning board
 Full spec in **PLANNING_BOARD.md**. Three phases.
 
-**Phase 1 — Planning board (Types 1, 2, 3)** — BUILT 2026-05-24
+**Phase 1 — Planning board (Types 1, 2, 3)** — BUILT 2026-05-24, updated 2026-05-24
 - [x] 1.1  Schema: `runType` + `dependsOnRunId` (self-ref FK) on Run — migration applied
-- [x] 1.2  API: `/planning/unplanned` — haversine 5km clustering with postcode fallback
+- [x] 1.2  API: `/planning/unplanned` — haversine 5km clustering with postcode fallback; stop-date filtering (timeWindowStart → bookedTime → job.plannedDate cascade)
 - [x] 1.3  Page: `/app/planning` — date navigation, two-panel layout (nav item added)
-- [x] 1.4  Left panel: ClusterCard — expandable stop list, per-stop run selector
-- [x] 1.5  Right panel: RunCard — stops list, inline add/remove
-- [x] 1.6  Trailer assignment on run card (required; red warning if missing at publish)
+- [x] 1.4  Left panel: ClusterCard — expandable stop list, per-stop run selector, same-job companion-stop indicators, cross-date labels
+- [x] 1.5  Right panel: RunCard — stops list, inline add/remove, stop-order warning
+- [~] 1.6  Trailer assignment on run card — **CHANGED: now optional** (plan said required). Decision: real-world planning often doesn't know trailer upfront. API enforcement removed; red warning removed. Trailer can be assigned later.
 - [x] 1.7  Driver assignment on run card (optional)
-- [ ] 1.8  Run dependency locking (relay: run B locked until run A done)
+- [~] 1.8  Run dependency locking — UI badge shows "🔒 Waiting on RUN-X"; `dependsOnRunId` stored and shown. **API does not enforce lock** (does not block publish if dependency isn't complete). Full enforcement not yet built.
 - [ ] 1.9  Split load UI — assign quantity per run, balance check
-- [x] 1.10 AI validation — green/amber/red per run card (debounced 800ms, concern/severity/message)
-- [x] 1.11 "Suggest runs for today" button — AI picks vehicle category, creates run from biggest cluster
+- [~] 1.10 AI validation — route feasibility check (`POST /ai/check-run`): haversine distances, HGV drive time, time window assessment. **Only route feasibility built.** Spec also lists: ADR on wrong trailer, temp load on non-fridge, weight vs capacity, split-load balance — these are NOT done.
+- [x] 1.11 "Suggest all runs" button — job-aware grouping (all stops from same job stay together), one run per cluster, AI vehicle suggestion per run
 - [ ] 1.12 Job progress update — job status derived from RunAssignment completion
-- [x] 1.13 Publish run → status set to "assigned"; API enforces trailer present
+- [~] 1.13 Publish run → status set to "assigned", `publishedToDriver = true`. **No push notification to driver yet** (plan said driver gets notified). Trailer enforcement removed (see 1.6).
+
+**Planning board extras built outside spec (2026-05-24):**
+- [x] Multi-day job support — unplanned filter uses stop's own `timeWindowStart` date not job date; cross-date labels on stops; companion-stop pairing indicators across clusters
+- [x] `RunWaypoint` model + `POST/DELETE /planning/runs/:id/waypoints` — depot start, yard pickup, hub drop, return-to-base, custom waypoints on run card; `sequenceNumber` positions them in run order. Schema migration `20260524130000_add_run_waypoints` applied.
+- [x] AI route feasibility check (replaces load/vehicle check) — `POST /ai/check-run` with haversine leg distances, HGV speed estimate, time window compliance; `checkRunService.ts`
 
 **Phase 2 — Depot operations (Type 4)**
 - [ ] 2.1  LoadTrack write path (API: POST /load-track)
@@ -245,7 +250,7 @@ Company, Customer, User, CompanyMembership, DriverProfile
 PasswordResetToken, EmailVerificationToken, RefreshToken
 SavedLocation, JobTemplate
 Job, JobPart, JobAudit, JobExecutionEvent
-Run, RunAssignment, LoadTrack
+Run, RunAssignment, RunWaypoint, LoadTrack
 SyncEventLog
 Shift, ShiftSegment, DeliveryTask
 DriverAvailability, ShiftPreference, HolidayRequest, DriverWorkingTimeSummary
