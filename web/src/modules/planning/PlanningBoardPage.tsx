@@ -522,24 +522,66 @@ export default function PlanningBoardPage() {
     if (!clusters.length) { setErr("No unplanned stops to suggest runs for."); return; }
     setAiSuggesting(true); setErr("");
     try {
-      // Create one run per cluster — AI picks vehicle category for each
+      // All unplanned stops across every cluster, keyed by stop id
+      const allStops = clusters.flatMap(c => c.stops);
+      const allStopMap = new Map(allStops.map(s => [s.id, s]));
+
+      // Group ALL stops by jobId — collection + delivery of the same job must travel together
+      const byJob = new Map<number, typeof allStops>();
+      for (const stop of allStops) {
+        if (!byJob.has(stop.jobId)) byJob.set(stop.jobId, []);
+        byJob.get(stop.jobId)!.push(stop);
+      }
+
+      // Build run groups: start from each cluster's COLLECTION/PICKUP stops,
+      // then pull in the matching deliveries from the same jobs (even if in another cluster).
+      const assignedStopIds = new Set<number>();
+      const COLLECTION_TYPES = new Set(["collection", "pickup"]);
+      const DELIVERY_TYPES   = new Set(["delivery", "dropoff"]);
+
       for (const cluster of clusters) {
+        // Skip clusters where every stop is already assigned to a run
+        const unassigned = cluster.stops.filter(s => !assignedStopIds.has(s.id));
+        if (!unassigned.length) continue;
+
+        // All job IDs that appear in this cluster's unassigned stops
+        const jobIds = new Set(unassigned.map(s => s.jobId));
+
+        // Collect every stop that belongs to any of those jobs (across all clusters)
+        // Sort: collections/pickups first, deliveries/dropoffs second
+        const runStops = [...byJob.entries()]
+          .filter(([jobId]) => jobIds.has(jobId))
+          .flatMap(([, stops]) => stops)
+          .filter(s => !assignedStopIds.has(s.id))
+          .sort((a, b) => {
+            const order = (t: string) => COLLECTION_TYPES.has(t) ? 0 : DELIVERY_TYPES.has(t) ? 1 : 2;
+            return order(a.type) - order(b.type);
+          });
+
+        if (!runStops.length) continue;
+
         const suggestion = await aiApi.suggestVehicle({
           weight:       cluster.totalWeightKg || undefined,
-          quantity:     cluster.totalQty       || undefined,
-          quantityUnit: cluster.primaryQtyUnit  ?? undefined,
-          goodsType:    cluster.stops[0]?.goodsType ?? undefined,
-          stopCount:    cluster.stops.length,
+          quantity:     cluster.totalQty      || undefined,
+          quantityUnit: cluster.primaryQtyUnit ?? undefined,
+          goodsType:    runStops[0]?.goodsType ?? undefined,
+          stopCount:    runStops.length,
         });
+
         const run = await planningApi.createRun({
           date,
           runType:      "direct",
           plannerNotes: `AI: ${suggestion.reasoning ?? ""}`,
         });
-        for (const stop of cluster.stops) {
-          try { await planningApi.addStop(run.id, stop.id); } catch { /* already assigned */ }
+
+        for (const stop of runStops) {
+          try {
+            await planningApi.addStop(run.id, stop.id);
+            assignedStopIds.add(stop.id);
+          } catch { /* skip */ }
         }
       }
+
       await Promise.all([loadLeft(date), loadRight(date)]);
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setAiSuggesting(false); }
