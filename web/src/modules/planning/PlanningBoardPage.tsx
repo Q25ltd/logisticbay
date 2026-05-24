@@ -241,10 +241,10 @@ function RunCard({
   const [publishing, setPublishing] = useState(false);
   const [err,       setErr]       = useState("");
   const [showWaypointForm, setShowWaypointForm] = useState(false);
-  const [wpType,    setWpType]    = useState("depot_start");
-  const [wpText,    setWpText]    = useState("");
-  const [wpSeq,     setWpSeq]     = useState(0);
-  const [wpAdding,  setWpAdding]  = useState(false);
+  const [wpType,       setWpType]    = useState("depot_start");
+  const [wpText,       setWpText]    = useState("");
+  const [wpAfterIdx,   setWpAfterIdx] = useState<number>(-1); // -1 = before all, N = after assignments[N]
+  const [wpAdding,     setWpAdding]  = useState(false);
   const [aiCheck,   setAiCheck]   = useState<{ ok: boolean; severity: "ok"|"warn"|"block"; reason: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -296,7 +296,16 @@ function RunCard({
     if (!wpText.trim()) return;
     setWpAdding(true);
     try {
-      await onAddWaypoint(run.id, wpType, wpText.trim(), wpSeq);
+      // Sequence number: depot_start=0, return_to_base=9999,
+      // mid-route = after the chosen stop's sequenceNumber
+      const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+      let seq: number;
+      if (wpType === "depot_start")    seq = 0;
+      else if (wpType === "return_to_base") seq = 9999;
+      else if (wpAfterIdx < 0)         seq = 0;        // before all
+      else seq = (sorted[wpAfterIdx]?.sequenceNumber ?? 0) + 5;
+
+      await onAddWaypoint(run.id, wpType, wpText.trim(), seq);
       setWpText(""); setShowWaypointForm(false);
     } catch (e: unknown) { setErr((e as Error).message ?? "Failed to add waypoint"); }
     finally { setWpAdding(false); }
@@ -427,43 +436,57 @@ function RunCard({
         {/* Add form */}
         {showWaypointForm && (
           <div className="rounded border border-slate-200 bg-slate-50 p-2 space-y-1.5 text-xs">
+            {/* Stop type */}
             <select
               className="input text-xs py-1 w-full"
               value={wpType}
-              onChange={e => { setWpType(e.target.value); setWpSeq(e.target.value === "depot_start" ? 0 : e.target.value === "return_to_base" ? 9999 : 50); }}
+              onChange={e => setWpType(e.target.value)}
             >
-              <option value="depot_start">Depot start (beginning of run)</option>
-              <option value="yard_pickup">Yard pickup (collect trailer/equipment)</option>
-              <option value="hub_drop">Hub / transfer point</option>
-              <option value="return_to_base">Return to base (end of run)</option>
-              <option value="custom">Custom waypoint</option>
+              <option value="depot_start">🏭 Depot start — first stop before any collections</option>
+              <option value="yard_pickup">🅿 Yard pickup — collect trailer or equipment</option>
+              <option value="hub_drop">🔄 Hub / transfer point — relay or consolidation</option>
+              <option value="return_to_base">🏠 Return to base — last stop after all deliveries</option>
+              <option value="custom">📍 Other — custom waypoint</option>
             </select>
+
+            {/* Location */}
             <input
               type="text"
               className="input text-xs py-1 w-full"
-              placeholder="Location name or address…"
+              placeholder="Location name, e.g. Trafford Park Depot"
               value={wpText}
               onChange={e => setWpText(e.target.value)}
             />
-            <div className="flex gap-1.5 items-center">
-              <label className="text-muted flex-shrink-0">Position</label>
-              <input
-                type="number"
-                className="input text-xs py-1 w-20"
-                value={wpSeq}
-                min={0}
-                onChange={e => setWpSeq(parseInt(e.target.value, 10) || 0)}
-                title="Lower = earlier in run. 0 = before all stops, 9999 = after all stops"
-              />
-              <span className="text-muted text-[10px]">(0 = first, 9999 = last)</span>
-              <button
-                onClick={handleAddWaypoint}
-                disabled={!wpText.trim() || wpAdding}
-                className="btn text-xs py-1 px-2 bg-accent text-white disabled:opacity-40 ml-auto"
-              >
-                {wpAdding ? "…" : "Add"}
-              </button>
-            </div>
+
+            {/* "After which stop?" — only for mid-route types */}
+            {wpType !== "depot_start" && wpType !== "return_to_base" && (
+              <div>
+                <label className="text-muted block mb-0.5">Place after which job stop?</label>
+                <select
+                  className="input text-xs py-1 w-full"
+                  value={wpAfterIdx}
+                  onChange={e => setWpAfterIdx(parseInt(e.target.value, 10))}
+                >
+                  <option value={-1}>— Before all stops (beginning of run)</option>
+                  {[...run.assignments]
+                    .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+                    .map((a, i) => (
+                      <option key={a.id} value={i}>
+                        After stop {i + 1}: {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — {a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? a.jobPart.postcode ?? "Unknown"}
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+            )}
+
+            <button
+              onClick={handleAddWaypoint}
+              disabled={!wpText.trim() || wpAdding}
+              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 w-full"
+            >
+              {wpAdding ? "Adding…" : "Add stop"}
+            </button>
           </div>
         )}
 
