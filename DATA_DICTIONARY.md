@@ -926,12 +926,16 @@ Stored in `JobRequest.loadData` (Json column, default `{}`). Copied verbatim to 
 | goodsTypeOther | String? | No | Free text | Description of goods when goodsType = `other` |
 | goodsDescription | String | Yes | Free text, min 15 characters | Detailed description of what is being transported |
 | quantity | Number | Yes | Positive number | Quantity of goods |
-| unit | String | Yes | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity |
+| unit | String | Yes | `pallets` \| `roll_cages` \| `ldm` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity. `ldm` = loading metres (European road freight standard) |
 | estimatedWeight | Number? | Yes (validated) | Positive number (kg) | Estimated total weight of the load in kilograms |
 | palletCount | Number? | No | Positive integer | Number of pallets (only when goodsType = `pallets`) |
-| palletType | String? | No | `euro` \| `uk` \| `half` \| `chep` \| `other` | Type of pallets (only when goodsType = `pallets`) |
+| palletType | String? | No | `euro` \| `uk` \| `half` \| `chep` \| `other` | Type of pallets (only when goodsType = `pallets` or unit = `pallets`) |
 | palletTypeOther | String? | No | Free text | Description of pallet type when palletType = `other` |
-| stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets`) |
+| palletDimL | Number? | No | Positive integer (mm) | Length of a custom pallet in millimetres — only present when palletType = `other` |
+| palletDimW | Number? | No | Positive integer (mm) | Width of a custom pallet in millimetres — only present when palletType = `other` |
+| weightPerUnit | Number? | No | Positive number (kg) | Gross weight per individual pallet or unit including packaging — required for tail lift and fork truck safety calculations |
+| stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets` or unit = `pallets`) |
+| ispm15Required | Boolean? | No | `true` \| `false` | Whether all wood packaging must be ISPM-15 certified (heat-treated and marked HT) — only shown when any stop is outside GB |
 | cageCount | Number? | No | Positive integer | Number of roll cages / yorks (only when goodsType = `roll_cages`) |
 | cageFolded | Boolean? | No | `true` \| `false` | Whether the cages are folded / nested (only when goodsType = `roll_cages`) |
 | buildingMaterialType | String? | No | `bricks_blocks` \| `timber` \| `aggregates` \| `plasterboard` \| `roofing` \| `glass` \| `insulation` \| `pipes_ducting` \| `other` | Sub-type of building material (only when goodsType = `building_materials`) |
@@ -953,6 +957,11 @@ Stored in `JobRequest.loadData` (Json column, default `{}`). Copied verbatim to 
 | tippingRequired | Boolean? | No | `true` \| `false` | Whether tipping is required at delivery (only when goodsType = `bulk_material`) |
 | temperatureRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range (only when goodsType = `food_refrigerated`) |
 | chilledFrozenAmbient | String? | No | `chilled` \| `frozen` \| `ambient` \| `dry` \| `wet` | Temperature / moisture classification of the load |
+| foodTempLogger | Boolean? | No | `true` \| `false` | Whether a continuous temperature data logger is required during transit |
+| foodCleanVehicle | Boolean? | No | `true` \| `false` | Whether a clean vehicle declaration must be provided before loading |
+| foodHaccp | Boolean? | No | `true` \| `false` | Whether HACCP (Hazard Analysis and Critical Control Points) compliance is required |
+| foodAllergenFree | Boolean? | No | `true` \| `false` | Whether the vehicle must be allergen / nut-free to prevent cross-contamination |
+| foodPreCooled | Boolean? | No | `true` \| `false` | Whether the trailer must be pre-cooled to the target temperature before loading |
 | vehicleCount | Number? | No | Positive integer | Number of vehicles to be transported (only when goodsType = `vehicles`) |
 | vehicleMakeModel | String? | No | Free text (e.g. `2019 Ford Transit Custom`) | Year, make and model of the vehicle(s) being transported |
 | vehicleKeysWithVehicle | Boolean? | No | `true` \| `false` | Whether keys will be with the vehicle (only when goodsType = `vehicles`) |
@@ -961,9 +970,38 @@ Stored in `JobRequest.loadData` (Json column, default `{}`). Copied verbatim to 
 | containerSizeOther | String? | No | Free text | Description of container size when containerSize = `other` |
 | loadedOrEmpty | String? | No | `loaded` \| `empty` | Whether the container is loaded or empty (only when goodsType = `containers`) |
 | containerNumber | String? | No | Free text (e.g. `MSCU1234567`) | Container identification number |
+| containerIsoType | String? | No | `gp` \| `hc` \| `rf` \| `ot` \| `fr` \| `tk` \| `other` | ISO container type code. `gp` = general purpose dry, `hc` = high cube, `rf` = reefer/refrigerated, `ot` = open top, `fr` = flat rack, `tk` = tank container |
+| containerBookingRef | String? | No | Free text (e.g. `MSKU1234567`) | Port booking reference or container release number — required by the terminal to release the box. Without this the driver cannot uplift. |
+| containerTerminal | String? | No | Free text (e.g. `DP World London Gateway — Berth 3`) | Terminal name and berth where the container is to be collected or delivered |
+| containerCutOff | String? | No | ISO 8601 datetime | Port cut-off date and time — container must arrive before this or it misses the sailing |
+| containerSealNumber | String? | No | Free text (e.g. `ML-12345678`) | Customs seal number fitted at collection — recorded for customs purposes |
 | loadNotes | String? | No | Free text | Additional load-specific notes for the driver and planner |
 | canSplitShipment | String? | No | `must_stay_together` \| `can_split_partially` \| `can_split_freely` | Whether the shipment can be split across multiple vehicles |
 | securingRequirements | String[]? | No | `straps_required` \| `chains_required` \| `edge_protection_required` \| `sheets_required` \| `curtains_must_not_touch_load` \| `stanchions_required` \| `temperature_monitoring_required` | Load securing equipment or methods required |
+| isWaste | Boolean? | No | `true` \| `false` | Whether the goods are classified as controlled waste under the Environmental Protection Act 1990. A valid Waste Carrier Licence and Waste Transfer Note are legally required. |
+| ewcCode | String? | No | Free text (e.g. `15 01 01`) | European Waste Catalogue code identifying the waste type — must accompany the Waste Transfer Note |
+| wasteTrnNumber | String? | No | Free text (e.g. `WTN-2026-001`) | Waste Transfer Note document reference — must travel with the load |
+| adrProperShippingName | String? | No | Free text (e.g. `FLAMMABLE LIQUID, N.O.S.`) | Official ADR proper shipping name as required on transport documents — only when `dangerous_goods` selected |
+| adrSubsidiaryRisk | String? | No | Free text (e.g. `8`) | ADR subsidiary risk class — only present when the substance has a secondary hazard |
+| adrFlashPoint | String? | No | Free text in °C (e.g. `23`) | Flash point — required for Class 3 flammable liquids |
+| adrEmsCode | String? | No | Free text (e.g. `F-E, S-E`) | Emergency Schedule code — required for sea or multimodal moves involving dangerous goods |
+| adrEmergencyContact | String? | No | Free text (e.g. `CHEMTREC: +1-800-424-9300`) | 24-hour emergency response telephone number to appear on transport documents |
+| stgoCategory | String? | No | `cat1` \| `cat2` \| `cat3` \| `so` | Special Types General Order category for abnormal / indivisible loads. `cat1` = up to 44t, `cat2` = up to 80t, `cat3` = up to 150t, `so` = Special Order (>150t or non-standard). Affects route notifications, speed limits, and police escort requirements. |
+| movementOrderNumber | String? | No | Free text (e.g. `MO-2026-00123`) | Movement order reference issued by the relevant highways authority — required before movement of Cat 3 / SO loads |
+| subcontractingAllowed | String? | No | `yes` \| `with_approval` \| `no` | Whether the haulier may subcontract this job to another operator or use the spot market |
+| driverQualifications | Object? | No | See sub-fields below | Additional driver qualification or vetting requirements beyond standard CPC and licence |
+| driverQualifications.cscsRequired | Boolean? | No | `true` \| `false` | Whether the driver must hold a CSCS (Construction Skills Certification Scheme) card |
+| driverQualifications.bs7858Required | Boolean? | No | `true` \| `false` | Whether the driver must hold BS7858 security vetting clearance (airports, data centres, MOD sites) |
+| driverQualifications.dbsLevel | String? | No | `basic` \| `enhanced` | DBS (Disclosure and Barring Service) check level required |
+| crossBorderData | Object? | No | See sub-fields below | Cross-border customs and crossing data — only present when one or more stops are outside GB |
+| crossBorderData.shipperEori | String? | No | Free text (e.g. `GB123456789000`) | Exporter's Economic Operator Registration and Identification number — required for customs declarations |
+| crossBorderData.consigneeEori | String? | No | Free text (e.g. `DE987654321000`) | Importer's EORI number |
+| crossBorderData.hsCode | String? | No | Free text (e.g. `8703 23 19 00`) | Harmonised System commodity code — at least 6 digits. Used for customs declarations and tariff preference claims. |
+| crossBorderData.customsMovementType | String? | No | `t1` \| `t2` \| `t2f` \| `national` \| `unsure` | Customs transit procedure. `t1` = External Community Transit, `t2` = Internal Community Transit, `t2f` = Internal Transit (special territories), `national` = domestic only, `unsure` = planner to advise |
+| crossBorderData.incoterms | String? | No | `exw` \| `fca` \| `cpt` \| `cip` \| `dap` \| `dpu` \| `ddp` \| `fas` \| `fob` \| `cfr` \| `cif` | Incoterms 2020 trade term defining freight/insurance responsibility and risk transfer point |
+| crossBorderData.crossingRequired | Boolean? | No | `true` \| `false` | Whether a sea or tunnel crossing is required |
+| crossBorderData.crossingType | String? | No | `eurotunnel` \| `dover_calais` \| `dover_dunkirk` \| `harwich_hook` \| `hull_rotterdam` \| `roscoff_plymouth` \| `other` | Crossing route (only when crossingRequired = `true`) |
+| crossBorderData.crossingBookingRef | String? | No | Free text (e.g. `EU123456789`) | Customer-supplied crossing booking reference. Leave blank if the carrier books it. |
 
 ---
 
@@ -977,8 +1015,13 @@ Stored in `JobRequest.specialRequirementsData` (Json column, default `{}`).
 | adrClass | String? | No | Free text (e.g. `Class 3 — Flammable liquids`) | ADR hazard class description (only when `dangerous_goods` selected) |
 | unNumber | String? | No | Free text (e.g. `UN 1993`) | UN dangerous goods number (only when `dangerous_goods` selected) |
 | packingGroup | String? | No | `I` \| `II` \| `III` | ADR packing group (only when `dangerous_goods` selected) |
+| hazardousQuantityKg | Number? | No | Positive number (kg) | Total quantity of dangerous goods in kilograms |
 | hazardousPaperworkAvailable | Boolean? | No | `true` \| `false` | Whether the customer will provide hazardous goods documentation |
-| temperatureRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range (only when `temperature_controlled` selected) |
+| oversizedWidth | String? | No | Free text in metres | Width of the oversized load |
+| oversizedHeight | String? | No | Free text in metres | Height of the oversized load |
+| oversizedLength | String? | No | Free text in metres | Length of the oversized load |
+
+> **Note:** The following ADR extended fields and STGO / movement order fields are stored in `loadData` (not in this blob): `adrProperShippingName`, `adrSubsidiaryRisk`, `adrFlashPoint`, `adrEmsCode`, `adrEmergencyContact`, `stgoCategory`, `movementOrderNumber`. This is a known inconsistency — they will be migrated to `specialRequirementsData` in a future cleanup.
 
 ---
 
@@ -1150,6 +1193,10 @@ Both the internal `CreateJobPage` form and the public `PublicRequestForm` now sh
 | **Load details** | Estimated total weight (kg) | `LoadDetails.weight` | `JobRequest.loadData.estimatedWeight` |
 | **Load details** | Pallet count | n/a (internal form uses quantity field) | `JobRequest.loadData.palletCount` |
 | **Load details** | Pallet type | n/a | `JobRequest.loadData.palletType` |
+| **Load details** | Pallet type — Other: Length (mm) | n/a | `JobRequest.loadData.palletDimL` |
+| **Load details** | Pallet type — Other: Width (mm) | n/a | `JobRequest.loadData.palletDimW` |
+| **Load details** | Weight per pallet (kg) | n/a | `JobRequest.loadData.weightPerUnit` |
+| **Load details** | ISPM-15 certified wood packaging required | n/a | `JobRequest.loadData.ispm15Required` |
 | **Load details** | Pallets are stackable | `LoadDetails.stackable` | `JobRequest.loadData.stackable` |
 | **Load details** | Number of cages | n/a | `JobRequest.loadData.cageCount` |
 | **Load details** | Cages are folded / nested | n/a | `JobRequest.loadData.cageFolded` |
@@ -1180,21 +1227,56 @@ Both the internal `CreateJobPage` form and the public `PublicRequestForm` now sh
 | **Load details** | Other container size — describe | n/a | `JobRequest.loadData.containerSizeOther` |
 | **Load details** | Loaded or empty? | n/a | `JobRequest.loadData.loadedOrEmpty` |
 | **Load details** | Container number | n/a | `JobRequest.loadData.containerNumber` |
+| **Load details** | Container ISO type | n/a | `JobRequest.loadData.containerIsoType` |
+| **Load details** | Port booking reference / release number | n/a | `JobRequest.loadData.containerBookingRef` |
+| **Load details** | Terminal / port name | n/a | `JobRequest.loadData.containerTerminal` |
+| **Load details** | Port cut-off date & time | n/a | `JobRequest.loadData.containerCutOff` |
+| **Load details** | Seal number | n/a | `JobRequest.loadData.containerSealNumber` |
 | **Load details** | Can this shipment be split? | `PlannedJob.canSplitShipment` | `JobRequest.loadData.canSplitShipment` |
 | **Load details** | Load securing requirements | `LoadDetails.securingRequirements` | `JobRequest.loadData.securingRequirements[]` |
 | **Load details** | Additional load notes | `LoadDetails.notes` | `JobRequest.loadData.loadNotes` |
+| **Load details** | These goods are classified as waste | n/a | `JobRequest.loadData.isWaste` |
+| **Load details** | EWC code (European Waste Catalogue) | n/a | `JobRequest.loadData.ewcCode` |
+| **Load details** | Waste Transfer Note number | n/a | `JobRequest.loadData.wasteTrnNumber` |
+| **Load details (food)** | Temperature data logger required | n/a | `JobRequest.loadData.foodTempLogger` |
+| **Load details (food)** | Clean vehicle declaration required | n/a | `JobRequest.loadData.foodCleanVehicle` |
+| **Load details (food)** | HACCP compliance required | n/a | `JobRequest.loadData.foodHaccp` |
+| **Load details (food)** | Allergen-free vehicle required | n/a | `JobRequest.loadData.foodAllergenFree` |
 | **Load details** | Load is fragile | `LoadDetails.fragile` | via `JobRequest.specialRequirementsData.items[]` |
 | **Load details** | Temperature controlled | `LoadDetails.tempControlled` | via `JobRequest.specialRequirementsData.items[]` |
 | **Load details** | Special requirements (multi-check) | `LoadDetails.specialRequirements` | `JobRequest.specialRequirementsData.items[]` |
 | **Special requirements** | ADR class | `LoadDetails.hazardClass` | `JobRequest.specialRequirementsData.adrClass` |
 | **Special requirements** | UN number | n/a | `JobRequest.specialRequirementsData.unNumber` |
 | **Special requirements** | Packing group | n/a | `JobRequest.specialRequirementsData.packingGroup` |
+| **Special requirements** | Hazardous goods quantity (kg) | n/a | `JobRequest.specialRequirementsData.hazardousQuantityKg` |
 | **Special requirements** | Hazardous paperwork available | n/a | `JobRequest.specialRequirementsData.hazardousPaperworkAvailable` |
+| **Special requirements** | Proper shipping name (ADR) | n/a | `JobRequest.loadData.adrProperShippingName` |
+| **Special requirements** | Subsidiary risk class | n/a | `JobRequest.loadData.adrSubsidiaryRisk` |
+| **Special requirements** | Flash point (°C) | n/a | `JobRequest.loadData.adrFlashPoint` |
+| **Special requirements** | EMS code | n/a | `JobRequest.loadData.adrEmsCode` |
+| **Special requirements** | 24-hour emergency contact | n/a | `JobRequest.loadData.adrEmergencyContact` |
+| **Special requirements** | Oversized load width (m) | n/a | `JobRequest.specialRequirementsData.oversizedWidth` |
+| **Special requirements** | Oversized load height (m) | n/a | `JobRequest.specialRequirementsData.oversizedHeight` |
+| **Special requirements** | Oversized load length (m) | n/a | `JobRequest.specialRequirementsData.oversizedLength` |
+| **Special requirements** | STGO category | n/a | `JobRequest.loadData.stgoCategory` |
+| **Special requirements** | Movement order number | n/a | `JobRequest.loadData.movementOrderNumber` |
 | **Transport requirements** | Let the planner choose (toggle) | n/a (planner always specifies directly) | `JobRequest.transportRequirementsData.plannerDecides` |
 | **Transport requirements** | Vehicle body category | `PlannedJob.reqBodyCategory` | `JobRequest.transportRequirementsData.reqBodyCategory` |
 | **Transport requirements** | Body types (multi-select) | `PlannedJob.reqBodyType` | `JobRequest.transportRequirementsData.reqBodyType` |
 | **Transport requirements** | Equipment required | `PlannedJob.reqEquipment` | `JobRequest.transportRequirementsData.reqEquipment` |
 | **Transport requirements** | Trailer types allowed | `PlannedJob.trailerTypesAllowed` | `JobRequest.transportRequirementsData.trailerTypesAllowed` |
+| **Transport requirements** | Can this job be subcontracted? | n/a | `JobRequest.loadData.subcontractingAllowed` |
+| **Transport requirements** | CSCS card required | n/a | `JobRequest.loadData.driverQualifications.cscsRequired` |
+| **Transport requirements** | BS7858 security vetting required | n/a | `JobRequest.loadData.driverQualifications.bs7858Required` |
+| **Transport requirements** | DBS check level | n/a | `JobRequest.loadData.driverQualifications.dbsLevel` |
+| **International** | Shipper EORI number | n/a | `JobRequest.loadData.crossBorderData.shipperEori` |
+| **International** | Consignee EORI number | n/a | `JobRequest.loadData.crossBorderData.consigneeEori` |
+| **International** | Commodity / HS code | n/a | `JobRequest.loadData.crossBorderData.hsCode` |
+| **International** | Customs movement type | n/a | `JobRequest.loadData.crossBorderData.customsMovementType` |
+| **International** | Incoterms | n/a | `JobRequest.loadData.crossBorderData.incoterms` |
+| **International** | Sea or tunnel crossing required | n/a | `JobRequest.loadData.crossBorderData.crossingRequired` |
+| **International** | Crossing route | n/a | `JobRequest.loadData.crossBorderData.crossingType` |
+| **International** | Crossing booking reference | n/a | `JobRequest.loadData.crossBorderData.crossingBookingRef` |
 | **Billing** | Declared value of goods (£) | n/a (internal form does not collect) | `JobRequest.billingData.declaredGoodsValue` |
 | **Billing** | Purchase order number | `PlannedJob.purchaseOrderNumber` | `JobRequest.billingData.purchaseOrderNumber` |
 | **Billing** | Billing reference / cost code | `PlannedJob.customerRef` | `JobRequest.billingData.billingReference` |
