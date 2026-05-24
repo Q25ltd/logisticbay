@@ -86,6 +86,26 @@ export interface LoadVehicleCheckResult {
   suggestion?: string;
 }
 
+export interface RunStopInput {
+  sequenceNumber:   number;
+  type:             string;
+  locationText?:    string | null;
+  postcode?:        string | null;
+  lat?:             number | null;
+  lng?:             number | null;
+  timeWindowStart?: string | null;
+  timeWindowEnd?:   string | null;
+  bookedTime?:      string | null;
+  customerName?:    string | null;
+}
+
+export interface RunFeasibilityResult {
+  concern:     boolean;
+  severity:    "high" | "medium" | "low" | "none";
+  message:     string;
+  suggestion?: string;
+}
+
 export type AreaType =
   | "industrial"
   | "residential"
@@ -111,6 +131,8 @@ export const aiApi = {
     api.post<VehicleSuggestion>("/ai/suggest-vehicle", input),
   checkVehicleLoad: (input: LoadVehicleCheckInput) =>
     api.post<LoadVehicleCheckResult>("/ai/check-vehicle-load", input),
+  checkRun: (input: { stops: RunStopInput[]; estimatedStartTime?: string | null }) =>
+    api.post<RunFeasibilityResult>("/ai/check-run", input),
   lookupAreas:   (postcodes: string[]) =>
     api.post<AreaInfo[]>("/ai/area-lookup", { postcodes }),
   status:        () =>

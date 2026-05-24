@@ -198,35 +198,42 @@ function RunCard({
   const [aiCheck,   setAiCheck]   = useState<{ ok: boolean; severity: "ok"|"warn"|"block"; reason: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Run AI check whenever stops or trailer changes
+  // Run AI feasibility check whenever stops or departure time changes
   useEffect(() => {
     if (!run.assignments.length) { setAiCheck(null); return; }
     setAiLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const stops = run.assignments.map(a => ({
-          type:    a.jobPart.type,
-          postcode: a.jobPart.postcode ?? undefined,
-        }));
-        const trailer = trailers.find(t => t.id === run.assignedTrailerId);
-        const result = await aiApi.checkVehicleLoad({
-          vehicleCategory: "tractor",
-          bodyTypes: trailer ? [trailer.bodyType] : undefined,
-          goodsDescription: run.assignments[0]?.jobPart.job.goodsDescription ?? undefined,
-          goodsType:        run.assignments[0]?.jobPart.job.goodsType ?? undefined,
-          weight:           run.maxLoadWeight ?? undefined,
+        const sortedStops = [...run.assignments]
+          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+          .map(a => ({
+            sequenceNumber:   a.sequenceNumber,
+            type:             a.jobPart.type,
+            locationText:     a.jobPart.locationTextSnapshot,
+            postcode:         a.jobPart.postcode,
+            lat:              a.jobPart.lat,
+            lng:              a.jobPart.lng,
+            timeWindowStart:  a.jobPart.timeWindowStart,
+            timeWindowEnd:    a.jobPart.timeWindowEnd,
+            customerName:     a.jobPart.job.customerName,
+          }));
+        const result = await aiApi.checkRun({
+          stops:              sortedStops,
+          estimatedStartTime: run.estimatedStartTime,
         });
         setAiCheck({
           ok:       !result.concern,
-          severity: result.severity === "high" ? "block" : result.severity === "medium" ? "warn" : result.severity === "low" ? "warn" : "ok",
-          reason:   result.message ?? "",
+          severity: result.severity === "high"   ? "block" :
+                    result.severity === "medium"  ? "warn"  :
+                    result.severity === "low"     ? "warn"  : "ok",
+          reason:   result.message,
         });
       } catch { setAiCheck(null); }
       finally  { setAiLoading(false); }
     }, 800);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run.assignments.length, run.assignedTrailerId]);
+  }, [run.assignments.length, run.estimatedStartTime]);
 
   async function patch(body: Record<string, unknown>) {
     setSaving(true); setErr("");
@@ -267,7 +274,7 @@ function RunCard({
       {err && <div className="text-xs text-red-600 mb-2">{err}</div>}
 
       {/* AI check */}
-      {aiLoading && <div className="text-xs text-muted mb-2 animate-pulse">🤖 Checking…</div>}
+      {aiLoading && <div className="text-xs text-muted mb-2 animate-pulse">🤖 Checking route feasibility…</div>}
       {!aiLoading && aiCheck && (
         <div className={`text-xs rounded px-2 py-1.5 mb-2 ${
           aiCheck.severity === "block" ? "bg-red-50 text-red-700" :

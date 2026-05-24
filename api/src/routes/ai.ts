@@ -20,6 +20,7 @@ import { parseTransportRequest, type SavedLocationHint } from "../services/parse
 import { suggestVehicle, type VehicleSuggestionInput }   from "../services/suggestVehicleService.js";
 import { lookupAreaTypes } from "../services/areaLookupService.js";
 import { checkLoadVehicle, type LoadVehicleCheckInput } from "../services/checkLoadVehicleService.js";
+import { checkRun, type RunStop } from "../services/checkRunService.js";
 
 export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
 
@@ -206,6 +207,50 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
       } catch (err: unknown) {
         app.log.error({ err }, "area-lookup error");
         return reply.status(500).send({ error: "Area lookup failed" });
+      }
+    },
+  );
+
+  // ── POST /ai/check-run ────────────────────────────────────────────────────
+  //
+  // Given an ordered stop list (with coordinates + time windows), Claude
+  // assesses whether the run is feasible — can the driver make all windows?
+  // Uses haversine distances + HGV speed estimate. Advisory only.
+  app.post(
+    "/ai/check-run",
+    {
+      preHandler: [authenticate, requireRole("company_owner", "planner")],
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      if (!env.AI_ENABLED) {
+        return reply.status(503).send({
+          error:   "AI_UNAVAILABLE",
+          message: "AI features are not enabled on this server.",
+        });
+      }
+
+      const body = request.body as { stops?: unknown; estimatedStartTime?: unknown };
+
+      if (!Array.isArray(body.stops) || body.stops.length === 0) {
+        return reply.status(400).send({ error: "stops is required (non-empty array)" });
+      }
+
+      try {
+        const result = await checkRun({
+          stops:               body.stops as RunStop[],
+          estimatedStartTime:  typeof body.estimatedStartTime === "string" ? body.estimatedStartTime : undefined,
+        });
+        return reply.send(result);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "AI check failed";
+        const isAuthError = message.toLowerCase().includes("authentication") ||
+                            message.toLowerCase().includes("invalid api key");
+        app.log.error({ err }, "check-run error");
+        return reply.status(isAuthError ? 503 : 502).send({
+          error:   isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR",
+          message,
+        });
       }
     },
   );
