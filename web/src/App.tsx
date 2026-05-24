@@ -23,6 +23,7 @@ import PublicRequestForm    from "./modules/requests/PublicRequestForm";
 import JobRequestsPage      from "./modules/requests/JobRequestsPage";
 import RunsPage             from "./modules/runs/RunsPage";
 import RunDetailPage        from "./modules/runs/RunDetailPage";
+import PlanningBoardPage    from "./modules/planning/PlanningBoardPage";
 
 export default function App() {
   const auth = useAuthProvider();
@@ -65,6 +66,7 @@ export default function App() {
             <Route path="job-requests"   element={<JobRequestsPage />} />
             <Route path="runs"           element={<RunsPage />} />
             <Route path="runs/:id"       element={<RunDetailPage />} />
+            <Route path="planning"       element={<PlanningBoardPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

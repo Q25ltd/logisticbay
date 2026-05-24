@@ -579,6 +579,8 @@ model Run {
   companyId                   Int
   runReference                String
   status                      String    @default("draft")
+  runType                     String?   // direct | relay | split | consolidation
+  dependsOnRunId              Int?      // relay: this run cannot start until that run completes
   assignedDriverId            Int?
   assignedTruckId             Int?
   assignedTrailerId           Int?
@@ -614,11 +616,13 @@ model Run {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company     Company           @relation(fields: [companyId], references: [id])
-  driver      DriverProfile?    @relation(fields: [assignedDriverId], references: [id])
-  assignments RunAssignment[]
-  loadTracks  LoadTrack[]
-  events      JobExecutionEvent[]
+  company        Company           @relation(fields: [companyId], references: [id])
+  driver         DriverProfile?    @relation(fields: [assignedDriverId], references: [id])
+  assignments    RunAssignment[]
+  loadTracks     LoadTrack[]
+  events         JobExecutionEvent[]
+  dependsOn      Run?              @relation("RunDependency", fields: [dependsOnRunId], references: [id])
+  dependents     Run[]             @relation("RunDependency")
 
   @@unique([companyId, runReference])
   @@index([companyId, plannedDate])

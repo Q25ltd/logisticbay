@@ -1,0 +1,642 @@
+import { useState, useEffect, useCallback } from "react";
+import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver } from "../../api/planning";
+import { aiApi } from "../../api/ai";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function prevDay(d: string): string {
+  const dt = new Date(d); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10);
+}
+function nextDay(d: string): string {
+  const dt = new Date(d); dt.setDate(dt.getDate() + 1); return dt.toISOString().slice(0, 10);
+}
+
+const STOP_TYPE_LABEL: Record<string, string> = {
+  collection: "Collection", delivery: "Delivery", pickup: "Pickup",
+  dropoff: "Drop-off", reload: "Reload", return: "Return", waypoint: "Waypoint", other: "Other",
+};
+
+const RUN_TYPE_LABELS: Record<string, string> = {
+  direct: "Direct", relay: "Relay", split: "Split load", consolidation: "Consolidation",
+};
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function Badge({ children, colour }: { children: React.ReactNode; colour: string }) {
+  return <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${colour}`}>{children}</span>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    draft:       "bg-slate-100 text-slate-600",
+    assigned:    "bg-blue-100 text-blue-700",
+    in_progress: "bg-amber-100 text-amber-700",
+    completed:   "bg-green-100 text-green-700",
+    cancelled:   "bg-red-100 text-red-600",
+  };
+  const label: Record<string, string> = {
+    draft: "Draft", assigned: "Assigned", in_progress: "In progress",
+    completed: "Done", cancelled: "Cancelled",
+  };
+  return <Badge colour={map[status] ?? "bg-slate-100 text-slate-600"}>{label[status] ?? status}</Badge>;
+}
+
+// ── Cluster card (left panel) ─────────────────────────────────────────────────
+
+function ClusterCard({
+  cluster,
+  onAddToRun,
+  runs,
+}: {
+  cluster:    StopCluster;
+  onAddToRun: (stopId: number, runId: number) => void;
+  runs:       PlanningRun[];
+}) {
+  const [expanded, setExpanded]   = useState(false);
+  const [stopRunId, setStopRunId] = useState<Record<number, number>>({});
+  const [adding,    setAdding]    = useState<Record<number, boolean>>({});
+
+  const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
+
+  async function handleAdd(stopId: number) {
+    const runId = stopRunId[stopId];
+    if (!runId) return;
+    setAdding(p => ({ ...p, [stopId]: true }));
+    try { await onAddToRun(stopId, runId); } finally { setAdding(p => ({ ...p, [stopId]: false })); }
+  }
+
+  return (
+    <div className="card p-3 mb-2">
+      <div className="flex items-start gap-2">
+        <button
+          className="flex-1 text-left"
+          onClick={() => setExpanded(e => !e)}
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-primary">{cluster.label}</span>
+            <span className="text-xs text-muted">{cluster.stops.length} stop{cluster.stops.length !== 1 ? "s" : ""}</span>
+            {cluster.totalWeightKg > 0 && (
+              <span className="text-xs text-muted">{cluster.totalWeightKg.toLocaleString()} kg</span>
+            )}
+            {cluster.totalQty > 0 && (
+              <span className="text-xs text-muted">{cluster.totalQty} {cluster.primaryQtyUnit ?? ""}</span>
+            )}
+            {cluster.hasTimeWindows && cluster.earliestWindow && (
+              <Badge colour="bg-amber-50 text-amber-700">
+                {fmtTime(cluster.earliestWindow)}–{fmtTime(cluster.latestWindow)}
+              </Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted mt-0.5">
+            {cluster.stops.map(s => STOP_TYPE_LABEL[s.type] ?? s.type).join(" · ")}
+          </div>
+        </button>
+        <span className="text-slate-400 text-xs mt-0.5">{expanded ? "▲" : "▼"}</span>
+      </div>
+
+      {expanded && (
+        <div className="mt-2 space-y-2 border-t border-slate-100 pt-2">
+          {cluster.stops.map(stop => (
+            <div key={stop.id} className="text-xs">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Badge colour={stop.type === "collection" || stop.type === "pickup" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                  {STOP_TYPE_LABEL[stop.type] ?? stop.type}
+                </Badge>
+                <span className="font-medium text-primary">{stop.customerName ?? "—"}</span>
+                <span className="text-muted">{stop.siteName ?? stop.locationText ?? stop.postcode}</span>
+                {stop.timeWindowStart && (
+                  <span className="text-amber-600">{fmtTime(stop.timeWindowStart)}–{fmtTime(stop.timeWindowEnd)}</span>
+                )}
+              </div>
+              <div className="text-muted">{stop.jobReference}</div>
+              {draftRuns.length > 0 && (
+                <div className="flex gap-1.5 mt-1 items-center">
+                  <select
+                    className="input text-xs py-0.5 flex-1"
+                    value={stopRunId[stop.id] ?? ""}
+                    onChange={e => setStopRunId(p => ({ ...p, [stop.id]: parseInt(e.target.value, 10) }))}
+                  >
+                    <option value="">Add to run…</option>
+                    {draftRuns.map(r => (
+                      <option key={r.id} value={r.id}>{r.runReference}</option>
+                    ))}
+                  </select>
+                  <button
+                    disabled={!stopRunId[stop.id] || adding[stop.id]}
+                    onClick={() => handleAdd(stop.id)}
+                    className="btn text-xs py-0.5 px-2 bg-accent text-white disabled:opacity-40"
+                  >
+                    {adding[stop.id] ? "…" : "Add"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Run card (right panel) ────────────────────────────────────────────────────
+
+function RunCard({
+  run,
+  trailers,
+  drivers,
+  allRuns,
+  onUpdate,
+  onRemoveStop,
+  onPublish,
+  onDelete,
+}: {
+  run:          PlanningRun;
+  trailers:     FleetTrailer[];
+  drivers:      PlanningDriver[];
+  allRuns:      PlanningRun[];
+  onUpdate:     (id: number, patch: Record<string, unknown>) => Promise<void>;
+  onRemoveStop: (runId: number, assignmentId: number) => Promise<void>;
+  onPublish:    (runId: number) => Promise<void>;
+  onDelete:     (runId: number) => Promise<void>;
+}) {
+  const [saving,    setSaving]    = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [err,       setErr]       = useState("");
+  const [aiCheck,   setAiCheck]   = useState<{ ok: boolean; severity: "ok"|"warn"|"block"; reason: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Run AI check whenever stops or trailer changes
+  useEffect(() => {
+    if (!run.assignments.length) { setAiCheck(null); return; }
+    setAiLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const stops = run.assignments.map(a => ({
+          type:    a.jobPart.type,
+          postcode: a.jobPart.postcode ?? undefined,
+        }));
+        const trailer = trailers.find(t => t.id === run.assignedTrailerId);
+        const result = await aiApi.checkVehicleLoad({
+          vehicleCategory: "tractor",
+          bodyTypes: trailer ? [trailer.bodyType] : undefined,
+          goodsDescription: run.assignments[0]?.jobPart.job.goodsDescription ?? undefined,
+          goodsType:        run.assignments[0]?.jobPart.job.goodsType ?? undefined,
+          weight:           run.maxLoadWeight ?? undefined,
+        });
+        setAiCheck({
+          ok:       !result.concern,
+          severity: result.severity === "high" ? "block" : result.severity === "medium" ? "warn" : result.severity === "low" ? "warn" : "ok",
+          reason:   result.message ?? "",
+        });
+      } catch { setAiCheck(null); }
+      finally  { setAiLoading(false); }
+    }, 800);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.assignments.length, run.assignedTrailerId]);
+
+  async function patch(body: Record<string, unknown>) {
+    setSaving(true); setErr("");
+    try { await onUpdate(run.id, body); }
+    catch (e: unknown) { setErr((e as Error).message ?? "Save failed"); }
+    finally { setSaving(false); }
+  }
+
+  async function handlePublish() {
+    setPublishing(true); setErr("");
+    try { await onPublish(run.id); }
+    catch (e: unknown) { setErr((e as Error).message ?? "Publish failed"); }
+    finally { setPublishing(false); }
+  }
+
+  const canPublish = run.status !== "completed" && run.status !== "cancelled" && !run.publishedToDriver;
+  const dependsOnRun = allRuns.find(r => r.id === run.dependsOnRunId);
+  const isLocked = !!dependsOnRun && dependsOnRun.status !== "completed";
+
+  return (
+    <div className={`card p-4 mb-3 ${isLocked ? "opacity-60" : ""}`}>
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="font-bold text-sm text-primary">{run.runReference}</span>
+        <StatusBadge status={run.status} />
+        {run.publishedToDriver && <Badge colour="bg-violet-100 text-violet-700">Published</Badge>}
+        {isLocked && <Badge colour="bg-orange-100 text-orange-700">🔒 Waiting on {dependsOnRun?.runReference}</Badge>}
+        {run.hasHazardous       && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
+        {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">Temp</Badge>}
+        {run.hasOversized       && <Badge colour="bg-purple-100 text-purple-700">Oversized</Badge>}
+        <button
+          onClick={() => onDelete(run.id)}
+          className="ml-auto text-xs text-red-400 hover:text-red-600"
+          title="Delete run"
+        >✕</button>
+      </div>
+
+      {err && <div className="text-xs text-red-600 mb-2">{err}</div>}
+
+      {/* AI check */}
+      {aiLoading && <div className="text-xs text-muted mb-2 animate-pulse">🤖 Checking…</div>}
+      {!aiLoading && aiCheck && (
+        <div className={`text-xs rounded px-2 py-1.5 mb-2 ${
+          aiCheck.severity === "block" ? "bg-red-50 text-red-700" :
+          aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700" :
+                                         "bg-green-50 text-green-700"
+        }`}>
+          {aiCheck.severity === "block" ? "🔴" : aiCheck.severity === "warn" ? "🟡" : "🟢"} {aiCheck.reason}
+        </div>
+      )}
+
+      {/* Stops */}
+      <div className="mb-3">
+        <div className="text-[10px] uppercase tracking-wide font-bold text-muted mb-1">Stops</div>
+        {run.assignments.length === 0 ? (
+          <div className="text-xs text-muted italic">No stops yet — add from the left panel</div>
+        ) : (
+          <div className="space-y-1">
+            {run.assignments.map((a, i) => (
+              <div key={a.id} className="flex items-center gap-2 text-xs">
+                <span className="w-4 text-center font-bold text-muted">{i + 1}</span>
+                <Badge colour={a.jobPart.type === "collection" || a.jobPart.type === "pickup" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                  {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
+                </Badge>
+                <span className="flex-1 truncate text-primary">{a.jobPart.job.customerName ?? "—"} · {a.jobPart.locationTextSnapshot ?? a.jobPart.postcode}</span>
+                {a.jobPart.timeWindowStart && (
+                  <span className="text-amber-600 flex-shrink-0">{fmtTime(a.jobPart.timeWindowStart)}</span>
+                )}
+                <button
+                  onClick={() => onRemoveStop(run.id, a.id)}
+                  className="text-red-400 hover:text-red-600 flex-shrink-0"
+                  title="Remove"
+                >✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Trailer — required */}
+      <div className="mb-2">
+        <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">
+          Trailer <span className="text-red-500">*</span>
+        </label>
+        <select
+          className={`input text-sm w-full ${!run.assignedTrailerId ? "border-red-300" : ""}`}
+          value={run.assignedTrailerId ?? ""}
+          disabled={saving}
+          onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
+        >
+          <option value="">— assign trailer —</option>
+          {trailers.map(t => (
+            <option key={t.id} value={t.id}>
+              {t.registration} · {t.bodyType || t.trailerType}
+              {t.status !== "available" ? ` (${t.status})` : ""}
+            </option>
+          ))}
+        </select>
+        {!run.assignedTrailerId && (
+          <div className="text-xs text-red-500 mt-0.5">Required before publishing</div>
+        )}
+      </div>
+
+      {/* Driver — optional */}
+      <div className="mb-2">
+        <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">Driver</label>
+        <select
+          className="input text-sm w-full"
+          value={run.assignedDriverId ?? ""}
+          disabled={saving}
+          onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
+        >
+          <option value="">— assign later —</option>
+          {drivers.map(d => (
+            <option key={d.id} value={d.id}>{d.displayName}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Run type */}
+      <div className="mb-2">
+        <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">Run type</label>
+        <select
+          className="input text-sm w-full"
+          value={run.runType ?? "direct"}
+          disabled={saving}
+          onChange={e => patch({ runType: e.target.value })}
+        >
+          {Object.entries(RUN_TYPE_LABELS).map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Depends on (relay) */}
+      {(run.runType === "relay" || run.dependsOnRunId) && (
+        <div className="mb-2">
+          <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">
+            Locked until run completes
+          </label>
+          <select
+            className="input text-sm w-full"
+            value={run.dependsOnRunId ?? ""}
+            disabled={saving}
+            onChange={e => patch({ dependsOnRunId: e.target.value ? parseInt(e.target.value, 10) : null })}
+          >
+            <option value="">— no dependency —</option>
+            {allRuns.filter(r => r.id !== run.id).map(r => (
+              <option key={r.id} value={r.id}>{r.runReference} ({r.status})</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Planner notes */}
+      <div className="mb-3">
+        <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">Planner notes</label>
+        <textarea
+          className="input text-xs w-full resize-none"
+          rows={2}
+          placeholder="Notes for driver…"
+          defaultValue={run.plannerNotes ?? ""}
+          onBlur={e => { if (e.target.value !== (run.plannerNotes ?? "")) patch({ plannerNotes: e.target.value }); }}
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 flex-wrap">
+        {canPublish && (
+          <button
+            onClick={handlePublish}
+            disabled={publishing || !run.assignedTrailerId || run.assignments.length === 0}
+            className="btn text-sm px-3 py-1.5 bg-primary text-white disabled:opacity-40 flex-1"
+          >
+            {publishing ? "Publishing…" : "Publish to driver"}
+          </button>
+        )}
+        {run.publishedToDriver && (
+          <Badge colour="bg-green-100 text-green-700">✓ Published to driver</Badge>
+        )}
+        {saving && <span className="text-xs text-muted">Saving…</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function PlanningBoardPage() {
+  const [date,        setDate]        = useState(todayISO());
+  const [clusters,    setClusters]    = useState<StopCluster[]>([]);
+  const [runs,        setRuns]        = useState<PlanningRun[]>([]);
+  const [trailers,    setTrailers]    = useState<FleetTrailer[]>([]);
+  const [drivers,     setDrivers]     = useState<PlanningDriver[]>([]);
+  const [loadingLeft, setLoadingLeft] = useState(false);
+  const [loadingRight,setLoadingRight]= useState(false);
+  const [totalUnplanned, setTotalUnplanned] = useState(0);
+  const [err,         setErr]         = useState("");
+  const [creatingRun, setCreatingRun] = useState(false);
+  const [aiSuggesting, setAiSuggesting] = useState(false);
+
+  const loadLeft = useCallback(async (d: string) => {
+    setLoadingLeft(true);
+    try {
+      const res = await planningApi.getUnplanned(d);
+      setClusters(res.clusters);
+      setTotalUnplanned(res.total);
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setLoadingLeft(false); }
+  }, []);
+
+  const loadRight = useCallback(async (d: string) => {
+    setLoadingRight(true);
+    try {
+      const res = await planningApi.getRuns(d);
+      setRuns(res.runs);
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setLoadingRight(false); }
+  }, []);
+
+  const loadFleet = useCallback(async () => {
+    try {
+      const res = await planningApi.getFleet();
+      setTrailers(res.trailers);
+    } catch { /* non-fatal */ }
+  }, []);
+
+  const loadDrivers = useCallback(async (d: string) => {
+    try {
+      const res = await planningApi.getDrivers(d);
+      setDrivers(res.drivers);
+    } catch { /* non-fatal */ }
+  }, []);
+
+  useEffect(() => {
+    loadLeft(date);
+    loadRight(date);
+    loadDrivers(date);
+  }, [date, loadLeft, loadRight, loadDrivers]);
+
+  useEffect(() => { loadFleet(); }, [loadFleet]);
+
+  async function handleAddToRun(stopId: number, runId: number) {
+    await planningApi.addStop(runId, stopId);
+    await Promise.all([loadLeft(date), loadRight(date)]);
+  }
+
+  async function handleUpdate(runId: number, patch: Record<string, unknown>) {
+    await planningApi.patchRun(runId, patch as Parameters<typeof planningApi.patchRun>[1]);
+    await loadRight(date);
+  }
+
+  async function handleRemoveStop(runId: number, assignmentId: number) {
+    await planningApi.removeStop(runId, assignmentId);
+    await Promise.all([loadLeft(date), loadRight(date)]);
+  }
+
+  async function handlePublish(runId: number) {
+    await planningApi.publish(runId);
+    await loadRight(date);
+  }
+
+  async function handleDeleteRun(runId: number) {
+    if (!window.confirm("Delete this run? Stops will return to the unplanned list.")) return;
+    await planningApi.patchRun(runId, { status: "cancelled" });
+    await Promise.all([loadLeft(date), loadRight(date)]);
+  }
+
+  async function handleCreateRun() {
+    setCreatingRun(true);
+    try {
+      const run = await planningApi.createRun({ date, runType: "direct" });
+      setRuns(prev => [...prev, run]);
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setCreatingRun(false); }
+  }
+
+  async function handleAiSuggest() {
+    setAiSuggesting(true);
+    try {
+      // Flatten all unplanned stops
+      const allStops = clusters.flatMap(c => c.stops);
+      if (!allStops.length) return;
+      // Ask AI to suggest vehicle for the biggest cluster as a starting point
+      const biggest = [...clusters].sort((a, b) => b.stops.length - a.stops.length)[0];
+      const suggestion = await aiApi.suggestVehicle({
+        weight:           biggest.totalWeightKg || undefined,
+        quantity:         biggest.totalQty || undefined,
+        quantityUnit:     biggest.primaryQtyUnit ?? undefined,
+        goodsType:        biggest.stops[0]?.goodsType ?? undefined,
+        stopCount:        biggest.stops.length,
+      });
+      // Create a run and add all stops in the biggest cluster
+      const run = await planningApi.createRun({
+        date,
+        runType:      "direct",
+        plannerNotes: `AI suggestion: ${suggestion.reasoning ?? ""}`,
+      });
+      for (const stop of biggest.stops) {
+        try { await planningApi.addStop(run.id, stop.id); } catch { /* skip if already assigned */ }
+      }
+      await Promise.all([loadLeft(date), loadRight(date)]);
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setAiSuggesting(false); }
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* ── Header ── */}
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-border flex-shrink-0 flex-wrap">
+        <h1 className="text-xl font-bold text-primary">Planning Board</h1>
+
+        {/* Date nav */}
+        <div className="flex items-center gap-1 ml-2">
+          <button onClick={() => setDate(prevDay(date))}
+            className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">←</button>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="input text-sm px-2 py-1 w-36"
+          />
+          <button onClick={() => setDate(nextDay(date))}
+            className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">→</button>
+          <button onClick={() => setDate(todayISO())}
+            className="btn px-2 py-1 text-xs border border-border bg-white hover:bg-slate-50 text-muted">Today</button>
+        </div>
+
+        <span className="text-sm text-muted ml-1">{fmtDate(date)}</span>
+
+        <div className="ml-auto flex gap-2">
+          <button
+            onClick={handleAiSuggest}
+            disabled={aiSuggesting || !clusters.length}
+            className="btn text-sm px-3 py-1.5 border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 flex items-center gap-1.5"
+          >
+            {aiSuggesting ? <><span className="animate-spin inline-block">⟳</span> Thinking…</> : <>🤖 Suggest runs</>}
+          </button>
+          <button
+            onClick={handleCreateRun}
+            disabled={creatingRun}
+            className="btn text-sm px-3 py-1.5 bg-primary text-white hover:opacity-90 disabled:opacity-40"
+          >
+            {creatingRun ? "Creating…" : "+ New run"}
+          </button>
+        </div>
+      </div>
+
+      {err && (
+        <div className="mx-6 mt-2 p-2 bg-red-50 text-red-700 text-sm rounded flex items-center gap-2">
+          <span>{err}</span>
+          <button onClick={() => setErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+
+      {/* ── Two-panel layout ── */}
+      <div className="flex-1 flex overflow-hidden">
+
+        {/* Left — unplanned stops */}
+        <div className="w-80 flex-shrink-0 border-r border-border flex flex-col">
+          <div className="px-4 py-3 border-b border-border flex-shrink-0 flex items-center justify-between">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wide text-muted">Unplanned stops</div>
+              <div className="text-lg font-bold text-primary">{totalUnplanned}</div>
+            </div>
+            {loadingLeft && <span className="text-xs text-muted animate-pulse">Loading…</span>}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3">
+            {!loadingLeft && clusters.length === 0 && (
+              <div className="text-center py-12 text-muted text-sm">
+                <div className="text-3xl mb-2">✅</div>
+                <div>All stops are planned for this date</div>
+              </div>
+            )}
+            {clusters.map(c => (
+              <ClusterCard
+                key={c.id}
+                cluster={c}
+                runs={runs}
+                onAddToRun={handleAddToRun}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Right — runs */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex-shrink-0 flex items-center gap-3">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wide text-muted">Runs</div>
+              <div className="text-lg font-bold text-primary">{runs.length}</div>
+            </div>
+            {loadingRight && <span className="text-xs text-muted animate-pulse">Loading…</span>}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {!loadingRight && runs.length === 0 && (
+              <div className="text-center py-16 text-muted">
+                <div className="text-4xl mb-3">🚚</div>
+                <div className="text-base font-medium mb-1">No runs yet for this date</div>
+                <div className="text-sm mb-4">Create a run then drag stops onto it from the left panel</div>
+                <button
+                  onClick={handleCreateRun}
+                  disabled={creatingRun}
+                  className="btn text-sm px-4 py-2 bg-primary text-white hover:opacity-90"
+                >
+                  + Create first run
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {runs.map(run => (
+                <RunCard
+                  key={run.id}
+                  run={run}
+                  trailers={trailers}
+                  drivers={drivers}
+                  allRuns={runs}
+                  onUpdate={handleUpdate}
+                  onRemoveStop={handleRemoveStop}
+                  onPublish={handlePublish}
+                  onDelete={handleDeleteRun}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
