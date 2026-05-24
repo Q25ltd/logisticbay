@@ -40,23 +40,6 @@ function cap(s: string): string {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 
-const PLANNING_LABELS: Record<string, string> = {
-  no_stops:          "No stops",
-  not_planned:       "Not in a run",
-  partially_planned: "Partly in runs",
-  planned:           "In runs",
-  partially_done:    "In progress",
-  done:              "Done",
-};
-
-const PLANNING_COLORS: Record<string, string> = {
-  no_stops:          "bg-slate-100 text-slate-500",
-  not_planned:       "bg-red-100 text-red-700",
-  partially_planned: "bg-amber-100 text-amber-700",
-  planned:           "bg-blue-100 text-blue-700",
-  partially_done:    "bg-purple-100 text-purple-700",
-  done:              "bg-green-100 text-green-700",
-};
 
 const STATUS_OPTIONS = [
   { value: "all",            label: "All statuses"   },
@@ -72,16 +55,6 @@ const STATUS_OPTIONS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function PlanningBadge({ status }: { status?: string }) {
-  if (!status) return null;
-  const label = PLANNING_LABELS[status] ?? cap(status);
-  const cls   = PLANNING_COLORS[status] ?? "bg-slate-100 text-slate-500";
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}>
-      {label}
-    </span>
-  );
-}
 
 function hasStatus(statuses: readonly string[], status: string) {
   return statuses.includes(status);
@@ -252,13 +225,12 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
         )}
       </td>
 
-      {/* Job ref + planning */}
+      {/* Job ref */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-2 flex-wrap">
           {job.jobReference
             ? <span className="font-mono font-semibold text-sm" style={{ color: "#0f172a" }}>{job.jobReference}</span>
             : <span className="text-xs italic" style={{ color: "#9ca3af" }}>No ref yet</span>}
-          <PlanningBadge status={job.planningStatus} />
         </div>
         {job.customerName && (
           <div className="text-xs mt-0.5 truncate" style={{ color: "#6b7280" }}>{job.customerName}</div>
@@ -566,7 +538,6 @@ export default function JobsPage() {
                       {job.jobReference
                         ? <span className="font-mono font-semibold text-primary">{job.jobReference}</span>
                         : <span className="italic text-muted">No ref yet</span>}
-                      <PlanningBadge status={job.planningStatus} />
                     </div>
                   </div>
                   <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
