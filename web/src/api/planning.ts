@@ -10,6 +10,7 @@ export interface UnplannedStop {
   type:           string;
   sequenceNumber: number;
   siteName:       string | null;
+  town:           string | null;
   locationText:   string | null;
   postcode:       string | null;
   lat:            number | null;
@@ -21,6 +22,14 @@ export interface UnplannedStop {
   weight:         number | null;
   quantity:       number | null;
   quantityUnit:   string | null;
+}
+
+export interface SavedLocationOption {
+  id:       number;
+  name:     string;
+  siteName: string | null;
+  town:     string | null;
+  postcode: string | null;
 }
 
 export interface StopCluster {
@@ -206,4 +215,7 @@ export const planningApi = {
 
   getDrivers: (date: string) =>
     api.get<{ drivers: PlanningDriver[] }>(`/planning/drivers?date=${date}`),
+
+  getLocations: () =>
+    api.get<{ data: SavedLocationOption[] }>("/locations"),
 };

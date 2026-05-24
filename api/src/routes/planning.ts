@@ -40,6 +40,7 @@ interface StopForCluster {
   type:           string;
   sequenceNumber: number;
   siteName:       string | null;
+  town:           string | null;
   locationText:   string | null;
   postcode:       string | null;
   lat:            number | null;
@@ -258,7 +259,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         customerName:   p.job.customerName,
         type:           p.type,
         sequenceNumber: p.sequenceNumber,
-        siteName:       p.locationTextSnapshot,
+        siteName:       p.siteName ?? p.locationTextSnapshot,
+        town:           p.town ?? null,
         locationText:   p.locationTextSnapshot,
         postcode:       p.postcode ?? null,
         lat:            p.lat ? Number(p.lat) : null,
