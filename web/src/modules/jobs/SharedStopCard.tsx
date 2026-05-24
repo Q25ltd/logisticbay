@@ -1033,6 +1033,14 @@ export default function SharedStopCard({
               type="time" value={stop.latestArrivalTime} onChange={v => onChange({ latestArrivalTime: v })}
               error={highlightErrors && !stop.latestArrivalTime ? "Required" : undefined} />
           </div>
+          {/* Within-stop window sanity check */}
+          {stop.earliestArrivalTime && stop.latestArrivalTime &&
+            stop.latestArrivalTime <= stop.earliestArrivalTime && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <span className="flex-shrink-0 mt-0.5">⚠</span>
+              <span>Latest arrival ({stop.latestArrivalTime}) is the same as or before earliest arrival ({stop.earliestArrivalTime}). The window end must be after the window start.</span>
+            </div>
+          )}
 
           {/* Service time */}
           <div>

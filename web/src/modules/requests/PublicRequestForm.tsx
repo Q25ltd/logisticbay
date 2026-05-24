@@ -1910,6 +1910,34 @@ export default function PublicRequestForm() {
                 );
               })}
 
+              {/* Cross-stop time conflict warnings */}
+              {(() => {
+                const collections = stops.filter(s => s.type === "collection" && s.date && s.latestArrivalTime);
+                const deliveries  = stops.filter(s => s.type === "delivery"   && s.date && s.earliestArrivalTime);
+                const conflicts: string[] = [];
+                for (const d of deliveries) {
+                  for (const c of collections) {
+                    if (d.date !== c.date) continue;
+                    if (d.earliestArrivalTime && c.latestArrivalTime && d.earliestArrivalTime < c.latestArrivalTime) {
+                      const dLabel = d.siteName?.trim() || `Delivery stop ${stops.indexOf(d) + 1}`;
+                      const cLabel = c.siteName?.trim() || `Collection stop ${stops.indexOf(c) + 1}`;
+                      conflicts.push(
+                        `${dLabel} (delivery from ${d.earliestArrivalTime}) is before ${cLabel} (collection until ${c.latestArrivalTime}) on ${d.date} — the goods won't have been collected yet.`
+                      );
+                    }
+                  }
+                }
+                if (!conflicts.length) return null;
+                return (
+                  <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 space-y-1.5">
+                    <p className="text-xs font-semibold text-red-700">⚠ Time conflict — check your stop times</p>
+                    {conflicts.map((msg, i) => (
+                      <p key={i} className="text-xs text-red-700">{msg}</p>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {/* Add stop — user picks type in the new card */}
               <button type="button"
                 onClick={() => setStops(prev => [...prev, blankStop("collection")])}
