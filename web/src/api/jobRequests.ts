@@ -121,6 +121,40 @@ export interface LoadData {
   loadNotes?:             string;
   canSplitShipment?:      string;
   securingRequirements?:  string[];
+  // Pallets extra
+  weightPerUnit?:         number;
+  palletDimL?:            number;
+  palletDimW?:            number;
+  ispm15Required?:        boolean;
+  // Waste
+  isWaste?:               boolean;
+  ewcCode?:               string;
+  wasteTrnNumber?:        string;
+  // Container extras
+  containerIsoType?:      string;
+  containerBookingRef?:   string;
+  containerTerminal?:     string;
+  containerCutOff?:       string;
+  containerSealNumber?:   string;
+  // Food extras
+  foodCleanVehicle?:      boolean;
+  foodHaccp?:             boolean;
+  foodAllergenFree?:      boolean;
+  foodTempLogger?:        boolean;
+  // ADR extras
+  adrProperShippingName?: string;
+  adrSubsidiaryRisk?:     string;
+  adrFlashPoint?:         string;
+  adrEmsCode?:            string;
+  adrEmergencyContact?:   string;
+  // Oversized / STGO
+  stgoCategory?:          string;
+  movementOrderNumber?:   string;
+  // Cross-border
+  crossBorderData?:       Record<string, unknown>;
+  // Transport
+  subcontractingAllowed?: string;
+  driverQualifications?:  Record<string, unknown>;
 }
 
 export interface SpecialRequirementsData {

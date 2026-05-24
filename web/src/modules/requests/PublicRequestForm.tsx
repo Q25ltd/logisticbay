@@ -239,6 +239,55 @@ const SPLIT_OPTIONS: [string, string][] = [
   ["can_split_freely",    "Can split freely"],
 ];
 
+const CONTAINER_ISO_TYPES: [string, string][] = [
+  ["gp",    "GP — General purpose (dry)"],
+  ["hc",    "HC — High cube"],
+  ["rf",    "RF — Reefer / refrigerated"],
+  ["ot",    "OT — Open top"],
+  ["fr",    "FR — Flat rack"],
+  ["tk",    "TK — Tank container"],
+  ["other", "Other"],
+];
+
+const STGO_CATEGORIES: [string, string][] = [
+  ["cat1", "Category 1 (up to 44t)"],
+  ["cat2", "Category 2 (up to 80t)"],
+  ["cat3", "Category 3 (up to 150t)"],
+  ["so",   "Special Order (SO — over 150t or non-standard)"],
+];
+
+const INCOTERMS: [string, string][] = [
+  ["exw", "EXW — Ex Works"],
+  ["fca", "FCA — Free Carrier"],
+  ["cpt", "CPT — Carriage Paid To"],
+  ["cip", "CIP — Carriage & Insurance Paid"],
+  ["dap", "DAP — Delivered at Place"],
+  ["dpu", "DPU — Delivered at Place Unloaded"],
+  ["ddp", "DDP — Delivered Duty Paid"],
+  ["fas", "FAS — Free Alongside Ship"],
+  ["fob", "FOB — Free on Board"],
+  ["cfr", "CFR — Cost & Freight"],
+  ["cif", "CIF — Cost, Insurance & Freight"],
+];
+
+const CUSTOMS_MOVEMENT_TYPES: [string, string][] = [
+  ["t1",       "T1 — External Community Transit"],
+  ["t2",       "T2 — Internal Community Transit"],
+  ["t2f",      "T2F — Internal Transit (special territories)"],
+  ["national", "National movement only"],
+  ["unsure",   "Not sure — planner to advise"],
+];
+
+const CROSSING_TYPES: [string, string][] = [
+  ["eurotunnel",       "Channel Tunnel (Eurotunnel Le Shuttle)"],
+  ["dover_calais",     "Dover–Calais ferry"],
+  ["dover_dunkirk",    "Dover–Dunkirk (DFDS)"],
+  ["harwich_hook",     "Harwich–Hook of Holland"],
+  ["hull_rotterdam",   "Hull–Rotterdam / Zeebrugge"],
+  ["roscoff_plymouth", "Plymouth–Roscoff"],
+  ["other",            "Other ferry / RoRo route"],
+];
+
 const SECURING_REQUIREMENTS: [string, string][] = [
   ["straps_required",                "Straps required"],
   ["chains_required",                "Chains required"],
@@ -1176,6 +1225,12 @@ export default function PublicRequestForm() {
   const removeStop = (id: string) =>
     setStops(prev => prev.filter(s => s.id !== id));
 
+  const hasInternationalStop = stops.some(s => s.country && s.country !== "GB");
+
+  useEffect(() => {
+    if (hasInternationalStop) setSIntl(false);
+  }, [hasInternationalStop]);
+
   // ── Declaration ───────────────────────────────────────────────────────────
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
 
@@ -1240,6 +1295,27 @@ export default function PublicRequestForm() {
   const [canSplitShipment,        setCanSplitShipment]        = useState("must_stay_together");
   const [securingRequirements,    setSecuringRequirements]    = useState<string[]>([]);
 
+  // Pallets extra
+  const [palletDimL,       setPalletDimL]       = useState("");
+  const [palletDimW,       setPalletDimW]       = useState("");
+  const [weightPerUnit,    setWeightPerUnit]    = useState("");
+  const [ispm15Required,   setIspm15Required]   = useState(false);
+  // Waste
+  const [isWaste,          setIsWaste]          = useState(false);
+  const [ewcCode,          setEwcCode]          = useState("");
+  const [wasteTrnNumber,   setWasteTrnNumber]   = useState("");
+  // Container extras
+  const [containerIsoType,     setContainerIsoType]     = useState("");
+  const [containerBookingRef,  setContainerBookingRef]  = useState("");
+  const [containerTerminal,    setContainerTerminal]    = useState("");
+  const [containerCutOff,      setContainerCutOff]      = useState("");
+  const [containerSealNumber,  setContainerSealNumber]  = useState("");
+  // Food extras
+  const [foodCleanVehicle,   setFoodCleanVehicle]   = useState(false);
+  const [foodHaccp,          setFoodHaccp]          = useState(false);
+  const [foodAllergenFree,   setFoodAllergenFree]   = useState(false);
+  const [foodTempLogger,     setFoodTempLogger]     = useState(false);
+
   // ── Sec 4: Special requirements ───────────────────────────────────────────
   const [specialItems,                 setSpecialItems]                 = useState<string[]>([]);
   const [hazardClass,                     setHazardClass]                     = useState("");
@@ -1251,6 +1327,15 @@ export default function PublicRequestForm() {
   const [oversizedWidth,               setOversizedWidth]               = useState("");
   const [oversizedHeight,              setOversizedHeight]              = useState("");
   const [oversizedLength,              setOversizedLength]              = useState("");
+  // ADR extras
+  const [adrSubsidiaryRisk,      setAdrSubsidiaryRisk]      = useState("");
+  const [adrProperShippingName,  setAdrProperShippingName]  = useState("");
+  const [adrFlashPoint,          setAdrFlashPoint]          = useState("");
+  const [adrEmsCode,             setAdrEmsCode]             = useState("");
+  const [adrEmergencyContact,    setAdrEmergencyContact]    = useState("");
+  // Oversized extras
+  const [stgoCategory,         setStgoCategory]         = useState("");
+  const [movementOrderNumber,  setMovementOrderNumber]  = useState("");
 
   // ── Sec 5: Transport ──────────────────────────────────────────────────────
   const [plannerDecides,  setPlannerDecides]  = useState(true);
@@ -1259,6 +1344,22 @@ export default function PublicRequestForm() {
   const [bodyTypes,        setBodyTypes]        = useState<string[]>([]);
   const [equipment,        setEquipment]        = useState<string[]>([]);
   const [trailersAllowed, setTrailersAllowed] = useState<string[]>([]);
+
+  // Transport extras
+  const [subcontractingAllowed, setSubcontractingAllowed] = useState("");
+  const [cscsRequired,          setCscsRequired]          = useState(false);
+  const [bs7858Required,        setBs7858Required]        = useState(false);
+  const [dbsLevel,              setDbsLevel]              = useState("");
+  // Cross-border / international
+  const [sIntl, setSIntl] = useState(true);
+  const [shipperEori,         setShipperEori]         = useState("");
+  const [consigneeEori,       setConsigneeEori]       = useState("");
+  const [hsCode,              setHsCode]              = useState("");
+  const [customsMovementType, setCustomsMovementType] = useState("");
+  const [incoterms,           setIncoterms]           = useState("");
+  const [crossingRequired,    setCrossingRequired]    = useState(false);
+  const [crossingType,        setCrossingType]        = useState("");
+  const [crossingBookingRef,  setCrossingBookingRef]  = useState("");
 
   // ── Sec 6: Billing ────────────────────────────────────────────────────────
   const [declaredValue,   setDeclaredValue]   = useState("");
@@ -1501,6 +1602,53 @@ export default function PublicRequestForm() {
       oversizedWidth:         oversizedWidth.trim()  || undefined,
       oversizedHeight:        oversizedHeight.trim() || undefined,
       oversizedLength:        oversizedLength.trim() || undefined,
+      // ADR extras
+      adrProperShippingName: adrProperShippingName.trim() || undefined,
+      adrSubsidiaryRisk:     adrSubsidiaryRisk.trim()     || undefined,
+      adrFlashPoint:         adrFlashPoint.trim()         || undefined,
+      adrEmsCode:            adrEmsCode.trim()            || undefined,
+      adrEmergencyContact:   adrEmergencyContact.trim()   || undefined,
+      // Oversized / STGO
+      stgoCategory:          stgoCategory        || undefined,
+      movementOrderNumber:   movementOrderNumber.trim() || undefined,
+      // Pallets extra
+      weightPerUnit:         weightPerUnit ? parseFloat(weightPerUnit) : undefined,
+      palletDimL:            palletType === "other" && palletDimL ? parseInt(palletDimL, 10) : undefined,
+      palletDimW:            palletType === "other" && palletDimW ? parseInt(palletDimW, 10) : undefined,
+      ispm15Required:        ispm15Required || undefined,
+      // Waste
+      isWaste:               isWaste || undefined,
+      ewcCode:               isWaste ? (ewcCode.trim() || undefined) : undefined,
+      wasteTrnNumber:        isWaste ? (wasteTrnNumber.trim() || undefined) : undefined,
+      // Container extras
+      containerIsoType:      containerIsoType     || undefined,
+      containerBookingRef:   containerBookingRef.trim() || undefined,
+      containerTerminal:     containerTerminal.trim()   || undefined,
+      containerCutOff:       containerCutOff      || undefined,
+      containerSealNumber:   containerSealNumber.trim() || undefined,
+      // Food extras
+      foodCleanVehicle:      foodCleanVehicle  || undefined,
+      foodHaccp:             foodHaccp         || undefined,
+      foodAllergenFree:      foodAllergenFree  || undefined,
+      foodTempLogger:        foodTempLogger    || undefined,
+      // Transport extras
+      subcontractingAllowed: subcontractingAllowed || undefined,
+      driverQualifications:  (cscsRequired || bs7858Required || dbsLevel) ? {
+        cscsRequired:   cscsRequired   || undefined,
+        bs7858Required: bs7858Required || undefined,
+        dbsLevel:       dbsLevel       || undefined,
+      } : undefined,
+      // Cross-border
+      crossBorderData: hasInternationalStop ? {
+        shipperEori:         shipperEori.trim()   || undefined,
+        consigneeEori:       consigneeEori.trim() || undefined,
+        hsCode:              hsCode.trim()        || undefined,
+        customsMovementType: customsMovementType  || undefined,
+        incoterms:           incoterms            || undefined,
+        crossingRequired:    crossingRequired     || undefined,
+        crossingType:        crossingType         || undefined,
+        crossingBookingRef:  crossingBookingRef.trim() || undefined,
+      } : undefined,
     };
     // Remove keys with undefined values
     Object.keys(loadDataBlob).forEach(k => loadDataBlob[k] === undefined && delete loadDataBlob[k]);
@@ -1870,11 +2018,32 @@ export default function PublicRequestForm() {
                     </div>
                   </div>
                   {palletType === "other" && (
-                    <input className="input w-full" type="text"
-                      placeholder="Describe pallet type"
-                      value={palletTypeOther} onChange={e => setPalletTypeOther(e.target.value)} />
+                    <div className="space-y-2">
+                      <input className="input w-full" type="text"
+                        placeholder="Describe pallet type (e.g. custom timber pallet)"
+                        value={palletTypeOther} onChange={e => setPalletTypeOther(e.target.value)} />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <FieldLabel>Length (mm)</FieldLabel>
+                          <input className="input mt-1 w-full font-mono" type="number" min="0" step="1"
+                            placeholder="1200" value={palletDimL} onChange={e => setPalletDimL(e.target.value)} />
+                        </div>
+                        <div>
+                          <FieldLabel>Width (mm)</FieldLabel>
+                          <input className="input mt-1 w-full font-mono" type="number" min="0" step="1"
+                            placeholder="800" value={palletDimW} onChange={e => setPalletDimW(e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
                   )}
                   <Toggle value={stackable} onChange={setStackable} label="Pallets are stackable" />
+                  <TextField label="Weight per pallet (kg)" type="number" min="0" step="1"
+                    value={weightPerUnit} onChange={setWeightPerUnit} placeholder="500"
+                    hint="Gross weight per individual pallet including packaging. Needed for tail lift and fork truck safety." />
+                  {hasInternationalStop && (
+                    <Toggle value={ispm15Required} onChange={setIspm15Required}
+                      label="ISPM-15 certified wood packaging required (international moves)" />
+                  )}
                 </div>
               )}
 
@@ -2004,6 +2173,14 @@ export default function PublicRequestForm() {
                       Pre-cooling takes 2–4 hours to arrange — we'll factor this into the plan.
                     </div>
                   )}
+                  <Toggle value={foodTempLogger} onChange={setFoodTempLogger}
+                    label="Temperature data logger required (continuous record)" />
+                  <Toggle value={foodCleanVehicle} onChange={setFoodCleanVehicle}
+                    label="Clean vehicle declaration required" />
+                  <Toggle value={foodHaccp} onChange={setFoodHaccp}
+                    label="HACCP compliance required" />
+                  <Toggle value={foodAllergenFree} onChange={setFoodAllergenFree}
+                    label="Allergen cross-contamination concern — nut-free / allergen-free vehicle required" />
                 </div>
               )}
 
@@ -2053,6 +2230,27 @@ export default function PublicRequestForm() {
                   </div>
                   <TextField label="Container number (optional)" value={containerNum}
                     onChange={setContainerNum} placeholder="MSCU1234567" />
+                  <div>
+                    <FieldLabel>Container ISO type</FieldLabel>
+                    <select className="input mt-1 w-full" value={containerIsoType} onChange={e => setContainerIsoType(e.target.value)}>
+                      <option value="">Not specified</option>
+                      {CONTAINER_ISO_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                  <TextField label="Port booking reference / release number" value={containerBookingRef}
+                    onChange={setContainerBookingRef} placeholder="MSKU1234567"
+                    hint="Required to collect the container from port. Without this the driver cannot uplift." />
+                  <TextField label="Terminal / port name" value={containerTerminal}
+                    onChange={setContainerTerminal} placeholder="DP World London Gateway — Berth 3" />
+                  <div>
+                    <FieldLabel>Port cut-off date &amp; time</FieldLabel>
+                    <input className="input mt-1 w-full" type="datetime-local" value={containerCutOff}
+                      onChange={e => setContainerCutOff(e.target.value)} />
+                    <div className="text-xs text-muted mt-1">Container must arrive at port before this time or it misses the sailing.</div>
+                  </div>
+                  <TextField label="Seal number" value={containerSealNumber}
+                    onChange={setContainerSealNumber} placeholder="ML-12345678"
+                    hint="Seal attached at collection — recorded for customs." />
                 </div>
               )}
 
@@ -2087,6 +2285,23 @@ export default function PublicRequestForm() {
                   <MultiCheck options={SECURING_REQUIREMENTS} value={securingRequirements}
                     onChange={setSecuringRequirements} />
                 </div>
+              </div>
+
+              {/* Waste transport */}
+              <div>
+                <Toggle value={isWaste} onChange={v => { setIsWaste(v); if (!v) { setEwcCode(""); setWasteTrnNumber(""); } }}
+                  label="These goods are classified as waste" />
+                {isWaste && (
+                  <div className="mt-3 space-y-3 border-l-2 border-orange-200 pl-4">
+                    <div className="px-3 py-2 rounded-lg bg-orange-50 border border-orange-200 text-xs text-orange-800 font-medium">
+                      ⚠ Carrying waste requires a valid Waste Carrier Licence. A Waste Transfer Note (WTN) must accompany the load.
+                    </div>
+                    <TextField label="EWC code (European Waste Catalogue)" value={ewcCode} onChange={setEwcCode}
+                      placeholder="e.g. 15 01 01" hint="6-digit code identifying the waste type." />
+                    <TextField label="Waste Transfer Note number" value={wasteTrnNumber} onChange={setWasteTrnNumber}
+                      placeholder="WTN-2026-001" hint="Document reference — must travel with the load." />
+                  </div>
+                )}
               </div>
 
               {/* Load notes */}
@@ -2145,6 +2360,23 @@ export default function PublicRequestForm() {
                     hint="Used to determine LQ / EQ exemption thresholds." />
                   <Toggle value={hazardousPaperworkAvailable} onChange={setHazardousPaperworkAvailable}
                     label="Hazardous paperwork available / will be provided" />
+                  <TextField label="Proper shipping name" value={adrProperShippingName}
+                    onChange={setAdrProperShippingName}
+                    placeholder="e.g. FLAMMABLE LIQUID, N.O.S."
+                    hint="Official ADR proper shipping name as it must appear on documents." />
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="Subsidiary risk (if any)" value={adrSubsidiaryRisk}
+                      onChange={setAdrSubsidiaryRisk} placeholder="e.g. 8" />
+                    <TextField label="Flash point (°C)" type="number" value={adrFlashPoint}
+                      onChange={setAdrFlashPoint} placeholder="e.g. 23"
+                      hint="Required for Class 3 flammables." />
+                  </div>
+                  <TextField label="EMS code" value={adrEmsCode}
+                    onChange={setAdrEmsCode} placeholder="e.g. F-E, S-E"
+                    hint="Emergency Schedule code (required for sea/multimodal moves)." />
+                  <TextField label="Emergency contact (24hr)" value={adrEmergencyContact}
+                    onChange={setAdrEmergencyContact} placeholder="CHEMTREC: +1-800-424-9300"
+                    hint="24-hour emergency response number to appear on transport documents." />
                 </div>
               )}
 
@@ -2174,6 +2406,17 @@ export default function PublicRequestForm() {
                       <p className="text-xs font-semibold text-amber-800">Over 4.65m high — route survey may be required for bridge and power line clearances.</p>
                     </div>
                   )}
+                  <div>
+                    <FieldLabel>STGO category</FieldLabel>
+                    <select className="input mt-1 w-full" value={stgoCategory} onChange={e => setStgoCategory(e.target.value)}>
+                      <option value="">Not yet determined</option>
+                      {STGO_CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <div className="text-xs text-muted mt-1">Special Types General Order category — affects notifications and speed limits.</div>
+                  </div>
+                  <TextField label="Movement order number" value={movementOrderNumber}
+                    onChange={setMovementOrderNumber} placeholder="MO-2026-00123"
+                    hint="Issued by the relevant highways authority. Required before movement." />
                 </div>
               )}
 
@@ -2258,10 +2501,107 @@ export default function PublicRequestForm() {
                   })()}
                 </div>
               )}
+              {/* Subcontracting */}
+              <div>
+                <FieldLabel>Can this job be subcontracted?</FieldLabel>
+                <div className="text-xs text-muted mb-2">Whether the carrier can pass this job to another operator or use a spot market.</div>
+                <Chips
+                  options={[["yes","Yes — freely"],["with_approval","With prior approval only"],["no","No — must stay in-house"]]}
+                  value={subcontractingAllowed}
+                  onChange={setSubcontractingAllowed} />
+              </div>
+
+              {/* Driver qualifications */}
+              <div>
+                <FieldLabel>Additional driver requirements</FieldLabel>
+                <div className="text-xs text-muted mb-2">Site access or customer requirements beyond standard licence and CPC.</div>
+                <div className="space-y-2">
+                  <Toggle value={cscsRequired} onChange={setCscsRequired}
+                    label="CSCS card required (construction sites)" />
+                  <Toggle value={bs7858Required} onChange={setBs7858Required}
+                    label="BS7858 security vetting required (airports, data centres, MOD)" />
+                  <div>
+                    <FieldLabel>DBS check required</FieldLabel>
+                    <select className="input mt-1 w-full max-w-xs" value={dbsLevel} onChange={e => setDbsLevel(e.target.value)}>
+                      <option value="">Not required</option>
+                      <option value="basic">Basic DBS check</option>
+                      <option value="enhanced">Enhanced DBS check</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <SectionFooter complete label="Transport requirements" onCollapse={() => setS5(true)} />
             </div>
           )}
         </div>
+
+        {/* ── International / cross-border section ──────────────────────────── */}
+        {hasInternationalStop && (
+          <div className="card overflow-hidden">
+            <SectionHeader num={7} icon="🌍" title="International / cross-border"
+              subtitle="Customs, crossing and trade documents"
+              active collapsed={sIntl} onToggle={() => setSIntl(o => !o)}
+              complete={false} optional
+              summary={customsMovementType ? CUSTOMS_MOVEMENT_TYPES.find(([v]) => v === customsMovementType)?.[1] : undefined} />
+            {!sIntl && (
+              <div className="px-5 pt-5 pb-4 space-y-5">
+                <div className="px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 font-medium">
+                  One or more stops are outside the UK. Please fill in the cross-border details below to avoid customs delays.
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <TextField label="Shipper EORI number" value={shipperEori} onChange={setShipperEori}
+                    placeholder="GB123456789000" hint="Exporter's Economic Operator Registration number." />
+                  <TextField label="Consignee EORI number" value={consigneeEori} onChange={setConsigneeEori}
+                    placeholder="DE987654321000" hint="Importer's EORI number." />
+                </div>
+
+                <TextField label="Commodity / HS code" value={hsCode} onChange={setHsCode}
+                  placeholder="8703 23 19 00" hint="Harmonised System tariff code. At least 6 digits. Used for customs declarations and tariff preference." />
+
+                <div>
+                  <FieldLabel>Customs movement type</FieldLabel>
+                  <select className="input mt-1 w-full" value={customsMovementType} onChange={e => setCustomsMovementType(e.target.value)}>
+                    <option value="">Not specified</option>
+                    {CUSTOMS_MOVEMENT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <FieldLabel>Incoterms</FieldLabel>
+                  <select className="input mt-1 w-full" value={incoterms} onChange={e => setIncoterms(e.target.value)}>
+                    <option value="">Not specified</option>
+                    {INCOTERMS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <div className="text-xs text-muted mt-1">Trade term defining who pays for freight, insurance, and where risk transfers.</div>
+                </div>
+
+                {/* Crossing */}
+                <div>
+                  <Toggle value={crossingRequired} onChange={v => { setCrossingRequired(v); if (!v) { setCrossingType(""); setCrossingBookingRef(""); } }}
+                    label="Sea or tunnel crossing required" />
+                  {crossingRequired && (
+                    <div className="mt-3 space-y-3 border-l-2 border-blue-100 pl-4">
+                      <div>
+                        <FieldLabel>Crossing route</FieldLabel>
+                        <select className="input mt-1 w-full" value={crossingType} onChange={e => setCrossingType(e.target.value)}>
+                          <option value="">Select route</option>
+                          {CROSSING_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                      </div>
+                      <TextField label="Crossing booking reference" value={crossingBookingRef}
+                        onChange={setCrossingBookingRef} placeholder="EU123456789"
+                        hint="If the crossing is pre-booked by the customer. Leave blank if the carrier books it." />
+                    </div>
+                  )}
+                </div>
+
+                <SectionFooter complete={false} label="International details" onCollapse={() => setSIntl(true)} missing={[]} />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Sec 6: Billing & insurance ───────────────────────────────────── */}
         <div className="card overflow-hidden">
