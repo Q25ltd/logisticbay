@@ -3,7 +3,55 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-23
+> Last updated: 2026-05-24
+
+---
+
+## Session log — 2026-05-24
+
+### Planning Board Phase 1 + forms polish
+
+**Done:**
+
+New files:
+- `api/prisma/migrations/20260524000000_add_run_type_and_dependency/migration.sql` — adds `runType TEXT`, `dependsOnRunId INT` (FK self-ref) to Run
+- `api/src/routes/planning.ts` — full planning API: `/planning/unplanned` (haversine clustering), `/planning/runs` CRUD, assignment add/remove, `/planning/fleet`, `/planning/drivers`, `/planning/runs/:id/publish`
+- `web/src/api/planning.ts` — typed client for all planning endpoints
+- `web/src/modules/planning/PlanningBoardPage.tsx` — full two-panel planning board UI
+
+Schema changes:
+- `Run` model: `runType String?`, `dependsOnRunId Int?`, self-referencing `dependsOn`/`dependents` relation named `"RunDependency"`
+
+Key API behaviours:
+- `clusterStops()`: greedy haversine 5km radius grouping; postcode area fallback when no GPS
+- `recalcDerived()`: recomputes `hasHazardous`/`hasTemperatureLoad`/`hasOversized`/`maxLoadWeight` after any assignment change
+- Publish enforces `assignedTrailerId` present; sets run status to `"assigned"`
+- Drivers filtered by `status: "active"` on requested date
+
+UI features:
+- Left panel: `ClusterCard` — expandable, shows stop count/weight, per-stop run selector + Add button
+- Right panel: `RunCard` — stops list (remove), trailer picker (required, red warning if unset), driver picker, run type select, dependency select (relay mode), planner notes, AI check badge (debounced 800ms)
+- AI check: maps `severity high→block, medium/low→warn, none→ok`; shows message on hover
+- "Suggest runs for today" button: calls `aiApi.suggestVehicle` on biggest unplanned cluster, creates a run, adds all stops
+
+Changes:
+- `api/src/app.ts` — registered `planningRoutes`
+- `web/src/App.tsx` — added `/app/planning` route
+- `web/src/modules/planner/AppShell.tsx` — added "Planning" nav item (between Runs and Fleet)
+- PRF: multi-pallet repeater block, identical to CJP (twin rule maintained)
+- `web/src/constants/vehicleTaxonomy.ts` (+ shared/ + api/src/constants/) — populated tractor/drawbar/heavy_haulage body type arrays that were previously empty
+- `web/src/modules/jobs/JobDetailPage.tsx` — `LoadDataSection` rewrite: array/object fields, grouped body type picker with proper labels
+
+**Key decisions:**
+- No `as const` on `RUN_INCLUDE` in Prisma — deep type inference breaks; plain object works fine
+- `migrate deploy` used for production-safe migration (not `migrate dev`) to avoid drift errors
+- AI check runs client-side on debounce; no caching needed at this scale
+- Trailer required at publish; driver optional — matches dispatcher workflow
+
+**Still TODO (Phase 1):**
+- 1.8 Run dependency locking (relay lock until parent complete)
+- 1.9 Split load quantity UI
+- 1.12 Job status derived from RunAssignment completion
 
 ---
 

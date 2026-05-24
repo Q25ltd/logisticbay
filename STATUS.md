@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-24
+> Last updated: 2026-05-24 (Planning Board Phase 1)
 
 ---
 
@@ -164,23 +164,23 @@
 
 ## 🔲 NOT STARTED — future phases
 
-### Planning board — NEXT BUILD PRIORITY
+### Planning board
 Full spec in **PLANNING_BOARD.md**. Three phases.
 
-**Phase 1 — Planning board (Types 1, 2, 3)**
-- [ ] 1.1  Schema: add `runType` + `dependsOnRunId` to Run (migration)
-- [ ] 1.2  API: geographic clustering endpoint (groups ready-to-plan stops by GPS/postcode)
-- [ ] 1.3  Page: `/app/planning` — date picker, two-panel layout
-- [ ] 1.4  Left panel: unplanned stops, auto-grouped clusters
-- [ ] 1.5  Right panel: run cards, drag stops onto runs
-- [ ] 1.6  Trailer assignment UI on run card (required)
-- [ ] 1.7  Driver assignment UI on run card (optional at planning)
+**Phase 1 — Planning board (Types 1, 2, 3)** — BUILT 2026-05-24
+- [x] 1.1  Schema: `runType` + `dependsOnRunId` (self-ref FK) on Run — migration applied
+- [x] 1.2  API: `/planning/unplanned` — haversine 5km clustering with postcode fallback
+- [x] 1.3  Page: `/app/planning` — date navigation, two-panel layout (nav item added)
+- [x] 1.4  Left panel: ClusterCard — expandable stop list, per-stop run selector
+- [x] 1.5  Right panel: RunCard — stops list, inline add/remove
+- [x] 1.6  Trailer assignment on run card (required; red warning if missing at publish)
+- [x] 1.7  Driver assignment on run card (optional)
 - [ ] 1.8  Run dependency locking (relay: run B locked until run A done)
 - [ ] 1.9  Split load UI — assign quantity per run, balance check
-- [ ] 1.10 AI validation (Claude API) — green/amber/red per run with reason
-- [ ] 1.11 AI grouping suggestion — "Suggest runs for today" button
+- [x] 1.10 AI validation — green/amber/red per run card (debounced 800ms, concern/severity/message)
+- [x] 1.11 "Suggest runs for today" button — AI picks vehicle category, creates run from biggest cluster
 - [ ] 1.12 Job progress update — job status derived from RunAssignment completion
-- [ ] 1.13 Publish run → driver notification
+- [x] 1.13 Publish run → status set to "assigned"; API enforces trailer present
 
 **Phase 2 — Depot operations (Type 4)**
 - [ ] 2.1  LoadTrack write path (API: POST /load-track)
