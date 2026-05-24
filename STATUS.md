@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-23
+> Last updated: 2026-05-24
 
 ---
 
@@ -59,14 +59,17 @@
   - Section 1: customer, contact, planned date
   - Section 2: stops (SharedStopCard — collection + delivery)
   - Section 3: load details (goods type, weight, qty, load sub-type blobs)
+    - Multi-type pallet repeater (type + count + custom dims per line, backward-compat restore)
+    - 25+ progressively-disclosed fields: waste (EWC/TRN), container extras (ISO type, terminal, cut-off, seal), food compliance (HACCP, clean vehicle, allergen-free, temp logger), ADR extended (proper shipping name, subsidiary risk, flash point, EMS code, emergency contact), STGO / abnormal load (category, movement order), cross-border/customs (EORI, HS code, incoterms, crossing booking), subcontracting, driver qualifications — all hidden until relevant goods type or international route triggers
   - Section 4: special requirements (ADR, oversized, fragile, high-value, etc.)
   - Section 5: vehicle requirements (category, body types, equipment, trailers)
+    - Artic / drawbar / heavy haulage: trailer types grouped by category (General, Flat, Tanker, Temp, Skeletal, Heavy haulage) with proper labels
   - Section 6: billing (declared value, PO number, billing ref)
   - Edit mode (restore from existing Job), template apply mode
   - Required-field red highlighting on save attempt (all 6 sections + stops)
   - `saveMode`: draft | ready_to_plan
 - **Public Request Form (PRF)** — `/request/:token`
-  - Full identical field set to CJP — same Zod schema, same DB columns
+  - Full identical field set to CJP — same Zod schema, same DB columns (PRF/CJP twin kept in sync)
   - LogisticBay "Powered by" branding badge (header, success, error screens)
   - Required-field red highlighting + per-stop missing field list
   - `status = pending_review` on submit
@@ -102,10 +105,11 @@
 
 ### Job management (web planner)
 - `JobsPage` — list with status filter, search, pagination
-- `JobDetailPage` — full job detail view
+- `JobDetailPage` — full job detail view including all loadData blob fields (waste, container extras, food compliance, ADR extended, STGO, cross-border, driver qualifications — each rendered as labelled sub-sections; palletLines rendered as readable summary)
 - `CreateJobPage` — create + edit mode
 - Job status updates via PATCH
 - Planner notes, internal notes
+- Vehicle panel: grouped trailer-type picker for artic/drawbar/heavy haulage with proper labels
 
 ### Runs & planning
 - `Run` model: date, driver, truck, trailer, status, publish flag, end instructions
