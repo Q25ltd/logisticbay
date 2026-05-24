@@ -111,9 +111,33 @@ export const BODY_TYPES_BY_CATEGORY: Record<BodyCategory, BodyType[]> = {
     "recovery_slide", "recovery_spec", "car_transporter", "cherry_picker", "livestock", "horsebox",
     "other",
   ],
-  tractor: [],
-  drawbar: [],
-  heavy_haulage: [],
+  tractor: [
+    // Semi-trailer types for artic tractor units
+    "curtain_sider", "double_deck_curtain", "box", "double_deck_box", "sliding_tarp",
+    "flatbed", "dropside", "extending_flat", "step_frame", "beavertail",
+    "tipper", "bulk_tipper", "walking_floor", "ejector_trailer", "powder_tanker", "blower_tanker",
+    "tanker_food", "tanker_fuel", "tanker_chemical", "tanker_water", "tanker_vacuum", "tanker_bitumen", "tanker_other",
+    "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+    "skeletal_20", "skeletal_40", "skeletal_45", "skeletal_extending", "swap_body",
+    "low_loader", "low_loader_extending",
+    "car_transporter", "boat_trailer", "livestock", "horsebox", "pole_timber", "coil_carrier", "glass_inloader",
+    "other",
+  ],
+  drawbar: [
+    // Drawbar trailer types
+    "curtain_sider", "double_deck_curtain", "box", "double_deck_box", "sliding_tarp",
+    "flatbed", "dropside", "extending_flat", "step_frame", "beavertail",
+    "tipper", "bulk_tipper", "walking_floor", "ejector_trailer", "powder_tanker", "blower_tanker",
+    "tanker_food", "tanker_fuel", "tanker_chemical", "tanker_water", "tanker_vacuum", "tanker_bitumen", "tanker_other",
+    "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+    "swap_body",
+    "livestock", "horsebox", "pole_timber", "coil_carrier",
+    "other",
+  ],
+  heavy_haulage: [
+    "low_loader", "low_loader_extending", "modular_heavy", "girder_frame",
+    "step_frame", "extending_flat", "other",
+  ],
   spmt: ["modular_heavy", "girder_frame", "other"],
   plant: ["other"],
 };

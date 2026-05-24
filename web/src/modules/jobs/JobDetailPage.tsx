@@ -1562,11 +1562,11 @@ function VehiclePanel({
         </div>
       </div>
 
-      {/* Body type chips (for the selected category) */}
+      {/* Body / trailer type chips (for the selected category) */}
       {category && availableBodyTypes.length > 0 && (
         <div className="mb-3">
           <span className="text-xs font-semibold uppercase tracking-wide block mb-1.5" style={{ color: "#94a3b8" }}>
-            Body type (optional)
+            {["tractor", "drawbar", "heavy_haulage"].includes(category) ? "Trailer type (optional)" : "Body type (optional)"}
           </span>
           <div className="flex flex-wrap gap-1.5">
             {availableBodyTypes.map(bt => (

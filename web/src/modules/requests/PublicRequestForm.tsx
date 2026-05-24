@@ -2508,7 +2508,7 @@ export default function PublicRequestForm() {
                     }
                     return (
                       <div className="space-y-3">
-                        <FieldLabel>Body type — select all that work</FieldLabel>
+                        <FieldLabel>{["tractor", "drawbar", "heavy_haulage"].includes(vehicleCategory) ? "Trailer type — select all that work" : "Body type — select all that work"}</FieldLabel>
                         {groups.map(g => (
                           <div key={g}>
                             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
