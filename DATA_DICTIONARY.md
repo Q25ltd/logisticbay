@@ -928,11 +928,7 @@ Stored in `JobRequest.loadData` (Json column, default `{}`). Copied verbatim to 
 | quantity | Number | Yes | Positive number | Quantity of goods |
 | unit | String | Yes | `pallets` \| `roll_cages` \| `ldm` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity. `ldm` = loading metres (European road freight standard) |
 | estimatedWeight | Number? | Yes (validated) | Positive number (kg) | Estimated total weight of the load in kilograms |
-| palletCount | Number? | No | Positive integer | Number of pallets (only when goodsType = `pallets`) |
-| palletType | String? | No | `euro` \| `uk` \| `half` \| `chep` \| `other` | Type of pallets (only when goodsType = `pallets` or unit = `pallets`) |
-| palletTypeOther | String? | No | Free text | Description of pallet type when palletType = `other` |
-| palletDimL | Number? | No | Positive integer (mm) | Length of a custom pallet in millimetres — only present when palletType = `other` |
-| palletDimW | Number? | No | Positive integer (mm) | Width of a custom pallet in millimetres — only present when palletType = `other` |
+| palletLines | Array? | No | Array of `{ type?, typeOther?, count?, dimL?, dimW? }` — see below | Multi-type pallet repeater. Replaces the old single-type `palletType`/`palletCount`/`palletDimL`/`palletDimW` fields. Each entry represents one pallet type present in the load. `type` values: `euro` \| `uk` \| `half` \| `chep` \| `other`. When `type = "other"`: `typeOther` is a free-text description, `dimL`/`dimW` are mm dimensions. Legacy jobs may still have the old single-type fields — forms restore them via the backward-compat path. |
 | weightPerUnit | Number? | No | Positive number (kg) | Gross weight per individual pallet or unit including packaging — required for tail lift and fork truck safety calculations |
 | stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets` or unit = `pallets`) |
 | ispm15Required | Boolean? | No | `true` \| `false` | Whether all wood packaging must be ISPM-15 certified (heat-treated and marked HT) — only shown when any stop is outside GB |
@@ -1191,10 +1187,7 @@ Both the internal `CreateJobPage` form and the public `PublicRequestForm` now sh
 | **Load details** | Quantity | `LoadDetails.quantity` | `JobRequest.loadData.quantity` |
 | **Load details** | Unit | `LoadDetails.unit` | `JobRequest.loadData.unit` |
 | **Load details** | Estimated total weight (kg) | `LoadDetails.weight` | `JobRequest.loadData.estimatedWeight` |
-| **Load details** | Pallet count | n/a (internal form uses quantity field) | `JobRequest.loadData.palletCount` |
-| **Load details** | Pallet type | n/a | `JobRequest.loadData.palletType` |
-| **Load details** | Pallet type — Other: Length (mm) | n/a | `JobRequest.loadData.palletDimL` |
-| **Load details** | Pallet type — Other: Width (mm) | n/a | `JobRequest.loadData.palletDimW` |
+| **Load details** | Pallet types (multi-line repeater) | n/a | `JobRequest.loadData.palletLines[]` |
 | **Load details** | Weight per pallet (kg) | n/a | `JobRequest.loadData.weightPerUnit` |
 | **Load details** | ISPM-15 certified wood packaging required | n/a | `JobRequest.loadData.ispm15Required` |
 | **Load details** | Pallets are stackable | `LoadDetails.stackable` | `JobRequest.loadData.stackable` |

@@ -1242,10 +1242,10 @@ export default function PublicRequestForm() {
   const [unit,                    setUnit]                    = useState("pallets");
   const [otherUnit,               setOtherUnit]               = useState("");
   const [estWeight,               setEstWeight]               = useState("");
-  // Pallets
-  const [palletCount,             setPalletCount]             = useState("");
-  const [palletType,              setPalletType]              = useState("");
-  const [palletTypeOther,         setPalletTypeOther]         = useState("");
+  // Pallets — multi-type repeater
+  interface PalletLine { id: string; type: string; typeOther: string; count: string; dimL: string; dimW: string; }
+  const blankPalletLine = (): PalletLine => ({ id: `pl${Date.now()}${Math.random()}`, type: "", typeOther: "", count: "", dimL: "", dimW: "" });
+  const [palletLines,             setPalletLines]             = useState<PalletLine[]>([blankPalletLine()]);
   const [stackable,               setStackable]               = useState(false);
   // Roll cages / yorks
   const [cageCount,               setCageCount]               = useState("");
@@ -1295,9 +1295,7 @@ export default function PublicRequestForm() {
   const [canSplitShipment,        setCanSplitShipment]        = useState("must_stay_together");
   const [securingRequirements,    setSecuringRequirements]    = useState<string[]>([]);
 
-  // Pallets extra
-  const [palletDimL,       setPalletDimL]       = useState("");
-  const [palletDimW,       setPalletDimW]       = useState("");
+  // Pallets extra (palletDimL/W now live inside palletLines entries)
   const [weightPerUnit,    setWeightPerUnit]    = useState("");
   const [ispm15Required,   setIspm15Required]   = useState(false);
   // Waste
@@ -1549,10 +1547,17 @@ export default function PublicRequestForm() {
     const loadDataBlob: Record<string, unknown> = {
       loadHeight:             loadHeight.trim() || undefined,
       loadNotes:              loadNotes.trim()  || undefined,
-      // pallets
-      palletCount:            palletCount  ? parseInt(palletCount, 10)  : undefined,
-      palletType:             palletType   || undefined,
-      palletTypeOther:        palletType === "other" ? (palletTypeOther.trim() || undefined) : undefined,
+      // pallets — multi-type
+      palletLines: (() => {
+        const lines = palletLines.filter(l => l.type || l.count).map(l => ({
+          type:      l.type      || undefined,
+          typeOther: l.type === "other" ? (l.typeOther.trim() || undefined) : undefined,
+          count:     l.count ? parseInt(l.count, 10) : undefined,
+          dimL:      l.type === "other" && l.dimL ? parseInt(l.dimL, 10) : undefined,
+          dimW:      l.type === "other" && l.dimW ? parseInt(l.dimW, 10) : undefined,
+        }));
+        return lines.length > 0 ? lines : undefined;
+      })(),
       stackable:              stackable    || undefined,
       // roll cages
       cageCount:              cageCount    ? parseInt(cageCount, 10)    : undefined,
@@ -1611,10 +1616,8 @@ export default function PublicRequestForm() {
       // Oversized / STGO
       stgoCategory:          stgoCategory        || undefined,
       movementOrderNumber:   movementOrderNumber.trim() || undefined,
-      // Pallets extra
+      // Pallets extra (dims are now inside palletLines entries)
       weightPerUnit:         weightPerUnit ? parseFloat(weightPerUnit) : undefined,
-      palletDimL:            palletType === "other" && palletDimL ? parseInt(palletDimL, 10) : undefined,
-      palletDimW:            palletType === "other" && palletDimW ? parseInt(palletDimW, 10) : undefined,
       ispm15Required:        ispm15Required || undefined,
       // Waste
       isWaste:               isWaste || undefined,
@@ -2000,42 +2003,71 @@ export default function PublicRequestForm() {
               {/* ── Conditional: Pallets ── */}
               {(goodsTypes.includes("pallets") || unit === "pallets") && (
                 <div className="space-y-4 pt-1">
-                  <div className={`grid ${unit !== "pallets" ? "grid-cols-2" : "grid-cols-1"} gap-3`}>
-                    {unit !== "pallets" && (
-                      <TextField label="Pallet count" type="number" min="0" step="1" value={palletCount}
-                        onChange={setPalletCount} placeholder="24" />
-                    )}
-                    <div>
-                      <FieldLabel>Pallet type</FieldLabel>
-                      <select className="input mt-1 w-full" value={palletType} onChange={e => setPalletType(e.target.value)}>
-                        <option value="">Not specified</option>
-                        <option value="euro">Euro pallets (800×1200mm)</option>
-                        <option value="uk">UK pallets (1000×1200mm)</option>
-                        <option value="half">Half pallets</option>
-                        <option value="chep">CHEP pallets</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-                  {palletType === "other" && (
+                  <div>
+                    <FieldLabel>Pallet types on this load</FieldLabel>
+                    <div className="text-xs text-muted mb-2">Add a line for each different pallet type — e.g. 10 Euro + 5 UK.</div>
                     <div className="space-y-2">
-                      <input className="input w-full" type="text"
-                        placeholder="Describe pallet type (e.g. custom timber pallet)"
-                        value={palletTypeOther} onChange={e => setPalletTypeOther(e.target.value)} />
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <FieldLabel>Length (mm)</FieldLabel>
-                          <input className="input mt-1 w-full font-mono" type="number" min="0" step="1"
-                            placeholder="1200" value={palletDimL} onChange={e => setPalletDimL(e.target.value)} />
+                      {palletLines.map((line, idx) => (
+                        <div key={line.id} className="space-y-2">
+                          <div className="flex gap-2 items-end">
+                            <div className="flex-1">
+                              {idx === 0 && <FieldLabel>Type</FieldLabel>}
+                              <select className="input w-full mt-1" value={line.type}
+                                onChange={e => setPalletLines(prev => prev.map(l => l.id === line.id ? { ...l, type: e.target.value, typeOther: "", dimL: "", dimW: "" } : l))}>
+                                <option value="">Not specified</option>
+                                <option value="euro">Euro (800×1200mm)</option>
+                                <option value="uk">UK (1000×1200mm)</option>
+                                <option value="half">Half pallets</option>
+                                <option value="chep">CHEP</option>
+                                <option value="other">Other / custom</option>
+                              </select>
+                            </div>
+                            <div className="w-28 flex-shrink-0">
+                              {idx === 0 && <FieldLabel>Count</FieldLabel>}
+                              <input className="input w-full mt-1 font-mono" type="number" min="0" step="1"
+                                placeholder="0" value={line.count}
+                                onKeyDown={e => { if (["e","E","-","."].includes(e.key)) e.preventDefault(); }}
+                                onChange={e => setPalletLines(prev => prev.map(l => l.id === line.id ? { ...l, count: e.target.value } : l))} />
+                            </div>
+                            {palletLines.length > 1 && (
+                              <button type="button"
+                                className="text-xs text-red-400 hover:text-red-600 transition-colors pb-2 flex-shrink-0"
+                                onClick={() => setPalletLines(prev => prev.filter(l => l.id !== line.id))}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          {line.type === "other" && (
+                            <div className="pl-2 border-l-2 border-slate-200 space-y-2">
+                              <input className="input w-full" type="text"
+                                placeholder="Describe pallet type (e.g. custom timber pallet)"
+                                value={line.typeOther}
+                                onChange={e => setPalletLines(prev => prev.map(l => l.id === line.id ? { ...l, typeOther: e.target.value } : l))} />
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <FieldLabel>Length (mm)</FieldLabel>
+                                  <input className="input mt-1 w-full font-mono" type="number" min="0" step="1"
+                                    placeholder="1200" value={line.dimL}
+                                    onChange={e => setPalletLines(prev => prev.map(l => l.id === line.id ? { ...l, dimL: e.target.value } : l))} />
+                                </div>
+                                <div>
+                                  <FieldLabel>Width (mm)</FieldLabel>
+                                  <input className="input mt-1 w-full font-mono" type="number" min="0" step="1"
+                                    placeholder="800" value={line.dimW}
+                                    onChange={e => setPalletLines(prev => prev.map(l => l.id === line.id ? { ...l, dimW: e.target.value } : l))} />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <FieldLabel>Width (mm)</FieldLabel>
-                          <input className="input mt-1 w-full font-mono" type="number" min="0" step="1"
-                            placeholder="800" value={palletDimW} onChange={e => setPalletDimW(e.target.value)} />
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  )}
+                    <button type="button"
+                      className="mt-2 text-xs font-semibold text-accent hover:text-accent/80 transition-colors flex items-center gap-1"
+                      onClick={() => setPalletLines(prev => [...prev, blankPalletLine()])}>
+                      + Add another pallet type
+                    </button>
+                  </div>
                   <Toggle value={stackable} onChange={setStackable} label="Pallets are stackable" />
                   <TextField label="Weight per pallet (kg)" type="number" min="0" step="1"
                     value={weightPerUnit} onChange={setWeightPerUnit} placeholder="500"
