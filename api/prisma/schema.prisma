@@ -248,6 +248,7 @@ model SavedLocation {
   pickupTemplates  JobTemplate[] @relation("PickupLocation")
   dropoffTemplates JobTemplate[] @relation("DropoffLocation")
   jobParts         JobPart[]
+  runWaypoints     RunWaypoint[] @relation("RunWaypointLocation")
 
   @@index([companyId, name])
   @@index([companyId, postcode])
@@ -619,6 +620,7 @@ model Run {
   company        Company           @relation(fields: [companyId], references: [id])
   driver         DriverProfile?    @relation(fields: [assignedDriverId], references: [id])
   assignments    RunAssignment[]
+  waypoints      RunWaypoint[]
   loadTracks     LoadTrack[]
   events         JobExecutionEvent[]
   dependsOn      Run?              @relation("RunDependency", fields: [dependsOnRunId], references: [id])
@@ -658,6 +660,30 @@ model RunAssignment {
   @@index([companyId, runId])
   @@index([companyId, jobPartId])
   @@index([companyId, jobId])
+}
+
+// ── RunWaypoint — non-job stops on a run (depot start, yard, hub, return) ────
+model RunWaypoint {
+  id             Int       @id @default(autoincrement())
+  companyId      Int
+  runId          Int
+  sequenceNumber Int       @default(0)
+  // depot_start | yard_pickup | hub_drop | return_to_base | custom
+  waypointType   String    @default("custom")
+  locationId     Int?      // optional link to a SavedLocation
+  locationText   String?   // free-text fallback when no saved location
+  postcode       String?
+  lat            Float?
+  lng            Float?
+  scheduledTime  String?   // HH:MM expected arrival/departure
+  notes          String?
+  createdAt      DateTime  @default(now())
+
+  run      Run            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  location SavedLocation? @relation("RunWaypointLocation", fields: [locationId], references: [id])
+
+  @@index([runId])
+  @@index([companyId])
 }
 
 // ── LoadTrack — immutable custody ledger ─────────────────────────────────────

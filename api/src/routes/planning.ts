@@ -159,6 +159,14 @@ const RUN_INCLUDE = {
     },
     orderBy: { sequenceNumber: "asc" as const },
   },
+  waypoints: {
+    include: {
+      location: {
+        select: { id: true, name: true, siteName: true, postcode: true, lat: true, lng: true },
+      },
+    },
+    orderBy: { sequenceNumber: "asc" as const },
+  },
   driver:    { include: { user: { select: { id: true, name: true, email: true } } } },
   dependsOn: { select: { id: true, runReference: true, status: true } },
   dependents:{ select: { id: true, runReference: true, status: true } },
@@ -174,39 +182,74 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const { companyId } = request.user!;
       const q = request.query as { date?: string };
 
-      // Find all ready_to_plan job stops that are not yet assigned to any active run
-      const dateFilter = q.date ? {
-        gte: new Date(`${q.date}T00:00:00.000Z`),
-        lte: new Date(`${q.date}T23:59:59.999Z`),
-      } : undefined;
+      // Find all ready_to_plan job stops not yet assigned to any active run.
+      //
+      // Filtering strategy — each stop surfaces on the date it needs to happen:
+      //   1. Stop has a timeWindowStart   → use that date
+      //   2. Stop has no window but bookedTime → use bookedTime date
+      //   3. Neither                     → fall back to the job's plannedDate
+      //
+      // This ensures a Monday collection + Friday delivery show on their
+      // respective boards so planners can assign each leg on the right day.
 
-      const where = {
-        companyId,
+      const jobPartInclude = {
         job: {
-          status: "ready_to_plan" as const,
-          ...(dateFilter ? { plannedDate: dateFilter } : {}),
+          select: {
+            id: true, jobReference: true, customerName: true,
+            goodsType: true, goodsDescription: true,
+            quantity: true, quantityUnit: true, weight: true,
+          },
         },
+      };
+
+      const baseWhere = {
+        companyId,
+        job:            { status: "ready_to_plan" as const },
         runAssignments: { none: { removedAt: null as null } },
       };
 
-      const parts = await prisma.jobPart.findMany({
-        where,
-        include: {
-          job: {
-            select: {
-              id: true,
-              jobReference: true,
-              customerName: true,
-              goodsType: true,
-              goodsDescription: true,
-              quantity: true,
-              quantityUnit: true,
-              weight: true,
+      let parts: Awaited<ReturnType<typeof prisma.jobPart.findMany<{ include: typeof jobPartInclude }>>>;
+
+      if (q.date) {
+        const gte = new Date(`${q.date}T00:00:00.000Z`);
+        const lte = new Date(`${q.date}T23:59:59.999Z`);
+
+        // Two separate queries to avoid Prisma OR + nested relation conflicts.
+        const [withWindow, fallback] = await Promise.all([
+          // Stops that have their own time window on this date
+          prisma.jobPart.findMany({
+            where:   { ...baseWhere, timeWindowStart: { gte, lte } },
+            include: jobPartInclude,
+            orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
+          }),
+          // Stops with no time window → use job plannedDate or bookedTime
+          prisma.jobPart.findMany({
+            where: {
+              ...baseWhere,
+              timeWindowStart: null,
+              OR: [
+                { bookedTime: { gte, lte } },
+                { bookedTime: null, job: { status: "ready_to_plan", plannedDate: { gte, lte } } },
+              ],
             },
-          },
-        },
-        orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
-      });
+            include: jobPartInclude,
+            orderBy: [{ bookedTime: "asc" }, { id: "asc" }],
+          }),
+        ]);
+
+        // Merge and deduplicate (a stop can't appear twice, but be safe)
+        const seen = new Set<number>();
+        parts = [];
+        for (const p of [...withWindow, ...fallback]) {
+          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withWindow).push(p); }
+        }
+      } else {
+        parts = await prisma.jobPart.findMany({
+          where:   baseWhere,
+          include: jobPartInclude,
+          orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
+        });
+      }
 
       const stops: StopForCluster[] = parts.map(p => ({
         id:             p.id,
@@ -452,6 +495,99 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       });
 
       return reply.send(updated);
+    },
+  );
+
+  // ── POST /planning/runs/:id/waypoints ────────────────────────────────────
+  //
+  // Add a non-job waypoint to a run (depot start, yard pickup, hub drop, etc.)
+  // Body: { waypointType, locationId?, locationText?, postcode?, lat?, lng?,
+  //         scheduledTime?, notes?, sequenceNumber? }
+  app.post(
+    "/planning/runs/:id/waypoints",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const { companyId } = request.user!;
+      const runId = parseInt((request.params as { id: string }).id, 10);
+
+      const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
+      if (!run) return reply.status(404).send({ error: "Run not found" });
+
+      const b = request.body as {
+        waypointType?:  string;
+        locationId?:    number | null;
+        locationText?:  string;
+        postcode?:      string;
+        lat?:           number;
+        lng?:           number;
+        scheduledTime?: string;
+        notes?:         string;
+        sequenceNumber?: number;
+      };
+
+      // If linked to a SavedLocation, pull its coords automatically
+      let lat = typeof b.lat === "number" ? b.lat : null;
+      let lng = typeof b.lng === "number" ? b.lng : null;
+      let postcode = b.postcode?.trim() || null;
+      let locationText = b.locationText?.trim() || null;
+
+      if (b.locationId) {
+        const loc = await prisma.savedLocation.findFirst({
+          where: { id: b.locationId, companyId },
+          select: { lat: true, lng: true, postcode: true, siteName: true, name: true },
+        });
+        if (loc) {
+          if (loc.lat) lat = Number(loc.lat);
+          if (loc.lng) lng = Number(loc.lng);
+          if (loc.postcode) postcode = loc.postcode;
+          if (!locationText) locationText = loc.siteName ?? loc.name;
+        }
+      }
+
+      const waypoint = await prisma.runWaypoint.create({
+        data: {
+          companyId,
+          runId,
+          waypointType:   b.waypointType ?? "custom",
+          locationId:     b.locationId   ?? null,
+          locationText,
+          postcode,
+          lat,
+          lng,
+          scheduledTime:  b.scheduledTime?.trim() || null,
+          notes:          b.notes?.trim()         || null,
+          sequenceNumber: b.sequenceNumber        ?? 0,
+        },
+        include: {
+          location: {
+            select: { id: true, name: true, siteName: true, postcode: true, lat: true, lng: true },
+          },
+        },
+      });
+
+      return reply.status(201).send(waypoint);
+    },
+  );
+
+  // ── DELETE /planning/runs/:id/waypoints/:wId ──────────────────────────────
+  app.delete(
+    "/planning/runs/:id/waypoints/:wId",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const { companyId } = request.user!;
+      const runId = parseInt((request.params as { id: string; wId: string }).id,  10);
+      const wId   = parseInt((request.params as { id: string; wId: string }).wId, 10);
+
+      const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
+      if (!run) return reply.status(404).send({ error: "Run not found" });
+
+      const waypoint = await prisma.runWaypoint.findFirst({
+        where: { id: wId, runId, companyId },
+      });
+      if (!waypoint) return reply.status(404).send({ error: "Waypoint not found" });
+
+      await prisma.runWaypoint.delete({ where: { id: wId } });
+      return reply.status(204).send();
     },
   );
 

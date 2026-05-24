@@ -67,6 +67,7 @@ export interface PlanningRun {
   dependsOn?:  { id: number; runReference: string; status: string } | null;
   dependents?: { id: number; runReference: string; status: string }[];
   assignments: PlanningAssignment[];
+  waypoints:   RunWaypoint[];
 }
 
 export interface PlanningAssignment {
@@ -117,6 +118,28 @@ export interface FleetUnit {
   category?:    string | null;
 }
 
+export interface RunWaypoint {
+  id:             number;
+  runId:          number;
+  sequenceNumber: number;
+  waypointType:   string;   // depot_start | yard_pickup | hub_drop | return_to_base | custom
+  locationId?:    number | null;
+  locationText?:  string | null;
+  postcode?:      string | null;
+  lat?:           number | null;
+  lng?:           number | null;
+  scheduledTime?: string | null;
+  notes?:         string | null;
+  location?: {
+    id:       number;
+    name:     string;
+    siteName: string | null;
+    postcode: string | null;
+    lat:      number | null;
+    lng:      number | null;
+  } | null;
+}
+
 export interface PlanningDriver {
   id:          number;
   displayName: string;
@@ -164,6 +187,19 @@ export const planningApi = {
 
   publish: (runId: number) =>
     api.post<PlanningRun>(`/planning/runs/${runId}/publish`, {}),
+
+  addWaypoint: (runId: number, body: {
+    waypointType?:  string;
+    locationId?:    number | null;
+    locationText?:  string;
+    postcode?:      string;
+    scheduledTime?: string;
+    notes?:         string;
+    sequenceNumber?: number;
+  }) => api.post<RunWaypoint>(`/planning/runs/${runId}/waypoints`, body),
+
+  removeWaypoint: (runId: number, waypointId: number) =>
+    api.delete<void>(`/planning/runs/${runId}/waypoints/${waypointId}`),
 
   getFleet: () =>
     api.get<{ trailers: FleetTrailer[]; trucks: FleetUnit[] }>("/planning/fleet"),

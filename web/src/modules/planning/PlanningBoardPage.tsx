@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver } from "../../api/planning";
+import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint } from "../../api/planning";
 import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
@@ -17,6 +17,22 @@ function fmtTime(iso: string | null | undefined): string {
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
+
+/** Returns "Mon 27 Jan" for an ISO datetime, comparing against the planning date */
+function stopDateLabel(iso: string | null | undefined, planningDate: string): string | null {
+  if (!iso) return null;
+  const stopDay  = iso.slice(0, 10);
+  if (stopDay === planningDate) return null; // same day — no label needed
+  return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+
+const WAYPOINT_TYPE_LABEL: Record<string, string> = {
+  depot_start:    "Depot start",
+  yard_pickup:    "Yard pickup",
+  hub_drop:       "Hub drop",
+  return_to_base: "Return to base",
+  custom:         "Waypoint",
+};
 
 function cap(s: string): string {
   const spaced = s.replace(/_/g, " ");
@@ -80,10 +96,14 @@ function ClusterCard({
   cluster,
   onAddToRun,
   runs,
+  planningDate,
+  allClusters,
 }: {
-  cluster:    StopCluster;
-  onAddToRun: (stopId: number, runId: number) => void;
-  runs:       PlanningRun[];
+  cluster:      StopCluster;
+  onAddToRun:   (stopId: number, runId: number) => void;
+  runs:         PlanningRun[];
+  planningDate: string;
+  allClusters:  StopCluster[];
 }) {
   const [expanded, setExpanded]   = useState(false);
   const [stopRunId, setStopRunId] = useState<Record<number, number>>({});
@@ -129,42 +149,63 @@ function ClusterCard({
 
       {expanded && (
         <div className="mt-2 space-y-2 border-t border-slate-100 pt-2">
-          {cluster.stops.map(stop => (
-            <div key={stop.id} className="text-xs">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <Badge colour={stop.type === "collection" || stop.type === "pickup" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                  {STOP_TYPE_LABEL[stop.type] ?? stop.type}
-                </Badge>
-                <span className="font-medium text-primary">{stop.customerName ?? "—"}</span>
-                <span className="text-muted">{stop.siteName ?? stop.locationText ?? stop.postcode}</span>
-                {stop.timeWindowStart && (
-                  <span className="text-amber-600">{fmtTime(stop.timeWindowStart)}–{fmtTime(stop.timeWindowEnd)}</span>
+          {cluster.stops.map(stop => {
+            // Companion stops: other parts of the same job that are in a DIFFERENT cluster
+            const companions = allClusters
+              .filter(c => c.id !== cluster.id)
+              .flatMap(c => c.stops.filter(s => s.jobId === stop.jobId));
+
+            const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
+
+            return (
+              <div key={stop.id} className="text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Badge colour={stop.type === "collection" || stop.type === "pickup" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                    {STOP_TYPE_LABEL[stop.type] ?? stop.type}
+                  </Badge>
+                  <span className="font-medium text-primary">{stop.customerName ?? "—"}</span>
+                  <span className="text-muted">{stop.siteName ?? stop.locationText ?? stop.postcode}</span>
+                  {stop.timeWindowStart && (
+                    <span className="text-amber-600">{fmtTime(stop.timeWindowStart)}–{fmtTime(stop.timeWindowEnd)}</span>
+                  )}
+                  {dateLabel && (
+                    <span className="text-violet-600 font-semibold">📅 {dateLabel}</span>
+                  )}
+                </div>
+                {/* Job reference + companion stops from same job */}
+                <div className="flex items-center gap-2 text-muted mt-0.5 flex-wrap">
+                  <span>{stop.jobReference}</span>
+                  {companions.map(c => (
+                    <span key={c.id} className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 text-[10px]">
+                      🔗 {STOP_TYPE_LABEL[c.type] ?? c.type} also in {allClusters.find(cl => cl.stops.some(s => s.id === c.id))?.label ?? "another cluster"}
+                      {c.timeWindowStart && <> · {fmtTime(c.timeWindowStart)}</>}
+                    </span>
+                  ))}
+                </div>
+                {draftRuns.length > 0 && (
+                  <div className="flex gap-1.5 mt-1 items-center">
+                    <select
+                      className="input text-xs py-0.5 flex-1"
+                      value={stopRunId[stop.id] ?? ""}
+                      onChange={e => setStopRunId(p => ({ ...p, [stop.id]: parseInt(e.target.value, 10) }))}
+                    >
+                      <option value="">Add to run…</option>
+                      {draftRuns.map(r => (
+                        <option key={r.id} value={r.id}>{r.runReference}</option>
+                      ))}
+                    </select>
+                    <button
+                      disabled={!stopRunId[stop.id] || adding[stop.id]}
+                      onClick={() => handleAdd(stop.id)}
+                      className="btn text-xs py-0.5 px-2 bg-accent text-white disabled:opacity-40"
+                    >
+                      {adding[stop.id] ? "…" : "Add"}
+                    </button>
+                  </div>
                 )}
               </div>
-              <div className="text-muted">{stop.jobReference}</div>
-              {draftRuns.length > 0 && (
-                <div className="flex gap-1.5 mt-1 items-center">
-                  <select
-                    className="input text-xs py-0.5 flex-1"
-                    value={stopRunId[stop.id] ?? ""}
-                    onChange={e => setStopRunId(p => ({ ...p, [stop.id]: parseInt(e.target.value, 10) }))}
-                  >
-                    <option value="">Add to run…</option>
-                    {draftRuns.map(r => (
-                      <option key={r.id} value={r.id}>{r.runReference}</option>
-                    ))}
-                  </select>
-                  <button
-                    disabled={!stopRunId[stop.id] || adding[stop.id]}
-                    onClick={() => handleAdd(stop.id)}
-                    className="btn text-xs py-0.5 px-2 bg-accent text-white disabled:opacity-40"
-                  >
-                    {adding[stop.id] ? "…" : "Add"}
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -180,21 +221,30 @@ function RunCard({
   allRuns,
   onUpdate,
   onRemoveStop,
+  onAddWaypoint,
+  onRemoveWaypoint,
   onPublish,
   onDelete,
 }: {
-  run:          PlanningRun;
-  trailers:     FleetTrailer[];
-  drivers:      PlanningDriver[];
-  allRuns:      PlanningRun[];
-  onUpdate:     (id: number, patch: Record<string, unknown>) => Promise<void>;
-  onRemoveStop: (runId: number, assignmentId: number) => Promise<void>;
-  onPublish:    (runId: number) => Promise<void>;
-  onDelete:     (runId: number) => Promise<void>;
+  run:               PlanningRun;
+  trailers:          FleetTrailer[];
+  drivers:           PlanningDriver[];
+  allRuns:           PlanningRun[];
+  onUpdate:          (id: number, patch: Record<string, unknown>) => Promise<void>;
+  onRemoveStop:      (runId: number, assignmentId: number) => Promise<void>;
+  onAddWaypoint:     (runId: number, type: string, locationText: string, seq: number) => Promise<void>;
+  onRemoveWaypoint:  (runId: number, waypointId: number) => Promise<void>;
+  onPublish:         (runId: number) => Promise<void>;
+  onDelete:          (runId: number) => Promise<void>;
 }) {
   const [saving,    setSaving]    = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [err,       setErr]       = useState("");
+  const [showWaypointForm, setShowWaypointForm] = useState(false);
+  const [wpType,    setWpType]    = useState("depot_start");
+  const [wpText,    setWpText]    = useState("");
+  const [wpSeq,     setWpSeq]     = useState(0);
+  const [wpAdding,  setWpAdding]  = useState(false);
   const [aiCheck,   setAiCheck]   = useState<{ ok: boolean; severity: "ok"|"warn"|"block"; reason: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -240,6 +290,16 @@ function RunCard({
     try { await onUpdate(run.id, body); }
     catch (e: unknown) { setErr((e as Error).message ?? "Save failed"); }
     finally { setSaving(false); }
+  }
+
+  async function handleAddWaypoint() {
+    if (!wpText.trim()) return;
+    setWpAdding(true);
+    try {
+      await onAddWaypoint(run.id, wpType, wpText.trim(), wpSeq);
+      setWpText(""); setShowWaypointForm(false);
+    } catch (e: unknown) { setErr((e as Error).message ?? "Failed to add waypoint"); }
+    finally { setWpAdding(false); }
   }
 
   async function handlePublish() {
@@ -327,6 +387,88 @@ function RunCard({
               ) : null;
             })()}
           </>
+        )}
+      </div>
+
+      {/* Waypoints (depot/yard/hub stops) */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-[10px] uppercase tracking-wide font-bold text-muted">Depot / yard stops</div>
+          <button
+            onClick={() => setShowWaypointForm(v => !v)}
+            className="text-[10px] text-accent hover:underline"
+          >
+            {showWaypointForm ? "Cancel" : "+ Add"}
+          </button>
+        </div>
+
+        {/* Existing waypoints */}
+        {run.waypoints.length > 0 && (
+          <div className="space-y-1 mb-1">
+            {run.waypoints.map(w => (
+              <div key={w.id} className="flex items-center gap-1.5 text-xs">
+                <Badge colour="bg-slate-100 text-slate-600">
+                  {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
+                </Badge>
+                <span className="flex-1 text-primary truncate">
+                  {w.location?.siteName ?? w.location?.name ?? w.locationText ?? w.postcode ?? "—"}
+                </span>
+                {w.scheduledTime && <span className="text-muted flex-shrink-0">{w.scheduledTime}</span>}
+                <button
+                  onClick={() => onRemoveWaypoint(run.id, w.id)}
+                  className="text-red-400 hover:text-red-600 flex-shrink-0"
+                  title="Remove"
+                >✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add form */}
+        {showWaypointForm && (
+          <div className="rounded border border-slate-200 bg-slate-50 p-2 space-y-1.5 text-xs">
+            <select
+              className="input text-xs py-1 w-full"
+              value={wpType}
+              onChange={e => { setWpType(e.target.value); setWpSeq(e.target.value === "depot_start" ? 0 : e.target.value === "return_to_base" ? 9999 : 50); }}
+            >
+              <option value="depot_start">Depot start (beginning of run)</option>
+              <option value="yard_pickup">Yard pickup (collect trailer/equipment)</option>
+              <option value="hub_drop">Hub / transfer point</option>
+              <option value="return_to_base">Return to base (end of run)</option>
+              <option value="custom">Custom waypoint</option>
+            </select>
+            <input
+              type="text"
+              className="input text-xs py-1 w-full"
+              placeholder="Location name or address…"
+              value={wpText}
+              onChange={e => setWpText(e.target.value)}
+            />
+            <div className="flex gap-1.5 items-center">
+              <label className="text-muted flex-shrink-0">Position</label>
+              <input
+                type="number"
+                className="input text-xs py-1 w-20"
+                value={wpSeq}
+                min={0}
+                onChange={e => setWpSeq(parseInt(e.target.value, 10) || 0)}
+                title="Lower = earlier in run. 0 = before all stops, 9999 = after all stops"
+              />
+              <span className="text-muted text-[10px]">(0 = first, 9999 = last)</span>
+              <button
+                onClick={handleAddWaypoint}
+                disabled={!wpText.trim() || wpAdding}
+                className="btn text-xs py-1 px-2 bg-accent text-white disabled:opacity-40 ml-auto"
+              >
+                {wpAdding ? "…" : "Add"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {run.waypoints.length === 0 && !showWaypointForm && (
+          <div className="text-[10px] text-muted italic">No depot/yard stops</div>
         )}
       </div>
 
@@ -510,6 +652,16 @@ export default function PlanningBoardPage() {
     await loadRight(date);
   }
 
+  async function handleAddWaypoint(runId: number, waypointType: string, locationText: string, sequenceNumber: number) {
+    await planningApi.addWaypoint(runId, { waypointType, locationText, sequenceNumber });
+    await loadRight(date);
+  }
+
+  async function handleRemoveWaypoint(runId: number, waypointId: number) {
+    await planningApi.removeWaypoint(runId, waypointId);
+    await loadRight(date);
+  }
+
   async function handleDeleteRun(runId: number) {
     if (!window.confirm("Delete this run? Stops will return to the unplanned list.")) return;
     await planningApi.patchRun(runId, { status: "cancelled" });
@@ -669,6 +821,8 @@ export default function PlanningBoardPage() {
                 cluster={c}
                 runs={runs}
                 onAddToRun={handleAddToRun}
+                planningDate={date}
+                allClusters={clusters}
               />
             ))}
           </div>
@@ -710,6 +864,8 @@ export default function PlanningBoardPage() {
                   allRuns={runs}
                   onUpdate={handleUpdate}
                   onRemoveStop={handleRemoveStop}
+                  onAddWaypoint={handleAddWaypoint}
+                  onRemoveWaypoint={handleRemoveWaypoint}
                   onPublish={handlePublish}
                   onDelete={handleDeleteRun}
                 />
