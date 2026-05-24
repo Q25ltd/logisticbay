@@ -370,7 +370,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id   = parseInt((request.params as { id: string }).id, 10);
-      const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string };
+      const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[] };
 
       const job = await prisma.job.findFirst({
         where:   { id, companyId: request.user!.companyId },
@@ -456,6 +456,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             plannedDate:     new Date(body.plannedDate),
             plannerNotes:    note || job.plannerNotes,
             vehicleCategory,
+            ...(Array.isArray(body.bodyTypes) && body.bodyTypes.length
+              ? { bodyTypes: body.bodyTypes }
+              : {}),
             validationStatus: validation.validationStatus,
           },
         }),

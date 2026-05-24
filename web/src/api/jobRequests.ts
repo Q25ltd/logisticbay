@@ -382,8 +382,8 @@ export const jobRequestsApi = {
     ),
   get:     (id: number) => api.get<import("../types").Job>(`/job-requests/${id}`),
   /** plannedDate is required. vehicleCategory required if not already on the job. */
-  accept:  (id: number, plannedDate: string, plannerNotes?: string, vehicleCategory?: string) =>
-    api.post<{ ok: true; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, { plannedDate, plannerNotes, vehicleCategory }),
+  accept:  (id: number, plannedDate: string, plannerNotes?: string, vehicleCategory?: string, bodyTypes?: string[]) =>
+    api.post<{ ok: true; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, { plannedDate, plannerNotes, vehicleCategory, bodyTypes }),
   reject:  (id: number, reason: string, notes?: string) =>
     api.post<{ ok: true }>(`/job-requests/${id}/reject`, { reason, notes }),
 };

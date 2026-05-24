@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Job, JobPart } from "../../types";
 import { jobRequestsApi } from "../../api/jobRequests";
-import { BODY_CATEGORIES, BODY_TYPES } from "../../constants/vehicleTaxonomy";
+import { BODY_CATEGORIES, BODY_TYPES, BODY_TYPES_BY_CATEGORY } from "../../constants/vehicleTaxonomy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -274,6 +274,7 @@ function RequestRow({
   const [plannedDate,     setPlannedDate]     = useState("");
   const [plannerNotes,    setPlannerNotes]    = useState("");
   const [vehicleCategory, setVehicleCategory] = useState(j.vehicleCategory ?? "");
+  const [bodyTypes,       setBodyTypes]       = useState<string[]>((j.bodyTypes as string[] | null) ?? []);
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -282,6 +283,15 @@ function RequestRow({
   // or the planner must choose it now.
   const vehicleAlreadySet = !!j.vehicleCategory;
   const canAccept = !!plannedDate && (vehicleAlreadySet || !!vehicleCategory);
+
+  // Body types available for the selected (or pre-set) vehicle category
+  const effectiveCategory = vehicleCategory || j.vehicleCategory || "";
+  const availableBodyTypes: string[] =
+    effectiveCategory ? (BODY_TYPES_BY_CATEGORY as Record<string, string[]>)[effectiveCategory] ?? [] : [];
+
+  function toggleBodyType(bt: string) {
+    setBodyTypes(prev => prev.includes(bt) ? prev.filter(x => x !== bt) : [...prev, bt]);
+  }
 
   const stops      = j.stops ?? [];
   const collections = stops.filter(s => s.type === "collection" || s.type === "pickup");
@@ -298,6 +308,7 @@ function RequestRow({
         plannedDate,
         plannerNotes.trim() || undefined,
         vehicleAlreadySet ? undefined : vehicleCategory,
+        bodyTypes.length ? bodyTypes : undefined,
       );
       onAccepted();
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
@@ -466,6 +477,36 @@ function RequestRow({
                         Required — wrong vehicle type means wrong trailer, wrong rate, failed job.
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Body type — shown when a vehicle category is selected/known and has body options */}
+                {availableBodyTypes.length > 0 && (
+                  <div>
+                    <label className="text-xs font-medium" style={{ color: "#374151" }}>
+                      Body type <span className="text-xs font-normal text-slate-400">(optional)</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2 mt-1.5">
+                      {availableBodyTypes.map(bt => {
+                        const meta = BODY_TYPES.find(b => b.value === bt);
+                        if (!meta) return null;
+                        const selected = bodyTypes.includes(bt);
+                        return (
+                          <button
+                            key={bt}
+                            type="button"
+                            onClick={() => toggleBodyType(bt)}
+                            className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                              selected
+                                ? "bg-blue-600 border-blue-600 text-white"
+                                : "bg-white border-slate-300 text-slate-700 hover:border-blue-400"
+                            }`}
+                          >
+                            {meta.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
