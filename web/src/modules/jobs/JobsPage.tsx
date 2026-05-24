@@ -42,9 +42,9 @@ function cap(s: string): string {
 
 const PLANNING_LABELS: Record<string, string> = {
   no_stops:          "No stops",
-  not_planned:       "Not planned",
-  partially_planned: "Partly planned",
-  planned:           "Planned",
+  not_planned:       "Not in a run",
+  partially_planned: "Partly in runs",
+  planned:           "In runs",
   partially_done:    "In progress",
   done:              "Done",
 };
@@ -64,7 +64,7 @@ const STATUS_OPTIONS = [
   { value: "pending_review", label: "Pending review" },
   { value: "ready_to_plan",  label: "Ready to plan"  },
   { value: "in_planning",    label: "In planning"    },
-  { value: "planned",        label: "Planned"        },
+  { value: "planned",        label: "In runs"        },
   { value: "in_progress",    label: "In progress"    },
   { value: "completed",      label: "Completed"      },
   { value: "cancelled",      label: "Cancelled"      },

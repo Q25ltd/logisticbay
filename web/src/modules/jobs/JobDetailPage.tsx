@@ -52,12 +52,12 @@ const STOP_DOT_COLOUR: Record<string, string> = {
 };
 
 const PLANNING_STATUS_LABEL: Record<string, { label: string; colour: string }> = {
-  no_stops:         { label: "No stops",          colour: "text-slate-400" },
-  not_planned:      { label: "Not in a run",       colour: "text-amber-600" },
-  partially_planned:{ label: "Partially assigned", colour: "text-indigo-600" },
-  planned:          { label: "Fully assigned",     colour: "text-blue-600"  },
-  partially_done:   { label: "Partially done",     colour: "text-teal-600"  },
-  done:             { label: "All done",            colour: "text-green-600" },
+  no_stops:         { label: "No stops",       colour: "text-slate-400" },
+  not_planned:      { label: "Not in a run",   colour: "text-amber-600" },
+  partially_planned:{ label: "Partly in runs", colour: "text-indigo-600" },
+  planned:          { label: "In runs",        colour: "text-blue-600"  },
+  partially_done:   { label: "Partially done", colour: "text-teal-600"  },
+  done:             { label: "All done",        colour: "text-green-600" },
 };
 
 const JOB_STATUSES = [
