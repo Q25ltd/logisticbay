@@ -441,9 +441,6 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         include: { assignments: { where: { removedAt: null } } },
       });
       if (!run) return reply.status(404).send({ error: "Run not found" });
-      if (!run.assignedTrailerId) {
-        return reply.status(400).send({ error: "TRAILER_REQUIRED", message: "A trailer must be assigned before publishing." });
-      }
       if (run.assignments.length === 0) {
         return reply.status(400).send({ error: "NO_STOPS", message: "Add at least one stop before publishing." });
       }

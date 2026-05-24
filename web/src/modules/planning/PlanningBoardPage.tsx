@@ -284,40 +284,57 @@ function RunCard({
         {run.assignments.length === 0 ? (
           <div className="text-xs text-muted italic">No stops yet — add from the left panel</div>
         ) : (
-          <div className="space-y-1">
-            {run.assignments.map((a, i) => (
-              <div key={a.id} className="flex items-center gap-2 text-xs">
-                <span className="w-4 text-center font-bold text-muted">{i + 1}</span>
-                <Badge colour={a.jobPart.type === "collection" || a.jobPart.type === "pickup" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                  {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
-                </Badge>
-                <span className="flex-1 truncate text-primary">{a.jobPart.job.customerName ?? "—"} · {a.jobPart.locationTextSnapshot ?? a.jobPart.postcode}</span>
-                {a.jobPart.timeWindowStart && (
-                  <span className="text-amber-600 flex-shrink-0">{fmtTime(a.jobPart.timeWindowStart)}</span>
-                )}
-                <button
-                  onClick={() => onRemoveStop(run.id, a.id)}
-                  className="text-red-400 hover:text-red-600 flex-shrink-0"
-                  title="Remove"
-                >✕</button>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="space-y-1">
+              {run.assignments.map((a, i) => (
+                <div key={a.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-4 text-center font-bold text-muted">{i + 1}</span>
+                  <Badge colour={a.jobPart.type === "collection" || a.jobPart.type === "pickup" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                    {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
+                  </Badge>
+                  <span className="flex-1 truncate text-primary">{a.jobPart.job.customerName ?? "—"} · {a.jobPart.locationTextSnapshot ?? a.jobPart.postcode}</span>
+                  {a.jobPart.timeWindowStart && (
+                    <span className="text-amber-600 flex-shrink-0">{fmtTime(a.jobPart.timeWindowStart)}</span>
+                  )}
+                  <button
+                    onClick={() => onRemoveStop(run.id, a.id)}
+                    className="text-red-400 hover:text-red-600 flex-shrink-0"
+                    title="Remove"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+            {/* Stop order warning */}
+            {(() => {
+              const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+              const COLLECTION_TYPES = new Set(["collection", "pickup"]);
+              const DELIVERY_TYPES   = new Set(["delivery", "dropoff"]);
+              const firstDelivery   = sorted.find(a => DELIVERY_TYPES.has(a.jobPart.type));
+              const firstCollection = sorted.find(a => COLLECTION_TYPES.has(a.jobPart.type));
+              const hasOrderIssue   = firstDelivery && firstCollection &&
+                firstDelivery.sequenceNumber < firstCollection.sequenceNumber;
+              return hasOrderIssue ? (
+                <div className="mt-1.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
+                  ⚠ Delivery appears before collection — check the stop order
+                </div>
+              ) : null;
+            })()}
+          </>
         )}
       </div>
 
-      {/* Trailer — required */}
+      {/* Trailer — optional */}
       <div className="mb-2">
         <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">
-          Trailer <span className="text-red-500">*</span>
+          Trailer <span className="text-[10px] text-muted font-normal normal-case">(assign now or later)</span>
         </label>
         <select
-          className={`input text-sm w-full ${!run.assignedTrailerId ? "border-red-300" : ""}`}
+          className="input text-sm w-full"
           value={run.assignedTrailerId ?? ""}
           disabled={saving}
           onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
         >
-          <option value="">— assign trailer —</option>
+          <option value="">— assign later —</option>
           {trailers.map(t => (
             <option key={t.id} value={t.id}>
               {t.registration} · {bodyTypeLabel(t.bodyType || t.trailerType)}
@@ -325,9 +342,6 @@ function RunCard({
             </option>
           ))}
         </select>
-        {!run.assignedTrailerId && (
-          <div className="text-xs text-red-500 mt-0.5">Required before publishing</div>
-        )}
       </div>
 
       {/* Driver — optional */}
@@ -398,7 +412,7 @@ function RunCard({
         {canPublish && (
           <button
             onClick={handlePublish}
-            disabled={publishing || !run.assignedTrailerId || run.assignments.length === 0}
+            disabled={publishing || run.assignments.length === 0}
             className="btn text-sm px-3 py-1.5 bg-primary text-white disabled:opacity-40 flex-1"
           >
             {publishing ? "Publishing…" : "Publish to driver"}
@@ -505,28 +519,26 @@ export default function PlanningBoardPage() {
   }
 
   async function handleAiSuggest() {
-    setAiSuggesting(true);
+    if (!clusters.length) { setErr("No unplanned stops to suggest runs for."); return; }
+    setAiSuggesting(true); setErr("");
     try {
-      // Flatten all unplanned stops
-      const allStops = clusters.flatMap(c => c.stops);
-      if (!allStops.length) return;
-      // Ask AI to suggest vehicle for the biggest cluster as a starting point
-      const biggest = [...clusters].sort((a, b) => b.stops.length - a.stops.length)[0];
-      const suggestion = await aiApi.suggestVehicle({
-        weight:           biggest.totalWeightKg || undefined,
-        quantity:         biggest.totalQty || undefined,
-        quantityUnit:     biggest.primaryQtyUnit ?? undefined,
-        goodsType:        biggest.stops[0]?.goodsType ?? undefined,
-        stopCount:        biggest.stops.length,
-      });
-      // Create a run and add all stops in the biggest cluster
-      const run = await planningApi.createRun({
-        date,
-        runType:      "direct",
-        plannerNotes: `AI suggestion: ${suggestion.reasoning ?? ""}`,
-      });
-      for (const stop of biggest.stops) {
-        try { await planningApi.addStop(run.id, stop.id); } catch { /* skip if already assigned */ }
+      // Create one run per cluster — AI picks vehicle category for each
+      for (const cluster of clusters) {
+        const suggestion = await aiApi.suggestVehicle({
+          weight:       cluster.totalWeightKg || undefined,
+          quantity:     cluster.totalQty       || undefined,
+          quantityUnit: cluster.primaryQtyUnit  ?? undefined,
+          goodsType:    cluster.stops[0]?.goodsType ?? undefined,
+          stopCount:    cluster.stops.length,
+        });
+        const run = await planningApi.createRun({
+          date,
+          runType:      "direct",
+          plannerNotes: `AI: ${suggestion.reasoning ?? ""}`,
+        });
+        for (const stop of cluster.stops) {
+          try { await planningApi.addStop(run.id, stop.id); } catch { /* already assigned */ }
+        }
       }
       await Promise.all([loadLeft(date), loadRight(date)]);
     } catch (e: unknown) { setErr((e as Error).message); }
@@ -563,7 +575,7 @@ export default function PlanningBoardPage() {
             disabled={aiSuggesting || !clusters.length}
             className="btn text-sm px-3 py-1.5 border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 flex items-center gap-1.5"
           >
-            {aiSuggesting ? <><span className="animate-spin inline-block">⟳</span> Thinking…</> : <>🤖 Suggest runs</>}
+            {aiSuggesting ? <><span className="animate-spin inline-block">⟳</span> Building runs…</> : <>🤖 Suggest all runs</>}
           </button>
           <button
             onClick={handleCreateRun}
