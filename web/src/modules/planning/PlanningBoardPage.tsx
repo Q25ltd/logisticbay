@@ -767,19 +767,24 @@ export default function PlanningBoardPage() {
   // Kept in the parent so it survives data refreshes — local state in RunCard
   // would reset to the initializer value every time the runs array updates.
   // undefined = use default (collapsed when has stops, expanded when empty).
-  const [runExpandOverrides, setRunExpandOverrides] = useState<Map<number, boolean>>(new Map());
+  // expandedRunIds: the set of run IDs that the user has explicitly opened.
+  // All runs default to collapsed. We auto-add new runs so they open immediately.
+  const [expandedRunIds, setExpandedRunIds] = useState<Set<number>>(new Set());
 
-  function isRunExpanded(run: PlanningRun): boolean {
-    if (runExpandOverrides.has(run.id)) return runExpandOverrides.get(run.id)!;
-    return run.assignments.length === 0; // default: expand empty, collapse with stops
+  function isRunExpanded(runId: number): boolean {
+    return expandedRunIds.has(runId);
   }
 
-  function toggleRunExpand(run: PlanningRun) {
-    setRunExpandOverrides(prev => {
-      const next = new Map(prev);
-      next.set(run.id, !isRunExpanded(run));
+  function toggleRunExpand(runId: number) {
+    setExpandedRunIds(prev => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId); else next.add(runId);
       return next;
     });
+  }
+
+  function autoExpand(runId: number) {
+    setExpandedRunIds(prev => new Set(prev).add(runId));
   }
 
   // Derive job groups from clusters — no extra fetch needed
@@ -877,6 +882,7 @@ export default function PlanningBoardPage() {
     try {
       const run = await planningApi.createRun({ date, runType: "direct" });
       setRuns(prev => [...prev, run]);
+      autoExpand(run.id); // open the new run immediately so the planner can fill it
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setCreatingRun(false); }
   }
@@ -1057,8 +1063,8 @@ export default function PlanningBoardPage() {
                 <RunCard
                   key={run.id}
                   run={run}
-                  isExpanded={isRunExpanded(run)}
-                  onToggleExpand={() => toggleRunExpand(run)}
+                  isExpanded={isRunExpanded(run.id)}
+                  onToggleExpand={() => toggleRunExpand(run.id)}
                   trailers={trailers}
                   drivers={drivers}
                   allRuns={runs}
