@@ -1315,7 +1315,8 @@ function VehiclePanel({
   function applySuggestion() {
     if (!suggestion) return;
     setCategory(suggestion.vehicleCategory);
-    setBodyTypes([]);
+    // Auto-apply suggested body types from the fleet — planner can adjust after
+    setBodyTypes(suggestion.suggestedBodyTypes ?? []);
     setMinGvw("");
     setSuggestion(null);
   }
@@ -1408,6 +1409,14 @@ function VehiclePanel({
         </div>
       )}
 
+      {/* Fleet warning — shown before AI suggestion if fleet lacks required kit */}
+      {suggestion?.fleetWarning && (
+        <div className="mb-3 rounded-xl border border-orange-300 bg-orange-50 px-3 py-2.5 text-sm flex items-start gap-2">
+          <span className="text-orange-500 text-base leading-none flex-shrink-0 mt-0.5">⚠</span>
+          <p className="text-orange-800 text-xs">{suggestion.fleetWarning}</p>
+        </div>
+      )}
+
       {/* AI suggestion banner */}
       {suggestion && (
         <div className={`mb-3 rounded-xl border px-3 py-2.5 text-sm ${
@@ -1423,6 +1432,13 @@ function VehiclePanel({
                   ?? BODY_CATEGORIES.find(c => c.value === suggestion.vehicleCategory)?.label
                   ?? suggestion.vehicleCategory}
               </span>
+              {suggestion.suggestedBodyTypes?.length > 0 && (
+                <span className="ml-2 text-xs text-slate-600">
+                  + {suggestion.suggestedBodyTypes
+                      .map(bt => BODY_TYPES.find(b => b.value === bt)?.label ?? bt)
+                      .join(", ")}
+                </span>
+              )}
               <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${
                 suggestion.confidence === "high"   ? "bg-green-100 text-green-700" :
                 suggestion.confidence === "medium" ? "bg-blue-100  text-blue-700" :

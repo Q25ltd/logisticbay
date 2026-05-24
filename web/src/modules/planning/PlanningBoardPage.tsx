@@ -917,7 +917,7 @@ export default function PlanningBoardPage() {
 
         if (!runStops.length) continue;
 
-        const suggestion = await aiApi.suggestVehicle({
+        const suggestion = await aiApi.suggestRunTrailer({
           weight:       cluster.totalWeightKg || undefined,
           quantity:     cluster.totalQty      || undefined,
           quantityUnit: cluster.primaryQtyUnit ?? undefined,
@@ -927,8 +927,9 @@ export default function PlanningBoardPage() {
 
         const run = await planningApi.createRun({
           date,
-          runType:      "direct",
-          plannerNotes: `AI: ${suggestion.reasoning ?? ""}`,
+          runType:            "direct",
+          plannerNotes:       `AI: ${suggestion.reasoning ?? ""}`,
+          assignedTrailerId:  suggestion.trailerId ?? undefined,
         });
 
         for (const stop of runStops) {

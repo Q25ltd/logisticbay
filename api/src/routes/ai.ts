@@ -17,7 +17,7 @@ import type { PrismaClient }    from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { env }                  from "../lib/env.js";
 import { parseTransportRequest, type SavedLocationHint } from "../services/parseRequestService.js";
-import { suggestVehicle, type VehicleSuggestionInput }   from "../services/suggestVehicleService.js";
+import { suggestVehicle, suggestTrailerForRun, type VehicleSuggestionInput } from "../services/suggestVehicleService.js";
 import { lookupAreaTypes } from "../services/areaLookupService.js";
 import { checkLoadVehicle, type LoadVehicleCheckInput } from "../services/checkLoadVehicleService.js";
 import { checkRun, type RunStop } from "../services/checkRunService.js";
@@ -101,6 +101,16 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
       }
 
       const body = request.body as VehicleSuggestionInput;
+      const { companyId } = request.user!;
+
+      // Fetch the company's active fleet body types so Claude can suggest from real options
+      const fleetTrailers = await prisma.fleetTrailer.findMany({
+        where:  { companyId, status: { notIn: ["disposed"] } },
+        select: { bodyType: true },
+      });
+      const fleetBodyTypes = [...new Set(
+        fleetTrailers.map(t => t.bodyType).filter((b): b is string => !!b && b.trim() !== "")
+      )];
 
       try {
         const suggestion = await suggestVehicle({
@@ -114,6 +124,7 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
           specialRequirements: Array.isArray(body.specialRequirements) ? body.specialRequirements : undefined,
           stopCount:           typeof body.stopCount === "number" ? body.stopCount : undefined,
           stops:               Array.isArray(body.stops) ? body.stops : undefined,
+          fleetBodyTypes:      fleetBodyTypes.length ? fleetBodyTypes : undefined,
         });
         return reply.send(suggestion);
       } catch (err: unknown) {
@@ -251,6 +262,76 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
           error:   isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR",
           message,
         });
+      }
+    },
+  );
+
+  // ── POST /ai/suggest-run-trailer ─────────────────────────────────────────────
+  //
+  // Given load details for a planning run, reads the company's available trailers
+  // from the DB and returns the most suitable one.
+  // Auth: company_owner | planner
+  app.post(
+    "/ai/suggest-run-trailer",
+    {
+      preHandler: [authenticate, requireRole("company_owner", "planner")],
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      if (!env.AI_ENABLED) {
+        return reply.status(503).send({
+          error:   "AI_UNAVAILABLE",
+          message: "AI features are not enabled on this server.",
+        });
+      }
+
+      const { companyId } = request.user!;
+      const body = request.body as {
+        weight?:         unknown;
+        quantity?:       unknown;
+        quantityUnit?:   unknown;
+        goodsType?:      unknown;
+        tempControlled?: unknown;
+        hazardClass?:    unknown;
+        stopCount?:      unknown;
+      };
+
+      // Fetch the company's active trailers from the fleet
+      const rawTrailers = await prisma.fleetTrailer.findMany({
+        where:  { companyId, status: { notIn: ["disposed"] } },
+        select: { id: true, registration: true, trailerType: true, bodyType: true, status: true },
+        orderBy: { registration: "asc" },
+      });
+
+      const availableTrailers = rawTrailers.map(t => ({
+        id:           t.id,
+        registration: t.registration,
+        trailerType:  t.trailerType ?? "unknown",
+        bodyType:     t.bodyType    ?? "unknown",
+        status:       t.status,
+      }));
+
+      try {
+        const suggestion = await suggestTrailerForRun({
+          weight:           typeof body.weight         === "number"  ? body.weight         : undefined,
+          quantity:         typeof body.quantity       === "number"  ? body.quantity        : undefined,
+          quantityUnit:     typeof body.quantityUnit   === "string"  ? body.quantityUnit    : undefined,
+          goodsType:        typeof body.goodsType      === "string"  ? body.goodsType       : undefined,
+          tempControlled:   typeof body.tempControlled === "boolean" ? body.tempControlled  : undefined,
+          hazardClass:      typeof body.hazardClass    === "string"  ? body.hazardClass     : undefined,
+          stopCount:        typeof body.stopCount      === "number"  ? body.stopCount       : undefined,
+          availableTrailers,
+        });
+        return reply.send(suggestion);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "AI request failed";
+        const isAuthError = message.toLowerCase().includes("authentication") ||
+                            message.toLowerCase().includes("invalid api key") ||
+                            message.toLowerCase().includes("api key");
+        const status = isAuthError ? 503 : 502;
+        const code   = isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR";
+        app.log.error({ err, code }, "AI suggest-run-trailer error");
+        return reply.status(status).send({ error: code, message });
       }
     },
   );

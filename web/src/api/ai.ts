@@ -62,9 +62,28 @@ export interface VehicleSuggestionInput {
 }
 
 export interface VehicleSuggestion {
-  vehicleCategory: string;
-  reasoning:       string;
-  confidence:      "high" | "medium" | "low";
+  vehicleCategory:    string;
+  suggestedBodyTypes: string[];        // body types from the fleet that suit this load
+  reasoning:          string;
+  confidence:         "high" | "medium" | "low";
+  fleetWarning?:      string | null;   // non-null if company fleet can't handle this job
+}
+
+export interface TrailerSuggestionInput {
+  weight?:         number;
+  quantity?:       number;
+  quantityUnit?:   string;
+  goodsType?:      string;
+  tempControlled?: boolean;
+  hazardClass?:    string;
+  stopCount?:      number;
+}
+
+export interface TrailerSuggestion {
+  trailerId:            number | null;
+  trailerRegistration:  string | null;
+  reasoning:            string;
+  confidence:           "high" | "medium" | "low";
 }
 
 export interface LoadVehicleCheckInput {
@@ -129,6 +148,8 @@ export const aiApi = {
     api.post<ParsedJobData>("/ai/parse-request", { text }),
   suggestVehicle: (input: VehicleSuggestionInput) =>
     api.post<VehicleSuggestion>("/ai/suggest-vehicle", input),
+  suggestRunTrailer: (input: TrailerSuggestionInput) =>
+    api.post<TrailerSuggestion>("/ai/suggest-run-trailer", input),
   checkVehicleLoad: (input: LoadVehicleCheckInput) =>
     api.post<LoadVehicleCheckResult>("/ai/check-vehicle-load", input),
   checkRun: (input: { stops: RunStopInput[]; estimatedStartTime?: string | null }) =>
