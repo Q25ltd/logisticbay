@@ -5,7 +5,7 @@ import { aiApi, type AreaInfo, type VehicleSuggestion, type LoadVehicleCheckResu
 import type { Job, JobPart } from "../../types";
 import RepeatJobModal from "./RepeatJobModal";
 import { Badge } from "../../components/Badge";
-import { BODY_CATEGORIES, BODY_TYPES_BY_CATEGORY, GVW_CLASSES } from "../../constants/vehicleTaxonomy";
+import { BODY_CATEGORIES, BODY_TYPES, BODY_TYPES_BY_CATEGORY, GVW_CLASSES } from "../../constants/vehicleTaxonomy";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1166,6 +1166,20 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
 
 // ── Vehicle panel ─────────────────────────────────────────────────────────────
 
+const BODY_TYPE_GROUP_LABELS: Record<string, string> = {
+  general:   "General / enclosed",
+  flat:      "Flat / open",
+  bulk:      "Bulk & tipping",
+  tanker:    "Tanker",
+  temp:      "Temperature controlled",
+  container: "Container / skeletal",
+  heavy:     "Heavy haulage",
+  specialist:"Specialist",
+  other:     "Other",
+};
+
+const TRAILER_CATEGORIES = new Set(["tractor", "drawbar", "heavy_haulage"]);
+
 const VEHICLE_BUTTONS = [
   { value: "van",        label: "Van",        sub: "≤3.5t LCV",        emoji: "🚐" },
   { value: "luton_van",  label: "Luton van",  sub: "≤3.5t box",        emoji: "📦" },
@@ -1562,29 +1576,50 @@ function VehiclePanel({
         </div>
       </div>
 
-      {/* Body / trailer type chips (for the selected category) */}
-      {category && availableBodyTypes.length > 0 && (
-        <div className="mb-3">
-          <span className="text-xs font-semibold uppercase tracking-wide block mb-1.5" style={{ color: "#94a3b8" }}>
-            {["tractor", "drawbar", "heavy_haulage"].includes(category) ? "Trailer type (optional)" : "Body type (optional)"}
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {availableBodyTypes.map(bt => (
-              <button
-                key={bt}
-                onClick={() => toggleBodyType(bt)}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
-                  bodyTypes.includes(bt)
-                    ? "border-blue-400 bg-blue-50 text-blue-700 font-medium"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                }`}
-              >
-                {cap(bt.replace(/_/g, " "))}
-              </button>
+      {/* Body / trailer type — grouped by category */}
+      {category && availableBodyTypes.length > 0 && (() => {
+        const isTrailer = TRAILER_CATEGORIES.has(category);
+        // Build a map of group → items, preserving the order from availableBodyTypes
+        const grouped: Record<string, { value: string; label: string }[]> = {};
+        availableBodyTypes.forEach(bt => {
+          const meta = BODY_TYPES.find(b => b.value === bt);
+          if (!meta) return;
+          if (!grouped[meta.group]) grouped[meta.group] = [];
+          grouped[meta.group].push({ value: meta.value, label: meta.label });
+        });
+        const groups = Object.keys(grouped);
+        return (
+          <div className="mb-3 space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-wide block" style={{ color: "#94a3b8" }}>
+              {isTrailer ? "Trailer type (optional)" : "Body type (optional)"}
+            </span>
+            {groups.map(g => (
+              <div key={g}>
+                {groups.length > 1 && (
+                  <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "#cbd5e1" }}>
+                    {BODY_TYPE_GROUP_LABELS[g] ?? g}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {grouped[g].map(bt => (
+                    <button
+                      key={bt.value}
+                      onClick={() => toggleBodyType(bt.value)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                        bodyTypes.includes(bt.value)
+                          ? "border-blue-400 bg-blue-50 text-blue-700 font-medium"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {bt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Min GVW */}
       {availableGvw.length > 0 && (
