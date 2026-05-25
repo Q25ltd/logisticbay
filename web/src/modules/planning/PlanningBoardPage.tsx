@@ -735,28 +735,19 @@ export default function PlanningBoardPage() {
   const [mobileTab,      setMobileTab]      = useState<"jobs" | "runs">("jobs");
   const [creatingRun,    setCreatingRun]    = useState(false);
 
-  // Collapse state for run cards, keyed by run ID.
-  // Kept in the parent so it survives data refreshes — local state in RunCard
-  // would reset to the initializer value every time the runs array updates.
-  // undefined = use default (collapsed when has stops, expanded when empty).
-  // expandedRunIds: the set of run IDs that the user has explicitly opened.
-  // All runs default to collapsed. We auto-add new runs so they open immediately.
-  const [expandedRunIds, setExpandedRunIds] = useState<Set<number>>(new Set());
+  // Accordion: only one run open at a time. null = all collapsed.
+  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
 
   function isRunExpanded(runId: number): boolean {
-    return expandedRunIds.has(runId);
+    return expandedRunId === runId;
   }
 
   function toggleRunExpand(runId: number) {
-    setExpandedRunIds(prev => {
-      const next = new Set(prev);
-      if (next.has(runId)) next.delete(runId); else next.add(runId);
-      return next;
-    });
+    setExpandedRunId(prev => (prev === runId ? null : runId));
   }
 
   function autoExpand(runId: number) {
-    setExpandedRunIds(prev => new Set(prev).add(runId));
+    setExpandedRunId(runId);
   }
 
   // End date of the unplanned window (date + lookAheadDays)
