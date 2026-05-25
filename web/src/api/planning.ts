@@ -128,6 +128,16 @@ export interface FleetUnit {
   category?:    string | null;
 }
 
+export interface DepotLocation {
+  id:       number;
+  name:     string;
+  siteName: string | null;
+  postcode: string | null;
+  lat:      number | null;
+  lng:      number | null;
+  town:     string | null;
+}
+
 export interface RunWaypoint {
   id:             number;
   runId:          number;
@@ -217,7 +227,7 @@ export const planningApi = {
     api.delete<void>(`/planning/runs/${runId}/waypoints/${waypointId}`),
 
   getFleet: () =>
-    api.get<{ trailers: FleetTrailer[]; trucks: FleetUnit[] }>("/planning/fleet"),
+    api.get<{ trailers: FleetTrailer[]; trucks: FleetUnit[]; depot: DepotLocation | null }>("/planning/fleet"),
 
   getDrivers: (date: string) =>
     api.get<{ drivers: PlanningDriver[] }>(`/planning/drivers?date=${date}`),

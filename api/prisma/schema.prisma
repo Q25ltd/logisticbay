@@ -31,12 +31,14 @@ model Company {
   holidaySeniorityYears        Int      @default(5)
   holidaySeniorityExtraDays    Int      @default(1)
   holidaySeniorityMaxExtraDays Int      @default(5)
+  depotLocationId              Int?
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
   memberships      CompanyMembership[]
   driverProfiles   DriverProfile[]
   savedLocations   SavedLocation[]
+  depotLocation    SavedLocation?      @relation("CompanyDepot", fields: [depotLocationId], references: [id])
   customers        Customer[]
   jobTemplates     JobTemplate[]
   jobs             Job[]
@@ -245,6 +247,7 @@ model SavedLocation {
   updatedAt            DateTime @updatedAt
 
   company          Company       @relation(fields: [companyId], references: [id])
+  depotForCompanies Company[]   @relation("CompanyDepot")
   pickupTemplates  JobTemplate[] @relation("PickupLocation")
   dropoffTemplates JobTemplate[] @relation("DropoffLocation")
   jobParts         JobPart[]

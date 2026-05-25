@@ -54,6 +54,7 @@ export interface PatchCompanyBody {
   holidaySeniorityYears?:        number;
   holidaySeniorityExtraDays?:    number;
   holidaySeniorityMaxExtraDays?: number;
+  depotLocationId?:              number | null;
 }
 
 // ── Drivers ───────────────────────────────────────────────────────────────────

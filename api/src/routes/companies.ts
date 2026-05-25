@@ -160,7 +160,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       }
     }
 
-    const updated = await prisma.company.update({
+    await prisma.company.update({
       where: { id: companyId },
       data: {
         ...(body.ticker !== undefined ? { ticker: body.ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || null } : {}),
@@ -178,6 +178,15 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         ...(body.holidaySeniorityYears !== undefined ? { holidaySeniorityYears: Math.max(0, Math.round(optionalNumber(body.holidaySeniorityYears) ?? 5)) } : {}),
         ...(body.holidaySeniorityExtraDays !== undefined ? { holidaySeniorityExtraDays: Math.max(0, Math.round(optionalNumber(body.holidaySeniorityExtraDays) ?? 1)) } : {}),
         ...(body.holidaySeniorityMaxExtraDays !== undefined ? { holidaySeniorityMaxExtraDays: Math.max(0, Math.round(optionalNumber(body.holidaySeniorityMaxExtraDays) ?? 5)) } : {}),
+        ...(body.depotLocationId !== undefined ? { depotLocationId: body.depotLocationId ? Number(body.depotLocationId) : null } : {}),
+      },
+    });
+    const updated = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        depotLocation: {
+          select: { id: true, name: true, siteName: true, postcode: true, lat: true, lng: true, town: true },
+        },
       },
     });
     return reply.send(updated);
@@ -186,7 +195,14 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   // ── GET /company ───────────────────────────────────────────────────────────
   app.get("/company", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
-    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        depotLocation: {
+          select: { id: true, name: true, siteName: true, postcode: true, lat: true, lng: true, town: true },
+        },
+      },
+    });
     if (!company) return reply.status(404).send({ error: "Company not found" });
     return reply.send(company);
   });

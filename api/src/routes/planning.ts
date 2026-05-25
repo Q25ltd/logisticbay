@@ -637,7 +637,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId } = request.user!;
 
-      const [trailers, trucks] = await Promise.all([
+      const [trailers, trucks, company] = await Promise.all([
         prisma.fleetTrailer.findMany({
           where:   { companyId, status: { not: "disposed" } },
           orderBy: { registration: "asc" },
@@ -646,9 +646,22 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           where:   { companyId, status: { not: "disposed" } },
           orderBy: { registration: "asc" },
         }),
+        prisma.company.findUnique({
+          where: { id: companyId },
+          select: {
+            depotLocationId: true,
+            depotLocation: {
+              select: { id: true, name: true, siteName: true, postcode: true, lat: true, lng: true, town: true },
+            },
+          },
+        }),
       ]);
 
-      return reply.send({ trailers, trucks });
+      return reply.send({
+        trailers,
+        trucks,
+        depot: company?.depotLocation ?? null,
+      });
     },
   );
 

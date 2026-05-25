@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint, type SavedLocationOption } from "../../api/planning";
+import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
 import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
@@ -295,6 +295,7 @@ function RunCard({
   onToggleExpand,
   trailers,
   drivers,
+  depot,
   allRuns,
   onUpdate,
   onRemoveStop,
@@ -308,6 +309,7 @@ function RunCard({
   onToggleExpand:    () => void;
   trailers:          FleetTrailer[];
   drivers:           PlanningDriver[];
+  depot:             DepotLocation | null;
   allRuns:           PlanningRun[];
   onUpdate:          (id: number, patch: Record<string, unknown>) => Promise<void>;
   onRemoveStop:      (runId: number, assignmentId: number) => Promise<void>;
@@ -375,7 +377,8 @@ function RunCard({
       .then(res => setSavedLocs(res.data))
       .catch(() => {/* non-fatal */})
       .finally(() => setLocsLoading(false));
-  }, [showWpForm, savedLocs.length, locsLoading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWpForm, savedLocs.length]);
 
   async function patch(body: Record<string, unknown>) {
     setSaving(true); setErr("");
@@ -566,6 +569,27 @@ function RunCard({
               </button>
             </div>
 
+            {/* Company depot — shown as fixed start/end reference */}
+            {depot && (
+              <div className="flex items-center gap-1.5 text-xs mb-1.5 rounded bg-blue-50 border border-blue-100 px-2 py-1">
+                <span className="text-blue-400 flex-shrink-0" title="Company depot">🏭</span>
+                <span className="flex-1 text-blue-700 font-medium truncate">
+                  {depot.siteName ?? depot.name}
+                  {depot.town ? ` · ${depot.town}` : ""}
+                  {depot.postcode ? ` · ${depot.postcode}` : ""}
+                </span>
+                <span className="text-[10px] text-blue-400 flex-shrink-0">depot</span>
+              </div>
+            )}
+            {!depot && (
+              <div className="flex items-center gap-1.5 text-xs mb-1.5 rounded bg-amber-50 border border-amber-200 px-2 py-1">
+                <span className="text-amber-500 flex-shrink-0">⚠</span>
+                <span className="text-amber-700 text-[11px]">
+                  No depot set — <a href="/settings" className="underline hover:no-underline">add one in Settings</a> to enable distance calculations.
+                </span>
+              </div>
+            )}
+
             {run.waypoints.length > 0 && (
               <div className="space-y-1 mb-1.5">
                 {run.waypoints.map((w: RunWaypoint) => (
@@ -671,8 +695,8 @@ function RunCard({
               </div>
             )}
 
-            {run.waypoints.length === 0 && !showWpForm && (
-              <div className="text-[10px] text-muted italic">No depot/yard stops added</div>
+            {run.waypoints.length === 0 && !showWpForm && depot && (
+              <div className="text-[10px] text-muted italic">No intermediate stops added</div>
             )}
           </div>
 
@@ -798,6 +822,7 @@ export default function PlanningBoardPage() {
   const [clusters,       setClusters]       = useState<StopCluster[]>([]);
   const [runs,           setRuns]           = useState<PlanningRun[]>([]);
   const [trailers,       setTrailers]       = useState<FleetTrailer[]>([]);
+  const [depot,          setDepot]          = useState<DepotLocation | null>(null);
   const [drivers,        setDrivers]        = useState<PlanningDriver[]>([]);
   const [loadingLeft,    setLoadingLeft]    = useState(false);
   const [loadingRight,   setLoadingRight]   = useState(false);
@@ -855,6 +880,7 @@ export default function PlanningBoardPage() {
     try {
       const res = await planningApi.getFleet();
       setTrailers(res.trailers);
+      setDepot(res.depot ?? null);
     } catch { /* non-fatal */ }
   }, []);
 
@@ -1109,6 +1135,7 @@ export default function PlanningBoardPage() {
                   onToggleExpand={() => toggleRunExpand(run.id)}
                   trailers={trailers}
                   drivers={drivers}
+                  depot={depot}
                   allRuns={runs}
                   onUpdate={handleUpdate}
                   onRemoveStop={handleRemoveStop}
