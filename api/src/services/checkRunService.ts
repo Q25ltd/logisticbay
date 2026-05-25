@@ -235,7 +235,10 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     `plain conversational English, no jargon, no technical terms. ` +
     `Rules you know: UK HGV drivers can drive up to 9 hours a day and must take a 45-minute break after 4.5 hours. ` +
     `Always give a clear verdict on whether the run works. ` +
-    `Use 12-hour clock with am/pm (e.g. 9:16am, not 09:16 UTC). Never mention UTC, APIs, routing engines, or leg names. ` +
+    `Use 12-hour clock with am/pm (e.g. 9:16am). Never mention UTC, APIs, routing engines, or leg names. ` +
+    `IMPORTANT — time window maths: if the driver arrives at 9:16am and the window closes at 9:30am, ` +
+    `the driver arrives 14 minutes BEFORE the close — that window is met, not missed. ` +
+    `Only flag a window as missed when the estimated arrival is AFTER the window close time. ` +
     `If timings are estimates rather than exact, say "timings are approximate" once at the end — nothing more technical than that. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
