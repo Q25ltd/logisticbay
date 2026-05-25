@@ -184,15 +184,25 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const { companyId } = request.user!;
       const q = request.query as { date?: string };
 
-      // Find all ready_to_plan job stops not yet assigned to any active run.
+      // Find all ready_to_plan / in_planning job stops not yet assigned to any active run.
       //
-      // Filtering strategy — each stop surfaces on the date it needs to happen:
-      //   1. Stop has a timeWindowStart   → use that date
-      //   2. Stop has no window but bookedTime → use bookedTime date
-      //   3. Neither                     → fall back to the job's plannedDate
+      // Date-placement strategy — the job's plannedDate is the primary anchor:
       //
-      // This ensures a Monday collection + Friday delivery show on their
-      // respective boards so planners can assign each leg on the right day.
+      //   1. Job has a plannedDate             → show ALL its unassigned stops on that board date
+      //                                          regardless of timeWindowStart values.
+      //                                          (timeWindowStart is still shown as a label on the card
+      //                                           so the planner can see the customer's requested window.)
+      //
+      //   2. Job has no plannedDate            → fall back to stop-level dates:
+      //      a. Stop has timeWindowStart       → show on that date
+      //      b. Stop has bookedTime            → show on that date
+      //      c. Neither                        → show without date filter (appears on all boards)
+      //
+      // Rationale: a planner sets plannedDate when they accept a PRF ("run this job on May 22").
+      // The customer may have requested a delivery time window of May 27 on the same job.
+      // Both pieces of information are correct — the RUN goes out on May 22, the stop
+      // time window is May 27.  The board must reflect when the planner wants to plan it,
+      // not when the stop needs to happen.
 
       const jobPartInclude = {
         job: {
@@ -218,34 +228,58 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         const gte = new Date(`${q.date}T00:00:00.000Z`);
         const lte = new Date(`${q.date}T23:59:59.999Z`);
 
-        // Two separate queries to avoid Prisma OR + nested relation conflicts.
-        const [withWindow, fallback] = await Promise.all([
-          // Stops that have their own time window on this date
-          prisma.jobPart.findMany({
-            where:   { ...baseWhere, timeWindowStart: { gte, lte } },
-            include: jobPartInclude,
-            orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
-          }),
-          // Stops with no time window → use job plannedDate or bookedTime
+        // Three separate queries to avoid Prisma OR + nested relation conflicts.
+        const [withPlannedDate, withWindow, withBookedTime] = await Promise.all([
+
+          // ── Query 1: jobs that have plannedDate on this date ─────────────────
+          // Show ALL their unassigned stops on this board, whatever timeWindowStart says.
           prisma.jobPart.findMany({
             where: {
               ...baseWhere,
+              job: {
+                status:      { in: ["ready_to_plan", "in_planning"] as string[] },
+                plannedDate: { gte, lte },
+              },
+            },
+            include: jobPartInclude,
+            orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
+          }),
+
+          // ── Query 2: jobs with NO plannedDate whose timeWindowStart is on this date ──
+          prisma.jobPart.findMany({
+            where: {
+              ...baseWhere,
+              job: {
+                status:      { in: ["ready_to_plan", "in_planning"] as string[] },
+                plannedDate: null,
+              },
+              timeWindowStart: { gte, lte },
+            },
+            include: jobPartInclude,
+            orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
+          }),
+
+          // ── Query 3: jobs with NO plannedDate, no timeWindowStart, bookedTime on this date ──
+          prisma.jobPart.findMany({
+            where: {
+              ...baseWhere,
+              job: {
+                status:      { in: ["ready_to_plan", "in_planning"] as string[] },
+                plannedDate: null,
+              },
               timeWindowStart: null,
-              OR: [
-                { bookedTime: { gte, lte } },
-                { bookedTime: null, job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: { gte, lte } } },
-              ],
+              bookedTime:      { gte, lte },
             },
             include: jobPartInclude,
             orderBy: [{ bookedTime: "asc" }, { id: "asc" }],
           }),
         ]);
 
-        // Merge and deduplicate (a stop can't appear twice, but be safe)
+        // Merge and deduplicate
         const seen = new Set<number>();
         parts = [];
-        for (const p of [...withWindow, ...fallback]) {
-          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withWindow).push(p); }
+        for (const p of [...withPlannedDate, ...withWindow, ...withBookedTime]) {
+          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withPlannedDate).push(p); }
         }
       } else {
         parts = await prisma.jobPart.findMany({
