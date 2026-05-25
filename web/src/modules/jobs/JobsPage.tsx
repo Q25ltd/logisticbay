@@ -65,12 +65,17 @@ function nextJobStatus(status: string) {
   return index >= 0 ? JOB_STATUS_FLOW[index + 1] : undefined;
 }
 
+const PROGRESS_ACTION_LABELS: Record<string, string> = {
+  accepted:        "Accept",
+  in_progress:     "▶ Start",
+  arrived_pickup:  "Arrived at Pickup",
+  collected:       "Mark Collected",
+  arrived_dropoff: "Arrived at Drop-off",
+  completed:       "✓ Mark Delivered",
+};
+
 function statusActionLabel(status: string) {
-  switch (status) {
-    case "in_progress": return "▶ Start";
-    case "completed":   return "✓ Complete";
-    default:            return cap(status);
-  }
+  return PROGRESS_ACTION_LABELS[status] ?? cap(status);
 }
 
 /** Return the first/last stop for a given role, checking all relevant type names. */

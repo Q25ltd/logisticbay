@@ -13,6 +13,20 @@ import {
 } from "./dashboardUtils";
 import { BODY_TYPES, ONBOARD_EQUIPMENT } from "../../constants/vehicleTaxonomy";
 
+const STOP_STATUS_LABELS: Record<string, string> = {
+  pending:   "Pending",
+  completed: "Completed",
+  skipped:   "Skipped",
+  failed:    "Failed",
+  arrived:   "Arrived",
+  loading:   "Loading",
+};
+
+function cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div>
@@ -87,7 +101,7 @@ export default function JobDetailDrawer({
               {sortedStops(job).map((stop) => (
                 <div key={stopKey(stop)} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold uppercase text-slate-700">{stop.type}</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold uppercase text-slate-700">{cap(stop.type)}</span>
                     <span className="text-sm font-bold text-primary">{shortLocation(stop, stop.locationTextSnapshot)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
@@ -98,7 +112,7 @@ export default function JobDetailDrawer({
                     <DetailRow label="Contact phone" value={stop.contactPhone} />
                     <DetailRow label="Driver notes" value={stop.instructions ? "Yes" : "No"} />
                     <DetailRow label="Navigation notes" value={stop.navigationInstructions ? "Yes" : "No"} />
-                    <DetailRow label="Status" value={stop.status} />
+                    <DetailRow label="Status" value={stop.status ? (STOP_STATUS_LABELS[stop.status] ?? cap(stop.status)) : undefined} />
                   </div>
                 </div>
               ))}
@@ -108,8 +122,8 @@ export default function JobDetailDrawer({
 
           <DrawerSection title="Load">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <DetailRow label="Goods/material" value={job.goodsDescription || (job.goodsType ? job.goodsType.charAt(0).toUpperCase() + job.goodsType.replace(/_/g, " ").slice(1) : undefined)} />
-              <DetailRow label="Total quantity" value={job.quantity != null ? `${job.quantity}${job.quantityUnit ? " " + job.quantityUnit.charAt(0).toUpperCase() + job.quantityUnit.slice(1) : ""}` : ""} />
+              <DetailRow label="Goods/material" value={job.goodsDescription || (job.goodsType ? cap(job.goodsType) : undefined)} />
+              <DetailRow label="Total quantity" value={job.quantity != null ? `${job.quantity}${job.quantityUnit ? " " + cap(job.quantityUnit) : ""}` : ""} />
               <DetailRow label="Total weight" value={job.weight != null ? `${job.weight}` : ""} />
               <DetailRow label="Per-stop allocation" value={sortedStops(job).some((stop) => stop.numPallets != null) ? "Present" : "Missing/unused"} />
               <DetailRow label="POD required" value={job.requirePOD ? "Yes" : "No"} />

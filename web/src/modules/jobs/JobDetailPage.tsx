@@ -51,6 +51,33 @@ const STOP_DOT_COLOUR: Record<string, string> = {
   depot:      "bg-slate-400",
 };
 
+const PRIORITY_LABELS: Record<string, string> = {
+  low:    "Low",
+  normal: "Normal",
+  high:   "High",
+  urgent: "Urgent",
+};
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  note_added:      "Note added",
+  status_changed:  "Status changed",
+  started:         "Started",
+  arrived_pickup:  "Arrived at pickup",
+  collected:       "Collected",
+  arrived_dropoff: "Arrived at drop-off",
+  completed:       "Completed",
+  cancelled:       "Cancelled",
+  job_created:     "Job created",
+  job_updated:     "Job updated",
+};
+
+const LOAD_READINESS_LABELS: Record<string, string> = {
+  ready_now:            "Ready now",
+  ready_at_booked_time: "Ready at booked time",
+  still_being_prepared: "Still being prepared",
+  unsure:               "Unsure",
+};
+
 const PLANNING_STATUS_LABEL: Record<string, { label: string; colour: string }> = {
   no_stops:         { label: "No stops",       colour: "text-slate-400" },
   not_planned:      { label: "Not in a run",   colour: "text-amber-600" },
@@ -224,7 +251,7 @@ export default function JobDetailPage() {
                 : job.priority === "high" ? "bg-orange-100 text-orange-700"
                 : "bg-slate-100 text-slate-500"
               }`}>
-                {job.priority.toUpperCase()}
+                {PRIORITY_LABELS[job.priority] ?? job.priority}
               </span>
             )}
           </div>
@@ -411,7 +438,7 @@ export default function JobDetailPage() {
                       {fmtDateTime(ev.createdAt)}
                     </div>
                     <div>
-                      <span className="font-semibold" style={{ color: "#0f172a" }}>{cap(ev.eventType)}</span>
+                      <span className="font-semibold" style={{ color: "#0f172a" }}>{EVENT_TYPE_LABELS[ev.eventType] ?? cap(ev.eventType)}</span>
                       {ev.note && <div className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{ev.note}</div>}
                     </div>
                   </div>
@@ -847,7 +874,7 @@ function StopRow({ stop: s, isLast, area }: { stop: JobPart; isLast: boolean; ar
         {/* Load readiness */}
         {s.loadReadiness && (
           <div className="text-xs mt-0.5 font-medium" style={{ color: "#6b7280" }}>
-            Load ready: {cap(s.loadReadiness)}
+            Load ready: {LOAD_READINESS_LABELS[s.loadReadiness] ?? cap(s.loadReadiness)}
           </div>
         )}
 

@@ -5,6 +5,16 @@ import type { JobContext } from "./dashboardTypes";
 import { isClosed } from "./dashboardUtils";
 import { BODY_CATEGORIES, BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
+const FLEET_STATUS_LABELS: Record<string, string> = {
+  available:      "Available",
+  off_road:       "Off Road",
+  vor:            "VOR",
+  loaded:         "Loaded",
+  in_use:         "In Use",
+  repair:         "In Repair",
+  decommissioned: "Decommissioned",
+};
+
 export default function DriverSnapshot({
   drivers,
   contexts,
@@ -225,7 +235,7 @@ export default function DriverSnapshot({
                       />
                       {matchedUnit && (
                         <p className="mt-0.5 text-[10px] text-green-700 font-semibold">
-                          ✓ In fleet · {vehicleClassLabel(matchedUnit.bodyCategory || matchedUnit.vehicleClass) || matchedUnit.bodyCategory || matchedUnit.vehicleClass} · {matchedUnit.status}
+                          ✓ In fleet · {vehicleClassLabel(matchedUnit.bodyCategory || matchedUnit.vehicleClass) || matchedUnit.bodyCategory || matchedUnit.vehicleClass} · {FLEET_STATUS_LABELS[matchedUnit.status] ?? matchedUnit.status}
                         </p>
                       )}
                       {isExternal && (

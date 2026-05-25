@@ -6,6 +6,14 @@ import { Button } from "../../components/Button";
 import { Alert } from "../../components/Alert";
 import { Input } from "../../components/Input";
 
+const ROLE_LABELS: Record<string, string> = {
+  company_owner: "Company Owner",
+  planner:       "Planner",
+  driver:        "Driver",
+  manager:       "Manager",
+  job_creator:   "Job Creator",
+};
+
 export default function SettingsPage() {
   const { user } = useAuth();
 
@@ -75,11 +83,11 @@ export default function SettingsPage() {
           {[
             { label: "Your Name", value: user?.name },
             { label: "Email",     value: user?.email },
-            { label: "Role",      value: user?.role?.replace(/_/g, " ") },
+            { label: "Role",      value: user?.role ? (ROLE_LABELS[user.role] ?? user.role) : undefined },
           ].map(r => (
             <div key={r.label} className="flex justify-between py-2 border-b border-border last:border-0">
               <span style={{ color: "#6b7280" }}>{r.label}</span>
-              <span className="font-semibold capitalize" style={{ color: "#0f172a" }}>{r.value}</span>
+              <span className="font-semibold" style={{ color: "#0f172a" }}>{r.value}</span>
             </div>
           ))}
         </div>
