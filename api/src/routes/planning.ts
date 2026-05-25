@@ -471,9 +471,12 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       }
 
       // Get next sequence number
+      // Include ALL assignments (even soft-deleted) so we never reuse a
+      // sequenceNumber that still exists in the table — the @@unique([runId,
+      // sequenceNumber]) constraint does not exempt removed rows.
       const maxSeq = await prisma.runAssignment.aggregate({
-        where:   { runId, removedAt: null },
-        _max:    { sequenceNumber: true },
+        where: { runId },
+        _max:  { sequenceNumber: true },
       });
       const nextSeq = (maxSeq._max.sequenceNumber ?? 0) + 1;
 
