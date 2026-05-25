@@ -619,15 +619,19 @@ function RunCard({
                   return items.map(item => {
                     if (item.kind === "waypoint") {
                       const w = item.data;
+                      const wpPostcode = w.postcode ?? w.location?.postcode ?? null;
                       return (
-                        <div key={`w-${w.id}`} className="flex items-center gap-1.5 text-xs pl-6">
+                        <div key={`w-${w.id}`} className="flex items-center gap-2 text-xs pl-6">
                           <Badge colour="bg-slate-100 text-slate-600">
                             {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
                           </Badge>
-                          <span className="flex-1 text-primary truncate">
-                            {w.location?.siteName ?? w.location?.name ?? w.locationText ?? w.postcode ?? "—"}
+                          <span className="font-medium text-primary truncate flex-1 min-w-0">
+                            {w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}
                           </span>
-                          {w.scheduledTime && <span className="text-muted flex-shrink-0">{w.scheduledTime}</span>}
+                          {wpPostcode && (
+                            <span className="text-muted truncate hidden sm:inline flex-shrink-0">{wpPostcode}</span>
+                          )}
+                          {w.scheduledTime && <span className="text-amber-600 flex-shrink-0">{w.scheduledTime}</span>}
                           <button onClick={() => onRemoveWaypoint(run.id, w.id)}
                             className="text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">✕</button>
                         </div>

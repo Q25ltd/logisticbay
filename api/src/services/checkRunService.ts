@@ -107,10 +107,11 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     }
   }
 
-  const hasAnyCoords = legs.some(l => l.driveMin != null);
-  const totalDriveMin = legs.reduce((s, l) => s + (l.driveMin ?? 0), 0);
-  const totalDwellMin = stops.length * STOP_DWELL_MIN;
-  const totalRunMin   = totalDriveMin + totalDwellMin;
+  const hasAnyCoords    = legs.some(l => l.driveMin != null);
+  const hasUnknownLegs  = legs.some(l => l.driveMin == null);
+  const totalDriveMin   = legs.reduce((s, l) => s + (l.driveMin ?? 0), 0);
+  const totalDwellMin   = stops.length * STOP_DWELL_MIN;
+  const totalRunMin     = totalDriveMin + totalDwellMin;
 
   // ── Build prompt ──────────────────────────────────────────────────────────
 
@@ -156,17 +157,23 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
 
   const totalLine = hasAnyCoords
     ? [
-        `Total estimated road distance: ~${Math.round(legs.reduce((s, l) => s + (l.roadKm ?? 0), 0))} km`,
-        `Estimated driving time: ~${Math.round(totalDriveMin)} min`,
+        `Total estimated road distance: ~${Math.round(legs.reduce((s, l) => s + (l.roadKm ?? 0), 0))} km (PARTIAL — legs marked "distance unknown" are NOT included)`,
+        `Estimated driving time: ~${Math.round(totalDriveMin)} min (PARTIAL — excludes unknown legs)`,
         `Dwell time (${stops.length} stops × 30 min): ${totalDwellMin} min`,
-        `Total run duration: ~${Math.round(totalRunMin / 60 * 10) / 10} hours`,
-      ].join("\n")
+        `Total run duration: ~${Math.round(totalRunMin / 60 * 10) / 10} hours (PARTIAL)`,
+        hasUnknownLegs
+          ? `⚠ WARNING: One or more legs have no GPS coordinates. The totals above are INCOMPLETE. Any time window near an unknown-distance leg must be treated as potentially infeasible — do NOT assume those legs take zero time.`
+          : "",
+      ].filter(Boolean).join("\n")
     : `GPS coordinates unavailable — estimated distances not calculated.\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}`;
 
   const systemPrompt =
     `You are a UK road freight planning expert reviewing whether a driver run is achievable. ` +
     `Road distances shown already include a 25% uplift from straight-line. ` +
     `UK HGV rules: max 9 h driving per day, must take a 45-min break after 4.5 h driving. ` +
+    `CRITICAL: If any leg is marked "distance unknown", you must NOT assume it takes zero time. ` +
+    `Any stops with tight time windows after an unknown-distance leg should be flagged as at risk. ` +
+    `Use UK postcode geography knowledge to estimate whether unknown legs are plausible given the time allowed. ` +
     `Be direct — one or two plain-English sentences a transport planner would immediately understand. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
