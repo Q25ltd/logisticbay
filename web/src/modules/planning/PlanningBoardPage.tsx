@@ -1029,7 +1029,7 @@ export default function PlanningBoardPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
               {runs.map(run => (
                 <RunCard
                   key={run.id}
