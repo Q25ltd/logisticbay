@@ -321,9 +321,12 @@ function RequestRow({
   // Pre-fill from: (1) job.plannedDate if set, (2) first stop's time window date,
   // (3) first stop's booked time date. PRF jobs often have no top-level plannedDate
   // but always have a stop time window the customer specified.
+  // Note: inline j.stops?.[0] here — firstStop is declared further down and
+  // can't be referenced safely inside a useState initialiser.
+  const _initFirstStop = (j.stops ?? [])[0];
   const firstStopDate =
-    firstStop?.timeWindowStart?.slice(0, 10) ??
-    firstStop?.bookedTime?.slice(0, 10) ??
+    _initFirstStop?.timeWindowStart?.slice(0, 10) ??
+    _initFirstStop?.bookedTime?.slice(0, 10) ??
     "";
   const [plannedDate,     setPlannedDate]     = useState(
     j.plannedDate ? j.plannedDate.slice(0, 10) : firstStopDate
