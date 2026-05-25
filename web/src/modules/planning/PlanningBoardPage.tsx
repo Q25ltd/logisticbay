@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint, type SavedLocationOption } from "../../api/planning";
+import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -329,6 +330,42 @@ function RunCard({
   const [savedLocs,    setSavedLocs]    = useState<SavedLocationOption[]>([]);
   const [locsLoading,  setLocsLoading]  = useState(false);
 
+  // AI route feasibility check
+  const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  useEffect(() => {
+    if (!run.assignments.length) { setAiCheck(null); return; }
+    setAiLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const sortedStops = [...run.assignments]
+          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+          .map(a => ({
+            sequenceNumber:  a.sequenceNumber,
+            type:            a.jobPart.type,
+            locationText:    a.jobPart.locationTextSnapshot,
+            postcode:        a.jobPart.postcode,
+            lat:             a.jobPart.lat,
+            lng:             a.jobPart.lng,
+            timeWindowStart: a.jobPart.timeWindowStart,
+            timeWindowEnd:   a.jobPart.timeWindowEnd,
+            customerName:    a.jobPart.job.customerName,
+          }));
+        const result = await aiApi.checkRun({ stops: sortedStops, estimatedStartTime: run.estimatedStartTime });
+        setAiCheck({
+          severity: result.severity === "high"  ? "block" :
+                    result.severity === "medium" ? "warn"  :
+                    result.severity === "low"    ? "warn"  : "ok",
+          reason:   result.message,
+        });
+      } catch { setAiCheck(null); }
+      finally  { setAiLoading(false); }
+    }, 800);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.assignments.length, run.estimatedStartTime]);
+
   // Load saved locations lazily when the waypoint form opens for the first time
   useEffect(() => {
     if (!showWpForm || savedLocs.length > 0 || locsLoading) return;
@@ -398,6 +435,11 @@ function RunCard({
     ? (sortedA[0]?.jobPart.job.customerName ?? sortedA[0]?.jobPart.locationTextSnapshot ?? "1 stop")
     : `${sortedA[0]?.jobPart.job.customerName ?? "?"} → ${sortedA[sortedA.length - 1]?.jobPart.job.customerName ?? "?"}`;
 
+  const aiDot = aiLoading ? "⟳" :
+    aiCheck?.severity === "block" ? "🔴" :
+    aiCheck?.severity === "warn"  ? "🟡" :
+    aiCheck                       ? "🟢" : null;
+
   const selectedLocObj = savedLocs.find(l => l.id === Number(wpLocationId));
 
   return (
@@ -425,6 +467,9 @@ function RunCard({
           </span>
         )}
 
+        {/* AI dot */}
+        {aiDot && <span className="flex-shrink-0 text-xs leading-none">{aiDot}</span>}
+
         {/* Delete */}
         <button
           onClick={e => { e.stopPropagation(); onDelete(run.id); }}
@@ -441,6 +486,20 @@ function RunCard({
         <div className="px-4 pb-4 pt-3 border-t border-slate-100">
 
           {err && <div className="text-xs text-red-600 mb-2">{err}</div>}
+
+          {/* AI feasibility check result */}
+          {aiLoading && (
+            <div className="text-xs text-muted mb-2 animate-pulse">🤖 Checking route feasibility…</div>
+          )}
+          {!aiLoading && aiCheck && (
+            <div className={`text-xs rounded px-2 py-1.5 mb-3 ${
+              aiCheck.severity === "block" ? "bg-red-50 text-red-700" :
+              aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700" :
+                                             "bg-green-50 text-green-700"
+            }`}>
+              {aiCheck.severity === "block" ? "🔴" : aiCheck.severity === "warn" ? "🟡" : "🟢"} {aiCheck.reason}
+            </div>
+          )}
 
           {/* ── Stops ── */}
           <div className="mb-3">
