@@ -735,19 +735,20 @@ export default function PlanningBoardPage() {
   const [mobileTab,      setMobileTab]      = useState<"jobs" | "runs">("jobs");
   const [creatingRun,    setCreatingRun]    = useState(false);
 
-  // Accordion: only one run open at a time. null = all collapsed.
-  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
+  // Expand state: multiple runs can be open at once (user controls manually).
+  // New runs are NOT auto-expanded — the user clicks to open them.
+  const [expandedRunIds, setExpandedRunIds] = useState<Set<number>>(new Set());
 
   function isRunExpanded(runId: number): boolean {
-    return expandedRunId === runId;
+    return expandedRunIds.has(runId);
   }
 
   function toggleRunExpand(runId: number) {
-    setExpandedRunId(prev => (prev === runId ? null : runId));
-  }
-
-  function autoExpand(runId: number) {
-    setExpandedRunId(runId);
+    setExpandedRunIds(prev => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId); else next.add(runId);
+      return next;
+    });
   }
 
   // End date of the unplanned window (date + lookAheadDays)
@@ -853,7 +854,6 @@ export default function PlanningBoardPage() {
     try {
       const run = await planningApi.createRun({ date, runType: "direct" });
       setRuns(prev => [...prev, run]);
-      autoExpand(run.id); // open the new run immediately so the planner can fill it
       setMobileTab("runs"); // switch to the Runs tab on mobile so the new run is visible
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setCreatingRun(false); }
