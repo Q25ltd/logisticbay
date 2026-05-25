@@ -609,11 +609,55 @@ function fmtPalletLines(lines: unknown): string {
 
 function fmtLoadValue(v: unknown): string {
   if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (v === "yes" || v === "true") return "Yes";
+  if (v === "no"  || v === "false") return "No";
   if (v === null || v === undefined) return "—";
   if (Array.isArray(v)) return "—"; // arrays handled specially
   if (typeof v === "object") return "—"; // objects handled specially
   return String(v);
 }
+
+const ACCESS_REQUIREMENT_LABELS: Record<string, string> = {
+  narrow_road:           "Narrow road",
+  height_restriction:    "Height restriction",
+  weight_restriction:    "Weight restriction",
+  length_restriction:    "Length restriction",
+  no_artic_access:       "No artic access",
+  no_trailer_access:     "No trailer access",
+  residential_area:      "Residential area",
+  security_checkin:      "Security check-in",
+  driver_id_required:    "Driver ID required",
+  do_not_arrive_early:   "Do not arrive early",
+  holding_area_required: "Holding area required",
+  port_access:           "Port access",
+  airport_access:        "Airport access",
+  ppe_required:          "PPE required",
+  ppe_safety_boots:      "PPE safety boots",
+  ppe_hi_vis:            "PPE hi-vis",
+  ppe_hard_hat:          "PPE hard hat",
+  ppe_gloves:            "PPE gloves",
+  ppe_glasses:           "PPE safety glasses",
+};
+
+const HANDLING_METHOD_LABELS: Record<string, string> = {
+  forklift:         "Forklift",
+  loading_bay:      "Loading bay",
+  hiab:             "HIAB / truck crane",
+  moffett:          "Moffett / vehicle forklift",
+  tail_lift:        "Tail lift",
+  pump_truck:       "Pump truck / pallet jack",
+  handball:         "Handball (manual)",
+  overhead_crane:   "Overhead / gantry crane",
+  magnetic_crane:   "Magnetic overhead crane",
+  side_loading:     "Side loading",
+  roro:             "RORO (drive on / drive off)",
+  tipper_discharge: "Tipper discharge",
+  grab:             "Grab (aggregate / scrap)",
+  pump_discharge:   "Pump discharge (tanker)",
+  walking_floor:    "Walking floor",
+  conveyor:         "Conveyor",
+  other:            "Other",
+};
 
 // Keys that are rendered as their own expanded sub-sections, not as plain key-value pairs
 const SPECIAL_KEYS = new Set(["palletLines", "driverQualifications", "crossBorderData"]);
@@ -824,7 +868,7 @@ function StopRow({ stop: s, isLast, area }: { stop: JobPart; isLast: boolean; ar
             <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#94a3b8" }}>Handling</div>
             <div className="flex flex-wrap gap-1">
               {(s.handlingMethods as string[]).map(m => (
-                <span key={m} className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{cap(m)}</span>
+                <span key={m} className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{HANDLING_METHOD_LABELS[m] ?? cap(m)}</span>
               ))}
             </div>
           </div>
@@ -834,7 +878,7 @@ function StopRow({ stop: s, isLast, area }: { stop: JobPart; isLast: boolean; ar
             <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#94a3b8" }}>Access</div>
             <div className="flex flex-wrap gap-1">
               {(s.accessRequirements as string[]).map(r => (
-                <span key={r} className="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">{cap(r)}</span>
+                <span key={r} className="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">{ACCESS_REQUIREMENT_LABELS[r] ?? cap(r)}</span>
               ))}
             </div>
           </div>
@@ -844,7 +888,7 @@ function StopRow({ stop: s, isLast, area }: { stop: JobPart; isLast: boolean; ar
             <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#94a3b8" }}>Proof required</div>
             <div className="flex flex-wrap gap-1">
               {(s.proofRequirements as string[]).map(r => (
-                <span key={r} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{cap(r)}</span>
+                <span key={r} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{cap(r).replace(/\bPod\b/, "POD").replace(/\bCmr\b/, "CMR").replace(/\bAdr\b/, "ADR")}</span>
               ))}
             </div>
           </div>
