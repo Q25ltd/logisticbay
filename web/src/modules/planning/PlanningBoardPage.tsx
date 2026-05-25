@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint, type SavedLocationOption } from "../../api/planning";
-import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -178,65 +177,90 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Job card (left panel) ─────────────────────────────────────────────────────
 
-/**
- * Per-stop row used in split mode — each stop gets its own run selector.
- */
-function StopRow({
-  stop,
+function JobCard({
+  group,
+  onAddJobToRun,
   runs,
   planningDate,
-  onAddStop,
+  showDateBadge,
 }: {
-  stop:         UnplannedStop;
-  runs:         PlanningRun[];
-  planningDate: string;
-  onAddStop:    (stopId: number, runId: number) => Promise<void>;
+  group:          JobGroup;
+  onAddJobToRun:  (jobId: number, runId: number) => Promise<void>;
+  runs:           PlanningRun[];
+  planningDate:   string;
+  showDateBadge?: boolean;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
-
-  const isCollect = stop.type === "collection" || stop.type === "pickup";
-  const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
-  const timeStr   = stop.timeWindowStart
-    ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
-    : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
 
   const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
 
   async function handleAdd() {
     if (!selectedRunId) return;
     setAdding(true);
-    try { await onAddStop(stop.id, Number(selectedRunId)); }
+    try { await onAddJobToRun(group.jobId, Number(selectedRunId)); }
     finally { setAdding(false); }
   }
 
   return (
-    <div className="rounded border border-slate-200 bg-slate-50 p-2 space-y-1.5">
-      {/* Stop identity row */}
-      <div className="flex items-start gap-1.5 text-xs">
-        <div className="flex-shrink-0 mt-0.5">
-          <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-            {STOP_TYPE_LABEL[stop.type] ?? stop.type}
-          </Badge>
+    <div className="card p-3 mb-2">
+      {/* Header */}
+      <div className="mb-2">
+        <div className="font-bold text-sm text-primary leading-tight">
+          {group.customerName ?? "Unknown customer"}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-primary font-medium leading-tight truncate">
-            {stopAddress(stop)}
-          </div>
-          {(timeStr || dateLabel) && (
-            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              {timeStr  && <span className="text-amber-700 font-medium">{timeStr}</span>}
-              {dateLabel && <span className="text-violet-600 font-semibold text-[10px]">📅 {dateLabel}</span>}
-            </div>
+        <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+          {group.jobReference && (
+            <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px]">{group.jobReference}</span>
+          )}
+          {showDateBadge && group.plannedDate && (
+            <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+              {new Date(group.plannedDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+            </span>
+          )}
+          {group.goodsType && <Badge colour="bg-slate-100 text-slate-600">{cap(group.goodsType)}</Badge>}
+          {group.weight   != null && group.weight   > 0 && <span>{group.weight.toLocaleString()} kg</span>}
+          {group.quantity != null && group.quantity > 0 && (
+            <span>{group.quantity}{group.quantityUnit ? " " + cap(group.quantityUnit) : ""}</span>
           )}
         </div>
       </div>
 
-      {/* Per-stop run selector */}
+      {/* Stops */}
+      <div className="space-y-1.5 mb-3">
+        {group.stops.map(stop => {
+          const isCollect = stop.type === "collection" || stop.type === "pickup";
+          const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
+          const timeStr   = stop.timeWindowStart
+            ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
+            : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
+
+          return (
+            <div key={stop.id} className="flex items-start gap-1.5 text-xs">
+              <div className="flex-shrink-0 mt-0.5">
+                <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                  {STOP_TYPE_LABEL[stop.type] ?? stop.type}
+                </Badge>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-primary font-medium leading-tight truncate">{stopAddress(stop)}</div>
+                {(timeStr || dateLabel) && (
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {timeStr   && <span className="text-amber-700 font-medium">{timeStr}</span>}
+                    {dateLabel && <span className="text-violet-600 font-semibold">📅 {dateLabel}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add to run */}
       {draftRuns.length > 0 ? (
-        <div className="flex gap-1 items-center">
+        <div className="flex gap-1.5 items-center">
           <select
-            className="input text-xs py-0.5 flex-1"
+            className="input text-xs py-1 flex-1"
             value={selectedRunId}
             onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
           >
@@ -250,171 +274,13 @@ function StopRow({
           <button
             disabled={!selectedRunId || adding}
             onClick={handleAdd}
-            className="btn text-xs py-0.5 px-2 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
+            className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
           >
             {adding ? "…" : "Add →"}
           </button>
         </div>
       ) : (
-        <div className="text-[10px] text-muted italic">No runs yet</div>
-      )}
-    </div>
-  );
-}
-
-function JobCard({
-  group,
-  onAddJobToRun,
-  onAddStopToRun,
-  runs,
-  planningDate,
-  showDateBadge,
-}: {
-  group:           JobGroup;
-  onAddJobToRun:   (jobId: number, runId: number) => Promise<void>;
-  onAddStopToRun:  (stopId: number, runId: number) => Promise<void>;
-  runs:            PlanningRun[];
-  planningDate:    string;
-  showDateBadge?:  boolean;   // true in multi-day mode to label which day each job belongs to
-}) {
-  const [selectedRunId, setSelectedRunId] = useState<number | "">("");
-  const [adding,    setAdding]    = useState(false);
-  const [splitMode, setSplitMode] = useState(false);
-
-  const draftRuns    = runs.filter(r => r.status === "draft" || r.status === "assigned");
-  const canSplit     = group.stops.length > 1;
-
-  async function handleAdd() {
-    if (!selectedRunId) return;
-    setAdding(true);
-    try { await onAddJobToRun(group.jobId, Number(selectedRunId)); }
-    finally { setAdding(false); }
-  }
-
-  return (
-    <div className="card p-3 mb-2">
-      {/* Job header */}
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm text-primary leading-tight">
-            {group.customerName ?? "Unknown customer"}
-          </div>
-          <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
-            {group.jobReference && (
-              <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px]">{group.jobReference}</span>
-            )}
-            {/* Date badge — shown in multi-day mode */}
-            {showDateBadge && group.plannedDate && (
-              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
-                📅 {new Date(group.plannedDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-              </span>
-            )}
-            {group.goodsType && (
-              <Badge colour="bg-slate-100 text-slate-600">{cap(group.goodsType)}</Badge>
-            )}
-            {group.weight != null && group.weight > 0 && (
-              <span>{group.weight.toLocaleString()} kg</span>
-            )}
-            {group.quantity != null && group.quantity > 0 && (
-              <span>{group.quantity}{group.quantityUnit ? " " + cap(group.quantityUnit) : ""}</span>
-            )}
-          </div>
-        </div>
-
-        {/* Split toggle — only shown for multi-stop jobs */}
-        {canSplit && (
-          <button
-            onClick={() => setSplitMode(v => !v)}
-            className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded border transition-colors ${
-              splitMode
-                ? "border-violet-400 bg-violet-100 text-violet-700"
-                : "border-slate-300 bg-white text-slate-500 hover:border-slate-400 hover:text-slate-700"
-            }`}
-            title={splitMode ? "Assign all stops to one run" : "Assign stops to different runs"}
-          >
-            {splitMode ? "✂ Split" : "✂ Split"}
-          </button>
-        )}
-      </div>
-
-      {/* ── Normal mode — stops list + single run selector ── */}
-      {!splitMode && (
-        <>
-          <div className="space-y-2 mb-3">
-            {group.stops.map(stop => {
-              const isCollect = stop.type === "collection" || stop.type === "pickup";
-              const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
-              const timeStr   = stop.timeWindowStart
-                ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
-                : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
-
-              return (
-                <div key={stop.id} className="flex items-start gap-1.5 text-xs">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                      {STOP_TYPE_LABEL[stop.type] ?? stop.type}
-                    </Badge>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-primary font-medium leading-tight truncate">
-                      {stopAddress(stop)}
-                    </div>
-                    {(timeStr || dateLabel) && (
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {timeStr  && <span className="text-amber-700 font-medium">{timeStr}</span>}
-                        {dateLabel && <span className="text-violet-600 font-semibold">📅 {dateLabel}</span>}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {draftRuns.length > 0 ? (
-            <div className="flex gap-1.5 items-center">
-              <select
-                className="input text-xs py-1 flex-1"
-                value={selectedRunId}
-                onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
-              >
-                <option value="">Add all stops to run…</option>
-                {draftRuns.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.runReference}{r.driver ? ` — ${r.driver.displayName}` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                disabled={!selectedRunId || adding}
-                onClick={handleAdd}
-                className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
-              >
-                {adding ? "…" : "Add all →"}
-              </button>
-            </div>
-          ) : (
-            <div className="text-[10px] text-muted italic">Create a run first to add this job</div>
-          )}
-        </>
-      )}
-
-      {/* ── Split mode — each stop gets its own run selector ── */}
-      {splitMode && (
-        <div className="space-y-2">
-          <div className="text-[10px] text-violet-700 font-semibold uppercase tracking-wide mb-1">
-            Assign each stop to its own run
-          </div>
-          {group.stops.map(stop => (
-            <StopRow
-              key={stop.id}
-              stop={stop}
-              runs={runs}
-              planningDate={planningDate}
-              onAddStop={onAddStopToRun}
-            />
-          ))}
-        </div>
+        <div className="text-[10px] text-muted italic">Create a run first to add this job</div>
       )}
     </div>
   );
@@ -455,50 +321,13 @@ function RunCard({
 
   // Waypoint form state
   const [showWpForm,   setShowWpForm]   = useState(false);
-  const [wpType,       setWpType]       = useState("depot_start");
   const [wpLocationId, setWpLocationId] = useState<number | "">("");
   const [wpText,       setWpText]       = useState("");
-  const [wpAfterIdx,   setWpAfterIdx]   = useState<number>(-1);
+  // wpPosition: -2 = before all stops, -1 = after all stops, 0..n = after stop at index n
+  const [wpPosition,   setWpPosition]   = useState<number>(-2);
   const [wpAdding,     setWpAdding]     = useState(false);
   const [savedLocs,    setSavedLocs]    = useState<SavedLocationOption[]>([]);
   const [locsLoading,  setLocsLoading]  = useState(false);
-
-  // AI feasibility check
-  const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-
-  // AI route feasibility — re-runs whenever stops or start time change
-  useEffect(() => {
-    if (!run.assignments.length) { setAiCheck(null); return; }
-    setAiLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const sortedStops = [...run.assignments]
-          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
-          .map(a => ({
-            sequenceNumber:  a.sequenceNumber,
-            type:            a.jobPart.type,
-            locationText:    a.jobPart.locationTextSnapshot,
-            postcode:        a.jobPart.postcode,
-            lat:             a.jobPart.lat,
-            lng:             a.jobPart.lng,
-            timeWindowStart: a.jobPart.timeWindowStart,
-            timeWindowEnd:   a.jobPart.timeWindowEnd,
-            customerName:    a.jobPart.job.customerName,
-          }));
-        const result = await aiApi.checkRun({ stops: sortedStops, estimatedStartTime: run.estimatedStartTime });
-        setAiCheck({
-          severity: result.severity === "high"  ? "block" :
-                    result.severity === "medium" ? "warn"  :
-                    result.severity === "low"    ? "warn"  : "ok",
-          reason:   result.message,
-        });
-      } catch { setAiCheck(null); }
-      finally  { setAiLoading(false); }
-    }, 800);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run.assignments.length, run.estimatedStartTime]);
 
   // Load saved locations lazily when the waypoint form opens for the first time
   useEffect(() => {
@@ -518,9 +347,9 @@ function RunCard({
   }
 
   async function handleAddWaypoint() {
-    const locationId    = wpLocationId ? Number(wpLocationId) : undefined;
-    const selectedLoc   = savedLocs.find(l => l.id === locationId);
-    const locationText  = selectedLoc
+    const locationId   = wpLocationId ? Number(wpLocationId) : undefined;
+    const selectedLoc  = savedLocs.find(l => l.id === locationId);
+    const locationText = selectedLoc
       ? (selectedLoc.siteName ?? selectedLoc.name)
       : wpText.trim();
     if (!locationText && !locationId) return;
@@ -529,13 +358,23 @@ function RunCard({
     try {
       const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
       let seq: number;
-      if      (wpType === "depot_start")    seq = 0;
-      else if (wpType === "return_to_base") seq = 9999;
-      else if (wpAfterIdx < 0)              seq = 0;
-      else seq = (sorted[wpAfterIdx]?.sequenceNumber ?? 0) + 5;
+      let waypointType: string;
+      if (wpPosition === -2) {
+        // Before all stops — start of run (depot / yard start)
+        seq = 0;
+        waypointType = "depot_start";
+      } else if (wpPosition === -1) {
+        // After all stops — end of run (return to base)
+        seq = 9999;
+        waypointType = "return_to_base";
+      } else {
+        // After a specific job stop
+        seq = (sorted[wpPosition]?.sequenceNumber ?? 0) + 5;
+        waypointType = "custom";
+      }
 
-      await onAddWaypoint(run.id, wpType, locationText, seq, locationId);
-      setWpText(""); setWpLocationId(""); setShowWpForm(false);
+      await onAddWaypoint(run.id, waypointType, locationText, seq, locationId);
+      setWpText(""); setWpLocationId(""); setWpPosition(-2); setShowWpForm(false);
     } catch (e: unknown) { setErr((e as Error).message ?? "Failed to add waypoint"); }
     finally { setWpAdding(false); }
   }
@@ -558,11 +397,6 @@ function RunCard({
     : run.assignments.length === 1
     ? (sortedA[0]?.jobPart.job.customerName ?? sortedA[0]?.jobPart.locationTextSnapshot ?? "1 stop")
     : `${sortedA[0]?.jobPart.job.customerName ?? "?"} → ${sortedA[sortedA.length - 1]?.jobPart.job.customerName ?? "?"}`;
-
-  const aiDot = aiLoading ? "⟳" :
-    aiCheck?.severity === "block" ? "🔴" :
-    aiCheck?.severity === "warn"  ? "🟡" :
-    aiCheck                       ? "🟢" : null;
 
   const selectedLocObj = savedLocs.find(l => l.id === Number(wpLocationId));
 
@@ -591,9 +425,6 @@ function RunCard({
           </span>
         )}
 
-        {/* AI dot */}
-        {aiDot && <span className="flex-shrink-0 text-xs leading-none">{aiDot}</span>}
-
         {/* Delete */}
         <button
           onClick={e => { e.stopPropagation(); onDelete(run.id); }}
@@ -610,20 +441,6 @@ function RunCard({
         <div className="px-4 pb-4 pt-3 border-t border-slate-100">
 
           {err && <div className="text-xs text-red-600 mb-2">{err}</div>}
-
-          {/* AI check result */}
-          {aiLoading && (
-            <div className="text-xs text-muted mb-2 animate-pulse">🤖 Checking route feasibility…</div>
-          )}
-          {!aiLoading && aiCheck && (
-            <div className={`text-xs rounded px-2 py-1.5 mb-3 ${
-              aiCheck.severity === "block" ? "bg-red-50 text-red-700" :
-              aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700" :
-                                             "bg-green-50 text-green-700"
-            }`}>
-              {aiCheck.severity === "block" ? "🔴" : aiCheck.severity === "warn" ? "🟡" : "🟢"} {aiCheck.reason}
-            </div>
-          )}
 
           {/* ── Stops ── */}
           <div className="mb-3">
@@ -712,18 +529,6 @@ function RunCard({
 
             {showWpForm && (
               <div className="rounded border border-slate-200 bg-slate-50 p-2.5 space-y-2 text-xs">
-                {/* Type */}
-                <select
-                  className="input text-xs py-1 w-full"
-                  value={wpType}
-                  onChange={e => setWpType(e.target.value)}
-                >
-                  <option value="depot_start">🏭 Depot start — first stop before collections</option>
-                  <option value="yard_pickup">🅿 Yard pickup — collect trailer or equipment</option>
-                  <option value="hub_drop">🔄 Hub / transfer point — relay or consolidation</option>
-                  <option value="return_to_base">🏠 Return to base — last stop after all deliveries</option>
-                  <option value="custom">📍 Other — custom waypoint</option>
-                </select>
 
                 {/* Location — saved location picker + free text fallback */}
                 <div>
@@ -757,34 +562,33 @@ function RunCard({
                     <input
                       type="text"
                       className={`input text-xs py-1 w-full ${savedLocs.length > 0 ? "mt-1.5" : ""}`}
-                      placeholder="Location name, e.g. Trafford Park Depot"
+                      placeholder="e.g. Trafford Park Depot"
                       value={wpText}
                       onChange={e => setWpText(e.target.value)}
                     />
                   )}
                 </div>
 
-                {/* After which stop? — only for mid-route types */}
-                {wpType !== "depot_start" && wpType !== "return_to_base" && run.assignments.length > 0 && (
-                  <div>
-                    <label className="text-muted block mb-1">Place after which job stop?</label>
-                    <select
-                      className="input text-xs py-1 w-full"
-                      value={wpAfterIdx}
-                      onChange={e => setWpAfterIdx(parseInt(e.target.value, 10))}
-                    >
-                      <option value={-1}>— Before all stops (beginning of run)</option>
-                      {[...run.assignments]
-                        .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
-                        .map((a, i) => (
-                          <option key={a.id} value={i}>
-                            After {i + 1}: {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — {a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}
-                          </option>
-                        ))
-                      }
-                    </select>
-                  </div>
-                )}
+                {/* Where in the route? */}
+                <div>
+                  <label className="text-muted block mb-1">Where in the route?</label>
+                  <select
+                    className="input text-xs py-1 w-full"
+                    value={wpPosition}
+                    onChange={e => setWpPosition(parseInt(e.target.value, 10))}
+                  >
+                    <option value={-2}>Before all stops (start of run)</option>
+                    {[...run.assignments]
+                      .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+                      .map((a, i) => (
+                        <option key={a.id} value={i}>
+                          After {i + 1}: {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — {a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}
+                        </option>
+                      ))
+                    }
+                    <option value={-1}>After all stops (end of run)</option>
+                  </select>
+                </div>
 
                 <button
                   onClick={handleAddWaypoint}
@@ -930,7 +734,6 @@ export default function PlanningBoardPage() {
   const [err,            setErr]            = useState("");
   const [mobileTab,      setMobileTab]      = useState<"jobs" | "runs">("jobs");
   const [creatingRun,    setCreatingRun]    = useState(false);
-  const [aiSuggesting,   setAiSuggesting]   = useState(false);
 
   // Collapse state for run cards, keyed by run ID.
   // Kept in the parent so it survives data refreshes — local state in RunCard
@@ -1020,13 +823,6 @@ export default function PlanningBoardPage() {
     setMobileTab("runs");
   }
 
-  /** Add a single stop to a run (split mode) */
-  async function handleAddStopToRun(stopId: number, runId: number) {
-    try { await planningApi.addStop(runId, stopId); } catch { /* skip already-assigned */ }
-    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
-    setMobileTab("runs");
-  }
-
   async function handleUpdate(runId: number, patch: Record<string, unknown>) {
     await planningApi.patchRun(runId, patch as Parameters<typeof planningApi.patchRun>[1]);
     await loadRight(date);
@@ -1072,65 +868,6 @@ export default function PlanningBoardPage() {
     finally { setCreatingRun(false); }
   }
 
-  async function handleAiSuggest() {
-    if (!clusters.length) { setErr("No unplanned stops to suggest runs for."); return; }
-    setAiSuggesting(true); setErr("");
-    try {
-      const allStops   = clusters.flatMap(c => c.stops);
-      const byJob      = new Map<number, typeof allStops>();
-      for (const stop of allStops) {
-        if (!byJob.has(stop.jobId)) byJob.set(stop.jobId, []);
-        byJob.get(stop.jobId)!.push(stop);
-      }
-
-      const assignedStopIds = new Set<number>();
-      const DELIVERY_TYPES  = new Set(["delivery", "dropoff"]);
-
-      for (const cluster of clusters) {
-        const unassigned = cluster.stops.filter(s => !assignedStopIds.has(s.id));
-        if (!unassigned.length) continue;
-
-        const jobIds   = new Set(unassigned.map(s => s.jobId));
-        const runStops = [...byJob.entries()]
-          .filter(([jobId]) => jobIds.has(jobId))
-          .flatMap(([, stops]) => stops)
-          .filter(s => !assignedStopIds.has(s.id))
-          .sort((a, b) => {
-            const order = (t: string) => COLLECT_FIRST.has(t) ? 0 : DELIVERY_TYPES.has(t) ? 1 : 2;
-            return order(a.type) - order(b.type);
-          });
-
-        if (!runStops.length) continue;
-
-        const suggestion = await aiApi.suggestRunTrailer({
-          weight:       cluster.totalWeightKg || undefined,
-          quantity:     cluster.totalQty      || undefined,
-          quantityUnit: cluster.primaryQtyUnit ?? undefined,
-          goodsType:    runStops[0]?.goodsType ?? undefined,
-          stopCount:    runStops.length,
-        });
-
-        const run = await planningApi.createRun({
-          date,
-          runType:            "direct",
-          plannerNotes:       `AI: ${suggestion.reasoning ?? ""}`,
-          assignedTrailerId:  suggestion.trailerId ?? undefined,
-        });
-
-        for (const stop of runStops) {
-          try {
-            await planningApi.addStop(run.id, stop.id);
-            assignedStopIds.add(stop.id);
-          } catch { /* skip */ }
-        }
-      }
-
-      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
-      setMobileTab("runs"); // switch to runs tab so the user can see the created runs
-    } catch (e: unknown) { setErr((e as Error).message); }
-    finally { setAiSuggesting(false); }
-  }
-
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
@@ -1155,16 +892,6 @@ export default function PlanningBoardPage() {
         <span className="hidden sm:inline text-sm text-muted">{fmtDate(date)}</span>
 
         <div className="ml-auto flex gap-1.5 sm:gap-2">
-          <button
-            onClick={handleAiSuggest}
-            disabled={aiSuggesting || !clusters.length}
-            className="btn text-xs sm:text-sm px-2 sm:px-3 py-1.5 border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 flex items-center gap-1"
-          >
-            {aiSuggesting
-              ? <><span className="animate-spin inline-block">⟳</span><span className="hidden sm:inline"> Building…</span></>
-              : <><span>🤖</span><span className="hidden sm:inline"> Suggest runs</span></>
-            }
-          </button>
           <button
             onClick={handleCreateRun}
             disabled={creatingRun}
@@ -1278,7 +1005,6 @@ export default function PlanningBoardPage() {
                 group={group}
                 runs={runs}
                 onAddJobToRun={handleAddJobToRun}
-                onAddStopToRun={handleAddStopToRun}
                 planningDate={date}
                 showDateBadge={lookAheadDays > 0}
               />
