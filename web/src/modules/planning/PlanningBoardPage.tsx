@@ -85,6 +85,7 @@ interface JobGroup {
   weight:       number | null;
   quantity:     number | null;
   quantityUnit: string | null;
+  plannedDate:  string | null;   // ISO date string YYYY-MM-DD, from the job's plannedDate
   stops:        UnplannedStop[];
 }
 
@@ -104,6 +105,7 @@ function buildJobGroups(clusters: StopCluster[]): JobGroup[] {
         weight:       stop.weight,
         quantity:     stop.quantity,
         quantityUnit: stop.quantityUnit,
+        plannedDate:  stop.plannedDate ? (stop.plannedDate as string).slice(0, 10) : null,
         stops:        [],
       });
     }
@@ -117,8 +119,10 @@ function buildJobGroups(clusters: StopCluster[]): JobGroup[] {
     );
   }
 
-  // Sort groups by earliest time window, then customer name
+  // Sort groups: by plannedDate first, then time window, then customer name
   return [...byJob.values()].sort((a, b) => {
+    if (a.plannedDate && b.plannedDate && a.plannedDate !== b.plannedDate)
+      return a.plannedDate.localeCompare(b.plannedDate);
     const aTime = a.stops.find(s => s.timeWindowStart)?.timeWindowStart
                ?? a.stops.find(s => s.bookedTime)?.bookedTime ?? null;
     const bTime = b.stops.find(s => s.timeWindowStart)?.timeWindowStart
@@ -128,6 +132,27 @@ function buildJobGroups(clusters: StopCluster[]): JobGroup[] {
     if (bTime) return 1;
     return (a.customerName ?? "").localeCompare(b.customerName ?? "");
   });
+}
+
+/** Shift an ISO date string by n days (UTC-safe). */
+function addDaysToISO(d: string, n: number): string {
+  const dt = new Date(d + "T12:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Client-side text search across customer name, reference, and stop addresses. */
+function matchesSearch(group: JobGroup, q: string): boolean {
+  const lq = q.toLowerCase();
+  if ((group.customerName  ?? "").toLowerCase().includes(lq)) return true;
+  if ((group.jobReference  ?? "").toLowerCase().includes(lq)) return true;
+  for (const s of group.stops) {
+    if ((s.siteName    ?? "").toLowerCase().includes(lq)) return true;
+    if ((s.town        ?? "").toLowerCase().includes(lq)) return true;
+    if ((s.postcode    ?? "").toLowerCase().includes(lq)) return true;
+    if ((s.locationText ?? "").toLowerCase().includes(lq)) return true;
+  }
+  return false;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -243,12 +268,14 @@ function JobCard({
   onAddStopToRun,
   runs,
   planningDate,
+  showDateBadge,
 }: {
   group:           JobGroup;
   onAddJobToRun:   (jobId: number, runId: number) => Promise<void>;
   onAddStopToRun:  (stopId: number, runId: number) => Promise<void>;
   runs:            PlanningRun[];
   planningDate:    string;
+  showDateBadge?:  boolean;   // true in multi-day mode to label which day each job belongs to
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding,    setAdding]    = useState(false);
@@ -275,6 +302,12 @@ function JobCard({
           <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
             {group.jobReference && (
               <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px]">{group.jobReference}</span>
+            )}
+            {/* Date badge — shown in multi-day mode */}
+            {showDateBadge && group.plannedDate && (
+              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                📅 {new Date(group.plannedDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+              </span>
             )}
             {group.goodsType && (
               <Badge colour="bg-slate-100 text-slate-600">{cap(group.goodsType)}</Badge>
@@ -876,19 +909,28 @@ function RunCard({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const LOOK_AHEAD_OPTIONS = [
+  { days: 0,  label: "1 day"   },
+  { days: 2,  label: "3 days"  },
+  { days: 6,  label: "7 days"  },
+  { days: 13, label: "2 weeks" },
+];
+
 export default function PlanningBoardPage() {
-  const [date,         setDate]         = useState(todayISO());
-  const [clusters,     setClusters]     = useState<StopCluster[]>([]);
-  const [runs,         setRuns]         = useState<PlanningRun[]>([]);
-  const [trailers,     setTrailers]     = useState<FleetTrailer[]>([]);
-  const [drivers,      setDrivers]      = useState<PlanningDriver[]>([]);
-  const [loadingLeft,  setLoadingLeft]  = useState(false);
-  const [loadingRight, setLoadingRight] = useState(false);
+  const [date,           setDate]           = useState(todayISO());
+  const [lookAheadDays,  setLookAheadDays]  = useState(0);
+  const [search,         setSearch]         = useState("");
+  const [clusters,       setClusters]       = useState<StopCluster[]>([]);
+  const [runs,           setRuns]           = useState<PlanningRun[]>([]);
+  const [trailers,       setTrailers]       = useState<FleetTrailer[]>([]);
+  const [drivers,        setDrivers]        = useState<PlanningDriver[]>([]);
+  const [loadingLeft,    setLoadingLeft]    = useState(false);
+  const [loadingRight,   setLoadingRight]   = useState(false);
   const [totalUnplanned, setTotalUnplanned] = useState(0);
-  const [err,          setErr]          = useState("");
-  const [mobileTab,    setMobileTab]    = useState<"jobs" | "runs">("jobs");
-  const [creatingRun,  setCreatingRun]  = useState(false);
-  const [aiSuggesting, setAiSuggesting] = useState(false);
+  const [err,            setErr]            = useState("");
+  const [mobileTab,      setMobileTab]      = useState<"jobs" | "runs">("jobs");
+  const [creatingRun,    setCreatingRun]    = useState(false);
+  const [aiSuggesting,   setAiSuggesting]   = useState(false);
 
   // Collapse state for run cards, keyed by run ID.
   // Kept in the parent so it survives data refreshes — local state in RunCard
@@ -914,13 +956,20 @@ export default function PlanningBoardPage() {
     setExpandedRunIds(prev => new Set(prev).add(runId));
   }
 
-  // Derive job groups from clusters — no extra fetch needed
-  const jobGroups = useMemo(() => buildJobGroups(clusters), [clusters]);
+  // End date of the unplanned window (date + lookAheadDays)
+  const dateTo = useMemo(() => addDaysToISO(date, lookAheadDays), [date, lookAheadDays]);
 
-  const loadLeft = useCallback(async (d: string) => {
+  // Derive job groups from clusters, then apply text search filter
+  const allJobGroups     = useMemo(() => buildJobGroups(clusters), [clusters]);
+  const jobGroups        = useMemo(
+    () => search.trim() ? allJobGroups.filter(g => matchesSearch(g, search.trim())) : allJobGroups,
+    [allJobGroups, search],
+  );
+
+  const loadLeft = useCallback(async (d: string, to: string) => {
     setLoadingLeft(true);
     try {
-      const res = await planningApi.getUnplanned(d);
+      const res = await planningApi.getUnplanned(d, to);
       setClusters(res.clusters);
       setTotalUnplanned(res.total);
     } catch (e: unknown) { setErr((e as Error).message); }
@@ -951,10 +1000,10 @@ export default function PlanningBoardPage() {
   }, []);
 
   useEffect(() => {
-    loadLeft(date);
+    loadLeft(date, dateTo);
     loadRight(date);
     loadDrivers(date);
-  }, [date, loadLeft, loadRight, loadDrivers]);
+  }, [date, dateTo, loadLeft, loadRight, loadDrivers]);
 
   useEffect(() => { loadFleet(); }, [loadFleet]);
 
@@ -967,14 +1016,14 @@ export default function PlanningBoardPage() {
     for (const stop of jobStops) {
       try { await planningApi.addStop(runId, stop.id); } catch { /* skip already-assigned */ }
     }
-    await Promise.all([loadLeft(date), loadRight(date)]);
+    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
     setMobileTab("runs");
   }
 
   /** Add a single stop to a run (split mode) */
   async function handleAddStopToRun(stopId: number, runId: number) {
     try { await planningApi.addStop(runId, stopId); } catch { /* skip already-assigned */ }
-    await Promise.all([loadLeft(date), loadRight(date)]);
+    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
     setMobileTab("runs");
   }
 
@@ -985,7 +1034,7 @@ export default function PlanningBoardPage() {
 
   async function handleRemoveStop(runId: number, assignmentId: number) {
     await planningApi.removeStop(runId, assignmentId);
-    await Promise.all([loadLeft(date), loadRight(date)]);
+    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
   }
 
   async function handlePublish(runId: number) {
@@ -1009,7 +1058,7 @@ export default function PlanningBoardPage() {
   async function handleDeleteRun(runId: number) {
     if (!window.confirm("Delete this run? Stops will return to the unplanned list.")) return;
     await planningApi.patchRun(runId, { status: "cancelled" });
-    await Promise.all([loadLeft(date), loadRight(date)]);
+    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
   }
 
   async function handleCreateRun() {
@@ -1076,7 +1125,7 @@ export default function PlanningBoardPage() {
         }
       }
 
-      await Promise.all([loadLeft(date), loadRight(date)]);
+      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
       setMobileTab("runs"); // switch to runs tab so the user can see the created runs
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setAiSuggesting(false); }
@@ -1162,24 +1211,65 @@ export default function PlanningBoardPage() {
 
         {/* ── Left — jobs to plan ── */}
         <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-80 flex-shrink-0 sm:border-r border-border`}>
-          <div className="px-4 py-3 border-b border-border flex-shrink-0 flex items-center justify-between">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wide text-muted">Jobs to plan</div>
-              <div className="text-lg font-bold text-primary">
-                {jobGroups.length}
-                {jobGroups.length !== totalUnplanned && (
-                  <span className="text-sm font-normal text-muted ml-1">({totalUnplanned} stops)</span>
-                )}
+
+          {/* Panel header: count + loading */}
+          <div className="px-3 pt-3 pb-2 border-b border-border flex-shrink-0 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide text-muted">Jobs to plan</div>
+                <div className="text-lg font-bold text-primary leading-tight">
+                  {jobGroups.length}
+                  {allJobGroups.length !== jobGroups.length && (
+                    <span className="text-sm font-normal text-muted ml-1">of {allJobGroups.length}</span>
+                  )}
+                  {allJobGroups.length !== totalUnplanned && jobGroups.length === allJobGroups.length && (
+                    <span className="text-sm font-normal text-muted ml-1">({totalUnplanned} stops)</span>
+                  )}
+                </div>
               </div>
+              {loadingLeft && <span className="text-xs text-muted animate-pulse">Loading…</span>}
             </div>
-            {loadingLeft && <span className="text-xs text-muted animate-pulse">Loading…</span>}
+
+            {/* Search input */}
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
+              <input
+                type="search"
+                placeholder="Search customer, ref, location…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="input text-xs py-1.5 pl-7 pr-2 w-full"
+              />
+            </div>
+
+            {/* Look-ahead day selector */}
+            <div className="flex gap-1">
+              {LOOK_AHEAD_OPTIONS.map(opt => (
+                <button
+                  key={opt.days}
+                  onClick={() => setLookAheadDays(opt.days)}
+                  className={`flex-1 text-[10px] font-semibold py-1 rounded border transition-colors ${
+                    lookAheadDays === opt.days
+                      ? "bg-primary text-white border-primary"
+                      : "bg-white text-slate-500 border-slate-300 hover:border-primary hover:text-primary"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">
             {!loadingLeft && jobGroups.length === 0 && (
               <div className="text-center py-12 text-muted text-sm">
-                <div className="text-3xl mb-2">✅</div>
-                <div>All jobs are planned for this date</div>
+                <div className="text-3xl mb-2">{search ? "🔍" : "✅"}</div>
+                <div>{search ? "No jobs match your search" : "All jobs are planned for this period"}</div>
+                {search && (
+                  <button onClick={() => setSearch("")} className="mt-2 text-xs text-accent hover:underline">
+                    Clear search
+                  </button>
+                )}
               </div>
             )}
             {jobGroups.map(group => (
@@ -1190,6 +1280,7 @@ export default function PlanningBoardPage() {
                 onAddJobToRun={handleAddJobToRun}
                 onAddStopToRun={handleAddStopToRun}
                 planningDate={date}
+                showDateBadge={lookAheadDays > 0}
               />
             ))}
           </div>

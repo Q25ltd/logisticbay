@@ -22,6 +22,7 @@ export interface UnplannedStop {
   weight:         number | null;
   quantity:       number | null;
   quantityUnit:   string | null;
+  plannedDate?:   string | null;
 }
 
 export interface SavedLocationOption {
@@ -159,8 +160,13 @@ export interface PlanningDriver {
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const planningApi = {
-  getUnplanned: (date: string) =>
-    api.get<{ clusters: StopCluster[]; total: number }>(`/planning/unplanned?date=${date}`),
+  getUnplanned: (dateFrom: string, dateTo?: string) => {
+    const to = dateTo ?? dateFrom;
+    const qs = dateFrom === to
+      ? `date=${dateFrom}`
+      : `dateFrom=${dateFrom}&dateTo=${to}`;
+    return api.get<{ clusters: StopCluster[]; total: number }>(`/planning/unplanned?${qs}`);
+  },
 
   getRuns: (date: string) =>
     api.get<{ runs: PlanningRun[] }>(`/planning/runs?date=${date}`),

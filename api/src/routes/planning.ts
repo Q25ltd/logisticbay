@@ -53,6 +53,7 @@ interface StopForCluster {
   weight:         number | null;
   quantity:       number | null;
   quantityUnit:   string | null;
+  plannedDate?:   Date | null;
 }
 
 interface Cluster {
@@ -182,27 +183,20 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const q = request.query as { date?: string };
+      const q = request.query as { date?: string; dateFrom?: string; dateTo?: string };
+
+      // Resolve the effective date range.
+      // Supports three modes:
+      //   ?date=YYYY-MM-DD                  → single day  (original)
+      //   ?dateFrom=YYYY-MM-DD&dateTo=…     → explicit range (multi-day)
+      //   (no params)                       → no date filter, all unplanned
+      const dateFrom = q.dateFrom ?? q.date;
+      const dateTo   = q.dateTo   ?? q.date;
 
       // Find all ready_to_plan / in_planning job stops not yet assigned to any active run.
       //
-      // Date-placement strategy — the job's plannedDate is the primary anchor:
-      //
-      //   1. Job has a plannedDate             → show ALL its unassigned stops on that board date
-      //                                          regardless of timeWindowStart values.
-      //                                          (timeWindowStart is still shown as a label on the card
-      //                                           so the planner can see the customer's requested window.)
-      //
-      //   2. Job has no plannedDate            → fall back to stop-level dates:
-      //      a. Stop has timeWindowStart       → show on that date
-      //      b. Stop has bookedTime            → show on that date
-      //      c. Neither                        → show without date filter (appears on all boards)
-      //
-      // Rationale: a planner sets plannedDate when they accept a PRF ("run this job on May 22").
-      // The customer may have requested a delivery time window of May 27 on the same job.
-      // Both pieces of information are correct — the RUN goes out on May 22, the stop
-      // time window is May 27.  The board must reflect when the planner wants to plan it,
-      // not when the stop needs to happen.
+      // Date-placement strategy — the job's plannedDate is the primary anchor.
+      // See the single-day implementation for full rationale.
 
       const jobPartInclude = {
         job: {
@@ -210,63 +204,48 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
             id: true, jobReference: true, customerName: true,
             goodsType: true, goodsDescription: true,
             quantity: true, quantityUnit: true, weight: true,
+            plannedDate: true,
           },
         },
       };
 
       const baseWhere = {
         companyId,
-        // Show stops from jobs that are ready to plan OR already partially in a run (in_planning).
-        // "planned" / "in_progress" / "completed" jobs are excluded — they're done.
         job:            { status: { in: ["ready_to_plan", "in_planning"] as string[] } },
         runAssignments: { none: { removedAt: null as null } },
       };
 
       let parts: Awaited<ReturnType<typeof prisma.jobPart.findMany<{ include: typeof jobPartInclude }>>>;
 
-      if (q.date) {
-        const gte = new Date(`${q.date}T00:00:00.000Z`);
-        const lte = new Date(`${q.date}T23:59:59.999Z`);
+      if (dateFrom && dateTo) {
+        const gte = new Date(`${dateFrom}T00:00:00.000Z`);
+        const lte = new Date(`${dateTo}T23:59:59.999Z`);
 
-        // Three separate queries to avoid Prisma OR + nested relation conflicts.
         const [withPlannedDate, withWindow, withBookedTime] = await Promise.all([
-
-          // ── Query 1: jobs that have plannedDate on this date ─────────────────
-          // Show ALL their unassigned stops on this board, whatever timeWindowStart says.
+          // Q1: jobs with plannedDate in range — show all their unassigned stops
           prisma.jobPart.findMany({
             where: {
               ...baseWhere,
-              job: {
-                status:      { in: ["ready_to_plan", "in_planning"] as string[] },
-                plannedDate: { gte, lte },
-              },
+              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: { gte, lte } },
             },
             include: jobPartInclude,
             orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
           }),
-
-          // ── Query 2: jobs with NO plannedDate whose timeWindowStart is on this date ──
+          // Q2: no plannedDate + timeWindowStart in range
           prisma.jobPart.findMany({
             where: {
               ...baseWhere,
-              job: {
-                status:      { in: ["ready_to_plan", "in_planning"] as string[] },
-                plannedDate: null,
-              },
+              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null },
               timeWindowStart: { gte, lte },
             },
             include: jobPartInclude,
             orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
           }),
-
-          // ── Query 3: jobs with NO plannedDate, no timeWindowStart, bookedTime on this date ──
+          // Q3: no plannedDate, no timeWindowStart, bookedTime in range
           prisma.jobPart.findMany({
             where: {
               ...baseWhere,
-              job: {
-                status:      { in: ["ready_to_plan", "in_planning"] as string[] },
-                plannedDate: null,
-              },
+              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null },
               timeWindowStart: null,
               bookedTime:      { gte, lte },
             },
@@ -275,7 +254,6 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           }),
         ]);
 
-        // Merge and deduplicate
         const seen = new Set<number>();
         parts = [];
         for (const p of [...withPlannedDate, ...withWindow, ...withBookedTime]) {
@@ -309,6 +287,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         weight:         p.job.weight    ? Number(p.job.weight)    : null,
         quantity:       p.job.quantity  ? Number(p.job.quantity)  : null,
         quantityUnit:   (p.job as any).quantityUnit ?? null,
+        plannedDate:    (p.job as any).plannedDate  ?? null,
       }));
 
       const clusters = clusterStops(stops);

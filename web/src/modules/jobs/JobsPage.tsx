@@ -323,6 +323,7 @@ export default function JobsPage() {
   const [error,        setError]        = useState("");
   const [dateRange,    setDateRange]    = useState({ from: today(), to: today() });
   const [statusFilter, setStatusFilter] = useState("all");
+  const [search,       setSearch]       = useState("");
   const [noteJobId,    setNoteJobId]    = useState<number | null>(null);
   const [success,      setSuccess]      = useState("");
   const [warning,      setWarning]      = useState("");
@@ -371,7 +372,20 @@ export default function JobsPage() {
     } catch (err: any) { alert(err.message); }
   }
 
-  const filtered = jobs.filter(j => statusFilter === "all" || j.status === statusFilter);
+  const filtered = jobs.filter(j => {
+    if (statusFilter !== "all" && j.status !== statusFilter) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const inCustomer  = (j.customerName  ?? "").toLowerCase().includes(q);
+      const inRef       = (j.jobReference  ?? "").toLowerCase().includes(q);
+      const inStops     = (j.stops ?? []).some(s =>
+        [(s as any).siteName, (s as any).town, (s as any).postcode, s.locationTextSnapshot]
+          .some(v => (v ?? "").toLowerCase().includes(q))
+      );
+      if (!inCustomer && !inRef && !inStops) return false;
+    }
+    return true;
+  });
 
   const stats = {
     total:     jobs.length,
@@ -465,6 +479,18 @@ export default function JobsPage() {
           <input type="date" value={dateRange.to}
             onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))}
             className="input py-1 text-xs w-32" />
+        </div>
+
+        {/* Search input */}
+        <div className="relative flex-shrink-0">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
+          <input
+            type="search"
+            placeholder="Customer, ref, location…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="input py-1 text-xs pl-7 pr-2 w-44"
+          />
         </div>
 
         {/* Status filter — inline, pushed right */}
