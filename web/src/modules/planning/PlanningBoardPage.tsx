@@ -311,7 +311,7 @@ function RunCard({
   allRuns:           PlanningRun[];
   onUpdate:          (id: number, patch: Record<string, unknown>) => Promise<void>;
   onRemoveStop:      (runId: number, assignmentId: number) => Promise<void>;
-  onAddWaypoint:     (runId: number, type: string, locationText: string, seq: number, locationId?: number) => Promise<void>;
+  onAddWaypoint:     (runId: number, type: string, locationText: string, seq: number, locationId?: number, scheduledTime?: string) => Promise<void>;
   onRemoveWaypoint:  (runId: number, waypointId: number) => Promise<void>;
   onPublish:         (runId: number) => Promise<void>;
   onDelete:          (runId: number) => Promise<void>;
@@ -326,6 +326,7 @@ function RunCard({
   const [wpText,       setWpText]       = useState("");
   // wpPosition: -2 = before all stops, -1 = after all stops, 0..n = after stop at index n
   const [wpPosition,   setWpPosition]   = useState<number>(-2);
+  const [wpTime,       setWpTime]       = useState("");
   const [wpAdding,     setWpAdding]     = useState(false);
   const [savedLocs,    setSavedLocs]    = useState<SavedLocationOption[]>([]);
   const [locsLoading,  setLocsLoading]  = useState(false);
@@ -410,8 +411,8 @@ function RunCard({
         waypointType = "custom";
       }
 
-      await onAddWaypoint(run.id, waypointType, locationText, seq, locationId);
-      setWpText(""); setWpLocationId(""); setWpPosition(-2); setShowWpForm(false);
+      await onAddWaypoint(run.id, waypointType, locationText, seq, locationId, wpTime || undefined);
+      setWpText(""); setWpLocationId(""); setWpPosition(-2); setWpTime(""); setShowWpForm(false);
     } catch (e: unknown) { setErr((e as Error).message ?? "Failed to add waypoint"); }
     finally { setWpAdding(false); }
   }
@@ -647,6 +648,17 @@ function RunCard({
                     }
                     <option value={-1}>After all stops (end of run)</option>
                   </select>
+                </div>
+
+                {/* Expected time at this stop */}
+                <div>
+                  <label className="text-muted block mb-1">Expected time (optional)</label>
+                  <input
+                    type="time"
+                    className="input text-xs py-1 w-full"
+                    value={wpTime}
+                    onChange={e => setWpTime(e.target.value)}
+                  />
                 </div>
 
                 <button
@@ -891,9 +903,9 @@ export default function PlanningBoardPage() {
 
   async function handleAddWaypoint(
     runId: number, waypointType: string, locationText: string,
-    sequenceNumber: number, locationId?: number,
+    sequenceNumber: number, locationId?: number, scheduledTime?: string,
   ) {
-    await planningApi.addWaypoint(runId, { waypointType, locationText, sequenceNumber, locationId });
+    await planningApi.addWaypoint(runId, { waypointType, locationText, sequenceNumber, locationId, scheduledTime });
     await loadRight(date);
   }
 
