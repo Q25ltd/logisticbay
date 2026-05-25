@@ -12,6 +12,7 @@
  */
 
 import { getAnthropicClient } from "../lib/anthropic.js";
+import { postcodeToCoords, getHgvLeg } from "../lib/routing.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,27 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   // Sort stops by sequence
   const stops = [...input.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
+  // ── Resolve postcodes → coords for any stop missing lat/lng ──────────────
+  // Uses postcodes.io (free, no key) so the AI gets real coordinates even
+  // when the SavedLocation has no geocoded lat/lng yet.
+  interface StopWithCoords {
+    lat: number | null;
+    lng: number | null;
+    resolvedFromPostcode: boolean;
+  }
+  const resolvedCoords: StopWithCoords[] = await Promise.all(
+    stops.map(async s => {
+      if (s.lat != null && s.lng != null) {
+        return { lat: s.lat, lng: s.lng, resolvedFromPostcode: false };
+      }
+      if (s.postcode) {
+        const c = await postcodeToCoords(s.postcode).catch(() => null);
+        if (c) return { lat: c.lat, lng: c.lng, resolvedFromPostcode: true };
+      }
+      return { lat: null, lng: null, resolvedFromPostcode: false };
+    }),
+  );
+
   // ── Leg calculations ──────────────────────────────────────────────────────
 
   interface LegInfo {
@@ -88,27 +110,48 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     straightKm: number | null;
     roadKm:     number | null;
     driveMin:   number | null;
+    source:     "ors" | "haversine" | "postcode_haversine" | "unknown";
   }
 
-  const legs: LegInfo[] = [];
-  for (let i = 0; i < stops.length - 1; i++) {
-    const a = stops[i];
-    const b = stops[i + 1];
-    if (
-      a.lat != null && a.lng != null &&
-      b.lat != null && b.lng != null
-    ) {
-      const straightKm = haversineKm(a.lat, a.lng, b.lat, b.lng);
-      const roadKm     = straightKm * ROAD_FACTOR;
-      const driveMin   = (roadKm / HGV_SPEED_KMH) * 60;
-      legs.push({ fromIdx: i, toIdx: i + 1, straightKm, roadKm, driveMin });
-    } else {
-      legs.push({ fromIdx: i, toIdx: i + 1, straightKm: null, roadKm: null, driveMin: null });
+  const legPromises = stops.slice(0, -1).map(async (_, i) => {
+    const aC = resolvedCoords[i];
+    const bC = resolvedCoords[i + 1];
+
+    const aLat = aC.lat; const aLng = aC.lng;
+    const bLat = bC.lat; const bLng = bC.lng;
+
+    if (aLat == null || aLng == null || bLat == null || bLng == null) {
+      return { fromIdx: i, toIdx: i + 1, straightKm: null, roadKm: null, driveMin: null, source: "unknown" } as LegInfo;
     }
-  }
+
+    // Try ORS HGV routing first (actual road network, respects bridges/weight limits)
+    const ors = await getHgvLeg({ lat: aLat, lng: aLng }, { lat: bLat, lng: bLng }).catch(() => null);
+    if (ors) {
+      return {
+        fromIdx: i, toIdx: i + 1,
+        straightKm: haversineKm(aLat, aLng, bLat, bLng),
+        roadKm:     ors.distanceKm,
+        driveMin:   ors.durationMinutes,
+        source:     (aC.resolvedFromPostcode || bC.resolvedFromPostcode) ? "postcode_haversine" : "ors",
+      } as LegInfo;
+    }
+
+    // Fallback: Haversine + road factor
+    const straightKm = haversineKm(aLat, aLng, bLat, bLng);
+    const roadKm     = straightKm * ROAD_FACTOR;
+    const driveMin   = (roadKm / HGV_SPEED_KMH) * 60;
+    return {
+      fromIdx: i, toIdx: i + 1, straightKm, roadKm, driveMin,
+      source: (aC.resolvedFromPostcode || bC.resolvedFromPostcode) ? "postcode_haversine" : "haversine",
+    } as LegInfo;
+  });
+
+  const legs: LegInfo[] = await Promise.all(legPromises);
 
   const hasAnyCoords    = legs.some(l => l.driveMin != null);
-  const hasUnknownLegs  = legs.some(l => l.driveMin == null);
+  const hasUnknownLegs  = legs.some(l => l.source === "unknown");
+  const hasEstLegs      = legs.some(l => l.source === "postcode_haversine" || l.source === "haversine");
+  const hasOrsLegs      = legs.some(l => l.source === "ors");
   const totalDriveMin   = legs.reduce((s, l) => s + (l.driveMin ?? 0), 0);
   const totalDwellMin   = stops.length * STOP_DWELL_MIN;
   const totalRunMin     = totalDriveMin + totalDwellMin;
@@ -145,8 +188,8 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     // Show leg drive time AFTER this stop (i.e., leg i = from stop i to stop i+1)
     const leg = legs[i];
     const legInfo = leg?.roadKm != null
-      ? ` → then ~${Math.round(leg.roadKm)} km / ~${Math.round(leg.driveMin!)} min drive to next stop`
-      : i < stops.length - 1 ? " → (no GPS — estimate from postcodes)" : "";
+      ? ` → then ~${Math.round(leg.roadKm)} km / ~${Math.round(leg.driveMin!)} min${leg.source !== "ors" ? " (est.)" : ""}`
+      : i < stops.length - 1 ? " → (distance unknown — no postcode or coords)" : "";
 
     return `  Stop ${i + 1}: ${type} at ${location}${customer}${window}${booked}${legInfo}`;
   });
@@ -155,24 +198,24 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     ? `Estimated departure: ${fmtUtcTime(input.estimatedStartTime)} UTC`
     : "No scheduled departure time set";
 
+  const distanceSource = hasOrsLegs && !hasEstLegs && !hasUnknownLegs ? "HGV routing"
+    : hasEstLegs ? "postcode-estimated (est., not guaranteed)"
+    : "calculated";
+
   const totalLine = hasAnyCoords
     ? [
-        `Total GPS-calculated road distance: ~${Math.round(legs.reduce((s, l) => s + (l.roadKm ?? 0), 0))} km${hasUnknownLegs ? " (partial — some legs lack GPS, estimate those from postcodes)" : ""}`,
-        `GPS-calculated driving time: ~${Math.round(totalDriveMin)} min${hasUnknownLegs ? " (partial)" : ""}`,
+        `Total road distance: ~${Math.round(legs.reduce((s, l) => s + (l.roadKm ?? 0), 0))} km (${distanceSource}${hasUnknownLegs ? ", some legs still unknown" : ""})`,
+        `Driving time: ~${Math.round(totalDriveMin)} min`,
         `Dwell time (${stops.length} stops × 30 min): ${totalDwellMin} min`,
-        `Total run duration so far: ~${Math.round(totalRunMin / 60 * 10) / 10} hours${hasUnknownLegs ? " — add your postcode-estimated legs to this" : ""}`,
+        `Total run: ~${Math.round(totalRunMin / 60 * 10) / 10} hours`,
       ].join("\n")
-    : `No GPS coordinates available — estimate all legs from postcodes below.\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}`;
+    : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}`;
 
   const systemPrompt =
     `You are a UK road freight planning expert reviewing whether a driver run is achievable. ` +
-    `Road distances shown already include a 25% uplift from straight-line. ` +
+    `Distances are either from the ORS HGV routing API (accurate) or postcode-estimated (est., ±10 min). ` +
     `UK HGV rules: max 9 h driving per day, must take a 45-min break after 4.5 h driving. ` +
-    `IMPORTANT — when GPS coordinates are missing for a leg, use your knowledge of UK postcodes ` +
-    `to estimate the road distance and driving time (HGV average 60 km/h including urban mix). ` +
-    `You MUST always give a verdict — never refuse because coordinates are missing. ` +
-    `Postcode-based estimates are accurate enough for planning; a 5–10 minute error is acceptable. ` +
-    `When any distance is estimated from postcodes rather than GPS, add "(est., not guaranteed)" to your message. ` +
+    `Always give a verdict. When any leg was estimated rather than routed, include "(est., not guaranteed)" in your message. ` +
     `Be direct — one or two plain-English sentences a transport planner would immediately understand. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
