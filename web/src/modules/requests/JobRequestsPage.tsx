@@ -318,9 +318,15 @@ function RequestRow({
   const [rejectReason,    setRejectReason]    = useState("no_capacity");
   const [rejectNotes,     setRejectNotes]     = useState("");
   const [accepting,       setAccepting]       = useState(false);
-  // Pre-fill from the job's requested date (customer specified it in the PRF)
+  // Pre-fill from: (1) job.plannedDate if set, (2) first stop's time window date,
+  // (3) first stop's booked time date. PRF jobs often have no top-level plannedDate
+  // but always have a stop time window the customer specified.
+  const firstStopDate =
+    firstStop?.timeWindowStart?.slice(0, 10) ??
+    firstStop?.bookedTime?.slice(0, 10) ??
+    "";
   const [plannedDate,     setPlannedDate]     = useState(
-    j.plannedDate ? j.plannedDate.slice(0, 10) : ""
+    j.plannedDate ? j.plannedDate.slice(0, 10) : firstStopDate
   );
   const [plannerNotes,    setPlannerNotes]    = useState("");
   const [vehicleCategory, setVehicleCategory] = useState(j.vehicleCategory ?? "");
