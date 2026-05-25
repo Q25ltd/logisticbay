@@ -174,6 +174,57 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const totalDwellMin   = stops.length * STOP_DWELL_MIN;
   const totalRunMin     = totalDriveMin + totalDwellMin;
 
+  // ── UK HGV break law calculation ──────────────────────────────────────────
+  // EC Regulation 561/2006 (retained in UK law):
+  //   After 4.5 h (270 min) of accumulated driving the driver MUST take a
+  //   45-min break before driving again.  The break can be split into a first
+  //   part of ≥15 min followed by a second part of ≥30 min — always in that
+  //   order, never 30+15.
+  //
+  // We pre-calculate this in code so Claude gets concrete numbers rather than
+  // having to do the maths itself (where it repeatedly makes errors).
+
+  const BREAK_TRIGGER_MIN  = 270; // 4.5 h
+  const BREAK_DURATION_MIN = 45;
+
+  // Walk through legs accumulating drive time; note which stop the break falls after.
+  let cumulativeDriveMin = 0;
+  let breakAfterStopIdx: number | null = null;   // 0-based index into stops[]
+  let driveMinAtBreak: number | null   = null;
+
+  for (let i = 0; i < legs.length; i++) {
+    const legMin = legs[i].driveMin ?? 0;
+    cumulativeDriveMin += legMin;
+    if (breakAfterStopIdx === null && cumulativeDriveMin >= BREAK_TRIGGER_MIN) {
+      // Break must be taken at the next stop (index i+1)
+      breakAfterStopIdx = i + 1;
+      driveMinAtBreak   = cumulativeDriveMin;
+    }
+  }
+
+  const breakRequired    = totalDriveMin >= BREAK_TRIGGER_MIN;
+  const breakEffectiveMin = breakRequired ? BREAK_DURATION_MIN : 0;
+
+  // Build a human-readable break note for the prompt
+  let breakNote = "";
+  if (breakRequired && breakAfterStopIdx !== null) {
+    const stopLabel = stops[breakAfterStopIdx]
+      ? `Stop ${breakAfterStopIdx + 1} (${stops[breakAfterStopIdx].locationText ?? stops[breakAfterStopIdx].postcode ?? "unknown"})`
+      : `stop ${breakAfterStopIdx + 1}`;
+    const driveHrs = (driveMinAtBreak! / 60).toFixed(1);
+    breakNote =
+      `\n⚠ MANDATORY BREAK — UK HGV law (EC Reg 561/2006):\n` +
+      `  The driver hits 4.5 hours of driving after the leg into ${stopLabel} (${driveHrs} h accumulated).\n` +
+      `  A 45-minute break MUST be taken at or before ${stopLabel} before driving continues.\n` +
+      `  The break can be split: 15 min first, then 30 min later — always that order.\n` +
+      `  Add ${BREAK_DURATION_MIN} minutes to all arrival times from ${stopLabel} onwards.\n` +
+      `  Total run time including break: ~${Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10} hours.`;
+  } else if (!breakRequired && totalDriveMin > 0) {
+    const driveHrs = (totalDriveMin / 60).toFixed(1);
+    breakNote =
+      `\n✓ No mandatory driving break required: total driving is ${driveHrs} h (under 4.5 h limit).`;
+  }
+
   // ── Build prompt ──────────────────────────────────────────────────────────
 
   const STOP_TYPE_LABEL: Record<string, string> = {
@@ -224,22 +275,31 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const totalLine = hasAnyCoords
     ? [
         `Total road distance: ~${Math.round(legs.reduce((s, l) => s + (l.roadKm ?? 0), 0))} km (${distanceSource}${hasUnknownLegs ? ", some legs still unknown" : ""})`,
-        `Driving time: ~${Math.round(totalDriveMin)} min`,
+        `Driving time: ~${Math.round(totalDriveMin)} min (${(totalDriveMin / 60).toFixed(1)} h)`,
         `Dwell time (${stops.length} stops × 30 min): ${totalDwellMin} min`,
-        `Total run: ~${Math.round(totalRunMin / 60 * 10) / 10} hours`,
+        `Total run (excl. break): ~${Math.round(totalRunMin / 60 * 10) / 10} hours`,
+        breakNote,
       ].join("\n")
-    : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}`;
+    : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}\n${breakNote}`;
 
   const systemPrompt =
     `You are a UK road freight planning assistant. Write like a helpful colleague talking to a transport planner — ` +
     `plain conversational English, no jargon, no technical terms. ` +
-    `Rules you know: UK HGV drivers can drive up to 9 hours a day and must take a 45-minute break after 4.5 hours. ` +
-    `Always give a clear verdict on whether the run works. ` +
-    `Use 12-hour clock with am/pm (e.g. 9:16am). Never mention UTC, APIs, routing engines, or leg names. ` +
-    `IMPORTANT — time window maths: if the driver arrives at 9:16am and the window closes at 9:30am, ` +
-    `the driver arrives 14 minutes BEFORE the close — that window is met, not missed. ` +
-    `Only flag a window as missed when the estimated arrival is AFTER the window close time. ` +
-    `If timings are estimates rather than exact, say "timings are approximate" once at the end — nothing more technical than that. ` +
+
+    `UK HGV driving law (EC Reg 561/2006 — mandatory, not optional): ` +
+    `(1) After 4.5 hours of driving the driver MUST stop for a 45-minute break before driving again. ` +
+    `The break can be split into 15 min then 30 min — always that order. ` +
+    `(2) Maximum 9 hours driving per day (up to 10h twice a week). ` +
+    `The break calculation has already been done for you in the data below — use those numbers exactly. ` +
+    `NEVER say "no break needed" or "no break required" when driving exceeds 4.5 hours. ` +
+    `NEVER omit the break from your timing calculations when the data shows a mandatory break. ` +
+
+    `Time window maths: arrival BEFORE window close = window met. ` +
+    `Only flag a window as missed when estimated arrival is AFTER the close time. ` +
+    `Example: arrive 9:16am, window closes 9:30am → 14 minutes to spare, window is fine. ` +
+
+    `Use 12-hour clock with am/pm. Never mention UTC, APIs, routing engines, or leg names. ` +
+    `If timings are estimates say "timings are approximate" once — nothing more technical. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
   const vehicleLine = input.vehicle
@@ -260,10 +320,11 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     `  "suggestion": "short plain-English fix (omit this key when concern is false)"\n` +
     `}\n\n` +
     `Severity guide:\n` +
-    `  high   — run won't work: windows will definitely be missed or driver hours exceeded\n` +
-    `  medium — tight run, delays likely, window at risk\n` +
-    `  low    — minor issue but achievable with good execution\n` +
-    `  none   — run looks fine (set concern: false)`;
+    `  high   — run won't work: windows definitely missed, legal hours exceeded, or break cannot fit\n` +
+    `  medium — run is tight: break pushes a window close, or delays are likely\n` +
+    `  low    — minor concern but achievable\n` +
+    `  none   — run looks fine, break (if required) fits without missing any window (set concern: false)\n\n` +
+    `Remember: if the data shows a mandatory break, ALWAYS include it in your message and arrival estimates.`;
 
   // ── Call Claude ───────────────────────────────────────────────────────────
 
