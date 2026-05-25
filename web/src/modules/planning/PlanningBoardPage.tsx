@@ -153,89 +153,65 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Job card (left panel) ─────────────────────────────────────────────────────
 
-function JobCard({
-  group,
-  onAddJobToRun,
+/**
+ * Per-stop row used in split mode — each stop gets its own run selector.
+ */
+function StopRow({
+  stop,
   runs,
   planningDate,
+  onAddStop,
 }: {
-  group:         JobGroup;
-  onAddJobToRun: (jobId: number, runId: number) => Promise<void>;
-  runs:          PlanningRun[];
-  planningDate:  string;
+  stop:         UnplannedStop;
+  runs:         PlanningRun[];
+  planningDate: string;
+  onAddStop:    (stopId: number, runId: number) => Promise<void>;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
+
+  const isCollect = stop.type === "collection" || stop.type === "pickup";
+  const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
+  const timeStr   = stop.timeWindowStart
+    ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
+    : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
 
   const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
 
   async function handleAdd() {
     if (!selectedRunId) return;
     setAdding(true);
-    try { await onAddJobToRun(group.jobId, Number(selectedRunId)); }
+    try { await onAddStop(stop.id, Number(selectedRunId)); }
     finally { setAdding(false); }
   }
 
   return (
-    <div className="card p-3 mb-2">
-      {/* Job header */}
-      <div className="mb-2">
-        <div className="font-bold text-sm text-primary leading-tight">
-          {group.customerName ?? "Unknown customer"}
+    <div className="rounded border border-slate-200 bg-slate-50 p-2 space-y-1.5">
+      {/* Stop identity row */}
+      <div className="flex items-start gap-1.5 text-xs">
+        <div className="flex-shrink-0 mt-0.5">
+          <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+            {STOP_TYPE_LABEL[stop.type] ?? stop.type}
+          </Badge>
         </div>
-        <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
-          {group.jobReference && (
-            <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px]">{group.jobReference}</span>
-          )}
-          {group.goodsType && (
-            <Badge colour="bg-slate-100 text-slate-600">{cap(group.goodsType)}</Badge>
-          )}
-          {group.weight != null && group.weight > 0 && (
-            <span>{group.weight.toLocaleString()} kg</span>
-          )}
-          {group.quantity != null && group.quantity > 0 && (
-            <span>{group.quantity}{group.quantityUnit ? " " + cap(group.quantityUnit) : ""}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Stops */}
-      <div className="space-y-2 mb-3">
-        {group.stops.map(stop => {
-          const isCollect  = stop.type === "collection" || stop.type === "pickup";
-          const dateLabel  = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
-          const timeStr    = stop.timeWindowStart
-            ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
-            : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
-
-          return (
-            <div key={stop.id} className="flex items-start gap-1.5 text-xs">
-              <div className="flex-shrink-0 mt-0.5">
-                <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                  {STOP_TYPE_LABEL[stop.type] ?? stop.type}
-                </Badge>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-primary font-medium leading-tight truncate">
-                  {stopAddress(stop)}
-                </div>
-                {(timeStr || dateLabel) && (
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {timeStr && <span className="text-amber-700 font-medium">{timeStr}</span>}
-                    {dateLabel && <span className="text-violet-600 font-semibold">📅 {dateLabel}</span>}
-                  </div>
-                )}
-              </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-primary font-medium leading-tight truncate">
+            {stopAddress(stop)}
+          </div>
+          {(timeStr || dateLabel) && (
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              {timeStr  && <span className="text-amber-700 font-medium">{timeStr}</span>}
+              {dateLabel && <span className="text-violet-600 font-semibold text-[10px]">📅 {dateLabel}</span>}
             </div>
-          );
-        })}
+          )}
+        </div>
       </div>
 
-      {/* Add to run */}
+      {/* Per-stop run selector */}
       {draftRuns.length > 0 ? (
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-1 items-center">
           <select
-            className="input text-xs py-1 flex-1"
+            className="input text-xs py-0.5 flex-1"
             value={selectedRunId}
             onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
           >
@@ -249,13 +225,163 @@ function JobCard({
           <button
             disabled={!selectedRunId || adding}
             onClick={handleAdd}
-            className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
+            className="btn text-xs py-0.5 px-2 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
           >
             {adding ? "…" : "Add →"}
           </button>
         </div>
       ) : (
-        <div className="text-[10px] text-muted italic">Create a run first to add this job</div>
+        <div className="text-[10px] text-muted italic">No runs yet</div>
+      )}
+    </div>
+  );
+}
+
+function JobCard({
+  group,
+  onAddJobToRun,
+  onAddStopToRun,
+  runs,
+  planningDate,
+}: {
+  group:           JobGroup;
+  onAddJobToRun:   (jobId: number, runId: number) => Promise<void>;
+  onAddStopToRun:  (stopId: number, runId: number) => Promise<void>;
+  runs:            PlanningRun[];
+  planningDate:    string;
+}) {
+  const [selectedRunId, setSelectedRunId] = useState<number | "">("");
+  const [adding,    setAdding]    = useState(false);
+  const [splitMode, setSplitMode] = useState(false);
+
+  const draftRuns    = runs.filter(r => r.status === "draft" || r.status === "assigned");
+  const canSplit     = group.stops.length > 1;
+
+  async function handleAdd() {
+    if (!selectedRunId) return;
+    setAdding(true);
+    try { await onAddJobToRun(group.jobId, Number(selectedRunId)); }
+    finally { setAdding(false); }
+  }
+
+  return (
+    <div className="card p-3 mb-2">
+      {/* Job header */}
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-sm text-primary leading-tight">
+            {group.customerName ?? "Unknown customer"}
+          </div>
+          <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+            {group.jobReference && (
+              <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px]">{group.jobReference}</span>
+            )}
+            {group.goodsType && (
+              <Badge colour="bg-slate-100 text-slate-600">{cap(group.goodsType)}</Badge>
+            )}
+            {group.weight != null && group.weight > 0 && (
+              <span>{group.weight.toLocaleString()} kg</span>
+            )}
+            {group.quantity != null && group.quantity > 0 && (
+              <span>{group.quantity}{group.quantityUnit ? " " + cap(group.quantityUnit) : ""}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Split toggle — only shown for multi-stop jobs */}
+        {canSplit && (
+          <button
+            onClick={() => setSplitMode(v => !v)}
+            className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded border transition-colors ${
+              splitMode
+                ? "border-violet-400 bg-violet-100 text-violet-700"
+                : "border-slate-300 bg-white text-slate-500 hover:border-slate-400 hover:text-slate-700"
+            }`}
+            title={splitMode ? "Assign all stops to one run" : "Assign stops to different runs"}
+          >
+            {splitMode ? "✂ Split" : "✂ Split"}
+          </button>
+        )}
+      </div>
+
+      {/* ── Normal mode — stops list + single run selector ── */}
+      {!splitMode && (
+        <>
+          <div className="space-y-2 mb-3">
+            {group.stops.map(stop => {
+              const isCollect = stop.type === "collection" || stop.type === "pickup";
+              const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
+              const timeStr   = stop.timeWindowStart
+                ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
+                : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
+
+              return (
+                <div key={stop.id} className="flex items-start gap-1.5 text-xs">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                      {STOP_TYPE_LABEL[stop.type] ?? stop.type}
+                    </Badge>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-primary font-medium leading-tight truncate">
+                      {stopAddress(stop)}
+                    </div>
+                    {(timeStr || dateLabel) && (
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {timeStr  && <span className="text-amber-700 font-medium">{timeStr}</span>}
+                        {dateLabel && <span className="text-violet-600 font-semibold">📅 {dateLabel}</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {draftRuns.length > 0 ? (
+            <div className="flex gap-1.5 items-center">
+              <select
+                className="input text-xs py-1 flex-1"
+                value={selectedRunId}
+                onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
+              >
+                <option value="">Add all stops to run…</option>
+                {draftRuns.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.runReference}{r.driver ? ` — ${r.driver.displayName}` : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={!selectedRunId || adding}
+                onClick={handleAdd}
+                className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
+              >
+                {adding ? "…" : "Add all →"}
+              </button>
+            </div>
+          ) : (
+            <div className="text-[10px] text-muted italic">Create a run first to add this job</div>
+          )}
+        </>
+      )}
+
+      {/* ── Split mode — each stop gets its own run selector ── */}
+      {splitMode && (
+        <div className="space-y-2">
+          <div className="text-[10px] text-violet-700 font-semibold uppercase tracking-wide mb-1">
+            Assign each stop to its own run
+          </div>
+          {group.stops.map(stop => (
+            <StopRow
+              key={stop.id}
+              stop={stop}
+              runs={runs}
+              planningDate={planningDate}
+              onAddStop={onAddStopToRun}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -832,7 +958,7 @@ export default function PlanningBoardPage() {
 
   useEffect(() => { loadFleet(); }, [loadFleet]);
 
-  /** Add all stops of a job to a run (collection + delivery in one click) */
+  /** Add all stops of a job to one run (normal mode) */
   async function handleAddJobToRun(jobId: number, runId: number) {
     const allStops = clusters.flatMap(c => c.stops);
     const jobStops = allStops
@@ -842,7 +968,14 @@ export default function PlanningBoardPage() {
       try { await planningApi.addStop(runId, stop.id); } catch { /* skip already-assigned */ }
     }
     await Promise.all([loadLeft(date), loadRight(date)]);
-    setMobileTab("runs"); // show the run the job was just added to
+    setMobileTab("runs");
+  }
+
+  /** Add a single stop to a run (split mode) */
+  async function handleAddStopToRun(stopId: number, runId: number) {
+    try { await planningApi.addStop(runId, stopId); } catch { /* skip already-assigned */ }
+    await Promise.all([loadLeft(date), loadRight(date)]);
+    setMobileTab("runs");
   }
 
   async function handleUpdate(runId: number, patch: Record<string, unknown>) {
@@ -1055,6 +1188,7 @@ export default function PlanningBoardPage() {
                 group={group}
                 runs={runs}
                 onAddJobToRun={handleAddJobToRun}
+                onAddStopToRun={handleAddStopToRun}
                 planningDate={date}
               />
             ))}
