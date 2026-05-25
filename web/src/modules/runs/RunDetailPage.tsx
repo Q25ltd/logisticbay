@@ -381,7 +381,7 @@ export default function RunDetailPage() {
     (run.hasHazardous || run.hasTemperatureLoad || run.hasOversized || run.requiredTrailerType || (run.requiredEquipment && run.requiredEquipment.length > 0) || run.maxLoadWeight);
 
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="p-4 sm:p-6 max-w-4xl">
       {/* Back link */}
       <Link to="/app/runs" className="text-sm text-muted hover:text-primary flex items-center gap-1 mb-4">
         ← Runs

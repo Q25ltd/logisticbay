@@ -176,7 +176,7 @@ export default function HolidaysPage() {
           {policySuccess && <Alert type="success" message={policySuccess} />}
           {policyError && <Alert type="error" message={policyError} />}
           <form onSubmit={handleSavePolicy}>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="Base holiday days"
                 type="number"
@@ -204,7 +204,7 @@ export default function HolidaysPage() {
               Pending and approved requests count against this limit. Planners can still approve over the limit as an exception.
             </p>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="Holiday reset month"
                 type="number"
@@ -256,7 +256,7 @@ export default function HolidaysPage() {
             </div>
 
             {holidaySeniorityEnabled && (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Input
                   label="After years"
                   type="number"
@@ -318,7 +318,7 @@ export default function HolidaysPage() {
         <div className="space-y-4">
           {requests.map((request) => (
             <div key={request.id} className="card p-4">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="font-bold text-primary">
@@ -369,7 +369,7 @@ export default function HolidaysPage() {
                 </div>
 
                 {request.status === "pending" && (
-                  <div className="flex flex-col gap-2 min-w-[130px]">
+                  <div className="flex sm:flex-col gap-2 sm:min-w-[130px]">
                     <Button
                       type="button"
                       loading={savingId === request.id}

@@ -383,31 +383,42 @@ function RequestRow({
             </div>
 
             {/* Action buttons */}
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              <button
-                className="btn btn-secondary text-xs px-3 py-1"
-                onClick={() => setShowModal(true)}
-              >
-                Full details
-              </button>
-              {isPending && !accepting && !rejecting && (
-                <>
+            {isPending && !accepting && !rejecting ? (
+              <div className="mt-3 space-y-2">
+                {/* Primary actions — full width row on mobile */}
+                <div className="flex gap-2">
                   <button
-                    className="btn btn-primary text-xs px-3 py-1"
+                    className="btn btn-primary flex-1 text-sm py-2"
                     onClick={() => { setAccepting(true); setRejecting(false); setErr(""); }}
                   >
                     ✓ Accept
                   </button>
                   <button
-                    className="btn text-xs px-3 py-1 border"
-                    style={{ color: "#ef4444", borderColor: "#fca5a5" }}
+                    className="btn flex-1 text-sm py-2 border"
+                    style={{ color: "#ef4444", borderColor: "#fca5a5", background: "#fff5f5" }}
                     onClick={() => { setRejecting(true); setAccepting(false); setErr(""); }}
                   >
                     ✗ Reject
                   </button>
-                </>
-              )}
-            </div>
+                </div>
+                {/* Secondary */}
+                <button
+                  className="text-xs text-slate-500 underline underline-offset-2"
+                  onClick={() => setShowModal(true)}
+                >
+                  Full details
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <button
+                  className="text-xs text-slate-500 underline underline-offset-2"
+                  onClick={() => setShowModal(true)}
+                >
+                  Full details
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Time since */}

@@ -60,37 +60,65 @@ export default function ShiftsPage() {
           <div className="text-sm text-muted">Shifts appear here when drivers submit from the mobile app</div>
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  {["Date","Driver","Start","Finish","Hours","Fuel","Night Out","Status"].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map(s => (
-                  <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-sm">{fmt(s.shiftDate)}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-primary">{s.driverName}</td>
-                    <td className="px-4 py-3 text-sm text-muted">{s.startTime || "—"}</td>
-                    <td className="px-4 py-3 text-sm text-muted">{s.endTime   || "—"}</td>
-                    <td className="px-4 py-3 text-sm font-bold">{s.totalHours || "—"}</td>
-                    <td className="px-4 py-3 text-sm text-muted">{s.fuelDrawn || "—"}</td>
-                    <td className="px-4 py-3 text-sm">{s.nightOut ? "✓ Yes" : "No"}</td>
-                    <td className="px-4 py-3">
-                      <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (s.status === "submitted" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")}>
-                        {s.status === "submitted" ? "Submitted" : s.status === "draft" ? "Draft" : s.status}
-                      </span>
-                    </td>
+        <>
+          {/* Desktop table */}
+          <div className="hidden sm:block card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    {["Date","Driver","Start","Finish","Hours","Fuel","Night Out","Status"].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filtered.map(s => (
+                    <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-sm">{fmt(s.shiftDate)}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-primary">{s.driverName}</td>
+                      <td className="px-4 py-3 text-sm text-muted">{s.startTime || "—"}</td>
+                      <td className="px-4 py-3 text-sm text-muted">{s.endTime   || "—"}</td>
+                      <td className="px-4 py-3 text-sm font-bold">{s.totalHours || "—"}</td>
+                      <td className="px-4 py-3 text-sm text-muted">{s.fuelDrawn || "—"}</td>
+                      <td className="px-4 py-3 text-sm">{s.nightOut ? "✓ Yes" : "No"}</td>
+                      <td className="px-4 py-3">
+                        <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (s.status === "submitted" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")}>
+                          {s.status === "submitted" ? "Submitted" : s.status === "draft" ? "Draft" : s.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+
+          {/* Mobile cards */}
+          <div className="sm:hidden space-y-3">
+            {filtered.map(s => (
+              <div key={s.id} className="card p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <span className="font-bold text-primary">{s.driverName}</span>
+                  <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (s.status === "submitted" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")}>
+                    {s.status === "submitted" ? "Submitted" : s.status === "draft" ? "Draft" : s.status}
+                  </span>
+                </div>
+                <div className="text-sm text-muted mb-1">{fmt(s.shiftDate)}</div>
+                <div className="flex items-center gap-4 text-sm flex-wrap">
+                  {(s.startTime || s.endTime) && (
+                    <span className="text-slate-700">
+                      {s.startTime || "—"} → {s.endTime || "—"}
+                      {s.totalHours && <span className="ml-1 font-semibold text-primary">({s.totalHours}h)</span>}
+                    </span>
+                  )}
+                  {s.fuelDrawn && <span className="text-muted">⛽ {s.fuelDrawn}</span>}
+                  {s.nightOut  && <span className="text-muted">🌙 Night out</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
