@@ -16,6 +16,7 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient }         from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
+import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 
 // ── Haversine distance (km) between two GPS points ───────────────────────────
 
@@ -725,6 +726,29 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         trucks,
         depot: company?.depotLocation ?? null,
       });
+    },
+  );
+
+  // ── GET /planning/work-items ──────────────────────────────────────────────
+  //
+  // Returns unplanned job parts sorted and grouped in the order a planner
+  // would build runs — not a flat random list.
+  // Sort: by NEXT REQUIRED MOVEMENT, not the original job request.
+  //
+  // Query params: dateFrom=YYYY-MM-DD, dateTo=YYYY-MM-DD
+  app.get(
+    "/planning/work-items",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const { companyId } = request.user!;
+      const q = request.query as { dateFrom?: string; dateTo?: string };
+
+      if (!q.dateFrom || !q.dateTo) {
+        return reply.status(400).send({ error: "dateFrom and dateTo are required (YYYY-MM-DD)" });
+      }
+
+      const items = await getPlannerWorkItems(prisma, companyId, q.dateFrom, q.dateTo);
+      return reply.send({ items });
     },
   );
 
