@@ -298,16 +298,23 @@ export async function patchJob(
   { id, companyId, userId, body, job }: { id: number; companyId: number; userId: number; body: PatchJobInput; job: NonNullable<ExistingJob> },
 ): Promise<ServiceResult<{ job: unknown; validation: JobValidationResult; quality: { score: number } }>> {
 
-  const existingStops: StructuredJobPartInput[] = job.stops.map(s => ({
-    sequenceNumber: s.sequenceNumber, type: s.type, savedLocationId: s.savedLocationId,
-    siteName: s.siteName ?? undefined, unitName: s.unitName ?? undefined,
-    street: s.street ?? undefined, town: s.town ?? undefined, postcode: s.postcode ?? undefined,
-    locationTextSnapshot: s.locationTextSnapshot,
-    lat: s.lat, lng: s.lng, gateLat: s.gateLat, gateLng: s.gateLng,
-    timeWindowStart: s.timeWindowStart, timeWindowEnd: s.timeWindowEnd,
-    contactName: s.contactName ?? undefined, contactPhone: s.contactPhone ?? undefined,
-    referenceNumber: s.referenceNumber ?? undefined, instructions: s.instructions ?? undefined,
-  }));
+  const existingStops: StructuredJobPartInput[] = job.stops.map(s => {
+    // Auto-build locationTextSnapshot from address parts when the DB value is null
+    // (PRF stops have street/town/postcode but no snapshot; without this the
+    //  ready_to_plan validation fails on every edit after acceptance).
+    const snapshotFromParts = [s.siteName, s.street, s.town, s.postcode]
+      .map(x => (x ?? "").trim()).filter(Boolean).join(", ") || null;
+    return {
+      sequenceNumber: s.sequenceNumber, type: s.type, savedLocationId: s.savedLocationId,
+      siteName: s.siteName ?? undefined, unitName: s.unitName ?? undefined,
+      street: s.street ?? undefined, town: s.town ?? undefined, postcode: s.postcode ?? undefined,
+      locationTextSnapshot: s.locationTextSnapshot || snapshotFromParts,
+      lat: s.lat, lng: s.lng, gateLat: s.gateLat, gateLng: s.gateLng,
+      timeWindowStart: s.timeWindowStart, timeWindowEnd: s.timeWindowEnd,
+      contactName: s.contactName ?? undefined, contactPhone: s.contactPhone ?? undefined,
+      referenceNumber: s.referenceNumber ?? undefined, instructions: s.instructions ?? undefined,
+    };
+  });
 
   const stops: StructuredJobPartInput[] = Array.isArray(body.stops) ? body.stops : existingStops;
   const saveMode = body.saveMode ?? (job.validationStatus === "ready_to_plan" ? "ready_to_plan" : "draft");
