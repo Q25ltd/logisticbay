@@ -760,6 +760,7 @@ export default function PlanningBoardPage() {
   const [loadingRight, setLoadingRight] = useState(false);
   const [totalUnplanned, setTotalUnplanned] = useState(0);
   const [err,          setErr]          = useState("");
+  const [mobileTab,    setMobileTab]    = useState<"jobs" | "runs">("jobs");
   const [creatingRun,  setCreatingRun]  = useState(false);
   const [aiSuggesting, setAiSuggesting] = useState(false);
 
@@ -841,6 +842,7 @@ export default function PlanningBoardPage() {
       try { await planningApi.addStop(runId, stop.id); } catch { /* skip already-assigned */ }
     }
     await Promise.all([loadLeft(date), loadRight(date)]);
+    setMobileTab("runs"); // show the run the job was just added to
   }
 
   async function handleUpdate(runId: number, patch: Record<string, unknown>) {
@@ -883,6 +885,7 @@ export default function PlanningBoardPage() {
       const run = await planningApi.createRun({ date, runType: "direct" });
       setRuns(prev => [...prev, run]);
       autoExpand(run.id); // open the new run immediately so the planner can fill it
+      setMobileTab("runs"); // switch to the Runs tab on mobile so the new run is visible
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setCreatingRun(false); }
   }
@@ -941,6 +944,7 @@ export default function PlanningBoardPage() {
       }
 
       await Promise.all([loadLeft(date), loadRight(date)]);
+      setMobileTab("runs"); // switch to runs tab so the user can see the created runs
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setAiSuggesting(false); }
   }
@@ -948,17 +952,17 @@ export default function PlanningBoardPage() {
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border flex-shrink-0 flex-wrap">
-        <h1 className="text-xl font-bold text-primary">Planning Board</h1>
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-border flex-shrink-0 flex-wrap">
+        <h1 className="text-base sm:text-xl font-bold text-primary">Planning</h1>
 
-        <div className="flex items-center gap-1 ml-2">
+        <div className="flex items-center gap-1">
           <button onClick={() => setDate(prevDay(date))}
             className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">←</button>
           <input
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            className="input text-sm px-2 py-1 w-36"
+            className="input text-sm px-2 py-1 w-32 sm:w-36"
           />
           <button onClick={() => setDate(nextDay(date))}
             className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">→</button>
@@ -966,41 +970,65 @@ export default function PlanningBoardPage() {
             className="btn px-2 py-1 text-xs border border-border bg-white hover:bg-slate-50 text-muted">Today</button>
         </div>
 
-        <span className="text-sm text-muted ml-1">{fmtDate(date)}</span>
+        <span className="hidden sm:inline text-sm text-muted">{fmtDate(date)}</span>
 
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex gap-1.5 sm:gap-2">
           <button
             onClick={handleAiSuggest}
             disabled={aiSuggesting || !clusters.length}
-            className="btn text-sm px-3 py-1.5 border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 flex items-center gap-1.5"
+            className="btn text-xs sm:text-sm px-2 sm:px-3 py-1.5 border border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 flex items-center gap-1"
           >
             {aiSuggesting
-              ? <><span className="animate-spin inline-block">⟳</span> Building runs…</>
-              : <>🤖 Suggest all runs</>
+              ? <><span className="animate-spin inline-block">⟳</span><span className="hidden sm:inline"> Building…</span></>
+              : <><span>🤖</span><span className="hidden sm:inline"> Suggest runs</span></>
             }
           </button>
           <button
             onClick={handleCreateRun}
             disabled={creatingRun}
-            className="btn text-sm px-3 py-1.5 bg-primary text-white hover:opacity-90 disabled:opacity-40"
+            className="btn text-xs sm:text-sm px-2 sm:px-3 py-1.5 bg-primary text-white hover:opacity-90 disabled:opacity-40"
           >
-            {creatingRun ? "Creating…" : "+ New run"}
+            {creatingRun ? "…" : "+ Run"}
           </button>
         </div>
       </div>
 
       {err && (
-        <div className="mx-6 mt-2 p-2 bg-red-50 text-red-700 text-sm rounded flex items-center gap-2">
+        <div className="mx-3 sm:mx-6 mt-2 p-2 bg-red-50 text-red-700 text-sm rounded flex items-center gap-2">
           <span>{err}</span>
           <button onClick={() => setErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
       )}
 
+      {/* ── Mobile tab bar ── */}
+      <div className="sm:hidden flex border-b border-border flex-shrink-0 bg-white">
+        <button
+          onClick={() => setMobileTab("jobs")}
+          className={`flex-1 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+            mobileTab === "jobs"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted hover:text-primary"
+          }`}
+        >
+          Jobs{jobGroups.length > 0 ? ` (${jobGroups.length})` : ""}
+        </button>
+        <button
+          onClick={() => setMobileTab("runs")}
+          className={`flex-1 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+            mobileTab === "runs"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted hover:text-primary"
+          }`}
+        >
+          Runs{runs.length > 0 ? ` (${runs.length})` : ""}
+        </button>
+      </div>
+
       {/* ── Two-panel layout ── */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* ── Left — jobs to plan ── */}
-        <div className="w-80 flex-shrink-0 border-r border-border flex flex-col">
+        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-80 flex-shrink-0 sm:border-r border-border`}>
           <div className="px-4 py-3 border-b border-border flex-shrink-0 flex items-center justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wide text-muted">Jobs to plan</div>
@@ -1034,7 +1062,7 @@ export default function PlanningBoardPage() {
         </div>
 
         {/* ── Right — runs ── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`${mobileTab === "runs" ? "flex" : "hidden"} sm:flex flex-1 flex-col overflow-hidden`}>
           <div className="px-4 py-3 border-b border-border flex-shrink-0 flex items-center gap-3">
             <div>
               <div className="text-xs font-bold uppercase tracking-wide text-muted">Runs</div>
@@ -1043,12 +1071,12 @@ export default function PlanningBoardPage() {
             {loadingRight && <span className="text-xs text-muted animate-pulse">Loading…</span>}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
             {!loadingRight && runs.length === 0 && (
               <div className="text-center py-16 text-muted">
                 <div className="text-4xl mb-3">🚚</div>
                 <div className="text-base font-medium mb-1">No runs yet for this date</div>
-                <div className="text-sm mb-4">Create a run, then add jobs from the left panel</div>
+                <div className="text-sm mb-4">Create a run, then add jobs from the Jobs tab</div>
                 <button
                   onClick={handleCreateRun}
                   disabled={creatingRun}
