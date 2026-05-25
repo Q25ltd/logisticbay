@@ -341,6 +341,9 @@ function RunCard({
   const [wpNewStreet,   setWpNewStreet]   = useState("");
   const [wpNewTown,     setWpNewTown]     = useState("");
   const [wpNewPostcode, setWpNewPostcode] = useState("");
+  const [wpNewLat,      setWpNewLat]      = useState("");
+  const [wpNewLng,      setWpNewLng]      = useState("");
+  const [wpGeoLoading,  setWpGeoLoading]  = useState(false);
   const [savedLocs,     setSavedLocs]     = useState<SavedLocationOption[]>([]);
   const [locsLoading,   setLocsLoading]   = useState(false);
 
@@ -445,6 +448,22 @@ function RunCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.assignments.length, run.waypoints.length, wpTimesKey, run.estimatedStartTime]);
 
+  // Auto-fill lat/lng from postcode using postcodes.io (free, no key)
+  async function geocodePostcode() {
+    const pc = wpNewPostcode.trim().replace(/\s+/g, "").toUpperCase();
+    if (!pc) return;
+    setWpGeoLoading(true);
+    try {
+      const res  = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`);
+      const data = await res.json() as { result?: { latitude: number; longitude: number } };
+      if (data.result) {
+        setWpNewLat(String(data.result.latitude));
+        setWpNewLng(String(data.result.longitude));
+      }
+    } catch { /* non-fatal */ }
+    finally { setWpGeoLoading(false); }
+  }
+
   // Load saved locations — called when form opens (user-triggered, never on mount)
   async function loadSavedLocs() {
     if (savedLocs.length > 0) return; // already loaded
@@ -506,6 +525,8 @@ function RunCard({
           street:   wpNewStreet.trim(),
           town:     wpNewTown.trim() || undefined,
           postcode: wpNewPostcode.trim() || undefined,
+          lat:      wpNewLat ? parseFloat(wpNewLat) : undefined,
+          lng:      wpNewLng ? parseFloat(wpNewLng) : undefined,
         });
         locationId   = newLoc.id;
         locationText = newLoc.siteName ?? newLoc.name;
@@ -532,6 +553,7 @@ function RunCard({
       // Reset form
       setWpLocId(""); setWpShowCreate(false);
       setWpNewName(""); setWpNewStreet(""); setWpNewTown(""); setWpNewPostcode("");
+      setWpNewLat(""); setWpNewLng("");
       setWpPosition(-2); setWpTime(""); setShowWpForm(false);
     } catch (e: unknown) { setErr((e as Error).message ?? "Failed to add waypoint"); }
     finally { setWpAdding(false); }
@@ -814,6 +836,18 @@ function RunCard({
                         <input type="text" className="input text-xs py-1" placeholder="Postcode"
                           value={wpNewPostcode} onChange={e => setWpNewPostcode(e.target.value.toUpperCase())} />
                       </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input type="number" step="any" className="input text-xs py-1" placeholder="Latitude (opt.)"
+                          value={wpNewLat} onChange={e => setWpNewLat(e.target.value)} />
+                        <input type="number" step="any" className="input text-xs py-1" placeholder="Longitude (opt.)"
+                          value={wpNewLng} onChange={e => setWpNewLng(e.target.value)} />
+                      </div>
+                      {wpNewPostcode.trim() && (
+                        <button type="button" onClick={geocodePostcode} disabled={wpGeoLoading}
+                          className="text-[10px] text-accent hover:underline disabled:opacity-50">
+                          {wpGeoLoading ? "Looking up…" : "Auto-fill coordinates from postcode"}
+                        </button>
+                      )}
                       {savedLocs.length > 0 && (
                         <button type="button"
                           onClick={() => { setWpShowCreate(false); setWpNewName(""); setWpNewStreet(""); setWpNewTown(""); setWpNewPostcode(""); }}
