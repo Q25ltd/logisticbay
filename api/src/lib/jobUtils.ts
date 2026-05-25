@@ -73,7 +73,16 @@ export function buildStopData(s: StructuredJobPartInput, companyId: number) {
     street:                    typeof s.street === "string" ? (s.street.trim() || null) : null,
     town:                      typeof s.town === "string" ? (s.town.trim() || null) : null,
     postcode:                  typeof s.postcode === "string" ? (s.postcode.trim().toUpperCase() || null) : null,
-    locationTextSnapshot:      s.locationTextSnapshot != null ? (String(s.locationTextSnapshot).trim() || null) : null,
+    locationTextSnapshot:      (() => {
+      // Use explicitly provided snapshot, else auto-build from address fields so
+      // PRF stops (which have address parts but no snapshot text) pass validation.
+      const explicit = s.locationTextSnapshot != null ? String(s.locationTextSnapshot).trim() : "";
+      if (explicit) return explicit;
+      const parts = [s.siteName, s.street, s.town, s.postcode]
+        .map(x => typeof x === "string" ? x.trim() : "")
+        .filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : null;
+    })(),
     lat:                       s.lat ?? null,
     lng:                       s.lng ?? null,
     gateLat:                   s.gateLat ?? null,
