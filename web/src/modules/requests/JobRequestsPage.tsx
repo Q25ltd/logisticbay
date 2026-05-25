@@ -51,6 +51,58 @@ const STOP_TYPE_LABEL: Record<string, string> = {
   depot:      "Depot",
 };
 
+const ACCESS_REQUIREMENT_LABELS: Record<string, string> = {
+  // Site restrictions
+  narrow_road:           "Narrow road",
+  height_restriction:    "Height restriction",
+  weight_restriction:    "Weight restriction",
+  length_restriction:    "Length restriction",
+  no_artic_access:       "No artic access",
+  no_trailer_access:     "No trailer access",
+  residential_area:      "Residential area",
+  security_checkin:      "Security check-in",
+  driver_id_required:    "Driver ID required",
+  do_not_arrive_early:   "Do not arrive early",
+  holding_area_required: "Holding area required",
+  port_access:           "Port access",
+  airport_access:        "Airport access",
+  // PPE items (stored with ppe_ prefix)
+  ppe_required:          "PPE required",
+  ppe_safety_boots:      "PPE safety boots",
+  ppe_hi_vis:            "PPE hi-vis",
+  ppe_hard_hat:          "PPE hard hat",
+  ppe_gloves:            "PPE gloves",
+  ppe_glasses:           "PPE safety glasses",
+};
+
+const HANDLING_METHOD_LABELS: Record<string, string> = {
+  forklift:          "Forklift",
+  loading_bay:       "Loading bay",
+  hiab:              "HIAB / truck crane",
+  moffett:           "Moffett / vehicle forklift",
+  tail_lift:         "Tail lift",
+  pump_truck:        "Pump truck / pallet jack",
+  handball:          "Handball (manual)",
+  overhead_crane:    "Overhead / gantry crane",
+  magnetic_crane:    "Magnetic overhead crane",
+  side_loading:      "Side loading",
+  roro:              "RORO (drive on / drive off)",
+  tipper_discharge:  "Tipper discharge",
+  grab:              "Grab (aggregate / scrap)",
+  pump_discharge:    "Pump discharge (tanker)",
+  walking_floor:     "Walking floor",
+  conveyor:          "Conveyor",
+  other:             "Other",
+};
+
+function accessLabel(v: string): string {
+  return ACCESS_REQUIREMENT_LABELS[v] ?? cap(v);
+}
+
+function handlingLabel(v: string): string {
+  return HANDLING_METHOD_LABELS[v] ?? cap(v);
+}
+
 const REJECT_REASONS = [
   { value: "no_capacity",           label: "No capacity"           },
   { value: "outside_service_area",  label: "Outside service area"  },
@@ -78,11 +130,6 @@ function fmtWindow(start: string | null | undefined, end: string | null | undefi
   if (!end) return `${date} from ${st}`;
   const et   = new Date(end).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return `${date} · ${st}–${et}`;
-}
-
-/** Today's date as YYYY-MM-DD (for date input min). */
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 /** "some_snake_case" → "Some snake case" */
@@ -271,7 +318,10 @@ function RequestRow({
   const [rejectReason,    setRejectReason]    = useState("no_capacity");
   const [rejectNotes,     setRejectNotes]     = useState("");
   const [accepting,       setAccepting]       = useState(false);
-  const [plannedDate,     setPlannedDate]     = useState("");
+  // Pre-fill from the job's requested date (customer specified it in the PRF)
+  const [plannedDate,     setPlannedDate]     = useState(
+    j.plannedDate ? j.plannedDate.slice(0, 10) : ""
+  );
   const [plannerNotes,    setPlannerNotes]    = useState("");
   const [vehicleCategory, setVehicleCategory] = useState(j.vehicleCategory ?? "");
   const [bodyTypes,       setBodyTypes]       = useState<string[]>((j.bodyTypes as string[] | null) ?? []);
@@ -455,7 +505,6 @@ function RequestRow({
                   <input
                     type="date"
                     className="input mt-1 text-sm"
-                    min={todayISO()}
                     value={plannedDate}
                     onChange={e => { setPlannedDate(e.target.value); setErr(""); }}
                   />
@@ -471,10 +520,12 @@ function RequestRow({
                   <div>
                     <label className="text-xs font-medium" style={{ color: "#374151" }}>
                       Vehicle type <span className="text-red-500">*</span>
-                      <span className="text-xs font-normal text-slate-400 ml-1">— customer left this to the planner</span>
                     </label>
+                    <p className="text-xs mt-0.5 mb-1" style={{ color: "#9ca3af" }}>
+                      Customer left this for you to decide — affects trailer, pricing and compliance.
+                    </p>
                     <select
-                      className="input mt-1 text-sm"
+                      className="input text-sm"
                       value={vehicleCategory}
                       onChange={e => { setVehicleCategory(e.target.value); setErr(""); }}
                     >
@@ -483,11 +534,6 @@ function RequestRow({
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
                     </select>
-                    {!vehicleCategory && (
-                      <p className="text-xs text-amber-700 mt-1">
-                        Required — wrong vehicle type means wrong trailer, wrong rate, failed job.
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -804,9 +850,8 @@ function StopBlock({ title, stop: s }: { title: string; stop: JobPart }) {
       />
 
       {s.lat != null && (
-        <div className="text-xs" style={{ color: "#6b7280" }}>
-          <span className="font-medium">Pin: </span>
-          {s.lat.toFixed(5)}, {(s.lng ?? 0).toFixed(5)}
+        <div className="text-xs inline-flex items-center gap-1 bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
+          📍 Location pinned
         </div>
       )}
 
@@ -838,8 +883,8 @@ function StopBlock({ title, stop: s }: { title: string; stop: JobPart }) {
         />
       )}
 
-      {Array.isArray(s.handlingMethods)   && s.handlingMethods.length   > 0 && <ChipRow label="Handling"    items={s.handlingMethods as string[]} />}
-      {Array.isArray(s.accessRequirements) && s.accessRequirements.length > 0 && <ChipRow label="Site access" items={s.accessRequirements as string[]} variant="amber" />}
+      {Array.isArray(s.handlingMethods)   && s.handlingMethods.length   > 0 && <ChipRow label="Handling"    items={s.handlingMethods as string[]} labelFn={handlingLabel} />}
+      {Array.isArray(s.accessRequirements) && s.accessRequirements.length > 0 && <ChipRow label="Site access" items={s.accessRequirements as string[]} variant="amber" labelFn={accessLabel} />}
       {Array.isArray(s.proofRequirements)  && s.proofRequirements.length  > 0 && <ChipRow label="Proof"      items={s.proofRequirements as string[]} />}
 
       {s.heightRestriction && <Field label="Height restriction" value={s.heightRestriction} />}
