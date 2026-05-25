@@ -370,15 +370,16 @@ function RunCard({
           }));
 
         // Waypoint stops — convert HH:MM scheduledTime to ISO using plannedDate
+        // Coordinates may be on the linked location record rather than the waypoint itself
         const waypointStops = [...run.waypoints]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
           .map(w => ({
             sequenceNumber:  w.sequenceNumber,
             type:            w.waypointType,
             locationText:    w.location?.siteName ?? w.location?.name ?? w.locationText ?? null,
-            postcode:        w.postcode ?? null,
-            lat:             w.lat ?? null,
-            lng:             w.lng ?? null,
+            postcode:        w.postcode ?? w.location?.postcode ?? null,
+            lat:             w.lat ?? w.location?.lat ?? null,
+            lng:             w.lng ?? w.location?.lng ?? null,
             timeWindowStart: w.scheduledTime && run.plannedDate
               ? `${run.plannedDate}T${w.scheduledTime}:00Z`
               : null,
