@@ -414,9 +414,23 @@ function RunCard({
       let seq: number;
       let waypointType: string;
 
-      if (wpPosition === -2) { seq = 0;    waypointType = "depot_start";    }
-      else if (wpPosition === -1) { seq = 9999; waypointType = "return_to_base"; }
-      else { seq = (sorted[wpPosition]?.sequenceNumber ?? 0) + 5; waypointType = "custom"; }
+      if (wpPosition === -2) {
+        seq = 0; waypointType = "depot_start";
+      } else if (wpPosition === -1) {
+        seq = 999999; waypointType = "return_to_base";
+      } else {
+        // Combined sorted list of all items in this run
+        const allItems = [
+          ...run.assignments.map(a => ({ seq: a.sequenceNumber })),
+          ...run.waypoints.map(w => ({ seq: w.sequenceNumber })),
+        ].sort((a, b) => a.seq - b.seq);
+        // wpPosition is the index into the combined list after which we insert
+        const prevSeq = allItems[wpPosition]?.seq ?? 0;
+        const nextSeq = allItems[wpPosition + 1]?.seq;
+        seq = nextSeq != null ? Math.round((prevSeq + nextSeq) / 2) : prevSeq + 1000;
+        // If no gap (same or adjacent), the API will resequence automatically
+        waypointType = "custom";
+      }
 
       if (isDepotStop) {
         if (depot) {
@@ -550,103 +564,93 @@ function RunCard({
             </div>
           )}
 
-          {/* ── Stops ── */}
-          <div className="mb-3">
-            <div className="text-[10px] uppercase tracking-wide font-bold text-muted mb-1.5">Stops</div>
-            {run.assignments.length === 0 ? (
-              <div className="text-xs text-muted italic">No stops yet — add from the left panel</div>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  {run.assignments.map((a, i) => (
-                    <div key={a.id} className="flex items-center gap-2 text-xs">
-                      <span className="w-4 text-center font-bold text-muted flex-shrink-0">{i + 1}</span>
-                      <Badge colour={a.jobPart.type === "collection" || a.jobPart.type === "pickup"
-                        ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                        {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
-                      </Badge>
-                      <span className="font-medium text-primary truncate flex-1 min-w-0">
-                        {a.jobPart.job.customerName ?? "—"}
-                      </span>
-                      <span className="text-muted truncate hidden sm:inline">
-                        {a.jobPart.locationTextSnapshot ?? a.jobPart.postcode ?? ""}
-                      </span>
-                      {a.jobPart.timeWindowStart && (
-                        <span className="text-amber-600 flex-shrink-0">{fmtTime(a.jobPart.timeWindowStart)}</span>
-                      )}
-                      <button
-                        onClick={() => onRemoveStop(run.id, a.id)}
-                        className="text-red-400 hover:text-red-600 flex-shrink-0"
-                        title="Remove stop"
-                      >✕</button>
-                    </div>
-                  ))}
-                </div>
-                {/* Delivery-before-collection warning */}
-                {(() => {
-                  const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-                  const DELIVER = new Set(["delivery", "dropoff"]);
-                  const COLLECT = new Set(["collection", "pickup"]);
-                  const fd = sorted.find(a => DELIVER.has(a.jobPart.type));
-                  const fc = sorted.find(a => COLLECT.has(a.jobPart.type));
-                  if (fd && fc && fd.sequenceNumber < fc.sequenceNumber) {
-                    return (
-                      <div className="mt-1.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
-                        ⚠ Delivery appears before collection — check the stop order
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-              </>
-            )}
-          </div>
-
-          {/* ── Depot / yard stops ── */}
+          {/* ── Route timeline — assignments + waypoints merged ── */}
           <div className="mb-3">
             <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[10px] uppercase tracking-wide font-bold text-muted">Depot / yard stops</div>
+              <div className="text-[10px] uppercase tracking-wide font-bold text-muted">Route</div>
               <button
                 onClick={() => setShowWpForm(v => !v)}
                 className="text-[10px] text-accent hover:underline"
               >
-                {showWpForm ? "Cancel" : "+ Add"}
+                {showWpForm ? "Cancel" : "+ Add stop"}
               </button>
             </div>
 
-            {/* Company depot — shown as fixed start/end reference */}
-            {depot && (
-              <div className="flex items-center gap-1.5 text-xs mb-1.5 rounded bg-blue-50 border border-blue-100 px-2 py-1">
-                <span className="text-blue-400 flex-shrink-0" title="Company depot">🏭</span>
-                <span className="flex-1 text-blue-700 font-medium truncate">
-                  {depot.siteName ?? depot.name}
-                  {depot.town ? ` · ${depot.town}` : ""}
-                  {depot.postcode ? ` · ${depot.postcode}` : ""}
-                </span>
-                <span className="text-[10px] text-blue-400 flex-shrink-0">depot</span>
+            {run.assignments.length === 0 && run.waypoints.length === 0 ? (
+              <div className="text-xs text-muted italic">No stops yet — add jobs from the left panel</div>
+            ) : (
+              <div className="space-y-1.5">
+                {/* Build combined sorted timeline */}
+                {(() => {
+                  type RouteItem =
+                    | { kind: "assignment"; seq: number; data: typeof run.assignments[0] }
+                    | { kind: "waypoint";   seq: number; data: RunWaypoint };
+
+                  const items: RouteItem[] = [
+                    ...run.assignments.map(a => ({ kind: "assignment" as const, seq: a.sequenceNumber, data: a })),
+                    ...run.waypoints.map(w => ({ kind: "waypoint" as const, seq: w.sequenceNumber, data: w })),
+                  ].sort((a, b) => a.seq - b.seq);
+
+                  let stopNum = 0;
+                  return items.map(item => {
+                    if (item.kind === "waypoint") {
+                      const w = item.data;
+                      return (
+                        <div key={`w-${w.id}`} className="flex items-center gap-1.5 text-xs pl-6">
+                          <Badge colour="bg-slate-100 text-slate-600">
+                            {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
+                          </Badge>
+                          <span className="flex-1 text-primary truncate">
+                            {w.location?.siteName ?? w.location?.name ?? w.locationText ?? w.postcode ?? "—"}
+                          </span>
+                          {w.scheduledTime && <span className="text-muted flex-shrink-0">{w.scheduledTime}</span>}
+                          <button onClick={() => onRemoveWaypoint(run.id, w.id)}
+                            className="text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">✕</button>
+                        </div>
+                      );
+                    } else {
+                      const a = item.data;
+                      stopNum++;
+                      return (
+                        <div key={`a-${a.id}`} className="flex items-center gap-2 text-xs">
+                          <span className="w-4 text-center font-bold text-muted flex-shrink-0">{stopNum}</span>
+                          <Badge colour={a.jobPart.type === "collection" || a.jobPart.type === "pickup"
+                            ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
+                            {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
+                          </Badge>
+                          <span className="font-medium text-primary truncate flex-1 min-w-0">
+                            {a.jobPart.job.customerName ?? "—"}
+                          </span>
+                          <span className="text-muted truncate hidden sm:inline">
+                            {a.jobPart.locationTextSnapshot ?? a.jobPart.postcode ?? ""}
+                          </span>
+                          {a.jobPart.timeWindowStart && (
+                            <span className="text-amber-600 flex-shrink-0">{fmtTime(a.jobPart.timeWindowStart)}</span>
+                          )}
+                          <button onClick={() => onRemoveStop(run.id, a.id)}
+                            className="text-red-400 hover:text-red-600 flex-shrink-0" title="Remove stop">✕</button>
+                        </div>
+                      );
+                    }
+                  });
+                })()}
               </div>
             )}
 
-            {run.waypoints.length > 0 && (
-              <div className="space-y-1 mb-1.5">
-                {run.waypoints.map((w: RunWaypoint) => (
-                  <div key={w.id} className="flex items-center gap-1.5 text-xs">
-                    <Badge colour="bg-slate-100 text-slate-600">
-                      {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
-                    </Badge>
-                    <span className="flex-1 text-primary truncate">
-                      {w.location?.siteName ?? w.location?.name ?? w.locationText ?? w.postcode ?? "—"}
-                    </span>
-                    {w.scheduledTime && <span className="text-muted flex-shrink-0">{w.scheduledTime}</span>}
-                    <button
-                      onClick={() => onRemoveWaypoint(run.id, w.id)}
-                      className="text-red-400 hover:text-red-600 flex-shrink-0"
-                      title="Remove"
-                    >✕</button>
+            {/* Delivery-before-collection warning */}
+            {(() => {
+              const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+              const fd = sorted.find(a => ["delivery","dropoff"].includes(a.jobPart.type));
+              const fc = sorted.find(a => ["collection","pickup"].includes(a.jobPart.type));
+              if (fd && fc && fd.sequenceNumber < fc.sequenceNumber) {
+                return (
+                  <div className="mt-1.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
+                    ⚠ Delivery appears before collection — check the stop order
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              }
+              return null;
+            })()}
 
             {showWpForm && (
               <div className="rounded border border-slate-200 bg-slate-50 p-2.5 space-y-2 text-xs">
@@ -660,14 +664,33 @@ function RunCard({
                     onChange={e => setWpPosition(parseInt(e.target.value, 10))}
                   >
                     <option value={-2}>Before all stops (depot start)</option>
-                    {[...run.assignments]
-                      .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
-                      .map((a, i) => (
-                        <option key={a.id} value={i}>
-                          After {i + 1}: {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — {a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}
+                    {(() => {
+                      // Combined sorted list so waypoints appear in the right position
+                      type CombinedItem =
+                        | { kind: "stop"; seq: number; label: string; key: string }
+                        | { kind: "wp";   seq: number; label: string; key: string };
+                      const items: CombinedItem[] = [
+                        ...[...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(a => ({
+                          kind: "stop" as const,
+                          seq:  a.sequenceNumber,
+                          key:  `a-${a.id}`,
+                          label: `${STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — ${a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}`,
+                        })),
+                        ...[...run.waypoints].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+                          .filter(w => w.waypointType !== "depot_start" && w.waypointType !== "return_to_base")
+                          .map(w => ({
+                            kind: "wp" as const,
+                            seq:  w.sequenceNumber,
+                            key:  `w-${w.id}`,
+                            label: `${WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}: ${w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}`,
+                          })),
+                      ].sort((a, b) => a.seq - b.seq);
+                      return items.map((item, i) => (
+                        <option key={item.key} value={i}>
+                          After: {item.label}
                         </option>
-                      ))
-                    }
+                      ));
+                    })()}
                     <option value={-1}>After all stops (return to depot)</option>
                   </select>
                 </div>

@@ -583,6 +583,69 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         }
       }
 
+      // ── Determine insertion sequence number ──────────────────────────────
+      // We need the waypoint to land at the correct position in the combined
+      // timeline (assignments + waypoints sorted by sequenceNumber).
+      // Strategy: fetch all existing items, renumber them with a step of 1000
+      // if needed to create gaps, then place the new waypoint at the midpoint
+      // between its neighbours.
+
+      const desiredSeq = b.sequenceNumber ?? 0;
+
+      // Fetch all items in the run sorted by seq
+      const [existingAssignments, existingWaypoints] = await Promise.all([
+        prisma.runAssignment.findMany({ where: { runId }, select: { id: true, sequenceNumber: true } }),
+        prisma.runWaypoint.findMany({ where: { runId }, select: { id: true, sequenceNumber: true } }),
+      ]);
+
+      // Build combined sorted list
+      type SeqItem = { kind: "a" | "w"; id: number; sequenceNumber: number };
+      const combined: SeqItem[] = [
+        ...existingAssignments.map(a => ({ kind: "a" as const, id: a.id, sequenceNumber: a.sequenceNumber })),
+        ...existingWaypoints.map(w => ({ kind: "w" as const, id: w.id, sequenceNumber: w.sequenceNumber })),
+      ].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+      // Check if there's a gap around the desired insertion point.
+      // Find neighbours: items immediately before and after desiredSeq.
+      const prevItem = [...combined].filter(i => i.sequenceNumber <= desiredSeq).pop();
+      const nextItem = combined.find(i => i.sequenceNumber > desiredSeq);
+
+      const prevSeq = prevItem?.sequenceNumber ?? -1000;
+      const nextSeq = nextItem?.sequenceNumber ?? (desiredSeq + 2000);
+      const gap = nextSeq - prevSeq;
+
+      let finalSeq: number;
+
+      if (gap > 1) {
+        // There's room — use the midpoint (or desired if it fits)
+        finalSeq = prevSeq < desiredSeq && desiredSeq < nextSeq
+          ? desiredSeq
+          : Math.round((prevSeq + nextSeq) / 2);
+      } else {
+        // No room — renumber all existing items with step=1000 then insert
+        let counter = 0;
+        const reseqOps = combined.map(item => {
+          counter += 1000;
+          const newSeq = item.kind === "a" && item.id === prevItem?.id
+            ? (newSeqForPrev => newSeqForPrev)(counter)
+            : counter;
+          return item;
+        });
+
+        // Simpler: just multiply all existing seqs by 1000
+        await Promise.all([
+          ...existingAssignments.map(a =>
+            prisma.runAssignment.update({ where: { id: a.id }, data: { sequenceNumber: a.sequenceNumber * 1000 } })
+          ),
+          ...existingWaypoints.map(w =>
+            prisma.runWaypoint.update({ where: { id: w.id }, data: { sequenceNumber: w.sequenceNumber * 1000 } })
+          ),
+        ]);
+        // Now there are gaps — insert at midpoint of the scaled neighbours
+        finalSeq = Math.round((prevSeq * 1000 + nextSeq * 1000) / 2);
+        void reseqOps; // suppress unused warning
+      }
+
       const waypoint = await prisma.runWaypoint.create({
         data: {
           companyId,
@@ -595,7 +658,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           lng,
           scheduledTime:  b.scheduledTime?.trim() || null,
           notes:          b.notes?.trim()         || null,
-          sequenceNumber: b.sequenceNumber        ?? 0,
+          sequenceNumber: finalSeq,
         },
         include: {
           location: {
