@@ -187,10 +187,16 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const BREAK_TRIGGER_MIN  = 270; // 4.5 h
   const BREAK_DURATION_MIN = 45;
 
+  // Stop types that are loading/unloading work — a driver CANNOT take a rest break
+  // during these. Breaks must be taken at a rest area, services, or layby where the
+  // driver is doing absolutely nothing.
+  const WORK_STOP_TYPES = new Set([
+    "collection", "delivery", "pickup", "dropoff", "reload",
+  ]);
+
   // Walk through legs accumulating drive time.
-  // Determine: (a) does a break fall within the run, (b) does it land at a stop or mid-road?
-  let cumulativeDriveMin  = 0;
-  let driveBeforeLeg: number[] = []; // drive accumulated BEFORE each leg starts
+  let cumulativeDriveMin = 0;
+  let driveBeforeLeg: number[] = [];
 
   for (let i = 0; i < legs.length; i++) {
     driveBeforeLeg.push(cumulativeDriveMin);
@@ -200,50 +206,54 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const breakRequired     = totalDriveMin >= BREAK_TRIGGER_MIN;
   const breakEffectiveMin = breakRequired ? BREAK_DURATION_MIN : 0;
 
-  // Find exactly where the 4.5 h threshold is crossed
-  let breakAfterStopIdx: number | null = null;  // which stop the driver should take the break at
-  let breakMidLeg      = false;                 // true if threshold is crossed mid-leg (no stop available)
-  let driveMinAtBreak  = 0;
+  // Find which leg crosses the 4.5 h threshold, then determine if there is a
+  // suitable (non-work) rest point in the route near that crossing.
+  let breakLegIdx    = -1;   // index of the leg where 4.5 h is crossed
+  let driveMinAtBreak = 0;
 
   for (let i = 0; i < legs.length; i++) {
-    const legMin    = legs[i].driveMin ?? 0;
-    const driveAfter = driveBeforeLeg[i] + legMin;
+    const driveAfter = driveBeforeLeg[i] + (legs[i].driveMin ?? 0);
     if (driveAfter >= BREAK_TRIGGER_MIN) {
+      breakLegIdx    = i;
       driveMinAtBreak = driveAfter;
-      // If there is a real stop at i+1 → break can happen there
-      if (stops[i + 1]) {
-        breakAfterStopIdx = i + 1;
-        breakMidLeg       = false;
-      } else {
-        // Threshold crossed on the last leg — no following stop
-        breakAfterStopIdx = i;  // must stop before leaving this stop
-        breakMidLeg       = false;
-      }
       break;
     }
   }
 
-  // Build a plain data note passed to Claude — concrete numbers, no legal opinion.
+  // Is there a non-work waypoint already in the route at or after the break point?
+  // (custom / return_to_base / depot_start — any stop where the driver isn't loading)
+  const restStopAfterBreak = breakLegIdx >= 0
+    ? stops.slice(breakLegIdx + 1).find(s => !WORK_STOP_TYPES.has(s.type))
+    : null;
+
+  // The stops immediately before and after the break crossing point
+  const stopBeforeBreak = breakLegIdx >= 0 ? stops[breakLegIdx]     : null;
+  const stopAfterBreak  = breakLegIdx >= 0 ? stops[breakLegIdx + 1] : null;
+
+  // Build the plain data note for the prompt
   let breakNote = "";
-  if (breakRequired && breakAfterStopIdx !== null) {
-    const breakStop = stops[breakAfterStopIdx];
-    const stopLabel = breakStop
-      ? `Stop ${breakAfterStopIdx + 1} (${breakStop.locationText ?? breakStop.postcode ?? "unknown"})`
-      : `stop ${breakAfterStopIdx + 1}`;
-    const driveHrs  = (driveMinAtBreak / 60).toFixed(1);
-    const isAtStop  = !!breakStop;
-    const totalWithBreak = Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10;
+  if (breakRequired && breakLegIdx >= 0) {
+    const driveHrs        = (driveMinAtBreak / 60).toFixed(1);
+    const beforeLabel     = stopBeforeBreak ? `Stop ${breakLegIdx + 1} (${stopBeforeBreak.locationText ?? stopBeforeBreak.postcode ?? "unknown"})` : "the previous stop";
+    const afterLabel      = stopAfterBreak  ? `Stop ${breakLegIdx + 2} (${stopAfterBreak.locationText  ?? stopAfterBreak.postcode  ?? "unknown"})` : "the next stop";
+    const totalWithBreak  = Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10;
+
+    // Key insight: loading/unloading does NOT count as a break
+    const restNote = restStopAfterBreak
+      ? `There is a non-work stop later in the route that could work as a rest point.`
+      : `There is NO dedicated rest stop in the route between ${beforeLabel} and the end — the driver will need to find a services or layby between ${beforeLabel} and ${afterLabel}.`;
 
     breakNote =
-      `\nBREAK PLANNING (estimated driving times only — actual depends on tachograph):\n` +
-      `  Estimated driving at break point: ~${driveHrs} h — driver will need a break around here.\n` +
-      `  Break should be taken at: ${stopLabel}${isAtStop ? " — this is a real stop, driver can take the break here" : " — no stop here, run may need a waypoint adding"}.\n` +
-      `  Planned break: 45 min (or split: 15 min now + 30 min at next stop).\n` +
-      `  Add ~45 min to all estimated arrivals from ${stopLabel} onwards.\n` +
+      `\nBREAK PLANNING (estimates only — actual depends on tachograph):\n` +
+      `  Estimated ~${driveHrs} h driving accumulated between ${beforeLabel} and ${afterLabel}.\n` +
+      `  The driver will likely need a ~45-min break somewhere between these two stops.\n` +
+      `  IMPORTANT: loading and unloading time does NOT count as a break — the driver must be completely stopped and resting, e.g. at services or a layby.\n` +
+      `  ${restNote}\n` +
+      `  Add ~45 min to all estimated arrivals from ${afterLabel} onwards.\n` +
       `  Estimated total run including break: ~${totalWithBreak} h.`;
   } else if (!breakRequired && totalDriveMin > 0) {
     const driveHrs = (totalDriveMin / 60).toFixed(1);
-    breakNote = `\nBREAK PLANNING: estimated driving ~${driveHrs} h — under 4.5 h, no break expected needed for this run.`;
+    breakNote = `\nBREAK PLANNING: estimated driving ~${driveHrs} h — under 4.5 h, no break expected to be needed.`;
   }
 
   // ── Build prompt ──────────────────────────────────────────────────────────
