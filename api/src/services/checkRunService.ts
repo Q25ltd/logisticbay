@@ -187,45 +187,63 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const BREAK_TRIGGER_MIN  = 270; // 4.5 h
   const BREAK_DURATION_MIN = 45;
 
-  // Walk through legs accumulating drive time; note which stop the break falls after.
-  let cumulativeDriveMin = 0;
-  let breakAfterStopIdx: number | null = null;   // 0-based index into stops[]
-  let driveMinAtBreak: number | null   = null;
+  // Walk through legs accumulating drive time.
+  // Determine: (a) does a break fall within the run, (b) does it land at a stop or mid-road?
+  let cumulativeDriveMin  = 0;
+  let driveBeforeLeg: number[] = []; // drive accumulated BEFORE each leg starts
 
   for (let i = 0; i < legs.length; i++) {
-    const legMin = legs[i].driveMin ?? 0;
-    cumulativeDriveMin += legMin;
-    if (breakAfterStopIdx === null && cumulativeDriveMin >= BREAK_TRIGGER_MIN) {
-      // Break must be taken at the next stop (index i+1)
-      breakAfterStopIdx = i + 1;
-      driveMinAtBreak   = cumulativeDriveMin;
+    driveBeforeLeg.push(cumulativeDriveMin);
+    cumulativeDriveMin += legs[i].driveMin ?? 0;
+  }
+
+  const breakRequired     = totalDriveMin >= BREAK_TRIGGER_MIN;
+  const breakEffectiveMin = breakRequired ? BREAK_DURATION_MIN : 0;
+
+  // Find exactly where the 4.5 h threshold is crossed
+  let breakAfterStopIdx: number | null = null;  // which stop the driver should take the break at
+  let breakMidLeg      = false;                 // true if threshold is crossed mid-leg (no stop available)
+  let driveMinAtBreak  = 0;
+
+  for (let i = 0; i < legs.length; i++) {
+    const legMin    = legs[i].driveMin ?? 0;
+    const driveAfter = driveBeforeLeg[i] + legMin;
+    if (driveAfter >= BREAK_TRIGGER_MIN) {
+      driveMinAtBreak = driveAfter;
+      // If there is a real stop at i+1 → break can happen there
+      if (stops[i + 1]) {
+        breakAfterStopIdx = i + 1;
+        breakMidLeg       = false;
+      } else {
+        // Threshold crossed on the last leg — no following stop
+        breakAfterStopIdx = i;  // must stop before leaving this stop
+        breakMidLeg       = false;
+      }
+      break;
     }
   }
 
-  const breakRequired    = totalDriveMin >= BREAK_TRIGGER_MIN;
-  const breakEffectiveMin = breakRequired ? BREAK_DURATION_MIN : 0;
-
-  // Build a human-readable break note for the prompt.
-  // We say "estimated" and "likely" — these are planning indicators, not tachograph readings.
+  // Build a plain data note passed to Claude — concrete numbers, no legal opinion.
   let breakNote = "";
   if (breakRequired && breakAfterStopIdx !== null) {
-    const stopLabel = stops[breakAfterStopIdx]
-      ? `Stop ${breakAfterStopIdx + 1} (${stops[breakAfterStopIdx].locationText ?? stops[breakAfterStopIdx].postcode ?? "unknown"})`
+    const breakStop = stops[breakAfterStopIdx];
+    const stopLabel = breakStop
+      ? `Stop ${breakAfterStopIdx + 1} (${breakStop.locationText ?? breakStop.postcode ?? "unknown"})`
       : `stop ${breakAfterStopIdx + 1}`;
-    const driveHrs = (driveMinAtBreak! / 60).toFixed(1);
+    const driveHrs  = (driveMinAtBreak / 60).toFixed(1);
+    const isAtStop  = !!breakStop;
+    const totalWithBreak = Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10;
+
     breakNote =
-      `\n⚠ BREAK PLANNING FLAG (estimated — actual obligation set by tachograph):\n` +
-      `  Based on estimated distances, the driver will likely accumulate ~4.5 hours of driving around the leg into ${stopLabel} (estimated ${driveHrs} h).\n` +
-      `  UK driving hours rules require a break after 4.5 h driving. Plan for a ~45-minute break at or before ${stopLabel}.\n` +
-      `  The break can be split: 15 min first, then 30 min later — always that order.\n` +
-      `  For arrival estimates after the break, add ~${BREAK_DURATION_MIN} minutes to times from ${stopLabel} onwards.\n` +
-      `  Estimated total run time including break: ~${Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10} hours.\n` +
-      `  Note: actual break timing depends on real driving time recorded by the tachograph — always check.`;
+      `\nBREAK PLANNING (estimated driving times only — actual depends on tachograph):\n` +
+      `  Estimated driving at break point: ~${driveHrs} h — driver will need a break around here.\n` +
+      `  Break should be taken at: ${stopLabel}${isAtStop ? " — this is a real stop, driver can take the break here" : " — no stop here, run may need a waypoint adding"}.\n` +
+      `  Planned break: 45 min (or split: 15 min now + 30 min at next stop).\n` +
+      `  Add ~45 min to all estimated arrivals from ${stopLabel} onwards.\n` +
+      `  Estimated total run including break: ~${totalWithBreak} h.`;
   } else if (!breakRequired && totalDriveMin > 0) {
     const driveHrs = (totalDriveMin / 60).toFixed(1);
-    breakNote =
-      `\n✓ BREAK FLAG: estimated driving is ${driveHrs} h — under the 4.5 h planning threshold, so no break appears needed for this run.\n` +
-      `  Note: actual obligation depends on the tachograph reading, not this estimate.`;
+    breakNote = `\nBREAK PLANNING: estimated driving ~${driveHrs} h — under 4.5 h, no break expected needed for this run.`;
   }
 
   // ── Build prompt ──────────────────────────────────────────────────────────
@@ -286,32 +304,22 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}\n${breakNote}`;
 
   const systemPrompt =
-    `You are a UK road freight planning assistant helping a transport planner review a run. ` +
-    `Write like a knowledgeable colleague — plain conversational English, no jargon. ` +
+    `You are a UK road freight planning assistant. Plain English, like a helpful colleague. ` +
 
-    `HONESTY RULES — follow these exactly: ` +
-    `(1) All driving times and arrival estimates in the data are ESTIMATES based on approximate road distances. ` +
-    `    Real journey times depend on traffic, roadworks, and the driver's actual route. ` +
-    `    Always say "estimated" or "roughly" when giving times — never present them as exact. ` +
-    `(2) The break flag in the data is a PLANNING INDICATOR, not a legal ruling. ` +
-    `    The actual legal break obligation is determined by the driver's tachograph reading, not our estimate. ` +
-    `    When a break is flagged, say the driver "will likely need" or "should plan for" a break — not "must" or "is legally required to". ` +
-    `    Always add: "Check the actual tachograph." ` +
-    `(3) Do not state specific law numbers, regulation names, or penalty amounts — you don't have verified legal knowledge. ` +
-    `    If you want to note it's a legal requirement, say "UK driving hours rules require" — nothing more specific. ` +
-    `(4) Never say a window is definitely met or definitely missed based on estimates. Say "looks like", "should reach", "may miss". ` +
+    `These are ESTIMATES — all times, distances, and the break point are based on approximate distances. ` +
+    `Say "roughly", "around", "looks like" — never present estimates as exact. ` +
 
-    `WHAT YOU DO KNOW (and can state): ` +
-    `UK HGV drivers need a break after accumulating 4.5 hours of driving. ` +
-    `The break can be split: 15 min first, then 30 min. Maximum driving per day is 9 hours. ` +
-    `Use these as planning guidance — not as legal verdicts. ` +
+    `For the break: the data tells you if a break is needed and where it falls. ` +
+    `Your job is to answer: does the break land at a real stop the driver can use, or is there no stop there? ` +
+    `If the break falls at a real stop — that's fine, say so. ` +
+    `If there's no stop at the break point — flag it: the planner needs to add a break stop to the run. ` +
+    `Do not give legal opinions. Just say "driver will likely need a break around here" and note whether there's a stop to take it at. ` +
 
-    `Time window maths: if estimated arrival is before window close = window is likely fine. ` +
-    `Only flag a window concern when estimated arrival is after the close time. ` +
-    `Example: estimated arrival 9:16am, window closes 9:30am → 14 minutes to spare, looks fine. ` +
+    `Time window maths: estimated arrival BEFORE close = window likely fine. Only flag a concern when estimated arrival is AFTER close. ` +
+    `Example: arrive roughly 9:16am, window closes 9:30am — 14 minutes to spare, that's fine. ` +
 
-    `Use 12-hour clock with am/pm. Never mention UTC, APIs, routing engines, or leg names. ` +
-    `Return ONLY valid JSON, no markdown fences.`;
+    `Use 12-hour am/pm clock. No UTC, no API names, no technical terms. ` +
+    `Return ONLY valid JSON, no markdown.`;
 
   const vehicleLine = input.vehicle
     ? `Vehicle: ${input.vehicle.weightT != null ? `${input.vehicle.weightT}t GVW` : "weight unknown"}, ` +
