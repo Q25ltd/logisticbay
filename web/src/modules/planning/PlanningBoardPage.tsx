@@ -374,7 +374,11 @@ function RunCard({
             customerName:    a.jobPart.job.customerName,
           }));
 
-        // Waypoint stops — convert HH:MM scheduledTime to ISO using plannedDate
+        // plannedDate comes back from the API as a full ISO datetime ("2026-05-25T12:00:00.000Z")
+        // — we only want the YYYY-MM-DD date part so we can build valid ISO datetimes.
+        const planDate = run.plannedDate ? run.plannedDate.slice(0, 10) : null;
+
+        // Waypoint stops — convert HH:MM scheduledTime to ISO using planDate
         // Coordinates may be on the linked location record rather than the waypoint itself
         const waypointStops = [...run.waypoints]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
@@ -385,8 +389,8 @@ function RunCard({
             postcode:        w.postcode ?? w.location?.postcode ?? null,
             lat:             w.lat ?? w.location?.lat ?? null,
             lng:             w.lng ?? w.location?.lng ?? null,
-            timeWindowStart: w.scheduledTime && run.plannedDate
-              ? `${run.plannedDate}T${w.scheduledTime}:00Z`
+            timeWindowStart: w.scheduledTime && planDate
+              ? `${planDate}T${w.scheduledTime}:00Z`
               : null,
             timeWindowEnd:   null,
             customerName:    null,
@@ -430,8 +434,8 @@ function RunCard({
         // Use run's estimatedStartTime, or fall back to the depot_start waypoint's scheduledTime
         const depotStart = run.waypoints.find(w => w.waypointType === "depot_start");
         const departureTime = run.estimatedStartTime
-          ?? (depotStart?.scheduledTime && run.plannedDate
-              ? `${run.plannedDate}T${depotStart.scheduledTime}:00Z`
+          ?? (depotStart?.scheduledTime && planDate
+              ? `${planDate}T${depotStart.scheduledTime}:00Z`
               : null);
 
         const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: departureTime, vehicle });
