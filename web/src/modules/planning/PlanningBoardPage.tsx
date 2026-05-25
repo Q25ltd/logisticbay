@@ -236,6 +236,43 @@ function fmtStopTime(item: PlannerWorkItem): string | null {
   return null;
 }
 
+// Goods-type → compatibility label so planners can spot load conflicts at a glance
+const GOODS_COMPAT: Record<string, { label: string; colour: string }> = {
+  liquid:            { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
+  bulk_liquid:       { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
+  bulk:              { label: "Bulk",     colour: "bg-stone-100 text-stone-700" },
+  food_refrigerated: { label: "Food ❄",  colour: "bg-blue-50 text-blue-800"    },
+  refrigerated:      { label: "Temp",     colour: "bg-blue-50 text-blue-800"    },
+  pallets:           { label: "Pallets",  colour: "bg-slate-100 text-slate-700" },
+  general_goods:     { label: "General",  colour: "bg-slate-100 text-slate-600" },
+  steel:             { label: "Steel",    colour: "bg-zinc-100 text-zinc-700"   },
+  machinery:         { label: "Machinery",colour: "bg-zinc-100 text-zinc-700"   },
+  timber:            { label: "Timber",   colour: "bg-amber-50 text-amber-800"  },
+  waste:             { label: "Waste",    colour: "bg-red-50 text-red-700"      },
+};
+
+function goodsCompatBadge(goodsType: string | null | undefined) {
+  if (!goodsType) return null;
+  const m = GOODS_COMPAT[goodsType.toLowerCase()];
+  return m ? <Badge colour={m.colour}>{m.label}</Badge>
+           : <Badge colour="bg-slate-100 text-slate-600">{cap(goodsType)}</Badge>;
+}
+
+// Format a date relative to today: "Today", "Tomorrow", "Mon 26 May"
+function relativeDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d     = iso.slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const tom   = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().slice(0, 10); })();
+  if (d === today) return "Today";
+  if (d === tom)   return "Tomorrow";
+  return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function partDate(part: PlannerWorkItem): string | null {
+  return part.timeWindowStart?.slice(0, 10) ?? part.bookedTime?.slice(0, 10) ?? null;
+}
+
 function JobWorkCard({
   group,
   onAddJobToRun,
@@ -248,8 +285,7 @@ function JobWorkCard({
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
 
-  // Auto-select when only one run exists
-  const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
+  const draftRuns      = runs.filter(r => r.status === "draft" || r.status === "assigned");
   const effectiveRunId = selectedRunId || (draftRuns.length === 1 ? draftRuns[0].id : "");
 
   async function handleAdd() {
@@ -259,30 +295,59 @@ function JobWorkCard({
     finally { setAdding(false); }
   }
 
+  const collections = group.parts.filter(p => p.nextAction.startsWith("Collect"));
+  const deliveries  = group.parts.filter(p => p.nextAction.startsWith("Deliver"));
+  const others      = group.parts.filter(p => !p.nextAction.startsWith("Collect") && !p.nextAction.startsWith("Deliver"));
+  const rep         = group.parts[0];
+
+  // ── Delivery-blocked: load not yet collected (no LoadTrack custody)
+  const deliveryBlocked = group.warnings.some(w => w.toLowerCase().includes("not yet collected"));
+
+  // ── Multi-day: collection and delivery on different days
+  const collectDate  = collections[0] ? partDate(collections[0]) : null;
+  const deliverDate  = deliveries[0]  ? partDate(deliveries[0])  : null;
+  const isMultiDay   = collectDate && deliverDate && collectDate !== deliverDate;
+
+  // ── Impossible schedule: delivery window ends before collection window starts
+  const collectStart = collections[0]?.timeWindowStart ?? collections[0]?.bookedTime;
+  const deliverEnd   = deliveries[0]?.timeWindowEnd   ?? deliveries[0]?.timeWindowStart ?? deliveries[0]?.bookedTime;
+  const impossible   = collectStart && deliverEnd && deliverEnd < collectStart;
+
+  // ── Load incompatibility hint
+  const isLiquid = rep.goodsType?.toLowerCase().includes("liquid") || rep.goodsType?.toLowerCase().includes("bulk");
+  const isADR    = rep.hasHazardous;
+  const isTemp   = rep.hasTempControl;
+
   const borderColour =
+    impossible             ? "border-l-red-600"   :
+    deliveryBlocked        ? "border-l-orange-500" :
     group.riskLevel === "high"   ? "border-l-red-500"   :
     group.riskLevel === "medium" ? "border-l-amber-400" :
     group.riskLevel === "low"    ? "border-l-yellow-300" :
     "border-l-slate-200";
 
-  // Collect and deliver parts, sorted: collections first
-  const collections = group.parts.filter(p => p.nextAction.startsWith("Collect"));
-  const deliveries  = group.parts.filter(p => p.nextAction.startsWith("Deliver"));
-  const others      = group.parts.filter(p => !p.nextAction.startsWith("Collect") && !p.nextAction.startsWith("Deliver"));
-
-  // Representative part for vehicle/goods info
-  const rep = group.parts[0];
+  const today = new Date().toISOString().slice(0, 10);
 
   return (
     <div className={`bg-white rounded border border-border border-l-4 ${borderColour} mb-1.5 overflow-hidden`}>
 
-      {/* ── Top bar: customer + ref + risk ── */}
-      <div className="flex items-center justify-between px-2.5 pt-2 pb-1 gap-2">
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between px-2.5 pt-2 pb-0.5 gap-2">
         <div className="font-semibold text-[13px] text-primary leading-tight truncate">
           {group.customerName ?? "Unknown customer"}
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {group.riskLevel !== "none" && (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {impossible && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+              ⛔ IMPOSSIBLE
+            </span>
+          )}
+          {!impossible && deliveryBlocked && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">
+              ▶ COLLECT FIRST
+            </span>
+          )}
+          {!impossible && !deliveryBlocked && group.riskLevel !== "none" && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
               group.riskLevel === "high"   ? "bg-red-100 text-red-700"    :
               group.riskLevel === "medium" ? "bg-amber-100 text-amber-700" :
@@ -291,72 +356,111 @@ function JobWorkCard({
               {group.riskLevel === "high" ? "⚠ URGENT" : group.riskLevel === "medium" ? "⚠ TIGHT" : "ℹ NOTE"}
             </span>
           )}
+          {isMultiDay && (
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">
+              Multi-day
+            </span>
+          )}
           {group.jobReference && (
             <span className="font-mono text-[10px] text-muted">{group.jobReference}</span>
           )}
         </div>
       </div>
 
-      {/* ── Collection + delivery rows ── */}
-      <div className="px-2.5 pb-1 space-y-0.5">
+      {/* ── Stop rows: collect first, always ── */}
+      <div className="px-2.5 py-1 space-y-0.5">
         {[...collections, ...others, ...deliveries].map(part => {
-          const time     = fmtStopTime(part);
+          const time      = fmtStopTime(part);
           const isCollect = part.nextAction.startsWith("Collect");
           const isDrop    = part.nextAction.startsWith("Deliver");
           const location  = part.currentLocation ?? part.finalDestination ?? "—";
           const postcode  = isCollect ? part.currentPostcode : part.finalPostcode;
+          const dDate     = partDate(part);
+          const dateLabel = dDate && dDate !== today ? relativeDate(dDate) : null;
+          const isBlocked = isDrop && deliveryBlocked;
 
           return (
-            <div key={part.jobPartId} className="flex items-baseline gap-2 text-xs">
+            <div key={part.jobPartId}
+              className={`flex items-baseline gap-1.5 ${isBlocked ? "opacity-50" : ""}`}>
+
               {/* Action label */}
               <span className={`flex-shrink-0 font-bold text-[10px] uppercase w-14 ${
-                isCollect ? "text-blue-600" : isDrop ? "text-green-700" : "text-slate-500"
+                isCollect ? "text-blue-600" :
+                isDrop    ? (isBlocked ? "text-slate-400" : "text-green-700") :
+                "text-slate-500"
               }`}>
                 {isCollect ? "Collect" : isDrop ? "Deliver" : "Stop"}
               </span>
 
-              {/* Time — biggest, most important */}
-              <span className={`flex-shrink-0 font-bold text-[13px] w-24 tabular-nums ${
-                time ? (isCollect ? "text-blue-700" : "text-green-800") : "text-slate-300"
+              {/* Date badge — only when not today or multi-day job */}
+              {dateLabel && (
+                <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-violet-50 text-violet-700">
+                  {dateLabel}
+                </span>
+              )}
+
+              {/* Time — the headline number */}
+              <span className={`flex-shrink-0 font-bold text-[13px] tabular-nums ${
+                time
+                  ? (isCollect ? "text-blue-700" : isBlocked ? "text-slate-400" : "text-green-800")
+                  : "text-slate-300"
               }`}>
-                {time ?? "No time"}
+                {time ?? "—"}
               </span>
 
-              {/* Location */}
-              <span className="text-slate-500 text-[11px] truncate leading-tight">
-                {postcode
-                  ? <><span className="font-medium text-slate-700">{postcode}</span>{location !== postcode ? ` · ${location}` : ""}</>
-                  : location
-                }
-              </span>
+              {/* Blocked indicator replaces location when delivery is locked */}
+              {isBlocked ? (
+                <span className="text-[10px] font-semibold text-orange-600">⛔ collect first</span>
+              ) : (
+                <span className="text-slate-500 text-[11px] truncate leading-tight">
+                  {postcode
+                    ? <><span className="font-medium text-slate-700">{postcode}</span>
+                        {location !== postcode ? ` · ${location}` : ""}
+                      </>
+                    : location
+                  }
+                </span>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* ── Metadata row ── */}
-      <div className="flex items-center gap-1.5 px-2.5 pb-1.5 flex-wrap">
+      {/* ── Load incompatibility strip — shown when this load cannot share with normal dry freight ── */}
+      {(isLiquid || isADR || isTemp) && (
+        <div className={`px-2.5 py-0.5 text-[10px] font-semibold flex items-center gap-1.5 border-t ${
+          isADR    ? "bg-orange-50 text-orange-700 border-orange-100" :
+          isLiquid ? "bg-cyan-50 text-cyan-800 border-cyan-100"      :
+          "bg-blue-50 text-blue-700 border-blue-100"
+        }`}>
+          {isADR    && <><span>☢</span><span>ADR — do not mix with food or general goods</span></>}
+          {!isADR && isLiquid && <><span>💧</span><span>Liquid load — tanker only, cannot share with dry freight</span></>}
+          {!isADR && !isLiquid && isTemp && <><span>❄</span><span>Temperature controlled — fridge trailer only</span></>}
+        </div>
+      )}
+
+      {/* ── Metadata ── */}
+      <div className="flex items-center gap-1.5 px-2.5 py-1 flex-wrap border-t border-slate-50">
         {rep.vehicleCategory && <Badge colour="bg-slate-100 text-slate-600">{cap(rep.vehicleCategory)}</Badge>}
-        {rep.goodsType        && <Badge colour="bg-slate-100 text-slate-500">{cap(rep.goodsType)}</Badge>}
-        {rep.hasTempControl   && <Badge colour="bg-blue-50 text-blue-700">❄ Temp</Badge>}
-        {rep.hasHazardous     && <Badge colour="bg-orange-50 text-orange-700">ADR</Badge>}
-        {rep.weight  != null && rep.weight  > 0 && (
-          <span className="text-[11px] text-muted">{rep.weight.toLocaleString()} kg</span>
-        )}
-        {rep.quantity != null && rep.quantity > 0 && (
-          <span className="text-[11px] text-muted">
-            {rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}
-          </span>
+        {goodsCompatBadge(rep.goodsType)}
+        {rep.weight   != null && rep.weight   > 0 && <span className="text-[11px] text-muted">{rep.weight.toLocaleString()} kg</span>}
+        {rep.quantity != null && rep.quantity > 0  && (
+          <span className="text-[11px] text-muted">{rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}</span>
         )}
       </div>
 
-      {/* ── Warnings (collapsed, only shown when present) ── */}
-      {group.warnings.length > 0 && (
+      {/* ── Warnings ── show impossible schedule prominently, others collapsed ── */}
+      {impossible && (
+        <div className="px-2.5 py-1 bg-red-50 text-red-700 text-[11px] border-t border-red-100 font-medium">
+          ⛔ Delivery window closes before collection can start — schedule is impossible
+        </div>
+      )}
+      {!impossible && group.warnings.length > 0 && (
         <div className={`px-2.5 py-1 border-t text-[11px] flex items-start gap-1 ${
           group.riskLevel === "high" ? "bg-red-50 text-red-700 border-red-100" : "bg-amber-50 text-amber-700 border-amber-100"
         }`}>
           <span className="flex-shrink-0">⚠</span>
-          <span>{group.warnings[0]}{group.warnings.length > 1 ? ` (+${group.warnings.length - 1} more)` : ""}</span>
+          <span>{group.warnings[0]}{group.warnings.length > 1 ? ` · +${group.warnings.length - 1} more` : ""}</span>
         </div>
       )}
 
@@ -366,22 +470,19 @@ function JobWorkCard({
           <span className="text-[11px] text-muted italic flex-1">Create a run first</span>
         ) : draftRuns.length === 1 ? (
           <>
-            <span className="text-[11px] text-muted flex-1 truncate">→ {draftRuns[0].runReference}{draftRuns[0].driver ? ` · ${draftRuns[0].driver.displayName}` : ""}</span>
-            <button
-              disabled={adding}
-              onClick={handleAdd}
-              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
-            >
+            <span className="text-[11px] text-muted flex-1 truncate">
+              → {draftRuns[0].runReference}{draftRuns[0].driver ? ` · ${draftRuns[0].driver.displayName}` : ""}
+            </span>
+            <button disabled={adding} onClick={handleAdd}
+              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 whitespace-nowrap">
               {adding ? "…" : "Add →"}
             </button>
           </>
         ) : (
           <>
-            <select
-              className="input text-xs py-1 flex-1 min-w-0"
+            <select className="input text-xs py-1 flex-1 min-w-0"
               value={selectedRunId}
-              onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
-            >
+              onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}>
               <option value="">Pick run…</option>
               {draftRuns.map(r => (
                 <option key={r.id} value={r.id}>
@@ -389,11 +490,8 @@ function JobWorkCard({
                 </option>
               ))}
             </select>
-            <button
-              disabled={!selectedRunId || adding}
-              onClick={handleAdd}
-              className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
-            >
+            <button disabled={!selectedRunId || adding} onClick={handleAdd}
+              className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap">
               {adding ? "…" : "Add →"}
             </button>
           </>
