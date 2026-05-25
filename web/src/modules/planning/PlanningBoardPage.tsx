@@ -31,7 +31,7 @@ const WAYPOINT_TYPE_LABEL: Record<string, string> = {
   yard_pickup:    "Yard pickup",
   hub_drop:       "Hub drop",
   return_to_base: "Return to base",
-  custom:         "Waypoint",
+  custom:         "Stop",
 };
 
 function cap(s: string): string {
