@@ -29,9 +29,18 @@ export interface RunStop {
   customerName?:    string | null;
 }
 
+export interface VehicleRestrictions {
+  weightT?:   number | null;  // combined GVW in tonnes
+  heightM?:   number | null;
+  widthM?:    number | null;
+  lengthM?:   number | null;
+  axleLoadT?: number | null;
+}
+
 export interface RunFeasibilityInput {
   stops:               RunStop[];
   estimatedStartTime?: string | null; // ISO datetime
+  vehicle?:            VehicleRestrictions | null;
 }
 
 export interface RunFeasibilityResult {
@@ -124,9 +133,16 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
       return { fromIdx: i, toIdx: i + 1, straightKm: null, roadKm: null, driveMin: null, source: "unknown" } as LegInfo;
     }
 
-    // Try ORS HGV routing first (actual road network, respects weight/height/bridge limits)
-    // ORS result is accurate even when coords came from postcode centroid (±100 m)
-    const ors = await getHgvLeg({ lat: aLat, lng: aLng }, { lat: bLat, lng: bLng }).catch(() => null);
+    // Try ORS HGV routing — pass real vehicle dimensions so the route respects
+    // actual weight bridges, low bridges and width restrictions for this vehicle.
+    const hgvParams = input.vehicle ? {
+      ...(input.vehicle.weightT   != null ? { weight:    input.vehicle.weightT }   : {}),
+      ...(input.vehicle.heightM   != null ? { height:    input.vehicle.heightM }   : {}),
+      ...(input.vehicle.widthM    != null ? { width:     input.vehicle.widthM }    : {}),
+      ...(input.vehicle.lengthM   != null ? { length:    input.vehicle.lengthM }   : {}),
+      ...(input.vehicle.axleLoadT != null ? { axle_load: input.vehicle.axleLoadT } : {}),
+    } : {};
+    const ors = await getHgvLeg({ lat: aLat, lng: aLng }, { lat: bLat, lng: bLng }, hgvParams).catch(() => null);
     if (ors) {
       return {
         fromIdx: i, toIdx: i + 1,
@@ -221,8 +237,14 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     `Be direct — one or two plain-English sentences a transport planner would immediately understand. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
+  const vehicleLine = input.vehicle
+    ? `Vehicle: ${input.vehicle.weightT != null ? `${input.vehicle.weightT}t GVW` : "weight unknown"}, ` +
+      `${input.vehicle.heightM != null ? `${input.vehicle.heightM}m high` : "height unknown"}, ` +
+      `${input.vehicle.lengthM != null ? `${input.vehicle.lengthM}m long` : "length unknown"}`
+    : "Vehicle: dimensions not set (ORS used default 44t / 4.0m / 16.5m constraints)";
+
   const userPrompt =
-    `${startLine}\n${totalLine}\n\n` +
+    `${startLine}\n${vehicleLine}\n${totalLine}\n\n` +
     `STOPS IN ORDER:\n${stopLines.join("\n")}\n\n` +
     `Question: Can the driver realistically complete this run and meet all time windows?\n\n` +
     `Return exactly this JSON (no extra keys, no markdown):\n` +

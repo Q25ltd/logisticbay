@@ -241,7 +241,17 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         });
       }
 
-      const body = request.body as { stops?: unknown; estimatedStartTime?: unknown };
+      const body = request.body as {
+        stops?: unknown;
+        estimatedStartTime?: unknown;
+        vehicle?: {
+          weightT?:   number | null;
+          heightM?:   number | null;
+          widthM?:    number | null;
+          lengthM?:   number | null;
+          axleLoadT?: number | null;
+        } | null;
+      };
 
       if (!Array.isArray(body.stops) || body.stops.length === 0) {
         return reply.status(400).send({ error: "stops is required (non-empty array)" });
@@ -251,6 +261,7 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         const result = await checkRun({
           stops:               body.stops as RunStop[],
           estimatedStartTime:  typeof body.estimatedStartTime === "string" ? body.estimatedStartTime : undefined,
+          vehicle:             body.vehicle ?? null,
         });
         return reply.send(result);
       } catch (err: unknown) {

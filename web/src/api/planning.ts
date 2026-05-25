@@ -119,6 +119,10 @@ export interface FleetTrailer {
   bodyType:     string;
   status:       string;
   notes?:       string | null;
+  heightM?:     number | null;
+  widthM?:      number | null;
+  lengthM?:     number | null;
+  axleLoadT?:   number | null;
 }
 
 export interface FleetUnit {
@@ -126,6 +130,11 @@ export interface FleetUnit {
   registration: string;
   status:       string;
   category?:    string | null;
+  gvwClass?:    string | null;
+  heightM?:     number | null;
+  widthM?:      number | null;
+  lengthM?:     number | null;
+  axleLoadT?:   number | null;
 }
 
 export interface DepotLocation {

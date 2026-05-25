@@ -152,8 +152,17 @@ export const aiApi = {
     api.post<TrailerSuggestion>("/ai/suggest-run-trailer", input),
   checkVehicleLoad: (input: LoadVehicleCheckInput) =>
     api.post<LoadVehicleCheckResult>("/ai/check-vehicle-load", input),
-  checkRun: (input: { stops: RunStopInput[]; estimatedStartTime?: string | null }) =>
-    api.post<RunFeasibilityResult>("/ai/check-run", input),
+  checkRun: (input: {
+    stops: RunStopInput[];
+    estimatedStartTime?: string | null;
+    vehicle?: {
+      weightT?:   number | null;  // combined GVW in tonnes
+      heightM?:   number | null;
+      widthM?:    number | null;
+      lengthM?:   number | null;
+      axleLoadT?: number | null;
+    } | null;
+  }) => api.post<RunFeasibilityResult>("/ai/check-run", input),
   lookupAreas:   (postcodes: string[]) =>
     api.post<AreaInfo[]>("/ai/area-lookup", { postcodes }),
   status:        () =>

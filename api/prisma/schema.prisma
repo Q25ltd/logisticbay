@@ -942,6 +942,12 @@ model FleetUnit {
   status             String   @default("available")
   notes              String?
 
+  // Physical dimensions for HGV route restriction checks (ORS)
+  heightM            Float?   // overall height in metres (cab + any body)
+  widthM             Float?   // overall width in metres
+  lengthM            Float?   // overall length in metres (cab only, excl. trailer)
+  axleLoadT          Float?   // max axle load in tonnes
+
   assignedDriverId   Int?
   currentTrailerId   Int?
   yardLocation       String?
@@ -968,6 +974,12 @@ model FleetTrailer {
   onboardEquipment Json?
   status           String   @default("available")
   notes            String?
+
+  // Physical dimensions for HGV route restriction checks (ORS)
+  heightM          Float?   // overall height in metres (loaded)
+  widthM           Float?   // overall width in metres
+  lengthM          Float?   // trailer length in metres (numeric form of trailerLength)
+  axleLoadT        Float?   // max axle load in tonnes
 
   attachedUnitId   Int?
   linkedJobId      Int?

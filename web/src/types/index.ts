@@ -334,6 +334,10 @@ export interface FleetUnit {
   assignedDriverId?: number | null;
   currentTrailerId?: number | null;
   yardLocation?: string | null;
+  heightM?:   number | null;
+  widthM?:    number | null;
+  lengthM?:   number | null;
+  axleLoadT?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -352,6 +356,10 @@ export interface FleetTrailer {
   attachedUnitId?: number | null;
   linkedJobId?: number | null;
   yardLocation?: string | null;
+  heightM?:   number | null;
+  widthM?:    number | null;
+  lengthM?:   number | null;
+  axleLoadT?: number | null;
   createdAt: string;
   updatedAt: string;
 }

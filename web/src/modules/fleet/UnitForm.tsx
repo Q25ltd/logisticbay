@@ -31,6 +31,10 @@ export default function UnitForm({ initial, onSave, onCancel }: {
     status:        initial?.status        ?? "available",
     notes:         initial?.notes         ?? "",
     yardLocation:  initial?.yardLocation  ?? "",
+    heightM:       initial?.heightM != null  ? String(initial.heightM)  : "",
+    widthM:        initial?.widthM  != null  ? String(initial.widthM)   : "",
+    lengthM:       initial?.lengthM != null  ? String(initial.lengthM)  : "",
+    axleLoadT:     initial?.axleLoadT != null ? String(initial.axleLoadT) : "",
   });
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -68,6 +72,10 @@ export default function UnitForm({ initial, onSave, onCancel }: {
         status:        form.status,
         notes:         form.notes.trim()        || undefined,
         yardLocation:  form.yardLocation.trim() || undefined,
+        heightM:       form.heightM   ? parseFloat(form.heightM)   : null,
+        widthM:        form.widthM    ? parseFloat(form.widthM)    : null,
+        lengthM:       form.lengthM   ? parseFloat(form.lengthM)   : null,
+        axleLoadT:     form.axleLoadT ? parseFloat(form.axleLoadT) : null,
       };
       if (initial) {
         await fleetApi.units.update(initial.id, payload);
@@ -148,6 +156,34 @@ export default function UnitForm({ initial, onSave, onCancel }: {
         placeholder="Bay 3, North yard…"
         caseRule="proper_name"
       />
+
+      {/* Vehicle dimensions — used for ORS HGV route restriction checks */}
+      <div className="mt-4 mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
+        Vehicle dimensions (for route planning)
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-sm font-semibold">
+          Height (m)
+          <input type="number" step="0.01" min="0" max="5" className="input mt-1 w-full"
+            placeholder="e.g. 3.8" value={form.heightM} onChange={set("heightM")} />
+        </label>
+        <label className="block text-sm font-semibold">
+          Width (m)
+          <input type="number" step="0.01" min="0" max="3" className="input mt-1 w-full"
+            placeholder="e.g. 2.55" value={form.widthM} onChange={set("widthM")} />
+        </label>
+        <label className="block text-sm font-semibold">
+          Cab length (m)
+          <input type="number" step="0.01" min="0" max="10" className="input mt-1 w-full"
+            placeholder="e.g. 6.0" value={form.lengthM} onChange={set("lengthM")} />
+        </label>
+        <label className="block text-sm font-semibold">
+          Max axle load (t)
+          <input type="number" step="0.1" min="0" max="20" className="input mt-1 w-full"
+            placeholder="e.g. 11.5" value={form.axleLoadT} onChange={set("axleLoadT")} />
+        </label>
+      </div>
+
       <label className="block text-sm font-semibold mt-3">
         Notes
         <textarea

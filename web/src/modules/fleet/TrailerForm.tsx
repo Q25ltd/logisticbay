@@ -29,6 +29,10 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
     status:        initial?.status        ?? "available",
     notes:         initial?.notes         ?? "",
     yardLocation:  initial?.yardLocation  ?? "",
+    heightM:       initial?.heightM   != null ? String(initial.heightM)   : "",
+    widthM:        initial?.widthM    != null ? String(initial.widthM)    : "",
+    lengthM:       initial?.lengthM   != null ? String(initial.lengthM)   : "",
+    axleLoadT:     initial?.axleLoadT != null ? String(initial.axleLoadT) : "",
   });
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -58,6 +62,10 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
         status:        form.status,
         notes:         form.notes.trim()        || undefined,
         yardLocation:  form.yardLocation.trim() || undefined,
+        heightM:       form.heightM   ? parseFloat(form.heightM)   : null,
+        widthM:        form.widthM    ? parseFloat(form.widthM)    : null,
+        lengthM:       form.lengthM   ? parseFloat(form.lengthM)   : null,
+        axleLoadT:     form.axleLoadT ? parseFloat(form.axleLoadT) : null,
       };
       if (initial) {
         await fleetApi.trailers.update(initial.id, payload);
@@ -145,6 +153,34 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
         placeholder="Bay 7, South yard…"
         caseRule="proper_name"
       />
+
+      {/* Trailer dimensions — used for ORS HGV route restriction checks */}
+      <div className="mt-4 mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
+        Trailer dimensions (for route planning)
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-sm font-semibold">
+          Height (m)
+          <input type="number" step="0.01" min="0" max="5.5" className="input mt-1 w-full"
+            placeholder="e.g. 4.2" value={form.heightM} onChange={set("heightM")} />
+        </label>
+        <label className="block text-sm font-semibold">
+          Width (m)
+          <input type="number" step="0.01" min="0" max="3" className="input mt-1 w-full"
+            placeholder="e.g. 2.55" value={form.widthM} onChange={set("widthM")} />
+        </label>
+        <label className="block text-sm font-semibold">
+          Length (m)
+          <input type="number" step="0.01" min="0" max="20" className="input mt-1 w-full"
+            placeholder="e.g. 13.6" value={form.lengthM} onChange={set("lengthM")} />
+        </label>
+        <label className="block text-sm font-semibold">
+          Max axle load (t)
+          <input type="number" step="0.1" min="0" max="20" className="input mt-1 w-full"
+            placeholder="e.g. 11.5" value={form.axleLoadT} onChange={set("axleLoadT")} />
+        </label>
+      </div>
+
       <label className="block text-sm font-semibold mt-3">
         Notes
         <textarea

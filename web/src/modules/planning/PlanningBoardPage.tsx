@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
+import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type FleetUnit, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
 import { api } from "../../api/client";
 import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
@@ -295,6 +295,7 @@ function RunCard({
   isExpanded,
   onToggleExpand,
   trailers,
+  trucks,
   drivers,
   depot,
   onDepotSet,
@@ -310,6 +311,7 @@ function RunCard({
   isExpanded:        boolean;
   onToggleExpand:    () => void;
   trailers:          FleetTrailer[];
+  trucks:            FleetUnit[];
   drivers:           PlanningDriver[];
   depot:             DepotLocation | null;
   onDepotSet:        (d: DepotLocation) => void;
@@ -390,7 +392,39 @@ function RunCard({
         const allStops = [...assignmentStops, ...waypointStops]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
-        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: run.estimatedStartTime });
+        // Derive vehicle dimensions from assigned truck + trailer
+        const truck   = run.assignedTruckId   ? trucks.find(t => t.id === run.assignedTruckId)     : null;
+        const trailer = run.assignedTrailerId  ? trailers.find(t => t.id === run.assignedTrailerId) : null;
+
+        // GVW: parse from truck's gvwClass string e.g. "44t" → 44, "7.5t" → 7.5
+        const gvwT = truck?.gvwClass ? parseFloat(truck.gvwClass) || null : null;
+
+        // Height: taller of truck or trailer (trailer is usually the restriction)
+        const heightM = Math.max(
+          truck?.heightM ?? 0,
+          trailer?.heightM ?? 0,
+        ) || null;
+
+        // Width: wider of the two
+        const widthM = Math.max(
+          truck?.widthM ?? 0,
+          trailer?.widthM ?? 0,
+        ) || null;
+
+        // Length: cab + trailer
+        const lengthM = (truck?.lengthM ?? 0) + (trailer?.lengthM ?? 0) || null;
+
+        // Axle load: stricter of the two
+        const axleLoadT = Math.max(
+          truck?.axleLoadT ?? 0,
+          trailer?.axleLoadT ?? 0,
+        ) || null;
+
+        const vehicle = (gvwT || heightM || widthM || lengthM || axleLoadT)
+          ? { weightT: gvwT, heightM, widthM, lengthM, axleLoadT }
+          : null;
+
+        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: run.estimatedStartTime, vehicle });
         setAiCheck({
           severity: result.severity === "high"  ? "block" :
                     result.severity === "medium" ? "warn"  :
@@ -930,6 +964,7 @@ export default function PlanningBoardPage() {
   const [clusters,       setClusters]       = useState<StopCluster[]>([]);
   const [runs,           setRuns]           = useState<PlanningRun[]>([]);
   const [trailers,       setTrailers]       = useState<FleetTrailer[]>([]);
+  const [trucks,         setTrucks]         = useState<FleetUnit[]>([]);
   const [depot,          setDepot]          = useState<DepotLocation | null>(null);
   const [drivers,        setDrivers]        = useState<PlanningDriver[]>([]);
   const [loadingLeft,    setLoadingLeft]    = useState(false);
@@ -988,6 +1023,7 @@ export default function PlanningBoardPage() {
     try {
       const res = await planningApi.getFleet();
       setTrailers(res.trailers);
+      setTrucks(res.trucks);
       setDepot(res.depot ?? null);
     } catch { /* non-fatal */ }
   }, []);
@@ -1242,6 +1278,7 @@ export default function PlanningBoardPage() {
                   isExpanded={isRunExpanded(run.id)}
                   onToggleExpand={() => toggleRunExpand(run.id)}
                   trailers={trailers}
+                  trucks={trucks}
                   drivers={drivers}
                   depot={depot}
                   onDepotSet={setDepot}

@@ -15,6 +15,10 @@ interface CreateUnitBody {
   status?:       string;
   notes?:        string;
   yardLocation?: string;
+  heightM?:      number | null;
+  widthM?:       number | null;
+  lengthM?:      number | null;
+  axleLoadT?:    number | null;
 }
 
 interface PatchUnitBody {
@@ -27,6 +31,10 @@ interface PatchUnitBody {
   status?:        string;
   notes?:         string;
   yardLocation?:  string;
+  heightM?:       number | null;
+  widthM?:        number | null;
+  lengthM?:       number | null;
+  axleLoadT?:     number | null;
 }
 
 // ── Fleet Trailers ───────────────────────────────────────────────────────────
@@ -42,6 +50,10 @@ interface CreateTrailerBody {
   status?:       string;
   notes?:        string;
   yardLocation?: string;
+  heightM?:      number | null;
+  widthM?:       number | null;
+  lengthM?:      number | null;
+  axleLoadT?:    number | null;
 }
 
 interface PatchTrailerBody {
@@ -55,6 +67,10 @@ interface PatchTrailerBody {
   status?:        string;
   notes?:         string;
   yardLocation?:  string;
+  heightM?:       number | null;
+  widthM?:        number | null;
+  lengthM?:       number | null;
+  axleLoadT?:     number | null;
 }
 
 function legacyUnitClass(value: unknown) {
@@ -150,6 +166,10 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
         status:        body.status ?? "available",
         notes:         body.notes?.trim() ?? null,
         yardLocation:  body.yardLocation?.trim() ?? null,
+        heightM:       body.heightM   ?? null,
+        widthM:        body.widthM    ?? null,
+        lengthM:       body.lengthM   ?? null,
+        axleLoadT:     body.axleLoadT ?? null,
       },
     });
 
@@ -185,6 +205,10 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
         status:        body.status                 ?? unit.status,
         notes:         body.notes !== undefined    ? (body.notes?.trim() || null) : unit.notes,
         yardLocation:  body.yardLocation !== undefined ? (body.yardLocation?.trim() || null) : unit.yardLocation,
+        heightM:       body.heightM   !== undefined ? body.heightM   : unit.heightM,
+        widthM:        body.widthM    !== undefined ? body.widthM    : unit.widthM,
+        lengthM:       body.lengthM   !== undefined ? body.lengthM   : unit.lengthM,
+        axleLoadT:     body.axleLoadT !== undefined ? body.axleLoadT : unit.axleLoadT,
       },
     });
 
@@ -253,6 +277,10 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
         status:        body.status ?? "available",
         notes:         body.notes?.trim() ?? null,
         yardLocation:  body.yardLocation?.trim() ?? null,
+        heightM:       body.heightM   ?? null,
+        widthM:        body.widthM    ?? null,
+        lengthM:       body.lengthM   ?? null,
+        axleLoadT:     body.axleLoadT ?? null,
       },
     });
 
@@ -284,6 +312,10 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
         status:        body.status                 ?? trailer.status,
         notes:         body.notes !== undefined    ? (body.notes?.trim() || null) : trailer.notes,
         yardLocation:  body.yardLocation !== undefined ? (body.yardLocation?.trim() || null) : trailer.yardLocation,
+        heightM:       body.heightM   !== undefined ? body.heightM   : trailer.heightM,
+        widthM:        body.widthM    !== undefined ? body.widthM    : trailer.widthM,
+        lengthM:       body.lengthM   !== undefined ? body.lengthM   : trailer.lengthM,
+        axleLoadT:     body.axleLoadT !== undefined ? body.axleLoadT : trailer.axleLoadT,
       },
     });
 
