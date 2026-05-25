@@ -394,22 +394,32 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         });
       }
 
-      // Full validation — same gates as CJP ready_to_plan save
-      const stopInputs: StructuredJobPartInput[] = job.stops.map(s => ({
-        sequenceNumber:       s.sequenceNumber,
-        type:                 s.type,
-        savedLocationId:      s.savedLocationId,
-        locationTextSnapshot: s.locationTextSnapshot,
-        lat:                  s.lat,
-        lng:                  s.lng,
-        timeWindowStart:      s.timeWindowStart?.toISOString() ?? null,
-        timeWindowEnd:        s.timeWindowEnd?.toISOString()   ?? null,
-        bookedTime:           s.bookedTime?.toISOString()       ?? null,
-        contactName:          s.contactName  ?? undefined,
-        contactPhone:         s.contactPhone ?? undefined,
-        bookingRequired:      (s as any).bookingRequired ?? undefined,
-        bookingRef:           (s as any).bookingRef      ?? undefined,
-      }));
+      // Full validation — same gates as CJP ready_to_plan save.
+      // Auto-build locationTextSnapshot from address parts when the PRF stop
+      // has address fields but no snapshot text (matching buildStopData logic).
+      const stopInputs: StructuredJobPartInput[] = job.stops.map(s => {
+        const snapshotFromParts = [s.siteName, s.street, s.town, s.postcode]
+          .map(x => (x ?? "").trim()).filter(Boolean).join(", ") || null;
+        return {
+          sequenceNumber:       s.sequenceNumber,
+          type:                 s.type,
+          savedLocationId:      s.savedLocationId,
+          locationTextSnapshot: s.locationTextSnapshot || snapshotFromParts,
+          siteName:             s.siteName   ?? undefined,
+          street:               s.street     ?? undefined,
+          town:                 s.town       ?? undefined,
+          postcode:             s.postcode   ?? undefined,
+          lat:                  s.lat,
+          lng:                  s.lng,
+          timeWindowStart:      s.timeWindowStart?.toISOString() ?? null,
+          timeWindowEnd:        s.timeWindowEnd?.toISOString()   ?? null,
+          bookedTime:           s.bookedTime?.toISOString()       ?? null,
+          contactName:          s.contactName  ?? undefined,
+          contactPhone:         s.contactPhone ?? undefined,
+          bookingRequired:      (s as any).bookingRequired ?? undefined,
+          bookingRef:           (s as any).bookingRef      ?? undefined,
+        };
+      });
 
       const validation = validateStructuredJob({
         saveMode:       "ready_to_plan",
