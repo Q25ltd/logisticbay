@@ -205,7 +205,8 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const breakRequired    = totalDriveMin >= BREAK_TRIGGER_MIN;
   const breakEffectiveMin = breakRequired ? BREAK_DURATION_MIN : 0;
 
-  // Build a human-readable break note for the prompt
+  // Build a human-readable break note for the prompt.
+  // We say "estimated" and "likely" — these are planning indicators, not tachograph readings.
   let breakNote = "";
   if (breakRequired && breakAfterStopIdx !== null) {
     const stopLabel = stops[breakAfterStopIdx]
@@ -213,16 +214,18 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
       : `stop ${breakAfterStopIdx + 1}`;
     const driveHrs = (driveMinAtBreak! / 60).toFixed(1);
     breakNote =
-      `\n⚠ MANDATORY BREAK — UK HGV law (EC Reg 561/2006):\n` +
-      `  The driver hits 4.5 hours of driving after the leg into ${stopLabel} (${driveHrs} h accumulated).\n` +
-      `  A 45-minute break MUST be taken at or before ${stopLabel} before driving continues.\n` +
+      `\n⚠ BREAK PLANNING FLAG (estimated — actual obligation set by tachograph):\n` +
+      `  Based on estimated distances, the driver will likely accumulate ~4.5 hours of driving around the leg into ${stopLabel} (estimated ${driveHrs} h).\n` +
+      `  UK driving hours rules require a break after 4.5 h driving. Plan for a ~45-minute break at or before ${stopLabel}.\n` +
       `  The break can be split: 15 min first, then 30 min later — always that order.\n` +
-      `  Add ${BREAK_DURATION_MIN} minutes to all arrival times from ${stopLabel} onwards.\n` +
-      `  Total run time including break: ~${Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10} hours.`;
+      `  For arrival estimates after the break, add ~${BREAK_DURATION_MIN} minutes to times from ${stopLabel} onwards.\n` +
+      `  Estimated total run time including break: ~${Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10} hours.\n` +
+      `  Note: actual break timing depends on real driving time recorded by the tachograph — always check.`;
   } else if (!breakRequired && totalDriveMin > 0) {
     const driveHrs = (totalDriveMin / 60).toFixed(1);
     breakNote =
-      `\n✓ No mandatory driving break required: total driving is ${driveHrs} h (under 4.5 h limit).`;
+      `\n✓ BREAK FLAG: estimated driving is ${driveHrs} h — under the 4.5 h planning threshold, so no break appears needed for this run.\n` +
+      `  Note: actual obligation depends on the tachograph reading, not this estimate.`;
   }
 
   // ── Build prompt ──────────────────────────────────────────────────────────
@@ -283,23 +286,31 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}\n${breakNote}`;
 
   const systemPrompt =
-    `You are a UK road freight planning assistant. Write like a helpful colleague talking to a transport planner — ` +
-    `plain conversational English, no jargon, no technical terms. ` +
+    `You are a UK road freight planning assistant helping a transport planner review a run. ` +
+    `Write like a knowledgeable colleague — plain conversational English, no jargon. ` +
 
-    `UK HGV driving law (EC Reg 561/2006 — mandatory, not optional): ` +
-    `(1) After 4.5 hours of driving the driver MUST stop for a 45-minute break before driving again. ` +
-    `The break can be split into 15 min then 30 min — always that order. ` +
-    `(2) Maximum 9 hours driving per day (up to 10h twice a week). ` +
-    `The break calculation has already been done for you in the data below — use those numbers exactly. ` +
-    `NEVER say "no break needed" or "no break required" when driving exceeds 4.5 hours. ` +
-    `NEVER omit the break from your timing calculations when the data shows a mandatory break. ` +
+    `HONESTY RULES — follow these exactly: ` +
+    `(1) All driving times and arrival estimates in the data are ESTIMATES based on approximate road distances. ` +
+    `    Real journey times depend on traffic, roadworks, and the driver's actual route. ` +
+    `    Always say "estimated" or "roughly" when giving times — never present them as exact. ` +
+    `(2) The break flag in the data is a PLANNING INDICATOR, not a legal ruling. ` +
+    `    The actual legal break obligation is determined by the driver's tachograph reading, not our estimate. ` +
+    `    When a break is flagged, say the driver "will likely need" or "should plan for" a break — not "must" or "is legally required to". ` +
+    `    Always add: "Check the actual tachograph." ` +
+    `(3) Do not state specific law numbers, regulation names, or penalty amounts — you don't have verified legal knowledge. ` +
+    `    If you want to note it's a legal requirement, say "UK driving hours rules require" — nothing more specific. ` +
+    `(4) Never say a window is definitely met or definitely missed based on estimates. Say "looks like", "should reach", "may miss". ` +
 
-    `Time window maths: arrival BEFORE window close = window met. ` +
-    `Only flag a window as missed when estimated arrival is AFTER the close time. ` +
-    `Example: arrive 9:16am, window closes 9:30am → 14 minutes to spare, window is fine. ` +
+    `WHAT YOU DO KNOW (and can state): ` +
+    `UK HGV drivers need a break after accumulating 4.5 hours of driving. ` +
+    `The break can be split: 15 min first, then 30 min. Maximum driving per day is 9 hours. ` +
+    `Use these as planning guidance — not as legal verdicts. ` +
+
+    `Time window maths: if estimated arrival is before window close = window is likely fine. ` +
+    `Only flag a window concern when estimated arrival is after the close time. ` +
+    `Example: estimated arrival 9:16am, window closes 9:30am → 14 minutes to spare, looks fine. ` +
 
     `Use 12-hour clock with am/pm. Never mention UTC, APIs, routing engines, or leg names. ` +
-    `If timings are estimates say "timings are approximate" once — nothing more technical. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
   const vehicleLine = input.vehicle
