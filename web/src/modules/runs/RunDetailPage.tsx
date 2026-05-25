@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { runsApi } from "../../api/runs";
 import type { PatchRunBody } from "../../api/runs";
-import { jobsApi } from "../../api/jobs";
+import { planningApi } from "../../api/planning";
+import type { UnplannedStop, StopCluster } from "../../api/planning";
 import { driversApi } from "../../api/drivers";
-import type { Run, RunAssignment, Driver, PlannedJob, JobPart } from "../../types";
+import type { Run, RunAssignment, Driver } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
@@ -65,6 +66,17 @@ const END_INSTRUCTIONS = [
 ];
 
 // ── Add Stop panel ────────────────────────────────────────────────────────────
+//
+// Shows only genuinely unplanned stops (not already in any active run) sourced
+// from jobs in ready_to_plan / in_planning status — same data as the Planning
+// Board. Grouped by job for easy scanning.
+
+type JobGroup = {
+  jobId:        number;
+  jobReference: string | null;
+  customerName: string | null;
+  stops:        UnplannedStop[];
+};
 
 function AddStopPanel({
   run,
@@ -76,21 +88,46 @@ function AddStopPanel({
   onAdded: () => void;
 }) {
   const [date, setDate] = useState(run.plannedDate ?? new Date().toISOString().slice(0, 10));
-  const [jobs, setJobs] = useState<PlannedJob[]>([]);
+  const [clusters, setClusters] = useState<StopCluster[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
   const [addingPart, setAddingPart] = useState<number | null>(null);
   const [error, setError] = useState("");
 
+  // Stops already in THIS run (safety guard against race conditions)
   const assignedPartIds = new Set(run.assignments?.map(a => a.jobPartId) ?? []);
   const nextSeq = (run.assignments?.length ?? 0) + 1;
 
-  const loadJobs = useCallback(async () => {
+  // Group unplanned stops by job for accordion display
+  const jobGroups = useMemo<JobGroup[]>(() => {
+    const map = new Map<number, JobGroup>();
+    for (const cluster of clusters) {
+      for (const stop of cluster.stops) {
+        if (!map.has(stop.jobId)) {
+          map.set(stop.jobId, {
+            jobId:        stop.jobId,
+            jobReference: stop.jobReference,
+            customerName: stop.customerName,
+            stops:        [],
+          });
+        }
+        map.get(stop.jobId)!.stops.push(stop);
+      }
+    }
+    for (const group of map.values()) {
+      group.stops.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+    }
+    return [...map.values()].sort((a, b) =>
+      (a.jobReference ?? "").localeCompare(b.jobReference ?? "")
+    );
+  }, [clusters]);
+
+  const loadUnplanned = useCallback(async () => {
     setLoadingJobs(true);
     setError("");
     try {
-      const res = await jobsApi.listRange(date, date);
-      setJobs(res.data);
+      const res = await planningApi.getUnplanned(date);
+      setClusters(res.clusters);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load jobs");
     } finally {
@@ -98,19 +135,18 @@ function AddStopPanel({
     }
   }, [date]);
 
-  useEffect(() => { loadJobs(); }, [loadJobs]);
+  useEffect(() => { loadUnplanned(); }, [loadUnplanned]);
 
-  async function addStop(job: PlannedJob, stop: JobPart) {
-    if (!stop.id) return;
+  async function addStop(stop: UnplannedStop) {
     setAddingPart(stop.id);
     setError("");
     try {
       await runsApi.addAssignment(run.id, {
-        jobPartId: stop.id,
-        jobId: job.id,
-        sequenceNumber: nextSeq,
+        jobPartId:        stop.id,
+        jobId:            stop.jobId,
+        sequenceNumber:   nextSeq,
         quantityAssigned: 0,
-        quantityUnit: job.quantityUnit || "",
+        quantityUnit:     stop.quantityUnit || "",
       });
       onAdded();
     } catch (err: unknown) {
@@ -149,46 +185,46 @@ function AddStopPanel({
 
         {/* Jobs list */}
         <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-          {loadingJobs && <div className="text-center py-8 text-muted">Loading jobs...</div>}
-          {!loadingJobs && jobs.length === 0 && (
-            <div className="text-center py-8 text-muted">No jobs found for this date</div>
+          {loadingJobs && <div className="text-center py-8 text-muted">Loading...</div>}
+          {!loadingJobs && jobGroups.length === 0 && (
+            <div className="text-center py-8 text-muted">
+              <div className="text-2xl mb-2">✓</div>
+              <p className="text-sm">No unplanned stops for this date</p>
+            </div>
           )}
-          {!loadingJobs && jobs.map(job => (
-            <div key={job.id} className="border border-border rounded-lg overflow-hidden">
+          {!loadingJobs && jobGroups.map(group => (
+            <div key={group.jobId} className="border border-border rounded-lg overflow-hidden">
               {/* Job header */}
               <button
                 className="w-full flex items-center justify-between p-3 bg-surface hover:bg-slate-50 transition-colors text-left"
-                onClick={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
+                onClick={() => setExpandedJobId(expandedJobId === group.jobId ? null : group.jobId)}
               >
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm text-primary">{job.jobReference ?? `Job #${job.id}`}</span>
-                    <Badge status={job.status} />
+                    <span className="font-semibold text-sm text-primary">{group.jobReference ?? `Job #${group.jobId}`}</span>
+                    <span className="text-xs text-muted">{group.stops.length} unplanned stop{group.stops.length !== 1 ? "s" : ""}</span>
                   </div>
-                  <div className="text-xs text-muted mt-0.5">
-                    {job.customerName || "—"} · {job.stops?.length ?? 0} stop{(job.stops?.length ?? 0) !== 1 ? "s" : ""}
-                  </div>
+                  <div className="text-xs text-muted mt-0.5">{group.customerName || "—"}</div>
                 </div>
-                <span className="text-muted text-sm ml-2">{expandedJobId === job.id ? "▲" : "▼"}</span>
+                <span className="text-muted text-sm ml-2">{expandedJobId === group.jobId ? "▲" : "▼"}</span>
               </button>
 
               {/* Expanded stops */}
-              {expandedJobId === job.id && (
+              {expandedJobId === group.jobId && (
                 <div className="border-t border-border divide-y divide-border">
-                  {(!job.stops || job.stops.length === 0) && (
-                    <div className="px-3 py-3 text-sm text-muted">No stops on this job</div>
-                  )}
-                  {job.stops?.map(stop => {
-                    const alreadyIn = stop.id !== undefined && assignedPartIds.has(stop.id);
+                  {group.stops.map(stop => {
+                    const alreadyIn = assignedPartIds.has(stop.id);
                     return (
-                      <div key={stop.id ?? stop.sequenceNumber} className="px-3 py-2 flex items-start justify-between gap-2">
+                      <div key={stop.id} className="px-3 py-2 flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-bold text-muted">#{stop.sequenceNumber}</span>
                             <span className="badge badge-pending text-xs">{STOP_TYPE_LABELS[stop.type] ?? stop.type}</span>
                           </div>
-                          <div className="text-sm text-primary mt-0.5 truncate">{stop.locationTextSnapshot || "—"}</div>
-                          {(stop.timeWindowStart || stop.bookedTime) && (
+                          <div className="text-sm text-primary mt-0.5 truncate">
+                            {stop.locationText || stop.siteName || stop.town || "—"}
+                          </div>
+                          {(stop.bookedTime || stop.timeWindowStart) && (
                             <div className="text-xs text-muted">
                               {stop.bookedTime ?? `${stop.timeWindowStart}–${stop.timeWindowEnd}`}
                             </div>
@@ -202,7 +238,7 @@ function AddStopPanel({
                             className="flex-shrink-0 text-xs py-1 px-2"
                             loading={addingPart === stop.id}
                             disabled={addingPart !== null}
-                            onClick={() => addStop(job, stop)}
+                            onClick={() => addStop(stop)}
                           >
                             + Add
                           </Button>
