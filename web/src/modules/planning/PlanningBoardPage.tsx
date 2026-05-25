@@ -377,20 +377,21 @@ function RunCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.assignments.length, run.estimatedStartTime]);
 
-  // Load saved locations lazily when the waypoint form opens for the first time
-  useEffect(() => {
-    if (!showWpForm || savedLocs.length > 0 || locsLoading) return;
+  // Load saved locations only when user explicitly clicks "Pick from existing"
+  // Never auto-load on form open — a 401 from getLocations would clear the token
+  async function loadSavedLocs() {
+    if (savedLocs.length > 0) { setWpMode("pick"); return; }
     setLocsLoading(true);
-    planningApi.getLocations()
-      .then(res => {
-        setSavedLocs(res.data);
-        // If no saved locations exist, go straight to create mode
-        setWpMode(res.data.length > 0 ? "pick" : "create");
-      })
-      .catch(() => setWpMode("create"))
-      .finally(() => setLocsLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showWpForm, savedLocs.length]);
+    try {
+      const res = await planningApi.getLocations();
+      setSavedLocs(res.data);
+      setWpMode(res.data.length > 0 ? "pick" : "create");
+    } catch {
+      // non-fatal — stay in create mode
+    } finally {
+      setLocsLoading(false);
+    }
+  }
 
   async function patch(body: Record<string, unknown>) {
     setSaving(true); setErr("");
@@ -611,14 +612,6 @@ function RunCard({
                 <span className="text-[10px] text-blue-400 flex-shrink-0">depot</span>
               </div>
             )}
-            {!depot && (
-              <div className="flex items-center gap-1.5 text-xs mb-1.5 rounded bg-amber-50 border border-amber-200 px-2 py-1">
-                <span className="text-amber-500 flex-shrink-0">⚠</span>
-                <span className="text-amber-700 text-[11px]">
-                  No depot set — <a href="/settings" className="underline hover:no-underline">add one in Settings</a> to enable distance calculations.
-                </span>
-              </div>
-            )}
 
             {run.waypoints.length > 0 && (
               <div className="space-y-1 mb-1.5">
@@ -683,15 +676,14 @@ function RunCard({
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
                           <label className="text-muted">New location</label>
-                          {savedLocs.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setWpMode("pick")}
-                              className="text-[10px] text-accent hover:underline"
-                            >
-                              ← Pick existing
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={loadSavedLocs}
+                            disabled={locsLoading}
+                            className="text-[10px] text-accent hover:underline disabled:opacity-50"
+                          >
+                            {locsLoading ? "Loading…" : "← Pick existing"}
+                          </button>
                         </div>
                         <input
                           type="text"
