@@ -786,7 +786,7 @@ function RunCard({
 
                 {/* ── Expected time ── */}
                 <div>
-                  <label className="text-muted block mb-1">Expected time (optional)</label>
+                  <label className="text-muted block mb-1">Expected time <span className="text-red-500">*</span></label>
                   <input type="time" className="input text-xs py-1 w-full"
                     value={wpTime} onChange={e => setWpTime(e.target.value)} />
                 </div>
@@ -796,6 +796,7 @@ function RunCard({
                   disabled={
                     wpAdding ||
                     locsLoading ||
+                    !wpTime ||
                     (!wpShowCreate && !wpLocId) ||
                     (wpShowCreate && (!wpNewName.trim() || !wpNewStreet.trim()))
                   }
