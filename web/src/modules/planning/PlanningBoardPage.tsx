@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
+import { api } from "../../api/client";
 import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
@@ -325,7 +326,14 @@ function RunCard({
   // Waypoint form state
   const [showWpForm,   setShowWpForm]   = useState(false);
   const [wpLocationId, setWpLocationId] = useState<number | "">("");
-  const [wpText,       setWpText]       = useState("");
+  // wpMode: "pick" = select from saved locs, "create" = enter new address
+  const [wpMode,       setWpMode]       = useState<"pick" | "create">("pick");
+  // Create-new address fields
+  const [wpName,       setWpName]       = useState("");
+  const [wpStreet,     setWpStreet]     = useState("");
+  const [wpTown,       setWpTown]       = useState("");
+  const [wpPostcode,   setWpPostcode]   = useState("");
+  const [wpSetAsDepot, setWpSetAsDepot] = useState(false);
   // wpPosition: -2 = before all stops, -1 = after all stops, 0..n = after stop at index n
   const [wpPosition,   setWpPosition]   = useState<number>(-2);
   const [wpTime,       setWpTime]       = useState("");
@@ -374,8 +382,12 @@ function RunCard({
     if (!showWpForm || savedLocs.length > 0 || locsLoading) return;
     setLocsLoading(true);
     planningApi.getLocations()
-      .then(res => setSavedLocs(res.data))
-      .catch(() => {/* non-fatal */})
+      .then(res => {
+        setSavedLocs(res.data);
+        // If no saved locations exist, go straight to create mode
+        setWpMode(res.data.length > 0 ? "pick" : "create");
+      })
+      .catch(() => setWpMode("create"))
       .finally(() => setLocsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showWpForm, savedLocs.length]);
@@ -388,34 +400,54 @@ function RunCard({
   }
 
   async function handleAddWaypoint() {
-    const locationId   = wpLocationId ? Number(wpLocationId) : undefined;
-    const selectedLoc  = savedLocs.find(l => l.id === locationId);
-    const locationText = selectedLoc
-      ? (selectedLoc.siteName ?? selectedLoc.name)
-      : wpText.trim();
-    if (!locationText && !locationId) return;
-
     setWpAdding(true);
     try {
+      let locationId: number | undefined;
+      let locationText: string;
+
+      if (wpMode === "create") {
+        // Create a new SavedLocation first
+        if (!wpName.trim() || !wpStreet.trim()) return;
+        const newLoc = await api.post<any>("/locations", {
+          name:     wpName.trim(),
+          street:   wpStreet.trim(),
+          town:     wpTown.trim() || undefined,
+          postcode: wpPostcode.trim() || undefined,
+        });
+        locationId   = newLoc.id;
+        locationText = newLoc.siteName ?? newLoc.name;
+        // Add to local list so picker shows it next time
+        setSavedLocs(prev => [...prev, { id: newLoc.id, name: newLoc.name, siteName: newLoc.siteName, town: newLoc.town, postcode: newLoc.postcode }]);
+        // Optionally set as company depot
+        if (wpSetAsDepot) {
+          await api.patch<any>("/company", { depotLocationId: newLoc.id });
+        }
+      } else {
+        // Pick mode — use selected saved location
+        if (!wpLocationId) return;
+        locationId = Number(wpLocationId);
+        const selectedLoc = savedLocs.find(l => l.id === locationId);
+        locationText = selectedLoc ? (selectedLoc.siteName ?? selectedLoc.name) : "";
+      }
+
       const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
       let seq: number;
       let waypointType: string;
       if (wpPosition === -2) {
-        // Before all stops — start of run (depot / yard start)
         seq = 0;
         waypointType = "depot_start";
       } else if (wpPosition === -1) {
-        // After all stops — end of run (return to base)
         seq = 9999;
         waypointType = "return_to_base";
       } else {
-        // After a specific job stop
         seq = (sorted[wpPosition]?.sequenceNumber ?? 0) + 5;
         waypointType = "custom";
       }
 
       await onAddWaypoint(run.id, waypointType, locationText, seq, locationId, wpTime || undefined);
-      setWpText(""); setWpLocationId(""); setWpPosition(-2); setWpTime(""); setShowWpForm(false);
+      // Reset form
+      setWpLocationId(""); setWpName(""); setWpStreet(""); setWpTown(""); setWpPostcode("");
+      setWpPosition(-2); setWpTime(""); setWpSetAsDepot(false); setShowWpForm(false);
     } catch (e: unknown) { setErr((e as Error).message ?? "Failed to add waypoint"); }
     finally { setWpAdding(false); }
   }
@@ -443,8 +475,6 @@ function RunCard({
     aiCheck?.severity === "block" ? "🔴" :
     aiCheck?.severity === "warn"  ? "🟡" :
     aiCheck                       ? "🟢" : null;
-
-  const selectedLocObj = savedLocs.find(l => l.id === Number(wpLocationId));
 
   return (
     <div className={`card mb-3 ${isLocked ? "opacity-60" : ""}`}>
@@ -614,84 +644,143 @@ function RunCard({
             {showWpForm && (
               <div className="rounded border border-slate-200 bg-slate-50 p-2.5 space-y-2 text-xs">
 
-                {/* Location — saved location picker + free text fallback */}
-                <div>
-                  <label className="text-muted block mb-1">Location</label>
-                  {locsLoading && (
-                    <div className="text-muted animate-pulse text-[11px]">Loading saved locations…</div>
-                  )}
-                  {!locsLoading && savedLocs.length > 0 && (
-                    <select
-                      className="input text-xs py-1 w-full"
-                      value={wpLocationId}
-                      onChange={e => {
-                        setWpLocationId(e.target.value ? Number(e.target.value) : "");
-                        setWpText("");
-                      }}
-                    >
-                      <option value="">— pick a saved location, or type below —</option>
-                      {savedLocs.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.name}{l.town ? ` · ${l.town}` : ""}{l.postcode ? ` · ${l.postcode}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {selectedLocObj && (
-                    <div className="text-[10px] text-muted mt-0.5">
-                      {[selectedLocObj.siteName, selectedLocObj.town, selectedLocObj.postcode].filter(Boolean).join(", ")}
+                {locsLoading && (
+                  <div className="text-muted animate-pulse text-[11px]">Loading locations…</div>
+                )}
+
+                {!locsLoading && (
+                  <>
+                    {/* ── Pick mode — saved locations exist ── */}
+                    {wpMode === "pick" && savedLocs.length > 0 && (
+                      <div>
+                        <label className="text-muted block mb-1">Location</label>
+                        <select
+                          className="input text-xs py-1 w-full"
+                          value={wpLocationId}
+                          onChange={e => setWpLocationId(e.target.value ? Number(e.target.value) : "")}
+                        >
+                          <option value="">— select a saved location —</option>
+                          {savedLocs.map(l => (
+                            <option key={l.id} value={l.id}>
+                              {l.siteName ? `${l.siteName} (${l.name})` : l.name}
+                              {l.town ? ` · ${l.town}` : ""}
+                              {l.postcode ? ` · ${l.postcode}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => { setWpMode("create"); setWpLocationId(""); }}
+                          className="text-[10px] text-accent hover:underline mt-1"
+                        >
+                          + Add new location
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ── Create mode — enter full address ── */}
+                    {wpMode === "create" && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-muted">New location</label>
+                          {savedLocs.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setWpMode("pick")}
+                              className="text-[10px] text-accent hover:underline"
+                            >
+                              ← Pick existing
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          className="input text-xs py-1 w-full"
+                          placeholder="Name (e.g. Main Yard) *"
+                          value={wpName}
+                          onChange={e => setWpName(e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          className="input text-xs py-1 w-full"
+                          placeholder="Street address *"
+                          value={wpStreet}
+                          onChange={e => setWpStreet(e.target.value)}
+                        />
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <input
+                            type="text"
+                            className="input text-xs py-1"
+                            placeholder="Town"
+                            value={wpTown}
+                            onChange={e => setWpTown(e.target.value)}
+                          />
+                          <input
+                            type="text"
+                            className="input text-xs py-1"
+                            placeholder="Postcode"
+                            value={wpPostcode}
+                            onChange={e => setWpPostcode(e.target.value.toUpperCase())}
+                          />
+                        </div>
+                        {wpPosition === -2 && (
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={wpSetAsDepot}
+                              onChange={e => setWpSetAsDepot(e.target.checked)}
+                            />
+                            <span className="text-[10px] text-muted">Also set as company depot</span>
+                          </label>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Where in the route? ── */}
+                    <div>
+                      <label className="text-muted block mb-1">Where in the route?</label>
+                      <select
+                        className="input text-xs py-1 w-full"
+                        value={wpPosition}
+                        onChange={e => setWpPosition(parseInt(e.target.value, 10))}
+                      >
+                        <option value={-2}>Before all stops (start of run)</option>
+                        {[...run.assignments]
+                          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+                          .map((a, i) => (
+                            <option key={a.id} value={i}>
+                              After {i + 1}: {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — {a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}
+                            </option>
+                          ))
+                        }
+                        <option value={-1}>After all stops (end of run)</option>
+                      </select>
                     </div>
-                  )}
-                  {!wpLocationId && (
-                    <input
-                      type="text"
-                      className={`input text-xs py-1 w-full ${savedLocs.length > 0 ? "mt-1.5" : ""}`}
-                      placeholder="e.g. Trafford Park Depot"
-                      value={wpText}
-                      onChange={e => setWpText(e.target.value)}
-                    />
-                  )}
-                </div>
 
-                {/* Where in the route? */}
-                <div>
-                  <label className="text-muted block mb-1">Where in the route?</label>
-                  <select
-                    className="input text-xs py-1 w-full"
-                    value={wpPosition}
-                    onChange={e => setWpPosition(parseInt(e.target.value, 10))}
-                  >
-                    <option value={-2}>Before all stops (start of run)</option>
-                    {[...run.assignments]
-                      .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
-                      .map((a, i) => (
-                        <option key={a.id} value={i}>
-                          After {i + 1}: {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — {a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}
-                        </option>
-                      ))
-                    }
-                    <option value={-1}>After all stops (end of run)</option>
-                  </select>
-                </div>
+                    {/* ── Expected time ── */}
+                    <div>
+                      <label className="text-muted block mb-1">Expected time (optional)</label>
+                      <input
+                        type="time"
+                        className="input text-xs py-1 w-full"
+                        value={wpTime}
+                        onChange={e => setWpTime(e.target.value)}
+                      />
+                    </div>
 
-                {/* Expected time at this stop */}
-                <div>
-                  <label className="text-muted block mb-1">Expected time (optional)</label>
-                  <input
-                    type="time"
-                    className="input text-xs py-1 w-full"
-                    value={wpTime}
-                    onChange={e => setWpTime(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  onClick={handleAddWaypoint}
-                  disabled={(!wpText.trim() && !wpLocationId) || wpAdding}
-                  className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 w-full"
-                >
-                  {wpAdding ? "Adding…" : "Add stop"}
-                </button>
+                    <button
+                      onClick={handleAddWaypoint}
+                      disabled={
+                        wpAdding ||
+                        (wpMode === "pick"   && !wpLocationId) ||
+                        (wpMode === "create" && (!wpName.trim() || !wpStreet.trim()))
+                      }
+                      className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 w-full"
+                    >
+                      {wpAdding ? "Adding…" : "Add stop"}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
