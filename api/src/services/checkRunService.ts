@@ -124,7 +124,8 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
       return { fromIdx: i, toIdx: i + 1, straightKm: null, roadKm: null, driveMin: null, source: "unknown" } as LegInfo;
     }
 
-    // Try ORS HGV routing first (actual road network, respects bridges/weight limits)
+    // Try ORS HGV routing first (actual road network, respects weight/height/bridge limits)
+    // ORS result is accurate even when coords came from postcode centroid (±100 m)
     const ors = await getHgvLeg({ lat: aLat, lng: aLng }, { lat: bLat, lng: bLng }).catch(() => null);
     if (ors) {
       return {
@@ -132,26 +133,26 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
         straightKm: haversineKm(aLat, aLng, bLat, bLng),
         roadKm:     ors.distanceKm,
         driveMin:   ors.durationMinutes,
-        source:     (aC.resolvedFromPostcode || bC.resolvedFromPostcode) ? "postcode_haversine" : "ors",
+        source:     "ors",
       } as LegInfo;
     }
 
-    // Fallback: Haversine + road factor
+    // Fallback: Haversine + road factor (estimated)
     const straightKm = haversineKm(aLat, aLng, bLat, bLng);
     const roadKm     = straightKm * ROAD_FACTOR;
     const driveMin   = (roadKm / HGV_SPEED_KMH) * 60;
     return {
       fromIdx: i, toIdx: i + 1, straightKm, roadKm, driveMin,
-      source: (aC.resolvedFromPostcode || bC.resolvedFromPostcode) ? "postcode_haversine" : "haversine",
+      source: "haversine",
     } as LegInfo;
   });
 
   const legs: LegInfo[] = await Promise.all(legPromises);
 
-  const hasAnyCoords    = legs.some(l => l.driveMin != null);
-  const hasUnknownLegs  = legs.some(l => l.source === "unknown");
-  const hasEstLegs      = legs.some(l => l.source === "postcode_haversine" || l.source === "haversine");
-  const hasOrsLegs      = legs.some(l => l.source === "ors");
+  const hasAnyCoords   = legs.some(l => l.driveMin != null);
+  const hasUnknownLegs = legs.some(l => l.source === "unknown");
+  const hasEstLegs     = legs.some(l => l.source === "haversine");
+  const hasOrsLegs     = legs.some(l => l.source === "ors");
   const totalDriveMin   = legs.reduce((s, l) => s + (l.driveMin ?? 0), 0);
   const totalDwellMin   = stops.length * STOP_DWELL_MIN;
   const totalRunMin     = totalDriveMin + totalDwellMin;
@@ -188,8 +189,8 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     // Show leg drive time AFTER this stop (i.e., leg i = from stop i to stop i+1)
     const leg = legs[i];
     const legInfo = leg?.roadKm != null
-      ? ` → then ~${Math.round(leg.roadKm)} km / ~${Math.round(leg.driveMin!)} min${leg.source !== "ors" ? " (est.)" : ""}`
-      : i < stops.length - 1 ? " → (distance unknown — no postcode or coords)" : "";
+      ? ` → then ~${Math.round(leg.roadKm)} km / ~${Math.round(leg.driveMin!)} min${leg.source === "ors" ? " (HGV route)" : " (est.)"}`
+      : i < stops.length - 1 ? " → (no postcode or coords — distance unknown)" : "";
 
     return `  Stop ${i + 1}: ${type} at ${location}${customer}${window}${booked}${legInfo}`;
   });
@@ -198,8 +199,9 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     ? `Estimated departure: ${fmtUtcTime(input.estimatedStartTime)} UTC`
     : "No scheduled departure time set";
 
-  const distanceSource = hasOrsLegs && !hasEstLegs && !hasUnknownLegs ? "HGV routing"
-    : hasEstLegs ? "postcode-estimated (est., not guaranteed)"
+  const distanceSource = hasOrsLegs && !hasEstLegs && !hasUnknownLegs ? "ORS HGV routing"
+    : hasOrsLegs ? "ORS HGV routing (some legs est.)"
+    : hasEstLegs ? "estimated (est., not guaranteed)"
     : "calculated";
 
   const totalLine = hasAnyCoords
