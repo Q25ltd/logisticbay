@@ -424,7 +424,14 @@ function RunCard({
           ? { weightT: gvwT, heightM, widthM, lengthM, axleLoadT }
           : null;
 
-        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: run.estimatedStartTime, vehicle });
+        // Use run's estimatedStartTime, or fall back to the depot_start waypoint's scheduledTime
+        const depotStart = run.waypoints.find(w => w.waypointType === "depot_start");
+        const departureTime = run.estimatedStartTime
+          ?? (depotStart?.scheduledTime && run.plannedDate
+              ? `${run.plannedDate}T${depotStart.scheduledTime}:00Z`
+              : null);
+
+        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: departureTime, vehicle });
         setAiCheck({
           severity: result.severity === "high"  ? "block" :
                     result.severity === "medium" ? "warn"  :
