@@ -346,12 +346,16 @@ function RunCard({
   const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
+  // Derived dep: joined waypoint scheduled times so effect re-fires when a time changes
+  const wpTimesKey = run.waypoints.map(w => `${w.id}:${w.scheduledTime ?? ""}`).sort().join("|");
+
   useEffect(() => {
-    if (!run.assignments.length) { setAiCheck(null); return; }
+    if (!run.assignments.length && !run.waypoints.length) { setAiCheck(null); return; }
     setAiLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const sortedStops = [...run.assignments]
+        // Assignment stops
+        const assignmentStops = [...run.assignments]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
           .map(a => ({
             sequenceNumber:  a.sequenceNumber,
@@ -364,7 +368,28 @@ function RunCard({
             timeWindowEnd:   a.jobPart.timeWindowEnd,
             customerName:    a.jobPart.job.customerName,
           }));
-        const result = await aiApi.checkRun({ stops: sortedStops, estimatedStartTime: run.estimatedStartTime });
+
+        // Waypoint stops — convert HH:MM scheduledTime to ISO using plannedDate
+        const waypointStops = [...run.waypoints]
+          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+          .map(w => ({
+            sequenceNumber:  w.sequenceNumber,
+            type:            w.waypointType,
+            locationText:    w.location?.siteName ?? w.location?.name ?? w.locationText ?? null,
+            postcode:        w.postcode ?? null,
+            lat:             w.lat ?? null,
+            lng:             w.lng ?? null,
+            timeWindowStart: w.scheduledTime && run.plannedDate
+              ? `${run.plannedDate}T${w.scheduledTime}:00Z`
+              : null,
+            timeWindowEnd:   null,
+            customerName:    null,
+          }));
+
+        const allStops = [...assignmentStops, ...waypointStops]
+          .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: run.estimatedStartTime });
         setAiCheck({
           severity: result.severity === "high"  ? "block" :
                     result.severity === "medium" ? "warn"  :
@@ -376,7 +401,7 @@ function RunCard({
     }, 800);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run.assignments.length, run.estimatedStartTime]);
+  }, [run.assignments.length, run.waypoints.length, wpTimesKey, run.estimatedStartTime]);
 
   // Load saved locations — called when form opens (user-triggered, never on mount)
   async function loadSavedLocs() {

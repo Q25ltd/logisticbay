@@ -115,9 +115,18 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   // ── Build prompt ──────────────────────────────────────────────────────────
 
   const STOP_TYPE_LABEL: Record<string, string> = {
-    collection: "Collection", delivery: "Delivery", pickup:  "Pickup",
-    dropoff:    "Drop-off",  reload:   "Reload",   return:  "Return",
-    waypoint:   "Waypoint",
+    collection:     "Collection",
+    delivery:       "Delivery",
+    pickup:         "Pickup",
+    dropoff:        "Drop-off",
+    reload:         "Reload",
+    return:         "Return",
+    waypoint:       "Waypoint",
+    depot_start:    "Depot start",
+    return_to_base: "Return to depot",
+    yard_pickup:    "Yard pickup",
+    hub_drop:       "Hub drop",
+    custom:         "Intermediate stop",
   };
 
   // One line per stop
