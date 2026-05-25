@@ -231,11 +231,12 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}`;
 
   const systemPrompt =
-    `You are a UK road freight planning expert reviewing whether a driver run is achievable. ` +
-    `Distances are either from the ORS HGV routing API (accurate) or postcode-estimated (est., ±10 min). ` +
-    `UK HGV rules: max 9 h driving per day, must take a 45-min break after 4.5 h driving. ` +
-    `Always give a verdict. When any leg was estimated rather than routed, include "(est., not guaranteed)" in your message. ` +
-    `Be direct — one or two plain-English sentences a transport planner would immediately understand. ` +
+    `You are a UK road freight planning assistant. Write like a helpful colleague talking to a transport planner — ` +
+    `plain conversational English, no jargon, no technical terms. ` +
+    `Rules you know: UK HGV drivers can drive up to 9 hours a day and must take a 45-minute break after 4.5 hours. ` +
+    `Always give a clear verdict on whether the run works. ` +
+    `Use 12-hour clock with am/pm (e.g. 9:16am, not 09:16 UTC). Never mention UTC, APIs, routing engines, or leg names. ` +
+    `If timings are estimates rather than exact, say "timings are approximate" once at the end — nothing more technical than that. ` +
     `Return ONLY valid JSON, no markdown fences.`;
 
   const vehicleLine = input.vehicle
@@ -252,14 +253,14 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     `{\n` +
     `  "concern": true or false,\n` +
     `  "severity": "high" | "medium" | "low" | "none",\n` +
-    `  "message": "1–2 sentence plain-English verdict",\n` +
-    `  "suggestion": "brief fix in 5–10 words (omit this key when concern is false)"\n` +
+    `  "message": "1–2 sentences in plain everyday English — times in 12-hour am/pm, no technical terms",\n` +
+    `  "suggestion": "short plain-English fix (omit this key when concern is false)"\n` +
     `}\n\n` +
     `Severity guide:\n` +
-    `  high   — run is infeasible: time windows will definitely be missed or legal hours exceeded\n` +
-    `  medium — tight run, likely delays, risk of missing a window\n` +
-    `  low    — minor concern but achievable with good execution\n` +
-    `  none   — run looks feasible (set concern: false)`;
+    `  high   — run won't work: windows will definitely be missed or driver hours exceeded\n` +
+    `  medium — tight run, delays likely, window at risk\n` +
+    `  low    — minor issue but achievable with good execution\n` +
+    `  none   — run looks fine (set concern: false)`;
 
   // ── Call Claude ───────────────────────────────────────────────────────────
 
