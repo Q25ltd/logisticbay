@@ -210,129 +210,195 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Work item card (left panel) ───────────────────────────────────────────────
 
-function WorkItemCard({
-  item,
-  onAddToRun,
+// ── JobWorkCard — one card per job, collection + delivery times as headline ────
+//
+// Groups all parts of a job together so the planner sees:
+//   COLLECT  09:00–12:00  TS29, County Durham
+//   DELIVER  15:00–17:00  LU2, Luton
+// "Add →" adds every part of the job to the selected run in one click.
+
+interface JobWorkGroup {
+  jobId:        number;
+  jobReference: string | null;
+  customerName: string | null;
+  parts:        PlannerWorkItem[];   // all parts for this job
+  riskLevel:    "high" | "medium" | "low" | "none";
+  warnings:     string[];
+}
+
+function fmtStopTime(item: PlannerWorkItem): string | null {
+  if (item.timeWindowStart) {
+    const start = fmtTime(item.timeWindowStart);
+    const end   = item.timeWindowEnd ? fmtTime(item.timeWindowEnd) : null;
+    return end ? `${start}–${end}` : start;
+  }
+  if (item.bookedTime) return fmtTime(item.bookedTime);
+  return null;
+}
+
+function JobWorkCard({
+  group,
+  onAddJobToRun,
   runs,
 }: {
-  item:        PlannerWorkItem;
-  onAddToRun:  (jobPartId: number, runId: number) => Promise<void>;
-  runs:        PlanningRun[];
+  group:         JobWorkGroup;
+  onAddJobToRun: (jobId: number, runId: number) => Promise<void>;
+  runs:          PlanningRun[];
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
 
+  // Auto-select when only one run exists
   const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
+  const effectiveRunId = selectedRunId || (draftRuns.length === 1 ? draftRuns[0].id : "");
 
   async function handleAdd() {
-    if (!selectedRunId) return;
+    if (!effectiveRunId) return;
     setAdding(true);
-    try { await onAddToRun(item.jobPartId, Number(selectedRunId)); }
+    try { await onAddJobToRun(group.jobId, Number(effectiveRunId)); }
     finally { setAdding(false); }
   }
 
-  const riskColour =
-    item.riskLevel === "high"   ? "border-l-red-500"   :
-    item.riskLevel === "medium" ? "border-l-amber-400" :
-    item.riskLevel === "low"    ? "border-l-yellow-300" :
-    "border-l-transparent";
+  const borderColour =
+    group.riskLevel === "high"   ? "border-l-red-500"   :
+    group.riskLevel === "medium" ? "border-l-amber-400" :
+    group.riskLevel === "low"    ? "border-l-yellow-300" :
+    "border-l-slate-200";
 
-  const timeStr = item.timeWindowStart
-    ? `${fmtTime(item.timeWindowStart)}${item.timeWindowEnd ? `–${fmtTime(item.timeWindowEnd)}` : ""}`
-    : item.bookedTime ? `Booked ${fmtTime(item.bookedTime)}` : null;
+  // Collect and deliver parts, sorted: collections first
+  const collections = group.parts.filter(p => p.nextAction.startsWith("Collect"));
+  const deliveries  = group.parts.filter(p => p.nextAction.startsWith("Deliver"));
+  const others      = group.parts.filter(p => !p.nextAction.startsWith("Collect") && !p.nextAction.startsWith("Deliver"));
+
+  // Representative part for vehicle/goods info
+  const rep = group.parts[0];
 
   return (
-    <div className={`card p-3 mb-2 border-l-4 ${riskColour}`}>
+    <div className={`bg-white rounded border border-border border-l-4 ${borderColour} mb-1.5 overflow-hidden`}>
 
-      {/* Customer + ref */}
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <div className="font-bold text-sm text-primary leading-tight">
-          {item.customerName ?? "Unknown customer"}
+      {/* ── Top bar: customer + ref + risk ── */}
+      <div className="flex items-center justify-between px-2.5 pt-2 pb-1 gap-2">
+        <div className="font-semibold text-[13px] text-primary leading-tight truncate">
+          {group.customerName ?? "Unknown customer"}
         </div>
-        {item.jobReference && (
-          <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px] flex-shrink-0">
-            {item.jobReference}
-          </span>
-        )}
-      </div>
-
-      {/* Next action — the key field */}
-      <div className="text-xs font-semibold text-primary mb-1.5">{item.nextAction}</div>
-
-      {/* Current → destination */}
-      {(item.currentLocation || item.finalDestination) && (
-        <div className="text-[11px] text-muted mb-1.5 flex items-center gap-1 flex-wrap">
-          {item.currentLocation && <span>{item.currentLocation}</span>}
-          {item.currentLocation && item.finalDestination && <span className="text-slate-400">→</span>}
-          {item.finalDestination && <span>{item.finalDestination}</span>}
-        </div>
-      )}
-
-      {/* Time + badges */}
-      <div className="flex flex-wrap gap-1 mb-2 items-center">
-        {timeStr && (
-          <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-            {timeStr}
-          </span>
-        )}
-        {item.vehicleCategory && (
-          <Badge colour="bg-slate-100 text-slate-600">{cap(item.vehicleCategory)}</Badge>
-        )}
-        {item.goodsType && (
-          <Badge colour="bg-slate-100 text-slate-600">{cap(item.goodsType)}</Badge>
-        )}
-        {item.hasTempControl && <Badge colour="bg-blue-50 text-blue-700">Temp</Badge>}
-        {item.hasHazardous   && <Badge colour="bg-orange-50 text-orange-700">ADR</Badge>}
-        {item.weight != null && item.weight > 0 && (
-          <span className="text-[11px] text-muted">{item.weight.toLocaleString()} kg</span>
-        )}
-        {item.quantity != null && item.quantity > 0 && (
-          <span className="text-[11px] text-muted">
-            {item.quantity}{item.quantityUnit ? " " + cap(item.quantityUnit) : ""}
-          </span>
-        )}
-      </div>
-
-      {/* Warnings */}
-      {item.warnings.length > 0 && (
-        <div className="mb-2 space-y-0.5">
-          {item.warnings.map((w, i) => (
-            <div key={i} className={`text-[11px] px-2 py-1 rounded flex items-start gap-1 ${
-              item.riskLevel === "high" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {group.riskLevel !== "none" && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+              group.riskLevel === "high"   ? "bg-red-100 text-red-700"    :
+              group.riskLevel === "medium" ? "bg-amber-100 text-amber-700" :
+              "bg-yellow-50 text-yellow-700"
             }`}>
-              <span className="flex-shrink-0">{item.riskLevel === "high" ? "⚠️" : "ℹ️"}</span>
-              <span>{w}</span>
+              {group.riskLevel === "high" ? "⚠ URGENT" : group.riskLevel === "medium" ? "⚠ TIGHT" : "ℹ NOTE"}
+            </span>
+          )}
+          {group.jobReference && (
+            <span className="font-mono text-[10px] text-muted">{group.jobReference}</span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Collection + delivery rows ── */}
+      <div className="px-2.5 pb-1 space-y-0.5">
+        {[...collections, ...others, ...deliveries].map(part => {
+          const time     = fmtStopTime(part);
+          const isCollect = part.nextAction.startsWith("Collect");
+          const isDrop    = part.nextAction.startsWith("Deliver");
+          const location  = part.currentLocation ?? part.finalDestination ?? "—";
+          const postcode  = isCollect ? part.currentPostcode : part.finalPostcode;
+
+          return (
+            <div key={part.jobPartId} className="flex items-baseline gap-2 text-xs">
+              {/* Action label */}
+              <span className={`flex-shrink-0 font-bold text-[10px] uppercase w-14 ${
+                isCollect ? "text-blue-600" : isDrop ? "text-green-700" : "text-slate-500"
+              }`}>
+                {isCollect ? "Collect" : isDrop ? "Deliver" : "Stop"}
+              </span>
+
+              {/* Time — biggest, most important */}
+              <span className={`flex-shrink-0 font-bold text-[13px] w-24 tabular-nums ${
+                time ? (isCollect ? "text-blue-700" : "text-green-800") : "text-slate-300"
+              }`}>
+                {time ?? "No time"}
+              </span>
+
+              {/* Location */}
+              <span className="text-slate-500 text-[11px] truncate leading-tight">
+                {postcode
+                  ? <><span className="font-medium text-slate-700">{postcode}</span>{location !== postcode ? ` · ${location}` : ""}</>
+                  : location
+                }
+              </span>
             </div>
-          ))}
+          );
+        })}
+      </div>
+
+      {/* ── Metadata row ── */}
+      <div className="flex items-center gap-1.5 px-2.5 pb-1.5 flex-wrap">
+        {rep.vehicleCategory && <Badge colour="bg-slate-100 text-slate-600">{cap(rep.vehicleCategory)}</Badge>}
+        {rep.goodsType        && <Badge colour="bg-slate-100 text-slate-500">{cap(rep.goodsType)}</Badge>}
+        {rep.hasTempControl   && <Badge colour="bg-blue-50 text-blue-700">❄ Temp</Badge>}
+        {rep.hasHazardous     && <Badge colour="bg-orange-50 text-orange-700">ADR</Badge>}
+        {rep.weight  != null && rep.weight  > 0 && (
+          <span className="text-[11px] text-muted">{rep.weight.toLocaleString()} kg</span>
+        )}
+        {rep.quantity != null && rep.quantity > 0 && (
+          <span className="text-[11px] text-muted">
+            {rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}
+          </span>
+        )}
+      </div>
+
+      {/* ── Warnings (collapsed, only shown when present) ── */}
+      {group.warnings.length > 0 && (
+        <div className={`px-2.5 py-1 border-t text-[11px] flex items-start gap-1 ${
+          group.riskLevel === "high" ? "bg-red-50 text-red-700 border-red-100" : "bg-amber-50 text-amber-700 border-amber-100"
+        }`}>
+          <span className="flex-shrink-0">⚠</span>
+          <span>{group.warnings[0]}{group.warnings.length > 1 ? ` (+${group.warnings.length - 1} more)` : ""}</span>
         </div>
       )}
 
-      {/* Add to run */}
-      {draftRuns.length > 0 ? (
-        <div className="flex gap-1.5 items-center">
-          <select
-            className="input text-xs py-1 flex-1"
-            value={selectedRunId}
-            onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
-          >
-            <option value="">Add to run…</option>
-            {draftRuns.map(r => (
-              <option key={r.id} value={r.id}>
-                {r.runReference}{r.driver ? ` — ${r.driver.displayName}` : ""}
-              </option>
-            ))}
-          </select>
-          <button
-            disabled={!selectedRunId || adding}
-            onClick={handleAdd}
-            className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
-          >
-            {adding ? "…" : "Add →"}
-          </button>
-        </div>
-      ) : (
-        <div className="text-[10px] text-muted italic">Create a run first to add this stop</div>
-      )}
+      {/* ── Add to run ── */}
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border-t border-border">
+        {draftRuns.length === 0 ? (
+          <span className="text-[11px] text-muted italic flex-1">Create a run first</span>
+        ) : draftRuns.length === 1 ? (
+          <>
+            <span className="text-[11px] text-muted flex-1 truncate">→ {draftRuns[0].runReference}{draftRuns[0].driver ? ` · ${draftRuns[0].driver.displayName}` : ""}</span>
+            <button
+              disabled={adding}
+              onClick={handleAdd}
+              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
+            >
+              {adding ? "…" : "Add →"}
+            </button>
+          </>
+        ) : (
+          <>
+            <select
+              className="input text-xs py-1 flex-1 min-w-0"
+              value={selectedRunId}
+              onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}
+            >
+              <option value="">Pick run…</option>
+              {draftRuns.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.runReference}{r.driver ? ` · ${r.driver.displayName}` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!selectedRunId || adding}
+              onClick={handleAdd}
+              className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap"
+            >
+              {adding ? "…" : "Add →"}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -1095,13 +1161,45 @@ export default function PlanningBoardPage() {
     [allJobGroups, search],
   );
 
-  // Work items: apply search filter then group by groupKey
+  // Work items: apply search filter
   const filteredWorkItems = useMemo(
     () => search.trim() ? workItems.filter(i => matchesWorkItem(i, search.trim())) : workItems,
     [workItems, search],
   );
 
-  // Ordered group keys preserving server sort (first occurrence wins)
+  // Build JobWorkGroups: merge all parts of the same job into one card,
+  // assign the card the group key + risk level of its most urgent part.
+  const jobWorkGroupsByGroupKey = useMemo(() => {
+    // First: collect all parts per jobId (in original priority order)
+    const byJob = new Map<number, { groupKey: string; parts: PlannerWorkItem[] }>();
+    for (const item of filteredWorkItems) {
+      if (!byJob.has(item.jobId)) {
+        byJob.set(item.jobId, { groupKey: item.groupKey, parts: [] });
+      }
+      byJob.get(item.jobId)!.parts.push(item);
+    }
+
+    // Then: build JobWorkGroups and bucket by groupKey
+    const byGroup = new Map<string, JobWorkGroup[]>();
+    for (const [jobId, { groupKey, parts }] of byJob) {
+      const rep      = parts[0];
+      const riskOrder = { high: 3, medium: 2, low: 1, none: 0 } as const;
+      const riskLevel = parts.reduce<"high"|"medium"|"low"|"none">((best, p) =>
+        riskOrder[p.riskLevel] > riskOrder[best] ? p.riskLevel : best, "none");
+      const warnings  = [...new Set(parts.flatMap(p => p.warnings))];
+
+      const grp: JobWorkGroup = {
+        jobId, jobReference: rep.jobReference, customerName: rep.customerName,
+        parts, riskLevel, warnings,
+      };
+      if (!byGroup.has(groupKey)) byGroup.set(groupKey, []);
+      byGroup.get(groupKey)!.push(grp);
+    }
+
+    return byGroup;
+  }, [filteredWorkItems]);
+
+  // Ordered group keys (preserving server priority order — first item in each job wins)
   const orderedGroupKeys = useMemo(() => {
     const seen = new Set<string>();
     const keys: string[] = [];
@@ -1111,13 +1209,9 @@ export default function PlanningBoardPage() {
     return keys;
   }, [filteredWorkItems]);
 
-  const itemsByGroup = useMemo(() => {
-    const map = new Map<string, PlannerWorkItem[]>();
-    for (const item of filteredWorkItems) {
-      if (!map.has(item.groupKey)) map.set(item.groupKey, []);
-      map.get(item.groupKey)!.push(item);
-    }
-    return map;
+  const totalJobCount = useMemo(() => {
+    const jobIds = new Set(filteredWorkItems.map(i => i.jobId));
+    return jobIds.size;
   }, [filteredWorkItems]);
 
   const loadLeft = useCallback(async (d: string, to: string) => {
@@ -1282,7 +1376,7 @@ export default function PlanningBoardPage() {
               : "border-transparent text-muted hover:text-primary"
           }`}
         >
-          Jobs{workItems.length > 0 ? ` (${workItems.length})` : ""}
+          Jobs{totalJobCount > 0 ? ` (${totalJobCount})` : ""}
         </button>
         <button
           onClick={() => setMobileTab("runs")}
@@ -1308,9 +1402,9 @@ export default function PlanningBoardPage() {
               <div>
                 <div className="text-xs font-bold uppercase tracking-wide text-muted">Jobs to plan</div>
                 <div className="text-lg font-bold text-primary leading-tight">
-                  {filteredWorkItems.length}
+                  {totalJobCount}
                   {filteredWorkItems.length !== workItems.length && (
-                    <span className="text-sm font-normal text-muted ml-1">of {workItems.length}</span>
+                    <span className="text-sm font-normal text-muted ml-1">of {new Set(workItems.map(i => i.jobId)).size}</span>
                   )}
                 </div>
               </div>
@@ -1347,8 +1441,8 @@ export default function PlanningBoardPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3">
-            {!loadingLeft && filteredWorkItems.length === 0 && (
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            {!loadingLeft && totalJobCount === 0 && (
               <div className="text-center py-12 text-muted text-sm">
                 <div className="text-3xl mb-2">{search ? "🔍" : "✅"}</div>
                 <div>{search ? "No jobs match your search" : "All jobs are planned for this period"}</div>
@@ -1359,31 +1453,33 @@ export default function PlanningBoardPage() {
                 )}
               </div>
             )}
-            {orderedGroupKeys.map(gk => (
-              <div key={gk} className="mb-4">
-                {/* Group header */}
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-1 py-1.5 mb-1.5 border-b ${
-                  gk === "needs_attention" ? "text-red-600 border-red-200" :
-                  gk === "in_custody"      ? "text-blue-700 border-blue-200" :
-                  gk === "today"           ? "text-violet-700 border-violet-200" :
-                  "text-slate-500 border-slate-200"
-                }`}>
-                  {GROUP_LABEL[gk] ?? gk}
-                  <span className="ml-1.5 font-normal normal-case">
-                    ({itemsByGroup.get(gk)?.length ?? 0})
-                  </span>
+            {orderedGroupKeys.map(gk => {
+              const grps = jobWorkGroupsByGroupKey.get(gk) ?? [];
+              if (grps.length === 0) return null;
+              return (
+                <div key={gk} className="mb-3">
+                  {/* Group header */}
+                  <div className={`text-[10px] font-bold uppercase tracking-wider px-1 py-1 mb-1 border-b flex items-center justify-between ${
+                    gk === "needs_attention" ? "text-red-600 border-red-200" :
+                    gk === "in_custody"      ? "text-blue-700 border-blue-200" :
+                    gk === "today"           ? "text-violet-700 border-violet-200" :
+                    "text-slate-400 border-slate-200"
+                  }`}>
+                    <span>{GROUP_LABEL[gk] ?? gk}</span>
+                    <span className="font-normal normal-case text-muted">{grps.length} job{grps.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  {/* Job cards */}
+                  {grps.map(grp => (
+                    <JobWorkCard
+                      key={grp.jobId}
+                      group={grp}
+                      runs={runs}
+                      onAddJobToRun={handleAddJobToRun}
+                    />
+                  ))}
                 </div>
-                {/* Cards */}
-                {(itemsByGroup.get(gk) ?? []).map(item => (
-                  <WorkItemCard
-                    key={item.jobPartId}
-                    item={item}
-                    runs={runs}
-                    onAddToRun={handleAddPartToRun}
-                  />
-                ))}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
