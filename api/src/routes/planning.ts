@@ -15,6 +15,7 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient }         from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
+import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 
 // ── Haversine distance (km) between two GPS points ───────────────────────────
 
@@ -205,7 +206,9 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const baseWhere = {
         companyId,
-        job:            { status: "ready_to_plan" as const },
+        // Show stops from jobs that are ready to plan OR already partially in a run (in_planning).
+        // "planned" / "in_progress" / "completed" jobs are excluded — they're done.
+        job:            { status: { in: ["ready_to_plan", "in_planning"] as string[] } },
         runAssignments: { none: { removedAt: null as null } },
       };
 
@@ -230,7 +233,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
               timeWindowStart: null,
               OR: [
                 { bookedTime: { gte, lte } },
-                { bookedTime: null, job: { status: "ready_to_plan", plannedDate: { gte, lte } } },
+                { bookedTime: null, job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: { gte, lte } } },
               ],
             },
             include: jobPartInclude,
@@ -371,12 +374,18 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       if (!run) return reply.status(404).send({ error: "Run not found" });
 
       // When cancelling a run, release all active assignments so the job parts
-      // return to the unplanned pool immediately.
+      // return to the unplanned pool immediately, then revert job statuses.
       if (b.status === "cancelled") {
+        const affectedJobIds = (await prisma.runAssignment.findMany({
+          where:  { runId: id, companyId, removedAt: null },
+          select: { jobId: true },
+        })).map(a => a.jobId);
+
         await prisma.runAssignment.updateMany({
           where: { runId: id, companyId, removedAt: null },
           data:  { removedAt: new Date() },
         });
+        await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, prisma);
       }
 
       const updated = await prisma.run.update({
@@ -448,8 +457,9 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         },
       });
 
-      // Refresh derived requirements
+      // Refresh derived requirements then advance job to in_planning
       await recalcDerived(runId, companyId, prisma);
+      await syncJobPlanningStatuses([part.jobId], companyId, prisma);
 
       const updated = await prisma.run.findFirst({ where: { id: runId }, include: RUN_INCLUDE });
       return reply.status(201).send({ assignment, run: updated });
@@ -476,6 +486,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       });
 
       await recalcDerived(runId, companyId, prisma);
+      // Revert job to ready_to_plan if this was its last active assignment
+      await syncJobPlanningStatuses([a.jobId], companyId, prisma);
 
       const updated = await prisma.run.findFirst({ where: { id: runId }, include: RUN_INCLUDE });
       return reply.send(updated);

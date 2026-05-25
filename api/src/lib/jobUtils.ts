@@ -1,6 +1,54 @@
 import type { StructuredJobPartInput, StructuredLoadDetailsInput } from "../services/jobValidation.js";
 import { toNullableDate } from "./coerce.js";
-import { Prisma } from "../generated/client.js";
+import { Prisma, PrismaClient } from "../generated/client.js";
+
+// ── Job planning status auto-sync ─────────────────────────────────────────────
+//
+// Called after any assignment add/remove and after a run is cancelled/deleted.
+// Keeps job.status in sync with whether its stops are in an active run:
+//
+//   • At least one stop in an active run  → in_planning
+//   • No stops in any active run          → ready_to_plan
+//
+// Only touches jobs in the planning tier (ready_to_plan / in_planning / planned).
+// Jobs that are in_progress, completed or cancelled are never auto-reverted.
+//
+// Pass a list of jobIds to process (often a single job, but batch is fine).
+export async function syncJobPlanningStatuses(
+  jobIds: number[],
+  companyId: number,
+  tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
+): Promise<void> {
+  if (jobIds.length === 0) return;
+
+  // Fetch current status + active assignment count for each job in one query
+  const jobs = await tx.job.findMany({
+    where: { id: { in: jobIds }, companyId },
+    select: {
+      id: true,
+      status: true,
+      _count: {
+        select: {
+          runAssignments: { where: { removedAt: null } },
+        },
+      },
+    },
+  });
+
+  const PLANNING_TIER = new Set(["ready_to_plan", "in_planning", "planned"]);
+
+  for (const job of jobs) {
+    if (!PLANNING_TIER.has(job.status)) continue; // never touch in_progress / completed / cancelled
+
+    const hasActiveAssignment = job._count.runAssignments > 0;
+
+    if (hasActiveAssignment && job.status === "ready_to_plan") {
+      await tx.job.update({ where: { id: job.id }, data: { status: "in_planning" } });
+    } else if (!hasActiveAssignment && (job.status === "in_planning" || job.status === "planned")) {
+      await tx.job.update({ where: { id: job.id }, data: { status: "ready_to_plan" } });
+    }
+  }
+}
 
 export function hasLoadDetailsInput(loadDetails: StructuredLoadDetailsInput | null | undefined): boolean {
   if (!loadDetails) return false;
