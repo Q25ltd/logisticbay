@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { planningApi, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type FleetUnit, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
+import { planningApi, type PlannerWorkItem, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type FleetUnit, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
 import { api } from "../../api/client";
 import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
@@ -142,7 +142,7 @@ function addDaysToISO(d: string, n: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-/** Client-side text search across customer name, reference, and stop addresses. */
+/** Client-side text search across customer name, reference, locations. */
 function matchesSearch(group: JobGroup, q: string): boolean {
   const lq = q.toLowerCase();
   if ((group.customerName  ?? "").toLowerCase().includes(lq)) return true;
@@ -155,6 +155,37 @@ function matchesSearch(group: JobGroup, q: string): boolean {
   }
   return false;
 }
+
+function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
+  const lq = q.toLowerCase();
+  return [
+    item.customerName, item.jobReference, item.nextAction,
+    item.currentLocation, item.finalDestination, item.finalPostcode,
+    item.currentPostcode, item.goodsType, item.goodsDescription,
+  ].some(v => (v ?? "").toLowerCase().includes(lq));
+}
+
+const GROUP_LABEL: Record<string, string> = {
+  needs_attention:            "⚠️  Needs attention",
+  in_custody:                 "📦  Already collected",
+  today:                      "📅  Today",
+  vehicle_van:                "🚐  Van",
+  vehicle_rigid:              "🚚  Rigid",
+  vehicle_artic_curtainsider: "🚛  Artic — Curtainsider",
+  vehicle_artic_fridge:       "❄️  Artic — Fridge",
+  vehicle_flatbed:            "🔩  Flatbed",
+  vehicle_taillift:           "📦  Tail lift",
+  vehicle_hiab:               "🏗️  HIAB",
+  vehicle_adr:                "☢️  ADR / Hazardous",
+  direction_london:           "📍  London / M25",
+  direction_midlands:         "📍  Midlands",
+  direction_north:            "📍  North",
+  direction_east:             "📍  East / Ports",
+  direction_west_wales:       "📍  West / Wales",
+  direction_scotland:         "📍  Scotland",
+  direction_local:            "📍  Local",
+  future:                     "🗓️  Future",
+};
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -177,20 +208,16 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge colour={map[status] ?? "bg-slate-100 text-slate-600"}>{label[status] ?? status}</Badge>;
 }
 
-// ── Job card (left panel) ─────────────────────────────────────────────────────
+// ── Work item card (left panel) ───────────────────────────────────────────────
 
-function JobCard({
-  group,
-  onAddJobToRun,
+function WorkItemCard({
+  item,
+  onAddToRun,
   runs,
-  planningDate,
-  showDateBadge,
 }: {
-  group:          JobGroup;
-  onAddJobToRun:  (jobId: number, runId: number) => Promise<void>;
-  runs:           PlanningRun[];
-  planningDate:   string;
-  showDateBadge?: boolean;
+  item:        PlannerWorkItem;
+  onAddToRun:  (jobPartId: number, runId: number) => Promise<void>;
+  runs:        PlanningRun[];
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
@@ -200,63 +227,85 @@ function JobCard({
   async function handleAdd() {
     if (!selectedRunId) return;
     setAdding(true);
-    try { await onAddJobToRun(group.jobId, Number(selectedRunId)); }
+    try { await onAddToRun(item.jobPartId, Number(selectedRunId)); }
     finally { setAdding(false); }
   }
 
+  const riskColour =
+    item.riskLevel === "high"   ? "border-l-red-500"   :
+    item.riskLevel === "medium" ? "border-l-amber-400" :
+    item.riskLevel === "low"    ? "border-l-yellow-300" :
+    "border-l-transparent";
+
+  const timeStr = item.timeWindowStart
+    ? `${fmtTime(item.timeWindowStart)}${item.timeWindowEnd ? `–${fmtTime(item.timeWindowEnd)}` : ""}`
+    : item.bookedTime ? `Booked ${fmtTime(item.bookedTime)}` : null;
+
   return (
-    <div className="card p-3 mb-2">
-      {/* Header */}
-      <div className="mb-2">
+    <div className={`card p-3 mb-2 border-l-4 ${riskColour}`}>
+
+      {/* Customer + ref */}
+      <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="font-bold text-sm text-primary leading-tight">
-          {group.customerName ?? "Unknown customer"}
+          {item.customerName ?? "Unknown customer"}
         </div>
-        <div className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
-          {group.jobReference && (
-            <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px]">{group.jobReference}</span>
-          )}
-          {showDateBadge && group.plannedDate && (
-            <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
-              {new Date(group.plannedDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-            </span>
-          )}
-          {group.goodsType && <Badge colour="bg-slate-100 text-slate-600">{cap(group.goodsType)}</Badge>}
-          {group.weight   != null && group.weight   > 0 && <span>{group.weight.toLocaleString()} kg</span>}
-          {group.quantity != null && group.quantity > 0 && (
-            <span>{group.quantity}{group.quantityUnit ? " " + cap(group.quantityUnit) : ""}</span>
-          )}
-        </div>
+        {item.jobReference && (
+          <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[10px] flex-shrink-0">
+            {item.jobReference}
+          </span>
+        )}
       </div>
 
-      {/* Stops */}
-      <div className="space-y-1.5 mb-3">
-        {group.stops.map(stop => {
-          const isCollect = stop.type === "collection" || stop.type === "pickup";
-          const dateLabel = stopDateLabel(stop.timeWindowStart ?? stop.bookedTime, planningDate);
-          const timeStr   = stop.timeWindowStart
-            ? `${fmtTime(stop.timeWindowStart)}${stop.timeWindowEnd ? `–${fmtTime(stop.timeWindowEnd)}` : ""}`
-            : stop.bookedTime ? fmtTime(stop.bookedTime) : null;
+      {/* Next action — the key field */}
+      <div className="text-xs font-semibold text-primary mb-1.5">{item.nextAction}</div>
 
-          return (
-            <div key={stop.id} className="flex items-start gap-1.5 text-xs">
-              <div className="flex-shrink-0 mt-0.5">
-                <Badge colour={isCollect ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                  {STOP_TYPE_LABEL[stop.type] ?? stop.type}
-                </Badge>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-primary font-medium leading-tight truncate">{stopAddress(stop)}</div>
-                {(timeStr || dateLabel) && (
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {timeStr   && <span className="text-amber-700 font-medium">{timeStr}</span>}
-                    {dateLabel && <span className="text-violet-600 font-semibold">📅 {dateLabel}</span>}
-                  </div>
-                )}
-              </div>
+      {/* Current → destination */}
+      {(item.currentLocation || item.finalDestination) && (
+        <div className="text-[11px] text-muted mb-1.5 flex items-center gap-1 flex-wrap">
+          {item.currentLocation && <span>{item.currentLocation}</span>}
+          {item.currentLocation && item.finalDestination && <span className="text-slate-400">→</span>}
+          {item.finalDestination && <span>{item.finalDestination}</span>}
+        </div>
+      )}
+
+      {/* Time + badges */}
+      <div className="flex flex-wrap gap-1 mb-2 items-center">
+        {timeStr && (
+          <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+            {timeStr}
+          </span>
+        )}
+        {item.vehicleCategory && (
+          <Badge colour="bg-slate-100 text-slate-600">{cap(item.vehicleCategory)}</Badge>
+        )}
+        {item.goodsType && (
+          <Badge colour="bg-slate-100 text-slate-600">{cap(item.goodsType)}</Badge>
+        )}
+        {item.hasTempControl && <Badge colour="bg-blue-50 text-blue-700">Temp</Badge>}
+        {item.hasHazardous   && <Badge colour="bg-orange-50 text-orange-700">ADR</Badge>}
+        {item.weight != null && item.weight > 0 && (
+          <span className="text-[11px] text-muted">{item.weight.toLocaleString()} kg</span>
+        )}
+        {item.quantity != null && item.quantity > 0 && (
+          <span className="text-[11px] text-muted">
+            {item.quantity}{item.quantityUnit ? " " + cap(item.quantityUnit) : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Warnings */}
+      {item.warnings.length > 0 && (
+        <div className="mb-2 space-y-0.5">
+          {item.warnings.map((w, i) => (
+            <div key={i} className={`text-[11px] px-2 py-1 rounded flex items-start gap-1 ${
+              item.riskLevel === "high" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
+            }`}>
+              <span className="flex-shrink-0">{item.riskLevel === "high" ? "⚠️" : "ℹ️"}</span>
+              <span>{w}</span>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Add to run */}
       {draftRuns.length > 0 ? (
@@ -282,7 +331,7 @@ function JobCard({
           </button>
         </div>
       ) : (
-        <div className="text-[10px] text-muted italic">Create a run first to add this job</div>
+        <div className="text-[10px] text-muted italic">Create a run first to add this stop</div>
       )}
     </div>
   );
@@ -1006,6 +1055,7 @@ export default function PlanningBoardPage() {
   const [date,           setDate]           = useState(todayISO());
   const [lookAheadDays,  setLookAheadDays]  = useState(0);
   const [search,         setSearch]         = useState("");
+  const [workItems,      setWorkItems]      = useState<PlannerWorkItem[]>([]);
   const [clusters,       setClusters]       = useState<StopCluster[]>([]);
   const [runs,           setRuns]           = useState<PlanningRun[]>([]);
   const [trailers,       setTrailers]       = useState<FleetTrailer[]>([]);
@@ -1038,19 +1088,48 @@ export default function PlanningBoardPage() {
   // End date of the unplanned window (date + lookAheadDays)
   const dateTo = useMemo(() => addDaysToISO(date, lookAheadDays), [date, lookAheadDays]);
 
-  // Derive job groups from clusters, then apply text search filter
+  // Derive job groups from clusters (kept for handleAddJobToRun compatibility)
   const allJobGroups     = useMemo(() => buildJobGroups(clusters), [clusters]);
   const jobGroups        = useMemo(
     () => search.trim() ? allJobGroups.filter(g => matchesSearch(g, search.trim())) : allJobGroups,
     [allJobGroups, search],
   );
 
+  // Work items: apply search filter then group by groupKey
+  const filteredWorkItems = useMemo(
+    () => search.trim() ? workItems.filter(i => matchesWorkItem(i, search.trim())) : workItems,
+    [workItems, search],
+  );
+
+  // Ordered group keys preserving server sort (first occurrence wins)
+  const orderedGroupKeys = useMemo(() => {
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    for (const item of filteredWorkItems) {
+      if (!seen.has(item.groupKey)) { seen.add(item.groupKey); keys.push(item.groupKey); }
+    }
+    return keys;
+  }, [filteredWorkItems]);
+
+  const itemsByGroup = useMemo(() => {
+    const map = new Map<string, PlannerWorkItem[]>();
+    for (const item of filteredWorkItems) {
+      if (!map.has(item.groupKey)) map.set(item.groupKey, []);
+      map.get(item.groupKey)!.push(item);
+    }
+    return map;
+  }, [filteredWorkItems]);
+
   const loadLeft = useCallback(async (d: string, to: string) => {
     setLoadingLeft(true);
     try {
-      const res = await planningApi.getUnplanned(d, to);
-      setClusters(res.clusters);
-      setTotalUnplanned(res.total);
+      const [wiRes, unRes] = await Promise.all([
+        planningApi.getWorkItems(d, to),
+        planningApi.getUnplanned(d, to),
+      ]);
+      setWorkItems(wiRes.items);
+      setClusters(unRes.clusters);
+      setTotalUnplanned(unRes.total);
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setLoadingLeft(false); }
   }, []);
@@ -1087,6 +1166,13 @@ export default function PlanningBoardPage() {
   }, [date, dateTo, loadLeft, loadRight, loadDrivers]);
 
   useEffect(() => { loadFleet(); }, [loadFleet]);
+
+  /** Add a single job part (from the new work-items panel) to a run */
+  async function handleAddPartToRun(jobPartId: number, runId: number) {
+    try { await planningApi.addStop(runId, jobPartId); } catch { /* skip already-assigned */ }
+    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    setMobileTab("runs");
+  }
 
   /** Add all stops of a job to one run (normal mode) */
   async function handleAddJobToRun(jobId: number, runId: number) {
@@ -1196,7 +1282,7 @@ export default function PlanningBoardPage() {
               : "border-transparent text-muted hover:text-primary"
           }`}
         >
-          Jobs{jobGroups.length > 0 ? ` (${jobGroups.length})` : ""}
+          Jobs{workItems.length > 0 ? ` (${workItems.length})` : ""}
         </button>
         <button
           onClick={() => setMobileTab("runs")}
@@ -1222,12 +1308,9 @@ export default function PlanningBoardPage() {
               <div>
                 <div className="text-xs font-bold uppercase tracking-wide text-muted">Jobs to plan</div>
                 <div className="text-lg font-bold text-primary leading-tight">
-                  {jobGroups.length}
-                  {allJobGroups.length !== jobGroups.length && (
-                    <span className="text-sm font-normal text-muted ml-1">of {allJobGroups.length}</span>
-                  )}
-                  {allJobGroups.length !== totalUnplanned && jobGroups.length === allJobGroups.length && (
-                    <span className="text-sm font-normal text-muted ml-1">({totalUnplanned} stops)</span>
+                  {filteredWorkItems.length}
+                  {filteredWorkItems.length !== workItems.length && (
+                    <span className="text-sm font-normal text-muted ml-1">of {workItems.length}</span>
                   )}
                 </div>
               </div>
@@ -1265,7 +1348,7 @@ export default function PlanningBoardPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">
-            {!loadingLeft && jobGroups.length === 0 && (
+            {!loadingLeft && filteredWorkItems.length === 0 && (
               <div className="text-center py-12 text-muted text-sm">
                 <div className="text-3xl mb-2">{search ? "🔍" : "✅"}</div>
                 <div>{search ? "No jobs match your search" : "All jobs are planned for this period"}</div>
@@ -1276,15 +1359,30 @@ export default function PlanningBoardPage() {
                 )}
               </div>
             )}
-            {jobGroups.map(group => (
-              <JobCard
-                key={group.jobId}
-                group={group}
-                runs={runs}
-                onAddJobToRun={handleAddJobToRun}
-                planningDate={date}
-                showDateBadge={lookAheadDays > 0}
-              />
+            {orderedGroupKeys.map(gk => (
+              <div key={gk} className="mb-4">
+                {/* Group header */}
+                <div className={`text-[11px] font-bold uppercase tracking-wider px-1 py-1.5 mb-1.5 border-b ${
+                  gk === "needs_attention" ? "text-red-600 border-red-200" :
+                  gk === "in_custody"      ? "text-blue-700 border-blue-200" :
+                  gk === "today"           ? "text-violet-700 border-violet-200" :
+                  "text-slate-500 border-slate-200"
+                }`}>
+                  {GROUP_LABEL[gk] ?? gk}
+                  <span className="ml-1.5 font-normal normal-case">
+                    ({itemsByGroup.get(gk)?.length ?? 0})
+                  </span>
+                </div>
+                {/* Cards */}
+                {(itemsByGroup.get(gk) ?? []).map(item => (
+                  <WorkItemCard
+                    key={item.jobPartId}
+                    item={item}
+                    runs={runs}
+                    onAddToRun={handleAddPartToRun}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         </div>

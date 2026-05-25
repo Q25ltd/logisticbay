@@ -176,6 +176,35 @@ export interface PlanningDriver {
   user?: { id: number; name: string; email: string } | null;
 }
 
+// ── Planner work items (sorted / grouped) ─────────────────────────────────────
+
+export interface PlannerWorkItem {
+  jobId:            number;
+  jobPartId:        number;
+  jobReference:     string | null;
+  customerName:     string | null;
+  nextAction:       string;
+  currentLocation:  string | null;
+  currentPostcode:  string | null;
+  finalDestination: string | null;
+  finalPostcode:    string | null;
+  timeWindowStart:  string | null;
+  timeWindowEnd:    string | null;
+  bookedTime:       string | null;
+  vehicleCategory:  string | null;
+  goodsType:        string | null;
+  goodsDescription: string | null;
+  weight:           number | null;
+  quantity:         number | null;
+  quantityUnit:     string | null;
+  hasHazardous:     boolean;
+  hasTempControl:   boolean;
+  riskLevel:        "high" | "medium" | "low" | "none";
+  warnings:         string[];
+  sortScore:        number;
+  groupKey:         string;
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const planningApi = {
@@ -185,6 +214,11 @@ export const planningApi = {
       ? `date=${dateFrom}`
       : `dateFrom=${dateFrom}&dateTo=${to}`;
     return api.get<{ clusters: StopCluster[]; total: number }>(`/planning/unplanned?${qs}`);
+  },
+
+  getWorkItems: (dateFrom: string, dateTo?: string) => {
+    const to = dateTo ?? dateFrom;
+    return api.get<{ items: PlannerWorkItem[] }>(`/planning/work-items?dateFrom=${dateFrom}&dateTo=${to}`);
   },
 
   getRuns: (date: string) =>
