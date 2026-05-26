@@ -171,9 +171,10 @@ export interface RunWaypoint {
 }
 
 export interface PlanningDriver {
-  id:          number;
-  displayName: string;
-  status:      string;
+  id:               number;
+  displayName:      string;
+  status:           string;
+  nightsOutAllowed: boolean;
   user?: { id: number; name: string; email: string } | null;
 }
 
@@ -204,6 +205,7 @@ export interface PlannerWorkItem {
   warnings:         string[];
   sortScore:        number;
   groupKey:         string;
+  postcodeDistrict: string | null;
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────

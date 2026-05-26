@@ -37,6 +37,22 @@ export interface PlannerWorkItem {
   warnings:         string[];
   sortScore:        number;
   groupKey:         string;
+  postcodeDistrict: string | null;  // UK outward code e.g. "LS27", "M1", "SW1A"
+}
+
+// ── UK postcode district extraction ──────────────────────────────────────────
+//
+// UK postcodes look like "LS27 8QT", "M1 1AA", "SW1A 2AA", "EC1A 1BB".
+// The outward code (district) is everything before the space.
+// If there's no space (data quality issue), strip the last 3 chars (inward code).
+
+function extractPostcodeDistrict(postcode: string | null | undefined): string | null {
+  if (!postcode) return null;
+  const t = postcode.trim().toUpperCase();
+  const spaceIdx = t.indexOf(" ");
+  if (spaceIdx > 0) return t.slice(0, spaceIdx);
+  // No space — strip inward code (last 3 chars)
+  return t.length > 3 ? t.slice(0, -3).trim() || null : null;
 }
 
 // ── UK postcode area → direction region ──────────────────────────────────────
@@ -467,6 +483,13 @@ export async function getPlannerWorkItems(
       now,
     );
 
+    // postcodeDistrict: the stop's own address is the most useful geographic anchor
+    // (where the driver needs to go for this specific stop).
+    const partPostcode   = part.postcode ?? null;
+    const postcodeDistrict = extractPostcodeDistrict(partPostcode) ??
+                             extractPostcodeDistrict(finalPostcode) ??
+                             extractPostcodeDistrict(currentPostcode);
+
     items.push({
       jobId:            part.jobId,
       jobPartId:        part.id,
@@ -492,6 +515,7 @@ export async function getPlannerWorkItems(
       warnings,
       sortScore:        score,
       groupKey,
+      postcodeDistrict,
     });
   }
 

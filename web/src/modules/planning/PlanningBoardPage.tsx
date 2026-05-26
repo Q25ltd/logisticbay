@@ -95,7 +95,7 @@ function nearestNeighborSort(assignments: PlanningAssignment[]): PlanningAssignm
 
 const WAYPOINT_TYPE_LABEL: Record<string, string> = {
   depot_start: "Depot start", yard_pickup: "Yard pickup", hub_drop: "Hub drop",
-  return_to_base: "Return to base", custom: "Stop",
+  return_to_base: "Return to base", overnight_rest: "Overnight rest", custom: "Stop",
 };
 
 const STOP_TYPE_LABEL: Record<string, string> = {
@@ -569,6 +569,7 @@ function RunLane({
   // Waypoint form state
   const [showWpForm,    setShowWpForm]    = useState(false);
   const [wpPosition,    setWpPosition]    = useState<number>(-2);
+  const [wpType,        setWpType]        = useState("custom");
   const [wpTime,        setWpTime]        = useState("");
   const [wpAdding,      setWpAdding]      = useState(false);
   const [wpLocId,       setWpLocId]       = useState<number | "">("");
@@ -657,6 +658,8 @@ function RunLane({
     if (!showWpForm) return;
     setWpShowCreate(false);
     setWpLocId((wpPosition === -2 || wpPosition === -1) ? (depot?.id ?? "") : "");
+    // Reset mid-route type when switching positions
+    if (wpPosition !== -2 && wpPosition !== -1) setWpType("custom");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wpPosition]);
 
@@ -704,7 +707,7 @@ function RunLane({
         const prevSeq = allItems[wpPosition]?.seq ?? 0;
         const nextSeq = allItems[wpPosition + 1]?.seq;
         seq = nextSeq != null ? Math.round((prevSeq + nextSeq) / 2) : prevSeq + 1000;
-        waypointType = "custom";
+        waypointType = wpType;
       }
 
       let locationId: number | undefined;
@@ -778,6 +781,17 @@ function RunLane({
   const fc = sortedA.find(a => ["collection","pickup"].includes(a.jobPart.type));
   const deliveryBeforeCollection = fd && fc && fd.sequenceNumber < fc.sequenceNumber;
 
+  // Day-driver multi-day warning
+  const assignedDriver = run.assignedDriverId ? drivers.find(d => d.id === run.assignedDriverId) : null;
+  const isDayDriver    = assignedDriver && !assignedDriver.nightsOutAllowed;
+  const stopDates = run.assignments
+    .map(a => a.jobPart.timeWindowStart ? new Date(a.jobPart.timeWindowStart).toISOString().slice(0, 10) : null)
+    .filter(Boolean) as string[];
+  const runDate = run.plannedDate?.slice(0, 10) ?? null;
+  const allDates = runDate ? [...new Set([runDate, ...stopDates])] : [...new Set(stopDates)];
+  const isMultiDayRun  = allDates.length > 1;
+  const dayDriverMultiDayWarning = isDayDriver && isMultiDayRun;
+
   return (
     <div
       className={`w-80 min-w-[320px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
@@ -813,7 +827,11 @@ function RunLane({
             onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
           >
             <option value="">— assign —</option>
-            {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+            {drivers.map(d => (
+              <option key={d.id} value={d.id}>
+                {d.displayName}{d.nightsOutAllowed ? " 🌙" : ""}
+              </option>
+            ))}
           </select>
         </div>
         <div className="bg-white px-2 py-1.5">
@@ -964,6 +982,13 @@ function RunLane({
               </div>
             )}
 
+            {/* Day driver on multi-day run */}
+            {dayDriverMultiDayWarning && (
+              <div className="text-[10px] bg-orange-50 text-orange-700 border border-orange-200 rounded px-2 py-1">
+                ⚠ Day driver — stops span multiple days. Add a depot return and a new run for the following day.
+              </div>
+            )}
+
             {/* Drop zone overlay (when has stops + hovering) */}
             {isOver && routeItems.length > 0 && (
               <div className="rounded border-2 border-dashed border-primary bg-primary/5 py-3 text-center text-sm text-primary">
@@ -1029,6 +1054,17 @@ function RunLane({
               })()}
               <option value={-1}>After all stops (return to depot)</option>
             </select>
+
+            {/* Stop type — only for mid-route stops (not depot start / return to base) */}
+            {wpPosition !== -2 && wpPosition !== -1 && (
+              <select className="input text-xs py-1 w-full" value={wpType}
+                onChange={e => setWpType(e.target.value)}>
+                <option value="custom">Stop / other</option>
+                <option value="yard_pickup">Yard pickup</option>
+                <option value="hub_drop">Hub drop</option>
+                <option value="overnight_rest">Overnight rest</option>
+              </select>
+            )}
 
             {locsLoading && <div className="text-muted animate-pulse text-[10px]">Loading locations…</div>}
             {!locsLoading && !wpShowCreate && (
@@ -1180,7 +1216,7 @@ interface SidebarCounts {
   ready_today:     number;
   future:          number;
   byVehicle:       Record<string, number>;
-  byDirection:     Record<string, number>;
+  byArea:          Record<string, number>;  // postcode district → job count
 }
 
 const VEHICLE_ORDER = [
@@ -1199,21 +1235,21 @@ function Sidebar({
   onPoolChange,
   activeVehicle,
   onVehicleChange,
-  activeDirection,
-  onDirectionChange,
+  activeArea,
+  onAreaChange,
 }: {
   counts:          SidebarCounts;
   activePool:      string | null;
   onPoolChange:    (p: string | null) => void;
   activeVehicle:   string | null;
   onVehicleChange: (v: string | null) => void;
-  activeDirection: string | null;
-  onDirectionChange: (d: string | null) => void;
+  activeArea:      string | null;
+  onAreaChange:    (a: string | null) => void;
 }) {
   const vehicleEntries = Object.entries(counts.byVehicle)
     .sort(([a], [b]) => (VEHICLE_ORDER.indexOf(a) - VEHICLE_ORDER.indexOf(b)) || a.localeCompare(b));
-  const directionEntries = Object.entries(counts.byDirection)
-    .sort(([, a], [, b]) => b - a);
+  const areaEntries = Object.entries(counts.byArea)
+    .sort(([a], [b]) => a.localeCompare(b));
 
   function SidebarItem({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
     return (
@@ -1254,27 +1290,27 @@ function Sidebar({
         </>
       )}
 
-      {/* By Direction */}
-      {directionEntries.length > 0 && (
+      {/* By Area (postcode district) */}
+      {areaEntries.length > 0 && (
         <>
-          <div className="px-2.5 pt-3 pb-1 text-[9px] uppercase tracking-wider font-bold text-muted">By direction</div>
-          {directionEntries.map(([d, c]) => (
+          <div className="px-2.5 pt-3 pb-1 text-[9px] uppercase tracking-wider font-bold text-muted">By area</div>
+          {areaEntries.map(([a, c]) => (
             <SidebarItem
-              key={d}
-              label={`📍 ${GROUP_LABEL[`direction_${d}`] ?? cap(d)}`}
+              key={a}
+              label={`📍 ${a}`}
               count={c}
-              active={activeDirection === d}
-              onClick={() => onDirectionChange(activeDirection === d ? null : d)}
+              active={activeArea === a}
+              onClick={() => onAreaChange(activeArea === a ? null : a)}
             />
           ))}
         </>
       )}
 
       {/* Clear all filters */}
-      {(activePool || activeVehicle || activeDirection) && (
+      {(activePool || activeVehicle || activeArea) && (
         <div className="px-2.5 pt-3">
           <button
-            onClick={() => { onPoolChange(null); onVehicleChange(null); onDirectionChange(null); }}
+            onClick={() => { onPoolChange(null); onVehicleChange(null); onAreaChange(null); }}
             className="text-[10px] text-accent hover:underline"
           >
             ✕ Clear filters
@@ -1340,9 +1376,9 @@ export default function PlanningBoardPage() {
   const [creatingRun,    setCreatingRun]    = useState(false);
 
   // Sidebar filters
-  const [activePool,      setActivePool]      = useState<string | null>(null);
-  const [activeVehicle,   setActiveVehicle]   = useState<string | null>(null);
-  const [activeDirection, setActiveDirection] = useState<string | null>(null);
+  const [activePool,    setActivePool]    = useState<string | null>(null);
+  const [activeVehicle, setActiveVehicle] = useState<string | null>(null);
+  const [activeArea,    setActiveArea]    = useState<string | null>(null);
 
   // Batch selection
   const [selectedJobIds, setSelectedJobIds] = useState<Set<number>>(new Set());
@@ -1363,7 +1399,7 @@ export default function PlanningBoardPage() {
     const today = new Set<number>();
     const future = new Set<number>();
     const byVehicle: Record<string, Set<number>> = {};
-    const byDirection: Record<string, Set<number>> = {};
+    const byArea: Record<string, Set<number>> = {};
 
     for (const item of workItems) {
       const gk = item.groupKey;
@@ -1378,10 +1414,10 @@ export default function PlanningBoardPage() {
         byVehicle[vc].add(item.jobId);
       }
 
-      if (gk.startsWith("direction_")) {
-        const dir = gk.replace("direction_", "");
-        if (!byDirection[dir]) byDirection[dir] = new Set();
-        byDirection[dir].add(item.jobId);
+      // Postcode district grouping — use the stop's own district
+      if (item.postcodeDistrict) {
+        if (!byArea[item.postcodeDistrict]) byArea[item.postcodeDistrict] = new Set();
+        byArea[item.postcodeDistrict].add(item.jobId);
       }
     }
 
@@ -1390,8 +1426,8 @@ export default function PlanningBoardPage() {
       in_custody:      custody.size,
       ready_today:     today.size,
       future:          future.size,
-      byVehicle:  Object.fromEntries(Object.entries(byVehicle).map(([k, v]) => [k, v.size])),
-      byDirection: Object.fromEntries(Object.entries(byDirection).map(([k, v]) => [k, v.size])),
+      byVehicle: Object.fromEntries(Object.entries(byVehicle).map(([k, v]) => [k, v.size])),
+      byArea:    Object.fromEntries(Object.entries(byArea).map(([k, v]) => [k, v.size])),
     };
   }, [workItems]);
 
@@ -1405,13 +1441,13 @@ export default function PlanningBoardPage() {
       if (activePool === "future"          && gk !== "future")           return false;
       if (activePool === "ready_today" && (gk === "needs_attention" || gk === "in_custody" || gk === "future")) return false;
 
-      if (activeVehicle   && (item.vehicleCategory?.toLowerCase() ?? "") !== activeVehicle) return false;
-      if (activeDirection && gk !== `direction_${activeDirection}`) return false;
+      if (activeVehicle && (item.vehicleCategory?.toLowerCase() ?? "") !== activeVehicle) return false;
+      if (activeArea    && item.postcodeDistrict !== activeArea) return false;
 
       if (search.trim() && !matchesWorkItem(item, search.trim())) return false;
       return true;
     });
-  }, [workItems, activePool, activeVehicle, activeDirection, search]);
+  }, [workItems, activePool, activeVehicle, activeArea, search]);
 
   // ── Build JobWorkGroups ─────────────────────────────────────────────────────
   const jobWorkGroupsByGroupKey = useMemo(() => {
@@ -1619,7 +1655,7 @@ export default function PlanningBoardPage() {
     activePool === "future"     ? "Future Jobs" :
     activePool === "ready_today"? "Ready Today" :
     activeVehicle               ? VEHICLE_LABELS[activeVehicle] ?? cap(activeVehicle) :
-    activeDirection             ? (GROUP_LABEL[`direction_${activeDirection}`] ?? cap(activeDirection)) :
+    activeArea                  ? `Area: ${activeArea}` :
     "All Jobs";
 
   return (
@@ -1683,8 +1719,8 @@ export default function PlanningBoardPage() {
             onPoolChange={setActivePool}
             activeVehicle={activeVehicle}
             onVehicleChange={setActiveVehicle}
-            activeDirection={activeDirection}
-            onDirectionChange={setActiveDirection}
+            activeArea={activeArea}
+            onAreaChange={setActiveArea}
           />
         </div>
 
