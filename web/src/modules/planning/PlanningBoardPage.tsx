@@ -321,7 +321,7 @@ function JobWorkCard({
           onClick={e => e.stopPropagation()}
           title="Select for batch action"
         />
-        <div className="font-semibold text-[13px] text-primary leading-tight truncate flex-1 min-w-0">
+        <div className="font-bold text-[14px] text-primary leading-tight truncate flex-1 min-w-0">
           {group.customerName ?? "Unknown customer"}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -493,6 +493,8 @@ function RunLane({
   onDelete,
   onDropJob,
   onOptimiseRoute,
+  onConfirmOptimise,
+  confirmingOptimise,
   optimising,
 }: {
   run:              PlanningRun;
@@ -508,9 +510,11 @@ function RunLane({
   onRemoveWaypoint: (runId: number, waypointId: number) => Promise<void>;
   onPublish:        (runId: number) => Promise<void>;
   onDelete:         (runId: number) => Promise<void>;
-  onDropJob:        (jobId: number) => Promise<void>;
-  onOptimiseRoute:  (runId: number) => Promise<void>;
-  optimising:       boolean;
+  onDropJob:         (jobId: number) => Promise<void>;
+  onOptimiseRoute:   (runId: number) => Promise<void>;
+  onConfirmOptimise: (runId: number) => Promise<void>;
+  confirmingOptimise: boolean;
+  optimising:        boolean;
 }) {
   const [saving,     setSaving]     = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -732,7 +736,7 @@ function RunLane({
 
   return (
     <div
-      className={`w-72 min-w-[260px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
+      className={`w-80 min-w-[320px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
         isLocked ? "opacity-60" : ""
       } ${isOver ? "ring-2 ring-primary shadow-lg" : "border-border"}`}
       style={{ maxHeight: "calc(100vh - 130px)" }}
@@ -757,9 +761,9 @@ function RunLane({
       {/* ── Inline driver + vehicle assign ── */}
       <div className="grid grid-cols-2 gap-px bg-slate-100 flex-shrink-0">
         <div className="bg-white px-2 py-1.5">
-          <div className="text-[9px] text-muted uppercase tracking-wide mb-0.5">Driver</div>
+          <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-0.5">Driver</div>
           <select
-            className="w-full text-[11px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            className="w-full text-[12px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
             value={run.assignedDriverId ?? ""}
             disabled={saving}
             onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
@@ -769,9 +773,9 @@ function RunLane({
           </select>
         </div>
         <div className="bg-white px-2 py-1.5">
-          <div className="text-[9px] text-muted uppercase tracking-wide mb-0.5">Trailer</div>
+          <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-0.5">Trailer</div>
           <select
-            className="w-full text-[11px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            className="w-full text-[12px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
             value={run.assignedTrailerId ?? ""}
             disabled={saving}
             onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
@@ -801,8 +805,8 @@ function RunLane({
           aiCheck.severity === "block" ? "bg-red-50 text-red-700 border-red-100" :
           aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700 border-amber-100" :
           "bg-green-50 text-green-700 border-green-100"
-        }`} title={aiCheck.reason}>
-          {aiDot} {aiCheck.reason.length > 90 ? aiCheck.reason.slice(0, 87) + "…" : aiCheck.reason}
+        }`}>
+          <span className="font-semibold">{aiDot}</span> {aiCheck.reason}
         </div>
       )}
 
@@ -849,22 +853,22 @@ function RunLane({
                   const a = item.data;
                   stopNum++;
                   return (
-                    <div key={`a-${a.id}`} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white border border-slate-100 hover:border-slate-200 text-xs group">
-                      <span className="w-4 text-center font-bold text-slate-400 flex-shrink-0 text-[10px]">{stopNum}</span>
+                    <div key={`a-${a.id}`} className="flex items-center gap-2 px-2 py-1.5 rounded bg-white border border-slate-100 hover:border-slate-200 group">
+                      <span className="w-5 text-center font-bold text-slate-400 flex-shrink-0 text-[11px]">{stopNum}</span>
                       <Badge colour={
                         a.jobPart.type === "collection" || a.jobPart.type === "pickup"
                           ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
                       }>
                         {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
                       </Badge>
-                      <span className="font-medium text-primary truncate flex-1 min-w-0">
+                      <span className="font-semibold text-[13px] text-primary truncate flex-1 min-w-0">
                         {a.jobPart.job.customerName ?? "—"}
                       </span>
                       {a.jobPart.timeWindowStart && (
-                        <span className="text-amber-600 flex-shrink-0 tabular-nums text-[10px]">{fmtTime(a.jobPart.timeWindowStart)}</span>
+                        <span className="text-amber-700 font-bold flex-shrink-0 tabular-nums text-[13px]">{fmtTime(a.jobPart.timeWindowStart)}</span>
                       )}
                       <button onClick={() => onRemoveStop(run.id, a.id)}
-                        className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove stop">✕</button>
+                        className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-sm" title="Remove stop">✕</button>
                     </div>
                   );
                 }
@@ -901,15 +905,22 @@ function RunLane({
           >
             {showWpForm ? "✕ Cancel" : "+ Waypoint"}
           </button>
-          {run.assignments.length >= 2 && (
+          {run.assignments.length >= 2 && !confirmingOptimise && (
             <button
               onClick={() => onOptimiseRoute(run.id)}
               disabled={optimising}
-              className="text-[10px] text-slate-500 hover:text-primary disabled:opacity-40 ml-auto"
+              className="text-[11px] text-slate-500 hover:text-primary disabled:opacity-40 ml-auto font-medium"
               title="Sort stops in geographically optimal order"
             >
               {optimising ? "⟳ Sorting…" : "⟡ Optimise route"}
             </button>
+          )}
+          {confirmingOptimise && (
+            <div className="ml-auto flex items-center gap-1.5 text-[11px]">
+              <span className="text-slate-600 font-medium">Reorder stops?</span>
+              <button onClick={() => onConfirmOptimise(run.id)} className="text-white bg-primary rounded px-2 py-0.5 font-semibold">Yes</button>
+              <button onClick={() => onOptimiseRoute(-1)} className="text-slate-500 hover:text-slate-700">Cancel</button>
+            </div>
           )}
         </div>
 
@@ -1126,12 +1137,12 @@ function Sidebar({
     return (
       <button
         onClick={onClick}
-        className={`w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded text-[12px] transition-colors ${
+        className={`w-full text-left flex items-center justify-between px-2.5 py-2 rounded text-[13px] transition-colors ${
           active ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100 hover:text-primary"
         }`}
       >
         <span className="truncate">{label}</span>
-        <span className={`text-[10px] font-bold flex-shrink-0 ml-1 tabular-nums ${active ? "text-white/80" : "text-muted"}`}>{count}</span>
+        <span className={`text-[11px] font-bold flex-shrink-0 ml-1 tabular-nums ${active ? "text-white/80" : "text-muted"}`}>{count}</span>
       </button>
     );
   }
@@ -1256,8 +1267,9 @@ export default function PlanningBoardPage() {
   const [batchRunId,     setBatchRunId]     = useState<number | "">("");
   const [batchAdding,    setBatchAdding]    = useState(false);
 
-  // Route optimise loading
-  const [optimisingRunIds, setOptimisingRunIds] = useState<Set<number>>(new Set());
+  // Route optimise loading + inline confirmation
+  const [optimisingRunIds,   setOptimisingRunIds]   = useState<Set<number>>(new Set());
+  const [confirmOptimiseId,  setConfirmOptimiseId]  = useState<number | null>(null);
 
   // End date of unplanned window
   const dateTo = useMemo(() => addDaysToISO(date, lookAheadDays), [date, lookAheadDays]);
@@ -1476,10 +1488,16 @@ export default function PlanningBoardPage() {
   }
 
   async function handleOptimiseRoute(runId: number) {
+    if (runId === -1) { setConfirmOptimiseId(null); return; } // cancel
     const run = runs.find(r => r.id === runId);
     if (!run || run.assignments.length < 2) return;
-    if (!window.confirm(`Sort ${run.assignments.length} stops in geographically optimal order?\n\nThis removes and re-adds them — any manual order will be lost.`)) return;
+    setConfirmOptimiseId(runId);
+  }
 
+  async function confirmOptimise(runId: number) {
+    setConfirmOptimiseId(null);
+    const run = runs.find(r => r.id === runId);
+    if (!run) return;
     setOptimisingRunIds(prev => new Set(prev).add(runId));
     try {
       const sorted = nearestNeighborSort([...run.assignments]);
@@ -1583,7 +1601,7 @@ export default function PlanningBoardPage() {
         </div>
 
         {/* Jobs panel */}
-        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-72 lg:w-80 flex-shrink-0 sm:border-r border-border`}>
+        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-80 lg:w-96 flex-shrink-0 sm:border-r border-border`}>
 
           <div className="px-3 pt-3 pb-2 border-b border-border flex-shrink-0 space-y-2">
             <div className="flex items-center justify-between">
@@ -1720,6 +1738,8 @@ export default function PlanningBoardPage() {
                 onDelete={handleDeleteRun}
                 onDropJob={jobId => handleAddJobToRun(jobId, run.id)}
                 onOptimiseRoute={handleOptimiseRoute}
+                onConfirmOptimise={confirmOptimise}
+                confirmingOptimise={confirmOptimiseId === run.id}
                 optimising={optimisingRunIds.has(run.id)}
               />
             ))}
