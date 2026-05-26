@@ -247,18 +247,21 @@ interface JobWorkGroup {
 function JobWorkCard({
   group,
   onAddJobToRun,
+  onAddPartToRun,
   runs,
   selected,
   onSelectToggle,
 }: {
-  group:          JobWorkGroup;
-  onAddJobToRun:  (jobId: number, runId: number) => Promise<void>;
-  runs:           PlanningRun[];
-  selected:       boolean;
-  onSelectToggle: (jobId: number) => void;
+  group:           JobWorkGroup;
+  onAddJobToRun:   (jobId: number, runId: number) => Promise<void>;
+  onAddPartToRun:  (jobPartId: number, runId: number) => Promise<void>;
+  runs:            PlanningRun[];
+  selected:        boolean;
+  onSelectToggle:  (jobId: number) => void;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
+  const [addingPartId, setAddingPartId] = useState<number | null>(null);
 
   const draftRuns      = runs.filter(r => r.status === "draft" || r.status === "assigned");
   const effectiveRunId = selectedRunId || (draftRuns.length === 1 ? draftRuns[0].id : "");
@@ -268,6 +271,13 @@ function JobWorkCard({
     setAdding(true);
     try { await onAddJobToRun(group.jobId, Number(effectiveRunId)); }
     finally { setAdding(false); }
+  }
+
+  async function handleAddPart(jobPartId: number) {
+    if (!effectiveRunId) return;
+    setAddingPartId(jobPartId);
+    try { await onAddPartToRun(jobPartId, Number(effectiveRunId)); }
+    finally { setAddingPartId(null); }
   }
 
   const collections  = group.parts.filter(p => p.nextAction.startsWith("Collect"));
@@ -371,7 +381,17 @@ function JobWorkCard({
           const isBlocked = isDrop && deliveryBlocked;
 
           return (
-            <div key={part.jobPartId} className={`flex items-baseline gap-1.5 ${isBlocked ? "opacity-50" : ""}`}>
+            <div
+              key={part.jobPartId}
+              draggable
+              onDragStart={e => {
+                e.stopPropagation();
+                e.dataTransfer.setData("application/job-part-id", String(part.jobPartId));
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+              className={`flex items-baseline gap-1.5 cursor-grab active:cursor-grabbing hover:bg-slate-50 rounded px-0.5 -mx-0.5 ${isBlocked ? "opacity-50" : ""}`}
+              title={isBlocked ? undefined : "Drag to add just this stop to a run"}
+            >
               <span className={`flex-shrink-0 font-bold text-[10px] uppercase w-14 ${
                 isCollect ? "text-blue-600" :
                 isDrop    ? (isBlocked ? "text-slate-400" : "text-green-700") :
@@ -439,36 +459,58 @@ function JobWorkCard({
       ) : null}
 
       {/* ── Add to run ── */}
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border-t border-border">
+      <div className="px-2.5 py-1.5 bg-slate-50 border-t border-border">
         {draftRuns.length === 0 ? (
-          <span className="text-[11px] text-muted italic flex-1">Create a run first — or drag</span>
-        ) : draftRuns.length === 1 ? (
-          <>
-            <span className="text-[11px] text-muted flex-1 truncate">
-              → {draftRuns[0].runReference}{draftRuns[0].driver ? ` · ${draftRuns[0].driver.displayName}` : ""}
-            </span>
-            <button disabled={adding} onClick={handleAdd}
-              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 whitespace-nowrap">
-              {adding ? "…" : "Add →"}
-            </button>
-          </>
+          <span className="text-[11px] text-muted italic">Create a run first — or drag a stop</span>
         ) : (
-          <>
-            <select className="input text-xs py-1 flex-1 min-w-0"
-              value={selectedRunId}
-              onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}>
-              <option value="">Pick run…</option>
-              {draftRuns.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.runReference}{r.driver ? ` · ${r.driver.displayName}` : ""}
-                </option>
-              ))}
-            </select>
-            <button disabled={!selectedRunId || adding} onClick={handleAdd}
-              className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap">
-              {adding ? "…" : "Add →"}
-            </button>
-          </>
+          <div className="flex flex-col gap-1">
+            {/* Run selector (only when >1 run) */}
+            {draftRuns.length > 1 && (
+              <select className="input text-xs py-1 w-full"
+                value={selectedRunId}
+                onChange={e => setSelectedRunId(e.target.value ? Number(e.target.value) : "")}>
+                <option value="">Pick run…</option>
+                {draftRuns.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.runReference}{r.driver ? ` · ${r.driver.displayName}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            {/* Add buttons */}
+            <div className="flex items-center gap-1">
+              {/* Add both (all parts) */}
+              <button disabled={!effectiveRunId || adding} onClick={handleAdd}
+                className="btn text-xs py-1 px-2.5 bg-accent text-white disabled:opacity-40 whitespace-nowrap flex-1">
+                {adding ? "…" : collections.length > 0 && deliveries.length > 0 ? "Add both →" : "Add →"}
+              </button>
+              {/* Individual part buttons — shown when job has separate collect + deliver */}
+              {collections.length > 0 && deliveries.length > 0 && (
+                <>
+                  <button
+                    disabled={!effectiveRunId || addingPartId !== null}
+                    onClick={() => handleAddPart(collections[0].jobPartId)}
+                    className="btn text-[11px] py-1 px-2 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 disabled:opacity-40 whitespace-nowrap"
+                    title="Add collect stop only — for relay runs">
+                    {addingPartId === collections[0].jobPartId ? "…" : "Collect →"}
+                  </button>
+                  <button
+                    disabled={!effectiveRunId || addingPartId !== null}
+                    onClick={() => handleAddPart(deliveries[0].jobPartId)}
+                    className="btn text-[11px] py-1 px-2 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 disabled:opacity-40 whitespace-nowrap"
+                    title="Add deliver stop only — for relay runs">
+                    {addingPartId === deliveries[0].jobPartId ? "…" : "Deliver →"}
+                  </button>
+                </>
+              )}
+            </div>
+            {/* Relay hint */}
+            {collections.length > 0 && deliveries.length > 0 && (
+              <span className="text-[10px] text-muted">
+                Relay run? Add collect to one run, deliver to another, then use + Waypoint → Yard stop on each.
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -492,6 +534,7 @@ function RunLane({
   onPublish,
   onDelete,
   onDropJob,
+  onDropPart,
   onOptimiseRoute,
   onConfirmOptimise,
   confirmingOptimise,
@@ -511,6 +554,7 @@ function RunLane({
   onPublish:        (runId: number) => Promise<void>;
   onDelete:         (runId: number) => Promise<void>;
   onDropJob:         (jobId: number) => Promise<void>;
+  onDropPart:        (jobPartId: number) => Promise<void>;
   onOptimiseRoute:   (runId: number) => Promise<void>;
   onConfirmOptimise: (runId: number) => Promise<void>;
   confirmingOptimise: boolean;
@@ -817,7 +861,9 @@ function RunLane({
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsOver(false); }}
         onDrop={async e => {
           e.preventDefault(); setIsOver(false);
-          const jobId = parseInt(e.dataTransfer.getData("application/job-id"), 10);
+          const partId = parseInt(e.dataTransfer.getData("application/job-part-id"), 10);
+          if (!isNaN(partId)) { await onDropPart(partId); return; }
+          const jobId  = parseInt(e.dataTransfer.getData("application/job-id"), 10);
           if (!isNaN(jobId)) await onDropJob(jobId);
         }}
       >
@@ -872,11 +918,11 @@ function RunLane({
                         return (
                           <span className="flex items-center gap-0.5 flex-shrink-0">
                             {wrongDay && (
-                              <span className="text-[10px] text-red-600 font-semibold bg-red-50 border border-red-200 rounded px-1 leading-tight">
+                              <span className="text-[10px] text-slate-500 font-medium bg-slate-100 border border-slate-200 rounded px-1 leading-tight">
                                 {new Date(tws).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                               </span>
                             )}
-                            <span className={`font-bold tabular-nums text-[13px] ${wrongDay ? "text-red-600" : "text-amber-700"}`}>
+                            <span className="font-bold tabular-nums text-[13px] text-amber-700">
                               {fmtTime(tws)}
                             </span>
                           </span>
@@ -1450,6 +1496,12 @@ export default function PlanningBoardPage() {
     setMobileTab("runs");
   }
 
+  async function handleAddPartToRun(jobPartId: number, runId: number) {
+    try { await planningApi.addStop(runId, jobPartId); } catch { /* skip */ }
+    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    setMobileTab("runs");
+  }
+
   async function handleBatchAddToRun() {
     if (!batchRunId || selectedJobIds.size === 0) return;
     setBatchAdding(true);
@@ -1684,6 +1736,7 @@ export default function PlanningBoardPage() {
                       selected={selectedJobIds.has(grp.jobId)}
                       onSelectToggle={toggleJobSelect}
                       onAddJobToRun={handleAddJobToRun}
+                      onAddPartToRun={handleAddPartToRun}
                     />
                   ))}
                 </div>
@@ -1751,7 +1804,8 @@ export default function PlanningBoardPage() {
                 onRemoveWaypoint={handleRemoveWaypoint}
                 onPublish={handlePublish}
                 onDelete={handleDeleteRun}
-                onDropJob={jobId => handleAddJobToRun(jobId, run.id)}
+                onDropJob={jobId   => handleAddJobToRun(jobId, run.id)}
+                onDropPart={partId => handleAddPartToRun(partId, run.id)}
                 onOptimiseRoute={handleOptimiseRoute}
                 onConfirmOptimise={confirmOptimise}
                 confirmingOptimise={confirmOptimiseId === run.id}
