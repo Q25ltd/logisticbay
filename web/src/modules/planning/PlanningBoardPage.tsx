@@ -81,8 +81,8 @@ function nearestNeighborSort(assignments: PlanningAssignment[]): PlanningAssignm
     const lng0 = last.jobPart.lng ?? -0.1;
     let nearestIdx = 0, nearestDist = Infinity;
     for (let i = 0; i < remaining.length; i++) {
-      const d = (remaining[i].jobPart.lat ?? 51.5 - lat0) ** 2
-              + (remaining[i].jobPart.lng ?? -0.1 - lng0) ** 2;
+      const d = ((remaining[i].jobPart.lat  ?? 51.5) - lat0) ** 2
+              + ((remaining[i].jobPart.lng ?? -0.1) - lng0) ** 2;
       if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
     }
     ordered.push(remaining[nearestIdx]);
@@ -864,9 +864,24 @@ function RunLane({
                       <span className="font-semibold text-[13px] text-primary truncate flex-1 min-w-0">
                         {a.jobPart.job.customerName ?? "—"}
                       </span>
-                      {a.jobPart.timeWindowStart && (
-                        <span className="text-amber-700 font-bold flex-shrink-0 tabular-nums text-[13px]">{fmtTime(a.jobPart.timeWindowStart)}</span>
-                      )}
+                      {a.jobPart.timeWindowStart && (() => {
+                        const tws = a.jobPart.timeWindowStart!;
+                        const stopLocalDate = new Date(tws).toLocaleDateString("en-GB");
+                        const runLocalDate  = run.plannedDate ? new Date(run.plannedDate).toLocaleDateString("en-GB") : null;
+                        const wrongDay      = runLocalDate && stopLocalDate !== runLocalDate;
+                        return (
+                          <span className="flex items-center gap-0.5 flex-shrink-0">
+                            {wrongDay && (
+                              <span className="text-[10px] text-red-600 font-semibold bg-red-50 border border-red-200 rounded px-1 leading-tight">
+                                {new Date(tws).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                              </span>
+                            )}
+                            <span className={`font-bold tabular-nums text-[13px] ${wrongDay ? "text-red-600" : "text-amber-700"}`}>
+                              {fmtTime(tws)}
+                            </span>
+                          </span>
+                        );
+                      })()}
                       <button onClick={() => onRemoveStop(run.id, a.id)}
                         className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-sm" title="Remove stop">✕</button>
                     </div>
