@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { planningApi, type PlannerWorkItem, type StopCluster, type UnplannedStop, type PlanningRun, type FleetTrailer, type FleetUnit, type PlanningDriver, type RunWaypoint, type SavedLocationOption, type DepotLocation } from "../../api/planning";
+import {
+  planningApi,
+  type PlannerWorkItem, type StopCluster, type UnplannedStop,
+  type PlanningRun, type PlanningAssignment,
+  type FleetTrailer, type FleetUnit,
+  type PlanningDriver, type RunWaypoint,
+  type SavedLocationOption, type DepotLocation,
+} from "../../api/planning";
 import { api } from "../../api/client";
 import { aiApi } from "../../api/ai";
 import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -19,211 +24,37 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-/** Returns "Mon 27 Jan" when the stop date differs from the planning date */
-function stopDateLabel(iso: string | null | undefined, planningDate: string): string | null {
-  if (!iso) return null;
-  if (iso.slice(0, 10) === planningDate) return null;
-  return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-}
-
-const WAYPOINT_TYPE_LABEL: Record<string, string> = {
-  depot_start:    "Depot start",
-  yard_pickup:    "Yard pickup",
-  hub_drop:       "Hub drop",
-  return_to_base: "Return to base",
-  custom:         "Stop",
-};
-
-function cap(s: string): string {
-  const spaced = s.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-function bodyTypeLabel(v: string): string {
-  return BODY_TYPES.find(b => b.value === v)?.label ?? cap(v);
-}
-
-const FLEET_STATUS_LABEL: Record<string, string> = {
-  available:      "Available",
-  off_road:       "Off Road",
-  vor:            "VOR",
-  loaded:         "Loaded",
-  in_use:         "In Use",
-  repair:         "In Repair",
-  decommissioned: "Decommissioned",
-};
-
 function prevDay(d: string): string {
   const dt = new Date(d); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10);
 }
 function nextDay(d: string): string {
   const dt = new Date(d); dt.setDate(dt.getDate() + 1); return dt.toISOString().slice(0, 10);
 }
-
-const STOP_TYPE_LABEL: Record<string, string> = {
-  collection: "Collect", delivery: "Deliver", pickup: "Pickup",
-  dropoff: "Drop", reload: "Reload", return: "Return", waypoint: "Stop", other: "Other",
-};
-
-const RUN_TYPE_LABELS: Record<string, string> = {
-  direct: "Direct", relay: "Relay", split: "Split load", consolidation: "Consolidation",
-};
-
-/** Format a stop's address: siteName, town, postcode — or locationText fallback */
-function stopAddress(stop: UnplannedStop): string {
-  const parts = [stop.siteName, stop.town, stop.postcode].filter(Boolean);
-  if (parts.length > 0) return parts.join(", ");
-  return stop.locationText ?? "—";
-}
-
-// ── Job grouping ──────────────────────────────────────────────────────────────
-
-interface JobGroup {
-  jobId:        number;
-  jobReference: string | null;
-  customerName: string | null;
-  goodsType:    string | null;
-  weight:       number | null;
-  quantity:     number | null;
-  quantityUnit: string | null;
-  plannedDate:  string | null;   // ISO date string YYYY-MM-DD, from the job's plannedDate
-  stops:        UnplannedStop[];
-}
-
-const COLLECT_FIRST = new Set(["collection", "pickup"]);
-
-function buildJobGroups(clusters: StopCluster[]): JobGroup[] {
-  const allStops = clusters.flatMap(c => c.stops);
-  const byJob = new Map<number, JobGroup>();
-
-  for (const stop of allStops) {
-    if (!byJob.has(stop.jobId)) {
-      byJob.set(stop.jobId, {
-        jobId:        stop.jobId,
-        jobReference: stop.jobReference,
-        customerName: stop.customerName,
-        goodsType:    stop.goodsType,
-        weight:       stop.weight,
-        quantity:     stop.quantity,
-        quantityUnit: stop.quantityUnit,
-        plannedDate:  stop.plannedDate ? (stop.plannedDate as string).slice(0, 10) : null,
-        stops:        [],
-      });
-    }
-    byJob.get(stop.jobId)!.stops.push(stop);
-  }
-
-  // Sort stops within each job: collections before deliveries
-  for (const g of byJob.values()) {
-    g.stops.sort((a, b) =>
-      (COLLECT_FIRST.has(a.type) ? 0 : 1) - (COLLECT_FIRST.has(b.type) ? 0 : 1)
-    );
-  }
-
-  // Sort groups: by plannedDate first, then time window, then customer name
-  return [...byJob.values()].sort((a, b) => {
-    if (a.plannedDate && b.plannedDate && a.plannedDate !== b.plannedDate)
-      return a.plannedDate.localeCompare(b.plannedDate);
-    const aTime = a.stops.find(s => s.timeWindowStart)?.timeWindowStart
-               ?? a.stops.find(s => s.bookedTime)?.bookedTime ?? null;
-    const bTime = b.stops.find(s => s.timeWindowStart)?.timeWindowStart
-               ?? b.stops.find(s => s.bookedTime)?.bookedTime ?? null;
-    if (aTime && bTime) return aTime.localeCompare(bTime);
-    if (aTime) return -1;
-    if (bTime) return 1;
-    return (a.customerName ?? "").localeCompare(b.customerName ?? "");
-  });
-}
-
-/** Shift an ISO date string by n days (UTC-safe). */
 function addDaysToISO(d: string, n: number): string {
   const dt = new Date(d + "T12:00:00Z");
   dt.setUTCDate(dt.getUTCDate() + n);
   return dt.toISOString().slice(0, 10);
 }
 
-/** Client-side text search across customer name, reference, locations. */
-function matchesSearch(group: JobGroup, q: string): boolean {
-  const lq = q.toLowerCase();
-  if ((group.customerName  ?? "").toLowerCase().includes(lq)) return true;
-  if ((group.jobReference  ?? "").toLowerCase().includes(lq)) return true;
-  for (const s of group.stops) {
-    if ((s.siteName    ?? "").toLowerCase().includes(lq)) return true;
-    if ((s.town        ?? "").toLowerCase().includes(lq)) return true;
-    if ((s.postcode    ?? "").toLowerCase().includes(lq)) return true;
-    if ((s.locationText ?? "").toLowerCase().includes(lq)) return true;
-  }
-  return false;
+function cap(s: string): string {
+  return s.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+}
+function bodyTypeLabel(v: string): string {
+  return BODY_TYPES.find(b => b.value === v)?.label ?? cap(v);
 }
 
-function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
-  const lq = q.toLowerCase();
-  return [
-    item.customerName, item.jobReference, item.nextAction,
-    item.currentLocation, item.finalDestination, item.finalPostcode,
-    item.currentPostcode, item.goodsType, item.goodsDescription,
-  ].some(v => (v ?? "").toLowerCase().includes(lq));
+function relativeDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d   = iso.slice(0, 10);
+  const now = new Date().toISOString().slice(0, 10);
+  const tom = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().slice(0, 10); })();
+  if (d === now) return "Today";
+  if (d === tom) return "Tomorrow";
+  return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-const GROUP_LABEL: Record<string, string> = {
-  needs_attention:            "⚠️  Needs attention",
-  in_custody:                 "📦  Already collected",
-  today:                      "📅  Today",
-  vehicle_van:                "🚐  Van",
-  vehicle_rigid:              "🚚  Rigid",
-  vehicle_artic_curtainsider: "🚛  Artic — Curtainsider",
-  vehicle_artic_fridge:       "❄️  Artic — Fridge",
-  vehicle_flatbed:            "🔩  Flatbed",
-  vehicle_taillift:           "📦  Tail lift",
-  vehicle_hiab:               "🏗️  HIAB",
-  vehicle_adr:                "☢️  ADR / Hazardous",
-  direction_london:           "📍  London / M25",
-  direction_midlands:         "📍  Midlands",
-  direction_north:            "📍  North",
-  direction_east:             "📍  East / Ports",
-  direction_west_wales:       "📍  West / Wales",
-  direction_scotland:         "📍  Scotland",
-  direction_local:            "📍  Local",
-  future:                     "🗓️  Future",
-};
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function Badge({ children, colour }: { children: React.ReactNode; colour: string }) {
-  return <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${colour}`}>{children}</span>;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft:       "bg-slate-100 text-slate-600",
-    assigned:    "bg-blue-100 text-blue-700",
-    in_progress: "bg-amber-100 text-amber-700",
-    completed:   "bg-green-100 text-green-700",
-    cancelled:   "bg-red-100 text-red-600",
-  };
-  const label: Record<string, string> = {
-    draft: "Draft", assigned: "Assigned", in_progress: "In progress",
-    completed: "Done", cancelled: "Cancelled",
-  };
-  return <Badge colour={map[status] ?? "bg-slate-100 text-slate-600"}>{label[status] ?? status}</Badge>;
-}
-
-// ── Work item card (left panel) ───────────────────────────────────────────────
-
-// ── JobWorkCard — one card per job, collection + delivery times as headline ────
-//
-// Groups all parts of a job together so the planner sees:
-//   COLLECT  09:00–12:00  TS29, County Durham
-//   DELIVER  15:00–17:00  LU2, Luton
-// "Add →" adds every part of the job to the selected run in one click.
-
-interface JobWorkGroup {
-  jobId:        number;
-  jobReference: string | null;
-  customerName: string | null;
-  parts:        PlannerWorkItem[];   // all parts for this job
-  riskLevel:    "high" | "medium" | "low" | "none";
-  warnings:     string[];
+function partDate(part: PlannerWorkItem): string | null {
+  return part.timeWindowStart?.slice(0, 10) ?? part.bookedTime?.slice(0, 10) ?? null;
 }
 
 function fmtStopTime(item: PlannerWorkItem): string | null {
@@ -236,7 +67,73 @@ function fmtStopTime(item: PlannerWorkItem): string | null {
   return null;
 }
 
-// Goods-type → compatibility label so planners can spot load conflicts at a glance
+/** Nearest-neighbor geographic sort for optimising stop order */
+function nearestNeighborSort(assignments: PlanningAssignment[]): PlanningAssignment[] {
+  if (assignments.length <= 1) return assignments;
+  const sorted = [...assignments].sort((a, b) =>
+    (a.jobPart.timeWindowStart ?? "23:59") < (b.jobPart.timeWindowStart ?? "23:59") ? -1 : 1
+  );
+  const ordered: PlanningAssignment[] = [sorted[0]];
+  const remaining = sorted.slice(1);
+  while (remaining.length > 0) {
+    const last = ordered[ordered.length - 1];
+    const lat0 = last.jobPart.lat ?? 51.5;
+    const lng0 = last.jobPart.lng ?? -0.1;
+    let nearestIdx = 0, nearestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const d = (remaining[i].jobPart.lat ?? 51.5 - lat0) ** 2
+              + (remaining[i].jobPart.lng ?? -0.1 - lng0) ** 2;
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+    ordered.push(remaining[nearestIdx]);
+    remaining.splice(nearestIdx, 1);
+  }
+  return ordered;
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const WAYPOINT_TYPE_LABEL: Record<string, string> = {
+  depot_start: "Depot start", yard_pickup: "Yard pickup", hub_drop: "Hub drop",
+  return_to_base: "Return to base", custom: "Stop",
+};
+
+const STOP_TYPE_LABEL: Record<string, string> = {
+  collection: "Collect", delivery: "Deliver", pickup: "Pickup",
+  dropoff: "Drop", reload: "Reload", return: "Return", waypoint: "Stop", other: "Other",
+};
+
+const RUN_TYPE_LABELS: Record<string, string> = {
+  direct: "Direct", relay: "Relay", split: "Split load", consolidation: "Consolidation",
+};
+
+const FLEET_STATUS_LABEL: Record<string, string> = {
+  available: "Available", off_road: "Off Road", vor: "VOR",
+  loaded: "Loaded", in_use: "In Use", repair: "In Repair",
+};
+
+const GROUP_LABEL: Record<string, string> = {
+  needs_attention:            "Needs attention",
+  in_custody:                 "Collected — in custody",
+  today:                      "Ready to plan today",
+  vehicle_van:                "Van",
+  vehicle_rigid:              "Rigid",
+  vehicle_artic_curtainsider: "Artic — Curtainsider",
+  vehicle_artic_fridge:       "Artic — Fridge",
+  vehicle_flatbed:            "Flatbed",
+  vehicle_taillift:           "Tail lift",
+  vehicle_hiab:               "HIAB",
+  vehicle_adr:                "ADR / Hazardous",
+  direction_london:           "London / M25",
+  direction_midlands:         "Midlands",
+  direction_north:            "North",
+  direction_east:             "East / Ports",
+  direction_west_wales:       "West / Wales",
+  direction_scotland:         "Scotland",
+  direction_local:            "Local",
+  future:                     "Future jobs",
+};
+
 const GOODS_COMPAT: Record<string, { label: string; colour: string }> = {
   liquid:            { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
   bulk_liquid:       { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
@@ -251,6 +148,34 @@ const GOODS_COMPAT: Record<string, { label: string; colour: string }> = {
   waste:             { label: "Waste",    colour: "bg-red-50 text-red-700"      },
 };
 
+const COLLECT_FIRST = new Set(["collection", "pickup"]);
+
+const LOOK_AHEAD_OPTIONS = [
+  { days: 0, label: "Today" },
+  { days: 2, label: "3 days" },
+  { days: 6, label: "1 week" },
+  { days: 13, label: "2 weeks" },
+];
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function Badge({ children, colour }: { children: React.ReactNode; colour: string }) {
+  return <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${colour}`}>{children}</span>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    draft: "bg-slate-100 text-slate-600", assigned: "bg-blue-100 text-blue-700",
+    in_progress: "bg-amber-100 text-amber-700", completed: "bg-green-100 text-green-700",
+    cancelled: "bg-red-100 text-red-600",
+  };
+  const label: Record<string, string> = {
+    draft: "Draft", assigned: "Assigned", in_progress: "In progress",
+    completed: "Done", cancelled: "Cancelled",
+  };
+  return <Badge colour={map[status] ?? "bg-slate-100 text-slate-600"}>{label[status] ?? status}</Badge>;
+}
+
 function goodsCompatBadge(goodsType: string | null | undefined) {
   if (!goodsType) return null;
   const m = GOODS_COMPAT[goodsType.toLowerCase()];
@@ -258,29 +183,79 @@ function goodsCompatBadge(goodsType: string | null | undefined) {
            : <Badge colour="bg-slate-100 text-slate-600">{cap(goodsType)}</Badge>;
 }
 
-// Format a date relative to today: "Today", "Tomorrow", "Mon 26 May"
-function relativeDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d     = iso.slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
-  const tom   = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().slice(0, 10); })();
-  if (d === today) return "Today";
-  if (d === tom)   return "Tomorrow";
-  return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+// ── CapacityBar ───────────────────────────────────────────────────────────────
+
+function CapacityBar({ run, trucks }: { run: PlanningRun; trucks: FleetUnit[] }) {
+  // Deduplicate by jobId so collect+deliver of the same job doesn't double-count
+  const seenJobs = new Set<number>();
+  let totalKg = 0, pallets = 0;
+  for (const a of run.assignments) {
+    if (!seenJobs.has(a.jobId)) {
+      seenJobs.add(a.jobId);
+      totalKg += a.jobPart.job.weight ?? 0;
+      if (["pallet","pallets","plt","pl"].includes((a.jobPart.job.quantityUnit ?? "").toLowerCase())) {
+        pallets += a.jobPart.job.quantity ?? 0;
+      }
+    }
+  }
+
+  const truck  = trucks.find(t => t.id === run.assignedTruckId);
+  const maxKg  = truck?.gvwClass ? parseFloat(truck.gvwClass) * 1000 : null;
+  const pct    = maxKg && totalKg > 0 ? Math.min(100, (totalKg / maxKg) * 100) : null;
+
+  if (totalKg === 0 && pallets === 0) return null;
+
+  return (
+    <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/60 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-muted uppercase tracking-wide">Load</span>
+        <span className="text-[11px] font-semibold text-primary">
+          {totalKg > 0 ? `${totalKg.toLocaleString()} kg` : ""}
+          {maxKg ? <span className="font-normal text-muted"> / {maxKg >= 1000 ? `${(maxKg/1000).toFixed(0)}t` : `${maxKg}kg`}</span> : ""}
+        </span>
+      </div>
+      {pct !== null ? (
+        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${pct > 95 ? "bg-red-500" : pct > 80 ? "bg-amber-400" : "bg-emerald-500"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      ) : totalKg > 0 ? (
+        <div className="h-1 bg-blue-200 rounded-full" title="No vehicle assigned — cannot calculate % full" />
+      ) : null}
+      {pallets > 0 && (
+        <div className="text-[10px] text-muted">📦 {pallets} pallets</div>
+      )}
+    </div>
+  );
 }
 
-function partDate(part: PlannerWorkItem): string | null {
-  return part.timeWindowStart?.slice(0, 10) ?? part.bookedTime?.slice(0, 10) ?? null;
+// ── JobWorkGroup type ─────────────────────────────────────────────────────────
+
+interface JobWorkGroup {
+  jobId:        number;
+  jobReference: string | null;
+  customerName: string | null;
+  parts:        PlannerWorkItem[];
+  riskLevel:    "high" | "medium" | "low" | "none";
+  warnings:     string[];
 }
+
+// ── JobWorkCard ───────────────────────────────────────────────────────────────
 
 function JobWorkCard({
   group,
   onAddJobToRun,
   runs,
+  selected,
+  onSelectToggle,
 }: {
-  group:         JobWorkGroup;
-  onAddJobToRun: (jobId: number, runId: number) => Promise<void>;
-  runs:          PlanningRun[];
+  group:          JobWorkGroup;
+  onAddJobToRun:  (jobId: number, runId: number) => Promise<void>;
+  runs:           PlanningRun[];
+  selected:       boolean;
+  onSelectToggle: (jobId: number) => void;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
@@ -295,64 +270,80 @@ function JobWorkCard({
     finally { setAdding(false); }
   }
 
-  const collections = group.parts.filter(p => p.nextAction.startsWith("Collect"));
-  const deliveries  = group.parts.filter(p => p.nextAction.startsWith("Deliver"));
-  const others      = group.parts.filter(p => !p.nextAction.startsWith("Collect") && !p.nextAction.startsWith("Deliver"));
-  const rep         = group.parts[0];
+  const collections  = group.parts.filter(p => p.nextAction.startsWith("Collect"));
+  const deliveries   = group.parts.filter(p => p.nextAction.startsWith("Deliver"));
+  const others       = group.parts.filter(p => !p.nextAction.startsWith("Collect") && !p.nextAction.startsWith("Deliver"));
+  const rep          = group.parts[0];
 
-  // ── Delivery-blocked: load not yet collected (no LoadTrack custody)
   const deliveryBlocked = group.warnings.some(w => w.toLowerCase().includes("not yet collected"));
-
-  // ── Multi-day: collection and delivery on different days
-  const collectDate  = collections[0] ? partDate(collections[0]) : null;
-  const deliverDate  = deliveries[0]  ? partDate(deliveries[0])  : null;
-  const isMultiDay   = collectDate && deliverDate && collectDate !== deliverDate;
-
-  // ── Impossible schedule: delivery window ends before collection window starts
-  const collectStart = collections[0]?.timeWindowStart ?? collections[0]?.bookedTime;
-  const deliverEnd   = deliveries[0]?.timeWindowEnd   ?? deliveries[0]?.timeWindowStart ?? deliveries[0]?.bookedTime;
-  const impossible   = collectStart && deliverEnd && deliverEnd < collectStart;
-
-  // ── Load incompatibility hint
-  const isLiquid = rep.goodsType?.toLowerCase().includes("liquid") || rep.goodsType?.toLowerCase().includes("bulk");
-  const isADR    = rep.hasHazardous;
-  const isTemp   = rep.hasTempControl;
-
-  const borderColour =
-    impossible             ? "border-l-red-600"   :
-    deliveryBlocked        ? "border-l-orange-500" :
-    group.riskLevel === "high"   ? "border-l-red-500"   :
-    group.riskLevel === "medium" ? "border-l-amber-400" :
-    group.riskLevel === "low"    ? "border-l-yellow-300" :
-    "border-l-slate-200";
+  const collectDate     = collections[0] ? partDate(collections[0]) : null;
+  const deliverDate     = deliveries[0]  ? partDate(deliveries[0])  : null;
+  const isMultiDay      = collectDate && deliverDate && collectDate !== deliverDate;
+  const collectStart    = collections[0]?.timeWindowStart ?? collections[0]?.bookedTime;
+  const deliverEnd      = deliveries[0]?.timeWindowEnd   ?? deliveries[0]?.timeWindowStart ?? deliveries[0]?.bookedTime;
+  const impossible      = collectStart && deliverEnd && deliverEnd < collectStart;
+  const isLiquid        = rep.goodsType?.toLowerCase().includes("liquid") || rep.goodsType?.toLowerCase().includes("bulk");
+  const isADR           = rep.hasHazardous;
+  const isTemp          = rep.hasTempControl;
 
   const today = new Date().toISOString().slice(0, 10);
 
-  return (
-    <div className={`bg-white rounded border border-border border-l-4 ${borderColour} mb-1.5 overflow-hidden`}>
+  const borderColour =
+    impossible             ? "border-l-red-600"    :
+    deliveryBlocked        ? "border-l-orange-500" :
+    group.riskLevel === "high"   ? "border-l-red-500"   :
+    group.riskLevel === "medium" ? "border-l-amber-400"  :
+    group.riskLevel === "low"    ? "border-l-yellow-300" :
+    "border-l-slate-200";
 
+  // Risk tooltip: the warnings explain the risk level to the planner
+  const riskTooltip = group.warnings.length > 0 ? group.warnings.join(" · ") : "";
+
+  return (
+    <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData("application/job-id", String(group.jobId));
+        e.dataTransfer.effectAllowed = "copy";
+      }}
+      className={`bg-white rounded border border-border border-l-4 ${borderColour} mb-1.5 overflow-hidden cursor-grab active:cursor-grabbing transition-shadow hover:shadow-sm ${
+        selected ? "ring-2 ring-primary/40" : ""
+      }`}
+    >
       {/* ── Top bar ── */}
-      <div className="flex items-center justify-between px-2.5 pt-2 pb-0.5 gap-2">
-        <div className="font-semibold text-[13px] text-primary leading-tight truncate">
+      <div className="flex items-center gap-2 px-2 pt-2 pb-0.5">
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          className="w-3.5 h-3.5 flex-shrink-0 rounded border-slate-300 cursor-pointer"
+          checked={selected}
+          onChange={() => onSelectToggle(group.jobId)}
+          onClick={e => e.stopPropagation()}
+          title="Select for batch action"
+        />
+        <div className="font-semibold text-[13px] text-primary leading-tight truncate flex-1 min-w-0">
           {group.customerName ?? "Unknown customer"}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {impossible && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700" title="Delivery window closes before collection can start">
               ⛔ IMPOSSIBLE
             </span>
           )}
           {!impossible && deliveryBlocked && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700" title="Goods not yet collected — collect before planning delivery">
               ▶ COLLECT FIRST
             </span>
           )}
           {!impossible && !deliveryBlocked && group.riskLevel !== "none" && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-              group.riskLevel === "high"   ? "bg-red-100 text-red-700"    :
-              group.riskLevel === "medium" ? "bg-amber-100 text-amber-700" :
-              "bg-yellow-50 text-yellow-700"
-            }`}>
+            <span
+              title={riskTooltip}
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-help ${
+                group.riskLevel === "high"   ? "bg-red-100 text-red-700"    :
+                group.riskLevel === "medium" ? "bg-amber-100 text-amber-700" :
+                "bg-yellow-50 text-yellow-700"
+              }`}
+            >
               {group.riskLevel === "high" ? "⚠ URGENT" : group.riskLevel === "medium" ? "⚠ TIGHT" : "ℹ NOTE"}
             </span>
           )}
@@ -367,7 +358,7 @@ function JobWorkCard({
         </div>
       </div>
 
-      {/* ── Stop rows: collect first, always ── */}
+      {/* ── Stop rows ── */}
       <div className="px-2.5 py-1 space-y-0.5">
         {[...collections, ...others, ...deliveries].map(part => {
           const time      = fmtStopTime(part);
@@ -380,10 +371,7 @@ function JobWorkCard({
           const isBlocked = isDrop && deliveryBlocked;
 
           return (
-            <div key={part.jobPartId}
-              className={`flex items-baseline gap-1.5 ${isBlocked ? "opacity-50" : ""}`}>
-
-              {/* Action label */}
+            <div key={part.jobPartId} className={`flex items-baseline gap-1.5 ${isBlocked ? "opacity-50" : ""}`}>
               <span className={`flex-shrink-0 font-bold text-[10px] uppercase w-14 ${
                 isCollect ? "text-blue-600" :
                 isDrop    ? (isBlocked ? "text-slate-400" : "text-green-700") :
@@ -391,34 +379,23 @@ function JobWorkCard({
               }`}>
                 {isCollect ? "Collect" : isDrop ? "Deliver" : "Stop"}
               </span>
-
-              {/* Date badge — only when not today or multi-day job */}
               {dateLabel && (
                 <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-violet-50 text-violet-700">
                   {dateLabel}
                 </span>
               )}
-
-              {/* Time — the headline number */}
               <span className={`flex-shrink-0 font-bold text-[13px] tabular-nums ${
-                time
-                  ? (isCollect ? "text-blue-700" : isBlocked ? "text-slate-400" : "text-green-800")
-                  : "text-slate-300"
+                time ? (isCollect ? "text-blue-700" : isBlocked ? "text-slate-400" : "text-green-800") : "text-slate-300"
               }`}>
                 {time ?? "—"}
               </span>
-
-              {/* Blocked indicator replaces location when delivery is locked */}
               {isBlocked ? (
                 <span className="text-[10px] font-semibold text-orange-600">⛔ collect first</span>
               ) : (
                 <span className="text-slate-500 text-[11px] truncate leading-tight">
                   {postcode
-                    ? <><span className="font-medium text-slate-700">{postcode}</span>
-                        {location !== postcode ? ` · ${location}` : ""}
-                      </>
-                    : location
-                  }
+                    ? <><span className="font-medium text-slate-700">{postcode}</span>{location !== postcode ? ` · ${location}` : ""}</>
+                    : location}
                 </span>
               )}
             </div>
@@ -426,7 +403,7 @@ function JobWorkCard({
         })}
       </div>
 
-      {/* ── Load incompatibility strip — shown when this load cannot share with normal dry freight ── */}
+      {/* ── Load incompatibility strip ── */}
       {(isLiquid || isADR || isTemp) && (
         <div className={`px-2.5 py-0.5 text-[10px] font-semibold flex items-center gap-1.5 border-t ${
           isADR    ? "bg-orange-50 text-orange-700 border-orange-100" :
@@ -434,8 +411,8 @@ function JobWorkCard({
           "bg-blue-50 text-blue-700 border-blue-100"
         }`}>
           {isADR    && <><span>☢</span><span>ADR — do not mix with food or general goods</span></>}
-          {!isADR && isLiquid && <><span>💧</span><span>Liquid load — tanker only, cannot share with dry freight</span></>}
-          {!isADR && !isLiquid && isTemp && <><span>❄</span><span>Temperature controlled — fridge trailer only</span></>}
+          {!isADR && isLiquid && <><span>💧</span><span>Liquid — tanker only</span></>}
+          {!isADR && !isLiquid && isTemp && <><span>❄</span><span>Temp controlled — fridge trailer only</span></>}
         </div>
       )}
 
@@ -444,30 +421,27 @@ function JobWorkCard({
         {rep.vehicleCategory && <Badge colour="bg-slate-100 text-slate-600">{cap(rep.vehicleCategory)}</Badge>}
         {goodsCompatBadge(rep.goodsType)}
         {rep.weight   != null && rep.weight   > 0 && <span className="text-[11px] text-muted">{rep.weight.toLocaleString()} kg</span>}
-        {rep.quantity != null && rep.quantity > 0  && (
-          <span className="text-[11px] text-muted">{rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}</span>
-        )}
+        {rep.quantity != null && rep.quantity > 0  && <span className="text-[11px] text-muted">{rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}</span>}
       </div>
 
-      {/* ── Warnings ── show impossible schedule prominently, others collapsed ── */}
-      {impossible && (
+      {/* ── Warnings ── */}
+      {impossible ? (
         <div className="px-2.5 py-1 bg-red-50 text-red-700 text-[11px] border-t border-red-100 font-medium">
-          ⛔ Delivery window closes before collection can start — schedule is impossible
+          ⛔ Delivery window closes before collection can start
         </div>
-      )}
-      {!impossible && group.warnings.length > 0 && (
+      ) : !impossible && group.warnings.length > 0 ? (
         <div className={`px-2.5 py-1 border-t text-[11px] flex items-start gap-1 ${
           group.riskLevel === "high" ? "bg-red-50 text-red-700 border-red-100" : "bg-amber-50 text-amber-700 border-amber-100"
         }`}>
           <span className="flex-shrink-0">⚠</span>
-          <span>{group.warnings[0]}{group.warnings.length > 1 ? ` · +${group.warnings.length - 1} more` : ""}</span>
+          <span>{group.warnings[0]}{group.warnings.length > 1 ? ` +${group.warnings.length - 1} more` : ""}</span>
         </div>
-      )}
+      ) : null}
 
       {/* ── Add to run ── */}
       <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border-t border-border">
         {draftRuns.length === 0 ? (
-          <span className="text-[11px] text-muted italic flex-1">Create a run first</span>
+          <span className="text-[11px] text-muted italic flex-1">Create a run first — or drag</span>
         ) : draftRuns.length === 1 ? (
           <>
             <span className="text-[11px] text-muted flex-1 truncate">
@@ -501,12 +475,10 @@ function JobWorkCard({
   );
 }
 
-// ── Run card (right panel) ────────────────────────────────────────────────────
+// ── RunLane — Kanban column (replaces RunCard) ────────────────────────────────
 
-function RunCard({
+function RunLane({
   run,
-  isExpanded,
-  onToggleExpand,
   trailers,
   trucks,
   drivers,
@@ -519,35 +491,38 @@ function RunCard({
   onRemoveWaypoint,
   onPublish,
   onDelete,
+  onDropJob,
+  onOptimiseRoute,
+  optimising,
 }: {
-  run:               PlanningRun;
-  isExpanded:        boolean;
-  onToggleExpand:    () => void;
-  trailers:          FleetTrailer[];
-  trucks:            FleetUnit[];
-  drivers:           PlanningDriver[];
-  depot:             DepotLocation | null;
-  onDepotSet:        (d: DepotLocation) => void;
-  allRuns:           PlanningRun[];
-  onUpdate:          (id: number, patch: Record<string, unknown>) => Promise<void>;
-  onRemoveStop:      (runId: number, assignmentId: number) => Promise<void>;
-  onAddWaypoint:     (runId: number, type: string, locationText: string, seq: number, locationId?: number, scheduledTime?: string) => Promise<void>;
-  onRemoveWaypoint:  (runId: number, waypointId: number) => Promise<void>;
-  onPublish:         (runId: number) => Promise<void>;
-  onDelete:          (runId: number) => Promise<void>;
+  run:              PlanningRun;
+  trailers:         FleetTrailer[];
+  trucks:           FleetUnit[];
+  drivers:          PlanningDriver[];
+  depot:            DepotLocation | null;
+  onDepotSet:       (d: DepotLocation) => void;
+  allRuns:          PlanningRun[];
+  onUpdate:         (id: number, patch: Record<string, unknown>) => Promise<void>;
+  onRemoveStop:     (runId: number, assignmentId: number) => Promise<void>;
+  onAddWaypoint:    (runId: number, type: string, locationText: string, seq: number, locationId?: number, scheduledTime?: string) => Promise<void>;
+  onRemoveWaypoint: (runId: number, waypointId: number) => Promise<void>;
+  onPublish:        (runId: number) => Promise<void>;
+  onDelete:         (runId: number) => Promise<void>;
+  onDropJob:        (jobId: number) => Promise<void>;
+  onOptimiseRoute:  (runId: number) => Promise<void>;
+  optimising:       boolean;
 }) {
-  const [saving,    setSaving]      = useState(false);
+  const [saving,     setSaving]     = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [err,       setErr]         = useState("");
+  const [err,        setErr]        = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [isOver,     setIsOver]     = useState(false);
 
   // Waypoint form state
-  const [showWpForm, setShowWpForm] = useState(false);
-  // wpPosition: -2 = before all stops (depot start), -1 = after all stops (return to base), 0..n = intermediate
-  const [wpPosition, setWpPosition] = useState<number>(-2);
-  const [wpTime,     setWpTime]     = useState("");
-  const [wpAdding,   setWpAdding]   = useState(false);
-
-  // Unified waypoint location state — picker-first for all positions
+  const [showWpForm,    setShowWpForm]    = useState(false);
+  const [wpPosition,    setWpPosition]    = useState<number>(-2);
+  const [wpTime,        setWpTime]        = useState("");
+  const [wpAdding,      setWpAdding]      = useState(false);
   const [wpLocId,       setWpLocId]       = useState<number | "">("");
   const [wpShowCreate,  setWpShowCreate]  = useState(false);
   const [wpNewName,     setWpNewName]     = useState("");
@@ -560,11 +535,10 @@ function RunCard({
   const [savedLocs,     setSavedLocs]     = useState<SavedLocationOption[]>([]);
   const [locsLoading,   setLocsLoading]   = useState(false);
 
-  // AI route feasibility check
+  // AI feasibility check
   const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Derived dep: joined waypoint scheduled times so effect re-fires when a time changes
   const wpTimesKey = run.waypoints.map(w => `${w.id}:${w.scheduledTime ?? ""}`).sort().join("|");
 
   useEffect(() => {
@@ -572,7 +546,6 @@ function RunCard({
     setAiLoading(true);
     const timer = setTimeout(async () => {
       try {
-        // Assignment stops
         const assignmentStops = [...run.assignments]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
           .map(a => ({
@@ -587,12 +560,8 @@ function RunCard({
             customerName:    a.jobPart.job.customerName,
           }));
 
-        // plannedDate comes back from the API as a full ISO datetime ("2026-05-25T12:00:00.000Z")
-        // — we only want the YYYY-MM-DD date part so we can build valid ISO datetimes.
         const planDate = run.plannedDate ? run.plannedDate.slice(0, 10) : null;
 
-        // Waypoint stops — convert HH:MM scheduledTime to ISO using planDate
-        // Coordinates may be on the linked location record rather than the waypoint itself
         const waypointStops = [...run.waypoints]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
           .map(w => ({
@@ -602,9 +571,7 @@ function RunCard({
             postcode:        w.postcode ?? w.location?.postcode ?? null,
             lat:             w.lat ?? w.location?.lat ?? null,
             lng:             w.lng ?? w.location?.lng ?? null,
-            timeWindowStart: w.scheduledTime && planDate
-              ? `${planDate}T${w.scheduledTime}:00Z`
-              : null,
+            timeWindowStart: w.scheduledTime && planDate ? `${planDate}T${w.scheduledTime}:00Z` : null,
             timeWindowEnd:   null,
             customerName:    null,
           }));
@@ -612,50 +579,23 @@ function RunCard({
         const allStops = [...assignmentStops, ...waypointStops]
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
-        // Derive vehicle dimensions from assigned truck + trailer
-        const truck   = run.assignedTruckId   ? trucks.find(t => t.id === run.assignedTruckId)     : null;
+        const truck   = run.assignedTruckId   ? trucks.find(t => t.id === run.assignedTruckId)    : null;
         const trailer = run.assignedTrailerId  ? trailers.find(t => t.id === run.assignedTrailerId) : null;
-
-        // GVW: parse from truck's gvwClass string e.g. "44t" → 44, "7.5t" → 7.5
-        const gvwT = truck?.gvwClass ? parseFloat(truck.gvwClass) || null : null;
-
-        // Height: taller of truck or trailer (trailer is usually the restriction)
-        const heightM = Math.max(
-          truck?.heightM ?? 0,
-          trailer?.heightM ?? 0,
-        ) || null;
-
-        // Width: wider of the two
-        const widthM = Math.max(
-          truck?.widthM ?? 0,
-          trailer?.widthM ?? 0,
-        ) || null;
-
-        // Length: cab + trailer
-        const lengthM = (truck?.lengthM ?? 0) + (trailer?.lengthM ?? 0) || null;
-
-        // Axle load: stricter of the two
-        const axleLoadT = Math.max(
-          truck?.axleLoadT ?? 0,
-          trailer?.axleLoadT ?? 0,
-        ) || null;
-
+        const gvwT    = truck?.gvwClass ? parseFloat(truck.gvwClass) || null : null;
+        const heightM = Math.max(truck?.heightM ?? 0, trailer?.heightM ?? 0) || null;
+        const widthM  = Math.max(truck?.widthM  ?? 0, trailer?.widthM  ?? 0) || null;
+        const lengthM = ((truck?.lengthM ?? 0) + (trailer?.lengthM ?? 0)) || null;
+        const axleLoadT = Math.max(truck?.axleLoadT ?? 0, trailer?.axleLoadT ?? 0) || null;
         const vehicle = (gvwT || heightM || widthM || lengthM || axleLoadT)
-          ? { weightT: gvwT, heightM, widthM, lengthM, axleLoadT }
-          : null;
+          ? { weightT: gvwT, heightM, widthM, lengthM, axleLoadT } : null;
 
-        // Use run's estimatedStartTime, or fall back to the depot_start waypoint's scheduledTime
         const depotStart = run.waypoints.find(w => w.waypointType === "depot_start");
         const departureTime = run.estimatedStartTime
-          ?? (depotStart?.scheduledTime && planDate
-              ? `${planDate}T${depotStart.scheduledTime}:00Z`
-              : null);
+          ?? (depotStart?.scheduledTime && planDate ? `${planDate}T${depotStart.scheduledTime}:00Z` : null);
 
         const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: departureTime, vehicle });
         setAiCheck({
-          severity: result.severity === "high"  ? "block" :
-                    result.severity === "medium" ? "warn"  :
-                    result.severity === "low"    ? "warn"  : "ok",
+          severity: result.severity === "high" ? "block" : result.severity === "medium" || result.severity === "low" ? "warn" : "ok",
           reason:   result.message,
         });
       } catch { setAiCheck(null); }
@@ -665,7 +605,13 @@ function RunCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.assignments.length, run.waypoints.length, wpTimesKey, run.estimatedStartTime]);
 
-  // Auto-fill lat/lng from postcode using postcodes.io (free, no key)
+  useEffect(() => {
+    if (!showWpForm) return;
+    setWpShowCreate(false);
+    setWpLocId((wpPosition === -2 || wpPosition === -1) ? (depot?.id ?? "") : "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wpPosition]);
+
   async function geocodePostcode() {
     const pc = wpNewPostcode.trim().replace(/\s+/g, "").toUpperCase();
     if (!pc) return;
@@ -673,33 +619,21 @@ function RunCard({
     try {
       const res  = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`);
       const data = await res.json() as { result?: { latitude: number; longitude: number } };
-      if (data.result) {
-        setWpNewLat(String(data.result.latitude));
-        setWpNewLng(String(data.result.longitude));
-      }
+      if (data.result) { setWpNewLat(String(data.result.latitude)); setWpNewLng(String(data.result.longitude)); }
     } catch { /* non-fatal */ }
     finally { setWpGeoLoading(false); }
   }
 
-  // Load saved locations — called when form opens (user-triggered, never on mount)
   async function loadSavedLocs() {
-    if (savedLocs.length > 0) return; // already loaded
+    if (savedLocs.length > 0) return;
     setLocsLoading(true);
     try {
       const res = await planningApi.getLocations();
       setSavedLocs(res.data);
-      if (res.data.length === 0) setWpShowCreate(true); // no locations yet → go straight to create
+      if (res.data.length === 0) setWpShowCreate(true);
     } catch { /* non-fatal */ }
     finally { setLocsLoading(false); }
   }
-
-  // When position changes while form is open: reset selection, pre-select depot for start/end
-  useEffect(() => {
-    if (!showWpForm) return;
-    setWpShowCreate(false);
-    setWpLocId((wpPosition === -2 || wpPosition === -1) ? (depot?.id ?? "") : "");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wpPosition]);
 
   async function patch(body: Record<string, unknown>) {
     setSaving(true); setErr("");
@@ -711,14 +645,10 @@ function RunCard({
   async function handleAddWaypoint() {
     setWpAdding(true);
     try {
-      // ── Sequence & waypoint type ──────────────────────────────────────────
-      let seq: number;
-      let waypointType: string;
-      if (wpPosition === -2) {
-        seq = 0; waypointType = "depot_start";
-      } else if (wpPosition === -1) {
-        seq = 999999; waypointType = "return_to_base";
-      } else {
+      let seq: number; let waypointType: string;
+      if (wpPosition === -2) { seq = 0; waypointType = "depot_start"; }
+      else if (wpPosition === -1) { seq = 999999; waypointType = "return_to_base"; }
+      else {
         const allItems = [
           ...run.assignments.map(a => ({ seq: a.sequenceNumber })),
           ...run.waypoints.map(w => ({ seq: w.sequenceNumber })),
@@ -729,37 +659,31 @@ function RunCard({
         waypointType = "custom";
       }
 
-      // ── Location ──────────────────────────────────────────────────────────
       let locationId: number | undefined;
       let locationText = "";
       const isDepotStop = wpPosition === -2 || wpPosition === -1;
 
       if (wpShowCreate) {
-        // Create a brand new saved location
         if (!wpNewName.trim() || !wpNewStreet.trim()) return;
         const newLoc = await api.post<any>("/locations", {
-          name:     wpNewName.trim(),
-          street:   wpNewStreet.trim(),
-          town:     wpNewTown.trim() || undefined,
+          name: wpNewName.trim(), street: wpNewStreet.trim(),
+          town: wpNewTown.trim() || undefined,
           postcode: wpNewPostcode.trim() || undefined,
-          lat:      wpNewLat ? parseFloat(wpNewLat) : undefined,
-          lng:      wpNewLng ? parseFloat(wpNewLng) : undefined,
+          lat: wpNewLat ? parseFloat(wpNewLat) : undefined,
+          lng: wpNewLng ? parseFloat(wpNewLng) : undefined,
         });
         locationId   = newLoc.id;
         locationText = newLoc.siteName ?? newLoc.name;
         setSavedLocs(prev => [...prev, { id: newLoc.id, name: newLoc.name, siteName: newLoc.siteName, town: newLoc.town ?? null, postcode: newLoc.postcode ?? null }]);
-        // Depot stop: set this new location as company depot
         if (isDepotStop) {
           await api.patch<any>("/company", { depotLocationId: newLoc.id });
           onDepotSet({ id: newLoc.id, name: newLoc.name, siteName: newLoc.siteName ?? null, town: newLoc.town ?? null, postcode: newLoc.postcode ?? null, lat: newLoc.lat ?? null, lng: newLoc.lng ?? null });
         }
       } else {
-        // Pick from existing saved locations
         if (!wpLocId) return;
         locationId = Number(wpLocId);
         const sel = savedLocs.find(l => l.id === locationId);
         locationText = sel ? (sel.siteName ?? sel.name) : "";
-        // Depot stop: if different from current company depot, update it
         if (isDepotStop && locationId !== depot?.id) {
           await api.patch<any>("/company", { depotLocationId: locationId });
           if (sel) onDepotSet({ id: sel.id, name: sel.name, siteName: sel.siteName ?? null, town: sel.town ?? null, postcode: sel.postcode ?? null, lat: null, lng: null });
@@ -767,7 +691,6 @@ function RunCard({
       }
 
       await onAddWaypoint(run.id, waypointType, locationText, seq, locationId, wpTime || undefined);
-      // Reset form
       setWpLocId(""); setWpShowCreate(false);
       setWpNewName(""); setWpNewStreet(""); setWpNewTown(""); setWpNewPostcode("");
       setWpNewLat(""); setWpNewLng("");
@@ -787,433 +710,524 @@ function RunCard({
   const dependsOnRun = allRuns.find(r => r.id === run.dependsOnRunId);
   const isLocked     = !!dependsOnRun && dependsOnRun.status !== "completed";
 
-  // Route summary shown in collapsed header
-  const sortedA = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-  const routeSummary = run.assignments.length === 0
-    ? "No stops — expand to add"
-    : run.assignments.length === 1
-    ? (sortedA[0]?.jobPart.job.customerName ?? sortedA[0]?.jobPart.locationTextSnapshot ?? "1 stop")
-    : `${sortedA[0]?.jobPart.job.customerName ?? "?"} → ${sortedA[sortedA.length - 1]?.jobPart.job.customerName ?? "?"}`;
-
   const aiDot = aiLoading ? "⟳" :
     aiCheck?.severity === "block" ? "🔴" :
     aiCheck?.severity === "warn"  ? "🟡" :
-    aiCheck                       ? "🟢" : null;
+    aiCheck                       ? "🟢" : "";
+
+  // Combined + sorted stop list
+  type RouteItem =
+    | { kind: "assignment"; seq: number; data: PlanningAssignment }
+    | { kind: "waypoint";   seq: number; data: RunWaypoint };
+  const routeItems: RouteItem[] = [
+    ...run.assignments.map(a => ({ kind: "assignment" as const, seq: a.sequenceNumber, data: a })),
+    ...run.waypoints.map(w => ({ kind: "waypoint" as const, seq: w.sequenceNumber, data: w })),
+  ].sort((a, b) => a.seq - b.seq);
+
+  // Delivery-before-collection warning
+  const sortedA = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+  const fd = sortedA.find(a => ["delivery","dropoff"].includes(a.jobPart.type));
+  const fc = sortedA.find(a => ["collection","pickup"].includes(a.jobPart.type));
+  const deliveryBeforeCollection = fd && fc && fd.sequenceNumber < fc.sequenceNumber;
 
   return (
-    <div className={`card mb-3 ${isLocked ? "opacity-60" : ""}`}>
-
-      {/* ── Always-visible collapsed header ── */}
-      <div
-        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none hover:bg-slate-50 rounded-t"
-        onClick={onToggleExpand}
-      >
-        <span className="font-bold text-sm text-primary flex-shrink-0">{run.runReference}</span>
+    <div
+      className={`w-72 min-w-[260px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
+        isLocked ? "opacity-60" : ""
+      } ${isOver ? "ring-2 ring-primary shadow-lg" : "border-border"}`}
+      style={{ maxHeight: "calc(100vh - 130px)" }}
+    >
+      {/* ── Lane header ── */}
+      <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border-b border-slate-200 flex-shrink-0">
+        <span className="font-bold text-[13px] text-primary flex-shrink-0">{run.runReference}</span>
         <StatusBadge status={run.status} />
-        {run.publishedToDriver && <Badge colour="bg-violet-100 text-violet-700">Published</Badge>}
+        {run.publishedToDriver && <Badge colour="bg-violet-100 text-violet-700">📤</Badge>}
         {isLocked           && <Badge colour="bg-orange-100 text-orange-700">🔒</Badge>}
         {run.hasHazardous   && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
-        {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">Temp</Badge>}
-
-        {/* Route summary */}
-        <span className="text-xs text-muted flex-1 truncate min-w-0 ml-1">{routeSummary}</span>
-
-        {/* Driver chip */}
-        {run.driver && (
-          <span className="text-xs text-slate-500 flex-shrink-0 hidden sm:inline">
-            👤 {run.driver.displayName}
-          </span>
-        )}
-
-        {/* AI dot */}
-        {aiDot && <span className="flex-shrink-0 text-xs leading-none">{aiDot}</span>}
-
-        {/* Delete */}
+        {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">❄</Badge>}
+        <span className="flex-1" />
+        {aiDot && <span className="text-xs leading-none" title={aiCheck?.reason ?? "Checking…"}>{aiDot}</span>}
         <button
-          onClick={e => { e.stopPropagation(); onDelete(run.id); }}
-          className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 ml-1 leading-none"
+          onClick={() => onDelete(run.id)}
+          className="text-slate-400 hover:text-red-500 text-xs leading-none ml-1 flex-shrink-0"
           title="Delete run"
         >✕</button>
-
-        {/* Expand/collapse arrow */}
-        <span className="text-slate-400 text-xs flex-shrink-0">{isExpanded ? "▲" : "▼"}</span>
       </div>
 
-      {/* ── Expanded body ── */}
-      {isExpanded && (
-        <div className="px-4 pb-4 pt-3 border-t border-slate-100">
+      {/* ── Inline driver + vehicle assign ── */}
+      <div className="grid grid-cols-2 gap-px bg-slate-100 flex-shrink-0">
+        <div className="bg-white px-2 py-1.5">
+          <div className="text-[9px] text-muted uppercase tracking-wide mb-0.5">Driver</div>
+          <select
+            className="w-full text-[11px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            value={run.assignedDriverId ?? ""}
+            disabled={saving}
+            onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
+          >
+            <option value="">— assign —</option>
+            {drivers.map(d => <option key={d.id} value={d.id}>{d.displayName}</option>)}
+          </select>
+        </div>
+        <div className="bg-white px-2 py-1.5">
+          <div className="text-[9px] text-muted uppercase tracking-wide mb-0.5">Trailer</div>
+          <select
+            className="w-full text-[11px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            value={run.assignedTrailerId ?? ""}
+            disabled={saving}
+            onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
+          >
+            <option value="">— assign —</option>
+            {trailers.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.registration} · {bodyTypeLabel(t.bodyType || t.trailerType)}
+                {t.status !== "available" ? ` (${FLEET_STATUS_LABEL[t.status] ?? cap(t.status)})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-          {err && <div className="text-xs text-red-600 mb-2">{err}</div>}
+      {/* ── Capacity bar ── */}
+      <CapacityBar run={run} trucks={trucks} />
 
-          {/* AI feasibility check result */}
-          {aiLoading && (
-            <div className="text-xs text-muted mb-2 animate-pulse">🤖 Checking route feasibility…</div>
-          )}
-          {!aiLoading && aiCheck && (
-            <div className={`text-xs rounded px-2 py-1.5 mb-3 ${
-              aiCheck.severity === "block" ? "bg-red-50 text-red-700" :
-              aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700" :
-                                             "bg-green-50 text-green-700"
-            }`}>
-              {aiCheck.severity === "block" ? "🔴" : aiCheck.severity === "warn" ? "🟡" : "🟢"} {aiCheck.reason}
-            </div>
-          )}
-
-          {/* ── Route timeline — assignments + waypoints merged ── */}
-          <div className="mb-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[10px] uppercase tracking-wide font-bold text-muted">Route</div>
-              <button
-                onClick={() => {
-                  if (!showWpForm) {
-                    // Opening — pre-select depot for the default position (-2 = start)
-                    setWpLocId(depot?.id ?? "");
-                    setWpShowCreate(false);
-                    setWpPosition(-2);
-                    loadSavedLocs();
-                  }
-                  setShowWpForm(v => !v);
-                }}
-                className="text-[10px] text-accent hover:underline"
-              >
-                {showWpForm ? "Cancel" : "+ Add stop"}
-              </button>
-            </div>
-
-            {run.assignments.length === 0 && run.waypoints.length === 0 ? (
-              <div className="text-xs text-muted italic">No stops yet — add jobs from the left panel</div>
-            ) : (
-              <div className="space-y-1.5">
-                {/* Build combined sorted timeline */}
-                {(() => {
-                  type RouteItem =
-                    | { kind: "assignment"; seq: number; data: typeof run.assignments[0] }
-                    | { kind: "waypoint";   seq: number; data: RunWaypoint };
-
-                  const items: RouteItem[] = [
-                    ...run.assignments.map(a => ({ kind: "assignment" as const, seq: a.sequenceNumber, data: a })),
-                    ...run.waypoints.map(w => ({ kind: "waypoint" as const, seq: w.sequenceNumber, data: w })),
-                  ].sort((a, b) => a.seq - b.seq);
-
-                  let stopNum = 0;
-                  return items.map(item => {
-                    if (item.kind === "waypoint") {
-                      const w = item.data;
-                      const wpPostcode = w.postcode ?? w.location?.postcode ?? null;
-                      return (
-                        <div key={`w-${w.id}`} className="flex items-center gap-2 text-xs pl-6">
-                          <Badge colour="bg-slate-100 text-slate-600">
-                            {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
-                          </Badge>
-                          <span className="font-medium text-primary truncate flex-1 min-w-0">
-                            {w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}
-                          </span>
-                          {wpPostcode && (
-                            <span className="text-muted truncate hidden sm:inline flex-shrink-0">{wpPostcode}</span>
-                          )}
-                          {w.scheduledTime && <span className="text-amber-600 flex-shrink-0">{w.scheduledTime}</span>}
-                          <button onClick={() => onRemoveWaypoint(run.id, w.id)}
-                            className="text-red-400 hover:text-red-600 flex-shrink-0" title="Remove">✕</button>
-                        </div>
-                      );
-                    } else {
-                      const a = item.data;
-                      stopNum++;
-                      return (
-                        <div key={`a-${a.id}`} className="flex items-center gap-2 text-xs">
-                          <span className="w-4 text-center font-bold text-muted flex-shrink-0">{stopNum}</span>
-                          <Badge colour={a.jobPart.type === "collection" || a.jobPart.type === "pickup"
-                            ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}>
-                            {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
-                          </Badge>
-                          <span className="font-medium text-primary truncate flex-1 min-w-0">
-                            {a.jobPart.job.customerName ?? "—"}
-                          </span>
-                          <span className="text-muted truncate hidden sm:inline">
-                            {a.jobPart.locationTextSnapshot ?? a.jobPart.postcode ?? ""}
-                          </span>
-                          {a.jobPart.timeWindowStart && (
-                            <span className="text-amber-600 flex-shrink-0">{fmtTime(a.jobPart.timeWindowStart)}</span>
-                          )}
-                          <button onClick={() => onRemoveStop(run.id, a.id)}
-                            className="text-red-400 hover:text-red-600 flex-shrink-0" title="Remove stop">✕</button>
-                        </div>
-                      );
-                    }
-                  });
-                })()}
-              </div>
-            )}
-
-            {/* Delivery-before-collection warning */}
-            {(() => {
-              const sorted = [...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-              const fd = sorted.find(a => ["delivery","dropoff"].includes(a.jobPart.type));
-              const fc = sorted.find(a => ["collection","pickup"].includes(a.jobPart.type));
-              if (fd && fc && fd.sequenceNumber < fc.sequenceNumber) {
-                return (
-                  <div className="mt-1.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
-                    ⚠ Delivery appears before collection — check the stop order
-                  </div>
-                );
-              }
-              return null;
-            })()}
-
-            {showWpForm && (
-              <div className="rounded border border-slate-200 bg-slate-50 p-2.5 space-y-2 text-xs">
-
-                {/* ── Where in the route? (always shown first) ── */}
-                <div>
-                  <label className="text-muted block mb-1">Where in the route?</label>
-                  <select
-                    className="input text-xs py-1 w-full"
-                    value={wpPosition}
-                    onChange={e => setWpPosition(parseInt(e.target.value, 10))}
-                  >
-                    <option value={-2}>Before all stops (depot start)</option>
-                    {(() => {
-                      // Combined sorted list so waypoints appear in the right position
-                      type CombinedItem =
-                        | { kind: "stop"; seq: number; label: string; key: string }
-                        | { kind: "wp";   seq: number; label: string; key: string };
-                      const items: CombinedItem[] = [
-                        ...[...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(a => ({
-                          kind: "stop" as const,
-                          seq:  a.sequenceNumber,
-                          key:  `a-${a.id}`,
-                          label: `${STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — ${a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}`,
-                        })),
-                        ...[...run.waypoints].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
-                          .filter(w => w.waypointType !== "depot_start" && w.waypointType !== "return_to_base")
-                          .map(w => ({
-                            kind: "wp" as const,
-                            seq:  w.sequenceNumber,
-                            key:  `w-${w.id}`,
-                            label: `${WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}: ${w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}`,
-                          })),
-                      ].sort((a, b) => a.seq - b.seq);
-                      return items.map((item, i) => (
-                        <option key={item.key} value={i}>
-                          After: {item.label}
-                        </option>
-                      ));
-                    })()}
-                    <option value={-1}>After all stops (return to depot)</option>
-                  </select>
-                </div>
-
-                {/* ── Location — picker-first for ALL positions ── */}
-                <div className="space-y-1.5">
-                  <label className="text-muted block">
-                    {(wpPosition === -2 || wpPosition === -1) ? "Depot / yard location" : "Location"}
-                  </label>
-
-                  {locsLoading && <div className="text-muted animate-pulse text-[11px]">Loading…</div>}
-
-                  {!locsLoading && !wpShowCreate && (
-                    <>
-                      {savedLocs.length > 0 ? (
-                        <select
-                          className="input text-xs py-1 w-full"
-                          value={wpLocId}
-                          onChange={e => setWpLocId(e.target.value ? Number(e.target.value) : "")}
-                        >
-                          <option value="">— select a location —</option>
-                          {savedLocs.map(l => (
-                            <option key={l.id} value={l.id}>
-                              {l.siteName ? `${l.siteName} (${l.name})` : l.name}
-                              {l.town ? ` · ${l.town}` : ""}
-                              {l.postcode ? ` · ${l.postcode}` : ""}
-                              {l.id === depot?.id ? " 🏭" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="text-[11px] text-muted italic">No saved locations yet</div>
-                      )}
-                      <button type="button"
-                        onClick={() => { setWpShowCreate(true); setWpLocId(""); }}
-                        className="text-[10px] text-accent hover:underline">
-                        + New address
-                      </button>
-                    </>
-                  )}
-
-                  {!locsLoading && wpShowCreate && (
-                    <>
-                      <input type="text" className="input text-xs py-1 w-full"
-                        placeholder={`${(wpPosition === -2 || wpPosition === -1) ? "Depot name (e.g. Main Yard)" : "Name"} *`}
-                        value={wpNewName} onChange={e => setWpNewName(e.target.value)} />
-                      <input type="text" className="input text-xs py-1 w-full" placeholder="Street address *"
-                        value={wpNewStreet} onChange={e => setWpNewStreet(e.target.value)} />
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <input type="text" className="input text-xs py-1" placeholder="Town"
-                          value={wpNewTown} onChange={e => setWpNewTown(e.target.value)} />
-                        <input type="text" className="input text-xs py-1" placeholder="Postcode"
-                          value={wpNewPostcode} onChange={e => setWpNewPostcode(e.target.value.toUpperCase())} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <input type="number" step="any" className="input text-xs py-1" placeholder="Latitude (opt.)"
-                          value={wpNewLat} onChange={e => setWpNewLat(e.target.value)} />
-                        <input type="number" step="any" className="input text-xs py-1" placeholder="Longitude (opt.)"
-                          value={wpNewLng} onChange={e => setWpNewLng(e.target.value)} />
-                      </div>
-                      {wpNewPostcode.trim() && (
-                        <button type="button" onClick={geocodePostcode} disabled={wpGeoLoading}
-                          className="text-[10px] text-accent hover:underline disabled:opacity-50">
-                          {wpGeoLoading ? "Looking up…" : "Auto-fill coordinates from postcode"}
-                        </button>
-                      )}
-                      {savedLocs.length > 0 && (
-                        <button type="button"
-                          onClick={() => { setWpShowCreate(false); setWpNewName(""); setWpNewStreet(""); setWpNewTown(""); setWpNewPostcode(""); }}
-                          className="text-[10px] text-accent hover:underline">
-                          ← Pick existing
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* ── Expected time ── */}
-                <div>
-                  <label className="text-muted block mb-1">Expected time <span className="text-red-500">*</span></label>
-                  <input type="time" className="input text-xs py-1 w-full"
-                    value={wpTime} onChange={e => setWpTime(e.target.value)} />
-                </div>
-
-                <button
-                  onClick={handleAddWaypoint}
-                  disabled={
-                    wpAdding ||
-                    locsLoading ||
-                    !wpTime ||
-                    (!wpShowCreate && !wpLocId) ||
-                    (wpShowCreate && (!wpNewName.trim() || !wpNewStreet.trim()))
-                  }
-                  className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 w-full"
-                >
-                  {wpAdding ? "Adding…" : wpShowCreate && (wpPosition === -2 || wpPosition === -1) ? "Save depot & add stop" : "Add stop"}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* ── Trailer ── */}
-          <div className="mb-2">
-            <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">
-              Trailer <span className="text-[10px] font-normal normal-case">(assign now or later)</span>
-            </label>
-            <select
-              className="input text-sm w-full"
-              value={run.assignedTrailerId ?? ""}
-              disabled={saving}
-              onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
-            >
-              <option value="">— assign later —</option>
-              {trailers.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.registration} · {bodyTypeLabel(t.bodyType || t.trailerType)}
-                  {t.status !== "available" ? ` (${FLEET_STATUS_LABEL[t.status] ?? cap(t.status)})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* ── Driver ── */}
-          <div className="mb-2">
-            <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">Driver</label>
-            <select
-              className="input text-sm w-full"
-              value={run.assignedDriverId ?? ""}
-              disabled={saving}
-              onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
-            >
-              <option value="">— assign later —</option>
-              {drivers.map(d => (
-                <option key={d.id} value={d.id}>{d.displayName}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* ── Run type ── */}
-          <div className="mb-2">
-            <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">Run type</label>
-            <select
-              className="input text-sm w-full"
-              value={run.runType ?? "direct"}
-              disabled={saving}
-              onChange={e => patch({ runType: e.target.value })}
-            >
-              {Object.entries(RUN_TYPE_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* ── Relay dependency ── */}
-          {(run.runType === "relay" || run.dependsOnRunId) && (
-            <div className="mb-2">
-              <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">
-                Locked until run completes
-              </label>
-              <select
-                className="input text-sm w-full"
-                value={run.dependsOnRunId ?? ""}
-                disabled={saving}
-                onChange={e => patch({ dependsOnRunId: e.target.value ? parseInt(e.target.value, 10) : null })}
-              >
-                <option value="">— no dependency —</option>
-                {allRuns.filter(r => r.id !== run.id).map(r => (
-                  <option key={r.id} value={r.id}>{r.runReference} ({r.status})</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* ── Planner notes ── */}
-          <div className="mb-3">
-            <label className="text-[10px] uppercase tracking-wide font-bold text-muted block mb-1">Planner notes</label>
-            <textarea
-              className="input text-xs w-full resize-none"
-              rows={2}
-              placeholder="Notes for driver…"
-              defaultValue={run.plannerNotes ?? ""}
-              onBlur={e => { if (e.target.value !== (run.plannerNotes ?? "")) patch({ plannerNotes: e.target.value }); }}
-            />
-          </div>
-
-          {/* ── Actions ── */}
-          <div className="flex gap-2 flex-wrap items-center">
-            {canPublish && (
-              <button
-                onClick={handlePublish}
-                disabled={publishing || run.assignments.length === 0}
-                className="btn text-sm px-3 py-1.5 bg-primary text-white disabled:opacity-40 flex-1"
-              >
-                {publishing ? "Publishing…" : "Publish to driver"}
-              </button>
-            )}
-            {run.publishedToDriver && (
-              <Badge colour="bg-green-100 text-green-700">✓ Published to driver</Badge>
-            )}
-            {saving && <span className="text-xs text-muted">Saving…</span>}
-          </div>
+      {/* ── AI feasibility strip (compact 1-liner) ── */}
+      {aiLoading && (
+        <div className="px-3 py-1 text-[10px] text-muted animate-pulse bg-slate-50 border-b border-slate-100 flex-shrink-0">
+          🤖 Checking route…
         </div>
       )}
+      {!aiLoading && aiCheck && (
+        <div className={`px-3 py-1 text-[10px] border-b flex-shrink-0 ${
+          aiCheck.severity === "block" ? "bg-red-50 text-red-700 border-red-100" :
+          aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700 border-amber-100" :
+          "bg-green-50 text-green-700 border-green-100"
+        }`} title={aiCheck.reason}>
+          {aiDot} {aiCheck.reason.length > 90 ? aiCheck.reason.slice(0, 87) + "…" : aiCheck.reason}
+        </div>
+      )}
+
+      {/* ── Stop list (scrollable) + drop zone ── */}
+      <div
+        className="flex-1 overflow-y-auto min-h-0"
+        onDragOver={e => { e.preventDefault(); setIsOver(true); }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsOver(false); }}
+        onDrop={async e => {
+          e.preventDefault(); setIsOver(false);
+          const jobId = parseInt(e.dataTransfer.getData("application/job-id"), 10);
+          if (!isNaN(jobId)) await onDropJob(jobId);
+        }}
+      >
+        {routeItems.length === 0 ? (
+          <div className={`m-3 rounded-lg border-2 border-dashed flex flex-col items-center justify-center py-8 text-sm transition-colors ${
+            isOver ? "border-primary bg-primary/5 text-primary" : "border-slate-200 text-slate-400"
+          }`}>
+            <span className="text-xl mb-1">📦</span>
+            <span>{isOver ? "Drop to add" : "Drag jobs here"}</span>
+          </div>
+        ) : (
+          <div className="p-2 space-y-1">
+            {/* Stop rows */}
+            {(() => {
+              let stopNum = 0;
+              return routeItems.map(item => {
+                if (item.kind === "waypoint") {
+                  const w = item.data;
+                  return (
+                    <div key={`w-${w.id}`} className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 border border-slate-100 text-xs">
+                      <Badge colour="bg-slate-100 text-slate-600">
+                        {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
+                      </Badge>
+                      <span className="font-medium text-primary truncate flex-1 min-w-0">
+                        {w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}
+                      </span>
+                      {w.scheduledTime && <span className="text-amber-600 flex-shrink-0 tabular-nums">{w.scheduledTime}</span>}
+                      <button onClick={() => onRemoveWaypoint(run.id, w.id)}
+                        className="text-slate-300 hover:text-red-500 flex-shrink-0" title="Remove">✕</button>
+                    </div>
+                  );
+                } else {
+                  const a = item.data;
+                  stopNum++;
+                  return (
+                    <div key={`a-${a.id}`} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white border border-slate-100 hover:border-slate-200 text-xs group">
+                      <span className="w-4 text-center font-bold text-slate-400 flex-shrink-0 text-[10px]">{stopNum}</span>
+                      <Badge colour={
+                        a.jobPart.type === "collection" || a.jobPart.type === "pickup"
+                          ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                      }>
+                        {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
+                      </Badge>
+                      <span className="font-medium text-primary truncate flex-1 min-w-0">
+                        {a.jobPart.job.customerName ?? "—"}
+                      </span>
+                      {a.jobPart.timeWindowStart && (
+                        <span className="text-amber-600 flex-shrink-0 tabular-nums text-[10px]">{fmtTime(a.jobPart.timeWindowStart)}</span>
+                      )}
+                      <button onClick={() => onRemoveStop(run.id, a.id)}
+                        className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove stop">✕</button>
+                    </div>
+                  );
+                }
+              });
+            })()}
+
+            {/* Delivery-before-collection warning */}
+            {deliveryBeforeCollection && (
+              <div className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
+                ⚠ Delivery appears before collection — check order
+              </div>
+            )}
+
+            {/* Drop zone overlay (when has stops + hovering) */}
+            {isOver && routeItems.length > 0 && (
+              <div className="rounded border-2 border-dashed border-primary bg-primary/5 py-3 text-center text-sm text-primary">
+                Drop to add to run
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Action bar ── */}
+      <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50">
+        {/* Waypoint + optimise tools */}
+        <div className="flex items-center gap-1 px-2 py-1 border-b border-slate-100">
+          <button
+            onClick={() => {
+              if (!showWpForm) { setWpLocId(depot?.id ?? ""); setWpShowCreate(false); setWpPosition(-2); loadSavedLocs(); }
+              setShowWpForm(v => !v);
+            }}
+            className="text-[10px] text-slate-500 hover:text-primary"
+          >
+            {showWpForm ? "✕ Cancel" : "+ Waypoint"}
+          </button>
+          {run.assignments.length >= 2 && (
+            <button
+              onClick={() => onOptimiseRoute(run.id)}
+              disabled={optimising}
+              className="text-[10px] text-slate-500 hover:text-primary disabled:opacity-40 ml-auto"
+              title="Sort stops in geographically optimal order"
+            >
+              {optimising ? "⟳ Sorting…" : "⟡ Optimise route"}
+            </button>
+          )}
+        </div>
+
+        {/* Waypoint form */}
+        {showWpForm && (
+          <div className="px-2 py-2 border-b border-slate-100 space-y-1.5 text-xs bg-white">
+            <select className="input text-xs py-1 w-full" value={wpPosition}
+              onChange={e => setWpPosition(parseInt(e.target.value, 10))}>
+              <option value={-2}>Before all stops (depot start)</option>
+              {(() => {
+                const items = [
+                  ...[...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(a => ({
+                    key: `a-${a.id}`, seq: a.sequenceNumber,
+                    label: `${STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — ${a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}`,
+                  })),
+                  ...[...run.waypoints].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+                    .filter(w => w.waypointType !== "depot_start" && w.waypointType !== "return_to_base")
+                    .map(w => ({
+                      key: `w-${w.id}`, seq: w.sequenceNumber,
+                      label: `${WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}: ${w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}`,
+                    })),
+                ].sort((a, b) => a.seq - b.seq);
+                return items.map((item, i) => <option key={item.key} value={i}>After: {item.label}</option>);
+              })()}
+              <option value={-1}>After all stops (return to depot)</option>
+            </select>
+
+            {locsLoading && <div className="text-muted animate-pulse text-[10px]">Loading locations…</div>}
+            {!locsLoading && !wpShowCreate && (
+              <>
+                {savedLocs.length > 0 ? (
+                  <select className="input text-xs py-1 w-full" value={wpLocId}
+                    onChange={e => setWpLocId(e.target.value ? Number(e.target.value) : "")}>
+                    <option value="">— select location —</option>
+                    {savedLocs.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.siteName ? `${l.siteName} (${l.name})` : l.name}
+                        {l.town ? ` · ${l.town}` : ""}{l.postcode ? ` · ${l.postcode}` : ""}
+                        {l.id === depot?.id ? " 🏭" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="text-[10px] text-muted italic">No saved locations</div>
+                )}
+                <button type="button" onClick={() => { setWpShowCreate(true); setWpLocId(""); }}
+                  className="text-[10px] text-accent hover:underline">+ New address</button>
+              </>
+            )}
+            {!locsLoading && wpShowCreate && (
+              <>
+                <input type="text" className="input text-xs py-1 w-full"
+                  placeholder={`${wpPosition === -2 || wpPosition === -1 ? "Depot name" : "Name"} *`}
+                  value={wpNewName} onChange={e => setWpNewName(e.target.value)} />
+                <input type="text" className="input text-xs py-1 w-full" placeholder="Street *"
+                  value={wpNewStreet} onChange={e => setWpNewStreet(e.target.value)} />
+                <div className="grid grid-cols-2 gap-1">
+                  <input type="text" className="input text-xs py-1" placeholder="Town"
+                    value={wpNewTown} onChange={e => setWpNewTown(e.target.value)} />
+                  <input type="text" className="input text-xs py-1" placeholder="Postcode"
+                    value={wpNewPostcode} onChange={e => setWpNewPostcode(e.target.value.toUpperCase())} />
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  <input type="number" step="any" className="input text-xs py-1" placeholder="Lat"
+                    value={wpNewLat} onChange={e => setWpNewLat(e.target.value)} />
+                  <input type="number" step="any" className="input text-xs py-1" placeholder="Lng"
+                    value={wpNewLng} onChange={e => setWpNewLng(e.target.value)} />
+                </div>
+                {wpNewPostcode.trim() && (
+                  <button type="button" onClick={geocodePostcode} disabled={wpGeoLoading}
+                    className="text-[10px] text-accent hover:underline disabled:opacity-50">
+                    {wpGeoLoading ? "Looking up…" : "Auto-fill from postcode"}
+                  </button>
+                )}
+                {savedLocs.length > 0 && (
+                  <button type="button"
+                    onClick={() => { setWpShowCreate(false); setWpNewName(""); setWpNewStreet(""); setWpNewTown(""); setWpNewPostcode(""); }}
+                    className="text-[10px] text-accent hover:underline block">← Pick existing</button>
+                )}
+              </>
+            )}
+
+            <input type="time" className="input text-xs py-1 w-full" placeholder="Expected time *"
+              value={wpTime} onChange={e => setWpTime(e.target.value)} />
+            <button
+              onClick={handleAddWaypoint}
+              disabled={wpAdding || locsLoading || !wpTime || (!wpShowCreate && !wpLocId) || (wpShowCreate && (!wpNewName.trim() || !wpNewStreet.trim()))}
+              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 w-full"
+            >
+              {wpAdding ? "Adding…" : wpShowCreate && (wpPosition === -2 || wpPosition === -1) ? "Save depot & add" : "Add stop"}
+            </button>
+          </div>
+        )}
+
+        {/* Settings toggle */}
+        <button
+          onClick={() => setShowSettings(v => !v)}
+          className="w-full text-left px-3 py-1.5 text-[10px] text-slate-400 hover:text-primary hover:bg-white transition-colors flex items-center gap-1"
+        >
+          <span>{showSettings ? "▲" : "▼"}</span>
+          <span>{showSettings ? "Hide" : "⚙ Run settings"}</span>
+          {saving && <span className="ml-auto text-[10px] text-muted animate-pulse">Saving…</span>}
+        </button>
+
+        {showSettings && (
+          <div className="px-3 pb-3 pt-1 space-y-2 bg-white border-t border-slate-100">
+            {err && <div className="text-xs text-red-600">{err}</div>}
+
+            {/* Run type */}
+            <div>
+              <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Run type</label>
+              <select className="input text-xs w-full py-1" value={run.runType ?? "direct"} disabled={saving}
+                onChange={e => patch({ runType: e.target.value })}>
+                {Object.entries(RUN_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+
+            {/* Relay dependency */}
+            {(run.runType === "relay" || run.dependsOnRunId) && (
+              <div>
+                <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Locked until run</label>
+                <select className="input text-xs w-full py-1" value={run.dependsOnRunId ?? ""} disabled={saving}
+                  onChange={e => patch({ dependsOnRunId: e.target.value ? parseInt(e.target.value, 10) : null })}>
+                  <option value="">— no dependency —</option>
+                  {allRuns.filter(r => r.id !== run.id).map(r => (
+                    <option key={r.id} value={r.id}>{r.runReference} ({r.status})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Truck */}
+            <div>
+              <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Truck unit</label>
+              <select className="input text-xs w-full py-1" value={run.assignedTruckId ?? ""} disabled={saving}
+                onChange={e => patch({ assignedTruckId: e.target.value ? parseInt(e.target.value, 10) : null })}>
+                <option value="">— no truck —</option>
+                {trucks.map(t => <option key={t.id} value={t.id}>{t.registration}{t.gvwClass ? ` · ${t.gvwClass}` : ""}</option>)}
+              </select>
+            </div>
+
+            {/* Planner notes */}
+            <div>
+              <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Notes for driver</label>
+              <textarea className="input text-xs w-full resize-none" rows={2}
+                placeholder="Notes…"
+                defaultValue={run.plannerNotes ?? ""}
+                onBlur={e => { if (e.target.value !== (run.plannerNotes ?? "")) patch({ plannerNotes: e.target.value }); }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Publish */}
+        <div className="px-3 py-2">
+          {canPublish ? (
+            <button onClick={handlePublish} disabled={publishing || run.assignments.length === 0}
+              className="btn text-xs px-3 py-1.5 bg-primary text-white disabled:opacity-40 w-full">
+              {publishing ? "Publishing…" : "📤 Publish to driver"}
+            </button>
+          ) : run.publishedToDriver ? (
+            <div className="text-center text-[11px] text-green-700 font-medium">✓ Published to driver</div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Sidebar ───────────────────────────────────────────────────────────────────
 
-const LOOK_AHEAD_OPTIONS = [
-  { days: 0,  label: "1 day"   },
-  { days: 2,  label: "3 days"  },
-  { days: 6,  label: "7 days"  },
-  { days: 13, label: "2 weeks" },
+interface SidebarCounts {
+  needs_attention: number;
+  in_custody:      number;
+  ready_today:     number;
+  future:          number;
+  byVehicle:       Record<string, number>;
+  byDirection:     Record<string, number>;
+}
+
+const VEHICLE_ORDER = [
+  "van", "rigid", "artic", "artic_curtainsider", "artic_fridge",
+  "flatbed", "taillift", "tail_lift", "hiab", "adr",
 ];
+const VEHICLE_LABELS: Record<string, string> = {
+  van: "Van", rigid: "Rigid", artic: "Artic", artic_curtainsider: "Artic — Curtainsider",
+  artic_fridge: "Artic — Fridge", flatbed: "Flatbed", taillift: "Tail lift",
+  tail_lift: "Tail lift", hiab: "HIAB", adr: "ADR",
+};
+
+function Sidebar({
+  counts,
+  activePool,
+  onPoolChange,
+  activeVehicle,
+  onVehicleChange,
+  activeDirection,
+  onDirectionChange,
+}: {
+  counts:          SidebarCounts;
+  activePool:      string | null;
+  onPoolChange:    (p: string | null) => void;
+  activeVehicle:   string | null;
+  onVehicleChange: (v: string | null) => void;
+  activeDirection: string | null;
+  onDirectionChange: (d: string | null) => void;
+}) {
+  const vehicleEntries = Object.entries(counts.byVehicle)
+    .sort(([a], [b]) => (VEHICLE_ORDER.indexOf(a) - VEHICLE_ORDER.indexOf(b)) || a.localeCompare(b));
+  const directionEntries = Object.entries(counts.byDirection)
+    .sort(([, a], [, b]) => b - a);
+
+  function SidebarItem({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+    return (
+      <button
+        onClick={onClick}
+        className={`w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded text-[12px] transition-colors ${
+          active ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100 hover:text-primary"
+        }`}
+      >
+        <span className="truncate">{label}</span>
+        <span className={`text-[10px] font-bold flex-shrink-0 ml-1 tabular-nums ${active ? "text-white/80" : "text-muted"}`}>{count}</span>
+      </button>
+    );
+  }
+
+  return (
+    <aside className="w-44 flex-shrink-0 border-r border-border bg-slate-50/50 overflow-y-auto flex flex-col gap-0.5 py-2">
+      {/* Work Pools */}
+      <div className="px-2.5 py-1 text-[9px] uppercase tracking-wider font-bold text-muted">Work pools</div>
+      <SidebarItem label="⚠ Needs attention" count={counts.needs_attention} active={activePool === "needs_attention"} onClick={() => onPoolChange(activePool === "needs_attention" ? null : "needs_attention")} />
+      <SidebarItem label="📦 In custody" count={counts.in_custody} active={activePool === "in_custody"} onClick={() => onPoolChange(activePool === "in_custody" ? null : "in_custody")} />
+      <SidebarItem label="📅 Ready today" count={counts.ready_today} active={activePool === "ready_today"} onClick={() => onPoolChange(activePool === "ready_today" ? null : "ready_today")} />
+      <SidebarItem label="🗓 Future" count={counts.future} active={activePool === "future"} onClick={() => onPoolChange(activePool === "future" ? null : "future")} />
+
+      {/* By Vehicle */}
+      {vehicleEntries.length > 0 && (
+        <>
+          <div className="px-2.5 pt-3 pb-1 text-[9px] uppercase tracking-wider font-bold text-muted">By vehicle</div>
+          {vehicleEntries.map(([v, c]) => (
+            <SidebarItem
+              key={v}
+              label={VEHICLE_LABELS[v] ?? cap(v)}
+              count={c}
+              active={activeVehicle === v}
+              onClick={() => onVehicleChange(activeVehicle === v ? null : v)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* By Direction */}
+      {directionEntries.length > 0 && (
+        <>
+          <div className="px-2.5 pt-3 pb-1 text-[9px] uppercase tracking-wider font-bold text-muted">By direction</div>
+          {directionEntries.map(([d, c]) => (
+            <SidebarItem
+              key={d}
+              label={`📍 ${GROUP_LABEL[`direction_${d}`] ?? cap(d)}`}
+              count={c}
+              active={activeDirection === d}
+              onClick={() => onDirectionChange(activeDirection === d ? null : d)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Clear all filters */}
+      {(activePool || activeVehicle || activeDirection) && (
+        <div className="px-2.5 pt-3">
+          <button
+            onClick={() => { onPoolChange(null); onVehicleChange(null); onDirectionChange(null); }}
+            className="text-[10px] text-accent hover:underline"
+          >
+            ✕ Clear filters
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+// ── JobGroup helpers (kept for handleAddJobToRun fallback) ────────────────────
+
+interface JobGroup {
+  jobId: number; jobReference: string | null; customerName: string | null;
+  goodsType: string | null; weight: number | null; quantity: number | null;
+  quantityUnit: string | null; plannedDate: string | null; stops: UnplannedStop[];
+}
+
+function buildJobGroups(clusters: StopCluster[]): JobGroup[] {
+  const allStops = clusters.flatMap(c => c.stops);
+  const byJob = new Map<number, JobGroup>();
+  for (const stop of allStops) {
+    if (!byJob.has(stop.jobId)) {
+      byJob.set(stop.jobId, {
+        jobId: stop.jobId, jobReference: stop.jobReference, customerName: stop.customerName,
+        goodsType: stop.goodsType, weight: stop.weight, quantity: stop.quantity,
+        quantityUnit: stop.quantityUnit,
+        plannedDate: stop.plannedDate ? (stop.plannedDate as string).slice(0, 10) : null,
+        stops: [],
+      });
+    }
+    byJob.get(stop.jobId)!.stops.push(stop);
+  }
+  return [...byJob.values()];
+}
+
+function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
+  const lq = q.toLowerCase();
+  return [
+    item.customerName, item.jobReference, item.nextAction,
+    item.currentLocation, item.finalDestination, item.finalPostcode,
+    item.currentPostcode, item.goodsType, item.goodsDescription,
+  ].some(v => (v ?? "").toLowerCase().includes(lq));
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PlanningBoardPage() {
   const [date,           setDate]           = useState(todayISO());
@@ -1228,68 +1242,99 @@ export default function PlanningBoardPage() {
   const [drivers,        setDrivers]        = useState<PlanningDriver[]>([]);
   const [loadingLeft,    setLoadingLeft]    = useState(false);
   const [loadingRight,   setLoadingRight]   = useState(false);
-  const [totalUnplanned, setTotalUnplanned] = useState(0);
   const [err,            setErr]            = useState("");
   const [mobileTab,      setMobileTab]      = useState<"jobs" | "runs">("jobs");
   const [creatingRun,    setCreatingRun]    = useState(false);
 
-  // Expand state: multiple runs can be open at once (user controls manually).
-  // New runs are NOT auto-expanded — the user clicks to open them.
-  const [expandedRunIds, setExpandedRunIds] = useState<Set<number>>(new Set());
+  // Sidebar filters
+  const [activePool,      setActivePool]      = useState<string | null>(null);
+  const [activeVehicle,   setActiveVehicle]   = useState<string | null>(null);
+  const [activeDirection, setActiveDirection] = useState<string | null>(null);
 
-  function isRunExpanded(runId: number): boolean {
-    return expandedRunIds.has(runId);
-  }
+  // Batch selection
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<number>>(new Set());
+  const [batchRunId,     setBatchRunId]     = useState<number | "">("");
+  const [batchAdding,    setBatchAdding]    = useState(false);
 
-  function toggleRunExpand(runId: number) {
-    setExpandedRunIds(prev => {
-      const next = new Set(prev);
-      if (next.has(runId)) next.delete(runId); else next.add(runId);
-      return next;
-    });
-  }
+  // Route optimise loading
+  const [optimisingRunIds, setOptimisingRunIds] = useState<Set<number>>(new Set());
 
-  // End date of the unplanned window (date + lookAheadDays)
+  // End date of unplanned window
   const dateTo = useMemo(() => addDaysToISO(date, lookAheadDays), [date, lookAheadDays]);
 
-  // Derive job groups from clusters (kept for handleAddJobToRun compatibility)
-  const allJobGroups     = useMemo(() => buildJobGroups(clusters), [clusters]);
-  const jobGroups        = useMemo(
-    () => search.trim() ? allJobGroups.filter(g => matchesSearch(g, search.trim())) : allJobGroups,
-    [allJobGroups, search],
-  );
+  // ── Sidebar counts ──────────────────────────────────────────────────────────
+  const sidebarCounts = useMemo<SidebarCounts>(() => {
+    const needs = new Set<number>();
+    const custody = new Set<number>();
+    const today = new Set<number>();
+    const future = new Set<number>();
+    const byVehicle: Record<string, Set<number>> = {};
+    const byDirection: Record<string, Set<number>> = {};
 
-  // Work items: apply search filter
-  const filteredWorkItems = useMemo(
-    () => search.trim() ? workItems.filter(i => matchesWorkItem(i, search.trim())) : workItems,
-    [workItems, search],
-  );
+    for (const item of workItems) {
+      const gk = item.groupKey;
+      if (gk === "needs_attention") needs.add(item.jobId);
+      else if (gk === "in_custody") custody.add(item.jobId);
+      else if (gk === "future")     future.add(item.jobId);
+      else                          today.add(item.jobId);
 
-  // Build JobWorkGroups: merge all parts of the same job into one card,
-  // assign the card the group key + risk level of its most urgent part.
+      const vc = item.vehicleCategory?.toLowerCase();
+      if (vc) {
+        if (!byVehicle[vc]) byVehicle[vc] = new Set();
+        byVehicle[vc].add(item.jobId);
+      }
+
+      if (gk.startsWith("direction_")) {
+        const dir = gk.replace("direction_", "");
+        if (!byDirection[dir]) byDirection[dir] = new Set();
+        byDirection[dir].add(item.jobId);
+      }
+    }
+
+    return {
+      needs_attention: needs.size,
+      in_custody:      custody.size,
+      ready_today:     today.size,
+      future:          future.size,
+      byVehicle:  Object.fromEntries(Object.entries(byVehicle).map(([k, v]) => [k, v.size])),
+      byDirection: Object.fromEntries(Object.entries(byDirection).map(([k, v]) => [k, v.size])),
+    };
+  }, [workItems]);
+
+  // ── Filtered work items (search + sidebar) ──────────────────────────────────
+  const filteredWorkItems = useMemo(() => {
+    return workItems.filter(item => {
+      const gk = item.groupKey;
+
+      if (activePool === "needs_attention" && gk !== "needs_attention") return false;
+      if (activePool === "in_custody"      && gk !== "in_custody")      return false;
+      if (activePool === "future"          && gk !== "future")           return false;
+      if (activePool === "ready_today" && (gk === "needs_attention" || gk === "in_custody" || gk === "future")) return false;
+
+      if (activeVehicle   && (item.vehicleCategory?.toLowerCase() ?? "") !== activeVehicle) return false;
+      if (activeDirection && gk !== `direction_${activeDirection}`) return false;
+
+      if (search.trim() && !matchesWorkItem(item, search.trim())) return false;
+      return true;
+    });
+  }, [workItems, activePool, activeVehicle, activeDirection, search]);
+
+  // ── Build JobWorkGroups ─────────────────────────────────────────────────────
   const jobWorkGroupsByGroupKey = useMemo(() => {
-    // First: collect all parts per jobId (in original priority order)
     const byJob = new Map<number, { groupKey: string; parts: PlannerWorkItem[] }>();
     for (const item of filteredWorkItems) {
-      if (!byJob.has(item.jobId)) {
-        byJob.set(item.jobId, { groupKey: item.groupKey, parts: [] });
-      }
+      if (!byJob.has(item.jobId)) byJob.set(item.jobId, { groupKey: item.groupKey, parts: [] });
       byJob.get(item.jobId)!.parts.push(item);
     }
 
-    // Then: build JobWorkGroups and bucket by groupKey
     const byGroup = new Map<string, JobWorkGroup[]>();
     for (const [jobId, { groupKey, parts }] of byJob) {
       const rep      = parts[0];
       const riskOrder = { high: 3, medium: 2, low: 1, none: 0 } as const;
       const riskLevel = parts.reduce<"high"|"medium"|"low"|"none">((best, p) =>
         riskOrder[p.riskLevel] > riskOrder[best] ? p.riskLevel : best, "none");
-      const warnings  = [...new Set(parts.flatMap(p => p.warnings))];
-
-      const grp: JobWorkGroup = {
-        jobId, jobReference: rep.jobReference, customerName: rep.customerName,
-        parts, riskLevel, warnings,
-      };
+      const warnings = [...new Set(parts.flatMap(p => p.warnings))];
+      const grp: JobWorkGroup = { jobId, jobReference: rep.jobReference, customerName: rep.customerName, parts, riskLevel, warnings };
       if (!byGroup.has(groupKey)) byGroup.set(groupKey, []);
       byGroup.get(groupKey)!.push(grp);
     }
@@ -1297,21 +1342,23 @@ export default function PlanningBoardPage() {
     return byGroup;
   }, [filteredWorkItems]);
 
-  // Ordered group keys (preserving server priority order — first item in each job wins)
   const orderedGroupKeys = useMemo(() => {
-    const seen = new Set<string>();
-    const keys: string[] = [];
+    const seen = new Set<string>(); const keys: string[] = [];
     for (const item of filteredWorkItems) {
       if (!seen.has(item.groupKey)) { seen.add(item.groupKey); keys.push(item.groupKey); }
     }
     return keys;
   }, [filteredWorkItems]);
 
-  const totalJobCount = useMemo(() => {
-    const jobIds = new Set(filteredWorkItems.map(i => i.jobId));
-    return jobIds.size;
-  }, [filteredWorkItems]);
+  const allDisplayedGroups = useMemo(() => {
+    const all: JobWorkGroup[] = [];
+    for (const gk of orderedGroupKeys) { all.push(...(jobWorkGroupsByGroupKey.get(gk) ?? [])); }
+    return all;
+  }, [orderedGroupKeys, jobWorkGroupsByGroupKey]);
 
+  const totalJobCount = useMemo(() => new Set(filteredWorkItems.map(i => i.jobId)).size, [filteredWorkItems]);
+
+  // ── Data loading ────────────────────────────────────────────────────────────
   const loadLeft = useCallback(async (d: string, to: string) => {
     setLoadingLeft(true);
     try {
@@ -1321,34 +1368,27 @@ export default function PlanningBoardPage() {
       ]);
       setWorkItems(wiRes.items);
       setClusters(unRes.clusters);
-      setTotalUnplanned(unRes.total);
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setLoadingLeft(false); }
   }, []);
 
   const loadRight = useCallback(async (d: string) => {
     setLoadingRight(true);
-    try {
-      const res = await planningApi.getRuns(d);
-      setRuns(res.runs);
-    } catch (e: unknown) { setErr((e as Error).message); }
+    try { const res = await planningApi.getRuns(d); setRuns(res.runs); }
+    catch (e: unknown) { setErr((e as Error).message); }
     finally { setLoadingRight(false); }
   }, []);
 
   const loadFleet = useCallback(async () => {
     try {
       const res = await planningApi.getFleet();
-      setTrailers(res.trailers);
-      setTrucks(res.trucks);
-      setDepot(res.depot ?? null);
+      setTrailers(res.trailers); setTrucks(res.trucks); setDepot(res.depot ?? null);
     } catch { /* non-fatal */ }
   }, []);
 
   const loadDrivers = useCallback(async (d: string) => {
-    try {
-      const res = await planningApi.getDrivers(d);
-      setDrivers(res.drivers);
-    } catch { /* non-fatal */ }
+    try { const res = await planningApi.getDrivers(d); setDrivers(res.drivers); }
+    catch { /* non-fatal */ }
   }, []);
 
   useEffect(() => {
@@ -1359,24 +1399,39 @@ export default function PlanningBoardPage() {
 
   useEffect(() => { loadFleet(); }, [loadFleet]);
 
-  /** Add a single job part (from the new work-items panel) to a run */
-  async function handleAddPartToRun(jobPartId: number, runId: number) {
-    try { await planningApi.addStop(runId, jobPartId); } catch { /* skip already-assigned */ }
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  async function handleAddJobToRun(jobId: number, runId: number) {
+    // Use workItems as primary source (they have jobPartId directly)
+    const jobParts = workItems.filter(i => i.jobId === jobId)
+      .sort((a, b) => (a.nextAction.startsWith("Collect") ? 0 : 1) - (b.nextAction.startsWith("Collect") ? 0 : 1));
+
+    if (jobParts.length > 0) {
+      for (const part of jobParts) {
+        try { await planningApi.addStop(runId, part.jobPartId); } catch { /* skip */ }
+      }
+    } else {
+      // Fallback: clusters
+      const allStops = clusters.flatMap(c => c.stops)
+        .filter(s => s.jobId === jobId)
+        .sort((a, b) => (COLLECT_FIRST.has(a.type) ? 0 : 1) - (COLLECT_FIRST.has(b.type) ? 0 : 1));
+      for (const stop of allStops) {
+        try { await planningApi.addStop(runId, stop.id); } catch { /* skip */ }
+      }
+    }
     await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
     setMobileTab("runs");
   }
 
-  /** Add all stops of a job to one run (normal mode) */
-  async function handleAddJobToRun(jobId: number, runId: number) {
-    const allStops = clusters.flatMap(c => c.stops);
-    const jobStops = allStops
-      .filter(s => s.jobId === jobId)
-      .sort((a, b) => (COLLECT_FIRST.has(a.type) ? 0 : 1) - (COLLECT_FIRST.has(b.type) ? 0 : 1));
-    for (const stop of jobStops) {
-      try { await planningApi.addStop(runId, stop.id); } catch { /* skip already-assigned */ }
-    }
-    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
-    setMobileTab("runs");
+  async function handleBatchAddToRun() {
+    if (!batchRunId || selectedJobIds.size === 0) return;
+    setBatchAdding(true);
+    try {
+      for (const jobId of selectedJobIds) {
+        await handleAddJobToRun(jobId, Number(batchRunId));
+      }
+      setSelectedJobIds(new Set());
+    } finally { setBatchAdding(false); }
   }
 
   async function handleUpdate(runId: number, patch: Record<string, unknown>) {
@@ -1394,10 +1449,7 @@ export default function PlanningBoardPage() {
     await loadRight(date);
   }
 
-  async function handleAddWaypoint(
-    runId: number, waypointType: string, locationText: string,
-    sequenceNumber: number, locationId?: number, scheduledTime?: string,
-  ) {
+  async function handleAddWaypoint(runId: number, waypointType: string, locationText: string, sequenceNumber: number, locationId?: number, scheduledTime?: string) {
     await planningApi.addWaypoint(runId, { waypointType, locationText, sequenceNumber, locationId, scheduledTime });
     await loadRight(date);
   }
@@ -1408,7 +1460,7 @@ export default function PlanningBoardPage() {
   }
 
   async function handleDeleteRun(runId: number) {
-    if (!window.confirm("Delete this run? Stops will return to the unplanned list.")) return;
+    if (!window.confirm("Delete this run? Stops return to the unplanned list.")) return;
     await planningApi.patchRun(runId, { status: "cancelled" });
     await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
   }
@@ -1418,26 +1470,63 @@ export default function PlanningBoardPage() {
     try {
       const run = await planningApi.createRun({ date, runType: "direct" });
       setRuns(prev => [...prev, run]);
-      setMobileTab("runs"); // switch to the Runs tab on mobile so the new run is visible
+      setMobileTab("runs");
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setCreatingRun(false); }
   }
 
+  async function handleOptimiseRoute(runId: number) {
+    const run = runs.find(r => r.id === runId);
+    if (!run || run.assignments.length < 2) return;
+    if (!window.confirm(`Sort ${run.assignments.length} stops in geographically optimal order?\n\nThis removes and re-adds them — any manual order will be lost.`)) return;
+
+    setOptimisingRunIds(prev => new Set(prev).add(runId));
+    try {
+      const sorted = nearestNeighborSort([...run.assignments]);
+      for (const a of run.assignments) {
+        await planningApi.removeStop(runId, a.id);
+      }
+      for (const a of sorted) {
+        await planningApi.addStop(runId, a.jobPart.id);
+      }
+      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    } catch {
+      setErr("Route optimisation failed — check stops manually");
+    } finally {
+      setOptimisingRunIds(prev => { const n = new Set(prev); n.delete(runId); return n; });
+    }
+  }
+
+  function toggleJobSelect(jobId: number) {
+    setSelectedJobIds(prev => {
+      const n = new Set(prev);
+      if (n.has(jobId)) n.delete(jobId); else n.add(jobId);
+      return n;
+    });
+  }
+
+  const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
+
+  // Panel title
+  const panelTitle = activePool === "needs_attention" ? "Needs Attention" :
+    activePool === "in_custody" ? "In Custody" :
+    activePool === "future"     ? "Future Jobs" :
+    activePool === "ready_today"? "Ready Today" :
+    activeVehicle               ? VEHICLE_LABELS[activeVehicle] ?? cap(activeVehicle) :
+    activeDirection             ? (GROUP_LABEL[`direction_${activeDirection}`] ?? cap(activeDirection)) :
+    "All Jobs";
+
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
-      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-border flex-shrink-0 flex-wrap">
-        <h1 className="text-base sm:text-xl font-bold text-primary">Planning</h1>
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-border flex-shrink-0 flex-wrap bg-white">
+        <h1 className="text-base sm:text-lg font-bold text-primary">Planning</h1>
 
         <div className="flex items-center gap-1">
           <button onClick={() => setDate(prevDay(date))}
             className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">←</button>
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className="input text-sm px-2 py-1 w-32 sm:w-36"
-          />
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="input text-sm px-2 py-1 w-32" />
           <button onClick={() => setDate(nextDay(date))}
             className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">→</button>
           <button onClick={() => setDate(todayISO())}
@@ -1446,19 +1535,16 @@ export default function PlanningBoardPage() {
 
         <span className="hidden sm:inline text-sm text-muted">{fmtDate(date)}</span>
 
-        <div className="ml-auto flex gap-1.5 sm:gap-2">
-          <button
-            onClick={handleCreateRun}
-            disabled={creatingRun}
-            className="btn text-xs sm:text-sm px-2 sm:px-3 py-1.5 bg-primary text-white hover:opacity-90 disabled:opacity-40"
-          >
-            {creatingRun ? "…" : "+ Run"}
+        <div className="ml-auto flex gap-1.5">
+          <button onClick={handleCreateRun} disabled={creatingRun}
+            className="btn text-sm px-3 py-1.5 bg-primary text-white hover:opacity-90 disabled:opacity-40">
+            {creatingRun ? "…" : "+ New run"}
           </button>
         </div>
       </div>
 
       {err && (
-        <div className="mx-3 sm:mx-6 mt-2 p-2 bg-red-50 text-red-700 text-sm rounded flex items-center gap-2">
+        <div className="mx-3 sm:mx-5 mt-2 p-2 bg-red-50 text-red-700 text-sm rounded flex items-center gap-2">
           <span>{err}</span>
           <button onClick={() => setErr("")} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
@@ -1466,40 +1552,44 @@ export default function PlanningBoardPage() {
 
       {/* ── Mobile tab bar ── */}
       <div className="sm:hidden flex border-b border-border flex-shrink-0 bg-white">
-        <button
-          onClick={() => setMobileTab("jobs")}
-          className={`flex-1 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
-            mobileTab === "jobs"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted hover:text-primary"
-          }`}
-        >
+        <button onClick={() => setMobileTab("jobs")}
+          className={`flex-1 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            mobileTab === "jobs" ? "border-primary text-primary" : "border-transparent text-muted"
+          }`}>
           Jobs{totalJobCount > 0 ? ` (${totalJobCount})` : ""}
         </button>
-        <button
-          onClick={() => setMobileTab("runs")}
-          className={`flex-1 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
-            mobileTab === "runs"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted hover:text-primary"
-          }`}
-        >
+        <button onClick={() => setMobileTab("runs")}
+          className={`flex-1 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            mobileTab === "runs" ? "border-primary text-primary" : "border-transparent text-muted"
+          }`}>
           Runs{runs.length > 0 ? ` (${runs.length})` : ""}
         </button>
       </div>
 
-      {/* ── Two-panel layout ── */}
+      {/* ── 3-panel layout ── */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* ── Left — jobs to plan ── */}
-        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-80 flex-shrink-0 sm:border-r border-border`}>
+        {/* Sidebar */}
+        <div className="hidden sm:block">
+          <Sidebar
+            counts={sidebarCounts}
+            activePool={activePool}
+            onPoolChange={setActivePool}
+            activeVehicle={activeVehicle}
+            onVehicleChange={setActiveVehicle}
+            activeDirection={activeDirection}
+            onDirectionChange={setActiveDirection}
+          />
+        </div>
 
-          {/* Panel header: count + loading */}
+        {/* Jobs panel */}
+        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-72 lg:w-80 flex-shrink-0 sm:border-r border-border`}>
+
           <div className="px-3 pt-3 pb-2 border-b border-border flex-shrink-0 space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wide text-muted">Jobs to plan</div>
-                <div className="text-lg font-bold text-primary leading-tight">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-muted">{panelTitle}</div>
+                <div className="text-xl font-bold text-primary leading-tight">
                   {totalJobCount}
                   {filteredWorkItems.length !== workItems.length && (
                     <span className="text-sm font-normal text-muted ml-1">of {new Set(workItems.map(i => i.jobId)).size}</span>
@@ -1509,54 +1599,41 @@ export default function PlanningBoardPage() {
               {loadingLeft && <span className="text-xs text-muted animate-pulse">Loading…</span>}
             </div>
 
-            {/* Search input */}
             <div className="relative">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
-              <input
-                type="search"
-                placeholder="Search customer, ref, location…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="input text-xs py-1.5 pl-7 pr-2 w-full"
-              />
+              <input type="search" placeholder="Search customer, ref, postcode…"
+                value={search} onChange={e => setSearch(e.target.value)}
+                className="input text-xs py-1.5 pl-7 pr-2 w-full" />
             </div>
 
-            {/* Look-ahead day selector */}
             <div className="flex gap-1">
               {LOOK_AHEAD_OPTIONS.map(opt => (
-                <button
-                  key={opt.days}
-                  onClick={() => setLookAheadDays(opt.days)}
+                <button key={opt.days} onClick={() => setLookAheadDays(opt.days)}
                   className={`flex-1 text-[10px] font-semibold py-1 rounded border transition-colors ${
                     lookAheadDays === opt.days
                       ? "bg-primary text-white border-primary"
                       : "bg-white text-slate-500 border-slate-300 hover:border-primary hover:text-primary"
-                  }`}
-                >
+                  }`}>
                   {opt.label}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2 py-2">
+          <div className="flex-1 overflow-y-auto px-2 py-2 min-h-0">
             {!loadingLeft && totalJobCount === 0 && (
               <div className="text-center py-12 text-muted text-sm">
                 <div className="text-3xl mb-2">{search ? "🔍" : "✅"}</div>
-                <div>{search ? "No jobs match your search" : "All jobs are planned for this period"}</div>
-                {search && (
-                  <button onClick={() => setSearch("")} className="mt-2 text-xs text-accent hover:underline">
-                    Clear search
-                  </button>
-                )}
+                <div>{search ? "No jobs match" : "All planned for this period"}</div>
+                {search && <button onClick={() => setSearch("")} className="mt-2 text-xs text-accent hover:underline">Clear search</button>}
               </div>
             )}
+
             {orderedGroupKeys.map(gk => {
               const grps = jobWorkGroupsByGroupKey.get(gk) ?? [];
               if (grps.length === 0) return null;
               return (
                 <div key={gk} className="mb-3">
-                  {/* Group header */}
                   <div className={`text-[10px] font-bold uppercase tracking-wider px-1 py-1 mb-1 border-b flex items-center justify-between ${
                     gk === "needs_attention" ? "text-red-600 border-red-200" :
                     gk === "in_custody"      ? "text-blue-700 border-blue-200" :
@@ -1566,12 +1643,13 @@ export default function PlanningBoardPage() {
                     <span>{GROUP_LABEL[gk] ?? gk}</span>
                     <span className="font-normal normal-case text-muted">{grps.length} job{grps.length !== 1 ? "s" : ""}</span>
                   </div>
-                  {/* Job cards */}
                   {grps.map(grp => (
                     <JobWorkCard
                       key={grp.jobId}
                       group={grp}
                       runs={runs}
+                      selected={selectedJobIds.has(grp.jobId)}
+                      onSelectToggle={toggleJobSelect}
                       onAddJobToRun={handleAddJobToRun}
                     />
                   ))}
@@ -1579,56 +1657,82 @@ export default function PlanningBoardPage() {
               );
             })}
           </div>
+
+          {/* Batch action bar */}
+          {selectedJobIds.size > 0 && (
+            <div className="flex-shrink-0 border-t border-border bg-primary/5 px-2 py-2 space-y-1.5">
+              <div className="text-xs font-semibold text-primary">{selectedJobIds.size} job{selectedJobIds.size !== 1 ? "s" : ""} selected</div>
+              <div className="flex gap-1.5">
+                {draftRuns.length === 0 ? (
+                  <span className="text-xs text-muted flex-1">Create a run first</span>
+                ) : (
+                  <>
+                    <select className="input text-xs py-1 flex-1 min-w-0"
+                      value={batchRunId}
+                      onChange={e => setBatchRunId(e.target.value ? Number(e.target.value) : "")}>
+                      <option value="">Pick run…</option>
+                      {draftRuns.map(r => <option key={r.id} value={r.id}>{r.runReference}{r.driver ? ` · ${r.driver.displayName}` : ""}</option>)}
+                    </select>
+                    <button onClick={handleBatchAddToRun} disabled={!batchRunId || batchAdding}
+                      className="btn text-xs py-1 px-2.5 bg-primary text-white disabled:opacity-40 whitespace-nowrap">
+                      {batchAdding ? "…" : "Add →"}
+                    </button>
+                  </>
+                )}
+                <button onClick={() => setSelectedJobIds(new Set())}
+                  className="btn text-xs py-1 px-2 border border-slate-300 text-slate-500">✕</button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* ── Right — runs ── */}
-        <div className={`${mobileTab === "runs" ? "flex" : "hidden"} sm:flex flex-1 flex-col overflow-hidden`}>
-          <div className="px-4 py-3 border-b border-border flex-shrink-0 flex items-center gap-3">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wide text-muted">Runs</div>
-              <div className="text-lg font-bold text-primary">{runs.length}</div>
-            </div>
-            {loadingRight && <span className="text-xs text-muted animate-pulse">Loading…</span>}
-          </div>
+        {/* ── Kanban run lanes ── */}
+        <div className={`${mobileTab === "runs" ? "flex" : "hidden"} sm:flex flex-1 overflow-hidden`}>
+          <div className="flex flex-row gap-3 p-3 overflow-x-auto overflow-y-hidden h-full items-start">
 
-          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
             {!loadingRight && runs.length === 0 && (
-              <div className="text-center py-16 text-muted">
-                <div className="text-4xl mb-3">🚚</div>
-                <div className="text-base font-medium mb-1">No runs yet for this date</div>
-                <div className="text-sm mb-4">Create a run, then add jobs from the Jobs tab</div>
-                <button
-                  onClick={handleCreateRun}
-                  disabled={creatingRun}
-                  className="btn text-sm px-4 py-2 bg-primary text-white hover:opacity-90"
-                >
+              <div className="flex-1 flex flex-col items-center justify-center text-muted py-16">
+                <div className="text-5xl mb-3">🚚</div>
+                <div className="text-base font-medium mb-1">No runs yet for {fmtDate(date)}</div>
+                <div className="text-sm mb-4">Create a run, then drag jobs into it</div>
+                <button onClick={handleCreateRun} disabled={creatingRun}
+                  className="btn text-sm px-4 py-2 bg-primary text-white hover:opacity-90">
                   + Create first run
                 </button>
               </div>
             )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
-              {runs.map(run => (
-                <RunCard
-                  key={run.id}
-                  run={run}
-                  isExpanded={isRunExpanded(run.id)}
-                  onToggleExpand={() => toggleRunExpand(run.id)}
-                  trailers={trailers}
-                  trucks={trucks}
-                  drivers={drivers}
-                  depot={depot}
-                  onDepotSet={setDepot}
-                  allRuns={runs}
-                  onUpdate={handleUpdate}
-                  onRemoveStop={handleRemoveStop}
-                  onAddWaypoint={handleAddWaypoint}
-                  onRemoveWaypoint={handleRemoveWaypoint}
-                  onPublish={handlePublish}
-                  onDelete={handleDeleteRun}
-                />
-              ))}
-            </div>
+            {runs.map(run => (
+              <RunLane
+                key={run.id}
+                run={run}
+                trailers={trailers}
+                trucks={trucks}
+                drivers={drivers}
+                depot={depot}
+                onDepotSet={setDepot}
+                allRuns={runs}
+                onUpdate={handleUpdate}
+                onRemoveStop={handleRemoveStop}
+                onAddWaypoint={handleAddWaypoint}
+                onRemoveWaypoint={handleRemoveWaypoint}
+                onPublish={handlePublish}
+                onDelete={handleDeleteRun}
+                onDropJob={jobId => handleAddJobToRun(jobId, run.id)}
+                onOptimiseRoute={handleOptimiseRoute}
+                optimising={optimisingRunIds.has(run.id)}
+              />
+            ))}
+
+            {/* Add new run lane */}
+            <button
+              onClick={handleCreateRun}
+              disabled={creatingRun}
+              className="w-48 min-w-[160px] flex-shrink-0 h-32 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all disabled:opacity-40 self-start"
+            >
+              <span className="text-3xl leading-none mb-1">{creatingRun ? "⟳" : "+"}</span>
+              <span className="text-xs font-semibold">New run</span>
+            </button>
           </div>
         </div>
       </div>
