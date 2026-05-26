@@ -108,6 +108,7 @@ export interface PlanningAssignment {
       quantity:     number | null;
       quantityUnit: string | null;
       weight:       number | null;
+      status:       string | null;
     };
   };
 }

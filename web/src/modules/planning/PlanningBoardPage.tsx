@@ -898,8 +898,22 @@ function RunLane({
                 } else {
                   const a = item.data;
                   stopNum++;
+                  const jobStatus   = a.jobPart.job.status ?? "pending";
+                  const isCollect   = a.jobPart.type === "collection" || a.jobPart.type === "pickup";
+                  const isDeliver   = a.jobPart.type === "delivery"   || a.jobPart.type === "dropoff";
+                  const cargoReady  = ["collected","arrived_dropoff","completed"].includes(jobStatus);
+                  const cargoMoving = jobStatus === "arrived_dropoff";
+                  const cargoDone   = jobStatus === "completed";
+                  // Cargo state pill — shown only when there's something actionable to flag
+                  const cargoPill =
+                    isDeliver && !cargoReady  ? <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-200 whitespace-nowrap" title="Collection not confirmed yet — cargo may not be ready">⏳ Not collected</span> :
+                    isDeliver && cargoMoving  ? <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">🚛 At drop-off</span> :
+                    isDeliver && cargoDone    ? <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">✅ Delivered</span> :
+                    isCollect && cargoReady   ? <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">✅ Collected</span> :
+                    null;
                   return (
-                    <div key={`a-${a.id}`} className="flex items-center gap-2 px-2 py-1.5 rounded bg-white border border-slate-100 hover:border-slate-200 group">
+                    <div key={`a-${a.id}`} className="flex flex-col px-2 py-1.5 rounded bg-white border border-slate-100 hover:border-slate-200 group">
+                      <div className="flex items-center gap-2">
                       <span className="w-5 text-center font-bold text-slate-400 flex-shrink-0 text-[11px]">{stopNum}</span>
                       <Badge colour={
                         a.jobPart.type === "collection" || a.jobPart.type === "pickup"
@@ -930,6 +944,13 @@ function RunLane({
                       })()}
                       <button onClick={() => onRemoveStop(run.id, a.id)}
                         className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-sm" title="Remove stop">✕</button>
+                      </div>{/* end inner flex row */}
+                      {/* Cargo state row */}
+                      {cargoPill && (
+                        <div className="flex items-center gap-1 pl-7 pt-0.5">
+                          {cargoPill}
+                        </div>
+                      )}
                     </div>
                   );
                 }

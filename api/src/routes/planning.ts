@@ -156,6 +156,7 @@ const RUN_INCLUDE = {
               id: true, jobReference: true, customerName: true,
               goodsType: true, goodsDescription: true,
               quantity: true, quantityUnit: true, weight: true,
+              status: true,
             },
           },
         },
