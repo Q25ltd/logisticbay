@@ -5,7 +5,7 @@
 > Before building any feature, check the relevant section — if questions are unanswered, answer them first.
 >
 > Key: [x] = answered · [~] = partial answer · [ ] = still open
-> Last updated: 2026-05-19
+> Last updated: 2026-05-26
 
 ---
 
@@ -19,6 +19,18 @@
 | Platform & compliance | 32 | 0 | 32 |
 | Product & notifications | 36 | 0 | 36 |
 | **Total** | **196** | **14** | **182** |
+
+---
+
+## 0. Planning board — open design questions (added 2026-05-26)
+
+- [~] **Tramper overnight rest — next-day run continuity.** When a tramper uses an `overnight_rest` waypoint to record where they parked up, the system does not yet auto-suggest that the next-day run starts from that location. **Current state:** planner manually creates a new run and adds a `depot_start` waypoint at the overnight address. **Open:** should the system detect the overnight rest and pre-fill the next run's start location? If yes, is the connection between runs via `dependsOnRunId` or by matching the `overnight_rest` waypoint location to the following run's `depot_start`?
+
+- [ ] **Day driver multi-day run — publish gate.** Currently a warning banner is shown but does not block publishing. Should publishing be blocked when a day driver is assigned to a multi-day run (same guard as "no stops")? Or is a warning sufficient because some planners intentionally do this and adjust later?
+
+- [ ] **Tramper shift accounting.** When a tramper's run spans multiple days, the shift record (`Shift` model) is one row per calendar day. How do we link an overnight run to two separate shift rows? Does the driver submit one shift per calendar day, or one per run?
+
+- [ ] **Postcode district sidebar — threshold.** If a company has many small jobs spread across 30+ postcode districts, the "By area" sidebar becomes very long. Should there be a minimum count threshold (e.g. show only districts with ≥2 jobs)? Or a "show more" collapse?
 
 ---
 

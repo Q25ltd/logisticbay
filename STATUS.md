@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-24 (Planning Board Phase 1)
+> Last updated: 2026-05-26 (Planning Board — postcode areas, relay runs, cargo state, driver types)
 
 ---
 
@@ -186,6 +186,18 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] Multi-day job support — unplanned filter uses stop's own `timeWindowStart` date not job date; cross-date labels on stops; companion-stop pairing indicators across clusters
 - [x] `RunWaypoint` model + `POST/DELETE /planning/runs/:id/waypoints` — depot start, yard pickup, hub drop, return-to-base, custom waypoints on run card; `sequenceNumber` positions them in run order. Schema migration `20260524130000_add_run_waypoints` applied.
 - [x] AI route feasibility check (replaces load/vehicle check) — `POST /ai/check-run` with haversine leg distances, HGV speed estimate, time window compliance; `checkRunService.ts`
+
+**Planning board extras built 2026-05-26:**
+- [x] Nearest-neighbour route optimise bug fix — `??` operator precedence corrected so distances are measured from the previous stop, not from a fixed origin point
+- [x] Date badge on wrong-day stops in run lane — neutral slate badge when stop's `timeWindowStart` date ≠ run's `plannedDate`
+- [x] Relay run support — per-part drag in JobWorkCard; "Collect →" / "Deliver →" individual buttons; relay hint text explaining yard stop workflow
+- [x] Cargo state badges on run lane stop rows — ⏳ Not collected / 🚛 At drop-off / ✅ Collected / ✅ Delivered; driven by `Job.status` returned in `RUN_INCLUDE`
+- [x] `Job.status` exposed in `RUN_INCLUDE` (API) and `PlanningAssignment.jobPart.job` (frontend type)
+- [x] `PlannerWorkItem.postcodeDistrict` — UK outward code (e.g. `LS27`, `M1`) extracted from stop's own postcode; added to service, API type, and `DATA_DICTIONARY.md`
+- [x] Sidebar "By direction" replaced with "By area" — shows specific postcode districts with job counts; clicking filters the jobs panel to that district only
+- [x] `PlanningDriver.nightsOutAllowed` exposed from `DriverProfile` — driver dropdown in run lane shows 🌙 suffix for trampers
+- [x] Day driver multi-day warning — banner in run lane when a day driver (`nightsOutAllowed = false`) is assigned to a run whose stops span multiple calendar dates
+- [x] `overnight_rest` waypoint type added — appears in the waypoint type selector (alongside yard_pickup, hub_drop) for mid-route stops; renders as "Overnight rest" label on the run card
 
 **Phase 2 — Depot operations (Type 4)**
 - [ ] 2.1  LoadTrack write path (API: POST /load-track)

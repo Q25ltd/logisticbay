@@ -1290,3 +1290,76 @@ Both the internal `CreateJobPage` form and the public `PublicRequestForm` now sh
 | **Exception / return policy** | Additional rejection / return notes | `PlannedJob.exceptionPolicyData.rejectionNotes` | `JobRequest.exceptionPolicyData.rejectionNotes` |
 | **Server-computed (not on form)** | Distance from postcode to entrance pin | n/a | `JobRequest.stops[n].entranceDistanceFromPostcode` |
 | **Server-computed (not on form)** | Entrance pin warning level | n/a | `JobRequest.stops[n].entranceWarningLevel` |
+
+---
+
+## RunWaypoint
+
+Table: `RunWaypoint`
+
+Non-job stops on a run (depot start, yard transfer, overnight rest, return to base, custom). Ordered by `sequenceNumber` alongside `RunAssignment` rows to produce the full route sequence.
+
+| Field | Type | Required | Values / Format | Description |
+|---|---|---|---|---|
+| id | Int | Yes (auto) | Auto-increment PK | Surrogate primary key |
+| companyId | Int | Yes | FK → Company.id | Owning company |
+| runId | Int | Yes | FK → Run.id | Run this waypoint belongs to |
+| sequenceNumber | Int | Yes | Positive integer, unique per run | Position of the waypoint in the combined route order (shared namespace with `RunAssignment.sequenceNumber`) |
+| waypointType | String | Yes | `depot_start` \| `yard_pickup` \| `hub_drop` \| `return_to_base` \| `overnight_rest` \| `custom` | Type of non-job stop. `depot_start` = start of day at depot (seq ≈ 0); `yard_pickup` = collect a pre-staged trailer or unit at a yard; `hub_drop` = drop trailer at a hub / relay point; `return_to_base` = end of run (seq = 999999); `overnight_rest` = tramper overnight rest location; `custom` = generic stop |
+| locationId | Int? | No | FK → SavedLocation.id | Link to a saved location (optional) |
+| locationText | String? | No | Free text | One-line location description (name or address) |
+| postcode | String? | No | Postcode string | Postcode of the waypoint (copied from SavedLocation if locationId given) |
+| lat | Float? | No | Decimal degrees | Latitude (copied from SavedLocation if locationId given) |
+| lng | Float? | No | Decimal degrees | Longitude (copied from SavedLocation if locationId given) |
+| scheduledTime | String? | No | HH:MM | Planned time at this waypoint |
+| notes | String? | No | Free text | Instructions or notes for this waypoint |
+| createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
+
+---
+
+## Planning API — Response types
+
+These are API-layer response shapes, not database models. They are computed and returned by planning endpoints.
+
+### PlannerWorkItem
+
+Returned by `GET /planning/work-items`. One row per unplanned `JobPart`. Sorted and grouped by priority so planners can build runs in the right order.
+
+| Field | Type | Description |
+|---|---|---|
+| jobId | Int | Parent job ID |
+| jobPartId | Int | JobPart ID (the specific stop) |
+| jobReference | String? | Human-readable job reference (e.g. `LB-2026-001`) |
+| customerName | String? | Customer display name |
+| nextAction | String | Plain-English description of what needs to happen (e.g. `Collect from Acme Leeds`) |
+| currentLocation | String? | Where the load currently is (collection address or last known custody location) |
+| currentPostcode | String? | Postcode of the current location |
+| finalDestination | String? | Where the load is ultimately going (delivery address) |
+| finalPostcode | String? | Postcode of the final destination |
+| timeWindowStart | String? | ISO 8601 — earliest arrival datetime |
+| timeWindowEnd | String? | ISO 8601 — latest arrival datetime |
+| bookedTime | String? | ISO 8601 — fixed appointment time |
+| vehicleCategory | String? | Required vehicle category (e.g. `artic`, `rigid`) |
+| goodsType | String? | Goods type code (e.g. `pallets`, `food_refrigerated`) |
+| goodsDescription | String? | Free-text description of goods |
+| weight | Float? | Total load weight in kg |
+| quantity | Float? | Quantity of goods |
+| quantityUnit | String? | Unit of measure |
+| hasHazardous | Boolean | Whether any stop on this job has hazardous goods |
+| hasTempControl | Boolean | Whether the load requires temperature control |
+| riskLevel | `"high"` \| `"medium"` \| `"low"` \| `"none"` | Overall risk level for this work item |
+| warnings | String[] | Array of plain-English warning messages for this item |
+| sortScore | Float | Internal sort priority (lower = more urgent). Not displayed directly. |
+| groupKey | String | Sidebar group this item belongs to. See values below. |
+| postcodeDistrict | String? | UK outward code extracted from the stop's own postcode (e.g. `LS27`, `M1`, `SW1A`). Used by the sidebar "By area" filter. Null if no postcode is available. |
+
+**groupKey values:**
+
+| Value | Meaning |
+|---|---|
+| `needs_attention` | High-risk item — urgent action required |
+| `in_custody` | Load has been collected and is in custody awaiting delivery |
+| `today` | Has a time window or booking today |
+| `vehicle_van` / `vehicle_rigid` / `vehicle_artic_curtainsider` / `vehicle_artic_fridge` / `vehicle_flatbed` / `vehicle_taillift` / `vehicle_hiab` / `vehicle_adr` | Grouped by required vehicle type |
+| `direction_london` / `direction_midlands` / `direction_north` / `direction_east` / `direction_west_wales` / `direction_scotland` / `direction_local` | Broad UK geographic region (based on delivery postcode area) |
+| `future` | No time window today; planned for a future date |

@@ -3,7 +3,62 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-24
+> Last updated: 2026-05-26
+
+---
+
+## Session log — 2026-05-26
+
+### Planning Board: postcode area grouping, relay run support, cargo state, driver types, overnight waypoint
+
+**Commits:** `7fe9add`, `f9fd3e9`, `8c35855`, `518faac`
+
+**Root cause investigation — wrong stop order on RUN-2026-000024:**
+- Stops appeared to be in the wrong order (Muller showing as Stop 2 despite an 05:00 time window).
+- Queried production API directly; discovered Muller's `timeWindowStart = "2026-05-27T05:00:00Z"` — the stop was for May 27, not May 22. The sort was correct.
+- Fix 1: `nearestNeighborSort` operator precedence bug — `lat ?? 51.5 - lat0` evaluated as `lat ?? (51.5 - lat0)` because `??` has lower precedence than `-`. All distances were measured from origin, not previous stop. Fixed with brackets: `((lat ?? 51.5) - lat0)`.
+- Fix 2: Date badge on run lane stop rows — neutral slate badge when stop date ≠ run date, so planner can see multi-day stops at a glance without alarming red.
+
+**Relay run support:**
+- Individual stop rows in JobWorkCard are now draggable (`application/job-part-id`).
+- "Collect →" and "Deliver →" buttons added below "Add both →" for jobs with separate collection + delivery parts.
+- Drop handler in RunLane checks `job-part-id` before `job-id` so individual stops take priority.
+- `handleAddPartToRun` added to main page; `onAddPartToRun` prop threaded through JobWorkCard.
+- Relay hint text: "Relay run? Add collect to one run, deliver to another, then use + Waypoint → Yard stop on each."
+- **Decision:** Relay/handover is accomplished via existing `RunWaypoint.waypointType = yard_pickup / hub_drop`. No new API needed.
+
+**Cargo state visibility:**
+- `Job.status` added to `RUN_INCLUDE` job select in `api/src/routes/planning.ts`.
+- `status: string | null` added to `PlanningAssignment.jobPart.job` frontend type.
+- Cargo state pills rendered below each stop row in the run lane: ⏳ Not collected / 🚛 At drop-off / ✅ Collected / ✅ Delivered — driven by `Job.status` lifecycle.
+- Stop row changed to `flex-col` to accommodate the cargo pill below the main row.
+
+**Postcode district grouping (user request: "grouping like ls27 instead of N/S/E/W direction"):**
+- `extractPostcodeDistrict()` added to `plannerWorkService.ts` — extracts UK outward code (`LS27`, `M1`, `SW1A`) from stop postcode.
+- `postcodeDistrict: string | null` added to `PlannerWorkItem` interface and `items.push()`.
+- Frontend `PlannerWorkItem` type updated; `DATA_DICTIONARY.md` updated with new field and full `PlannerWorkItem` section.
+- Sidebar "By direction" section replaced with "By area" — groups by `postcodeDistrict`, sorted alphabetically.
+- `activeDirection` / `byDirection` state replaced with `activeArea` / `byArea` throughout.
+- Filter logic updated: `item.postcodeDistrict !== activeArea` instead of `gk !== direction_*`.
+- Panel title updated: "Area: LS27" etc.
+- **Decision:** Specific postcode districts are strictly more useful than broad N/S/E/W labels for building tight geographic runs. Broad direction groups remain as `groupKey` values for job-panel section headers but are no longer the primary sidebar filter dimension.
+
+**Driver type in planning UI (user request: "day driver or tramper"):**
+- `nightsOutAllowed: boolean` added to `PlanningDriver` frontend type. The field was already returned by the API (full DriverProfile is returned) — only the frontend type needed updating.
+- Driver dropdown in run lane shows 🌙 suffix for trampers (`nightsOutAllowed = true`).
+- Day driver multi-day warning: if assigned driver has `nightsOutAllowed = false` and run has stops spanning multiple calendar dates, a banner appears: "Day driver — stops span multiple days. Add a depot return and a new run for the following day."
+- **Decision:** `nightsOutAllowed` (Boolean, already on DriverProfile) is the canonical tramper flag. No new field needed.
+
+**Overnight rest waypoint (user request: "tramper stop — we need to know where he finish and start"):**
+- `overnight_rest` added to `WAYPOINT_TYPE_LABEL` map — renders as "Overnight rest" in the run card.
+- Waypoint form: when position is mid-route (not depot_start / return_to_base), a type selector now appears with options: Stop / other, Yard pickup, Hub drop, Overnight rest.
+- `wpType` state added; used instead of hardcoded `"custom"` in `handleAddWaypoint`.
+- **Decision:** Overnight rest is a `RunWaypoint` with `waypointType = "overnight_rest"`. The location records where the tramper parks up. The next day's run starts with a `depot_start` waypoint from that same location. No separate "shift end" model needed at this stage.
+
+**Gaps / open items from this session:**
+- Tramper next-day run: the `overnight_rest` waypoint tells you where they rest, but the system does not yet automatically suggest that the next run starts from that location. Planner must manually create a new run and add a depot_start at the overnight rest address.
+- Day driver multi-day warning: detects the problem but does not block publishing. Consider adding a publish-time guard (similar to the "no stops" guard) in a future session.
+- `DATA_DICTIONARY.md` `RunWaypoint` section added (was missing from 2026-05-24 session).
 
 ---
 
