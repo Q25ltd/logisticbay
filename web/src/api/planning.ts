@@ -256,6 +256,9 @@ export const planningApi = {
   removeStop: (runId: number, assignmentId: number) =>
     api.delete<PlanningRun>(`/planning/runs/${runId}/assignments/${assignmentId}`),
 
+  reorderStops: (runId: number, assignmentIds: number[]) =>
+    api.patch<{ run: PlanningRun }>(`/planning/runs/${runId}/assignments/reorder`, { assignmentIds }),
+
   publish: (runId: number) =>
     api.post<PlanningRun>(`/planning/runs/${runId}/publish`, {}),
 

@@ -550,6 +550,7 @@ function RunLane({
   allRuns,
   onUpdate,
   onRemoveStop,
+  onReorderStops,
   onAddWaypoint,
   onRemoveWaypoint,
   onPublish,
@@ -570,6 +571,7 @@ function RunLane({
   allRuns:          PlanningRun[];
   onUpdate:         (id: number, patch: Record<string, unknown>) => Promise<void>;
   onRemoveStop:     (runId: number, assignmentId: number) => Promise<void>;
+  onReorderStops:   (runId: number, assignmentIds: number[]) => Promise<void>;
   onAddWaypoint:    (runId: number, type: string, locationText: string, seq: number, locationId?: number, scheduledTime?: string) => Promise<void>;
   onRemoveWaypoint: (runId: number, waypointId: number) => Promise<void>;
   onPublish:        (runId: number) => Promise<void>;
@@ -587,6 +589,11 @@ function RunLane({
   const [err,        setErr]        = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isOver,     setIsOver]     = useState(false);
+
+  // Manual stop reorder via drag-and-drop within the lane
+  const [reorderDragId, setReorderDragId] = useState<number | null>(null);
+  const [reorderOverId, setReorderOverId] = useState<number | null>(null);
+  const [reordering,    setReordering]    = useState(false);
 
   // Waypoint form state
   const [showWpForm,    setShowWpForm]    = useState(false);
@@ -713,6 +720,29 @@ function RunLane({
     try { await onUpdate(run.id, body); }
     catch (e: unknown) { setErr((e as Error).message ?? "Save failed"); }
     finally { setSaving(false); }
+  }
+
+  // Sorted assignment IDs in current display order — used for reorder calculations
+  const sortedAssignmentIds = [...run.assignments]
+    .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+    .map(a => a.id);
+
+  async function handleReorderDrop(targetId: number) {
+    if (!reorderDragId || reorderDragId === targetId) {
+      setReorderDragId(null); setReorderOverId(null); return;
+    }
+    const ids = [...sortedAssignmentIds];
+    const fromIdx = ids.indexOf(reorderDragId);
+    const toIdx   = ids.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) { setReorderDragId(null); setReorderOverId(null); return; }
+    // Move dragged item to just before the target
+    ids.splice(fromIdx, 1);
+    ids.splice(toIdx, 0, reorderDragId);
+    setReorderDragId(null); setReorderOverId(null);
+    setReordering(true);
+    try { await onReorderStops(run.id, ids); }
+    catch (e: unknown) { setErr((e as Error).message ?? "Reorder failed"); }
+    finally { setReordering(false); }
   }
 
   async function handleAddWaypoint() {
@@ -971,13 +1001,46 @@ function RunLane({
                     isCollect && cargoReady   ? <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">✅ Collected</span> :
                     null;
                   return (
+                    <div key={`a-${a.id}`}>
+                      {/* Drop indicator — blue line ABOVE the target stop */}
+                      {reorderOverId === a.id && reorderDragId !== a.id && (
+                        <div className="h-0.5 bg-primary rounded-full mx-1 mb-0.5" />
+                      )}
                     <div
-                      key={`a-${a.id}`}
-                      className="flex flex-col rounded bg-white border border-slate-100 hover:border-slate-300 overflow-hidden group transition-colors"
+                      draggable
+                      onDragStart={e => {
+                        e.stopPropagation(); // don't trigger outer lane drag
+                        setReorderDragId(a.id);
+                        e.dataTransfer.setData("application/run-assignment", String(a.id));
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragOver={e => {
+                        if (e.dataTransfer.types.includes("application/run-assignment")) {
+                          e.preventDefault(); e.stopPropagation();
+                          setReorderOverId(a.id);
+                        }
+                      }}
+                      onDragLeave={e => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) setReorderOverId(null);
+                      }}
+                      onDrop={async e => {
+                        if (e.dataTransfer.types.includes("application/run-assignment")) {
+                          e.preventDefault(); e.stopPropagation();
+                          await handleReorderDrop(a.id);
+                        }
+                      }}
+                      onDragEnd={() => { setReorderDragId(null); setReorderOverId(null); }}
+                      className={`flex flex-col rounded bg-white border border-slate-100 hover:border-slate-300 overflow-hidden group transition-colors ${
+                        reorderDragId === a.id ? "opacity-40 ring-1 ring-primary" : ""
+                      }`}
                       style={{ borderLeft: `3px solid ${getJobColour(a.jobId)}` }}
                     >
-                      {/* Row 1: stop number · type badge · customer · X */}
+                      {/* Row 1: drag handle · stop number · type badge · customer · X */}
                       <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5">
+                        <span
+                          className="text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing flex-shrink-0 select-none text-[14px] leading-none"
+                          title="Drag to reorder"
+                        >⠿</span>
                         <span className="w-5 text-center font-bold text-slate-400 flex-shrink-0 text-[11px]">{stopNum}</span>
                         <Badge colour={
                           a.jobPart.type === "collection" || a.jobPart.type === "pickup"
@@ -1045,10 +1108,16 @@ function RunLane({
                         </div>
                       )}
                     </div>
+                    </div>
                   );
                 }
               });
             })()}
+
+            {/* Reorder loading overlay */}
+            {reordering && (
+              <div className="text-xs text-muted text-center py-2 animate-pulse">Reordering…</div>
+            )}
 
             {/* Delivery-before-collection warning */}
             {deliveryBeforeCollection && (
@@ -1219,7 +1288,7 @@ function RunLane({
         >
           <span>{showSettings ? "▲" : "▼"}</span>
           <span className="font-medium">{showSettings ? "Hide settings" : "⚙ Run settings"}</span>
-          {saving && <span className="ml-auto text-xs text-muted animate-pulse">Saving…</span>}
+          {(saving || reordering) && <span className="ml-auto text-xs text-muted animate-pulse">{reordering ? "Reordering…" : "Saving…"}</span>}
         </button>
 
         {showSettings && (
@@ -1682,6 +1751,11 @@ export default function PlanningBoardPage() {
     await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
   }
 
+  async function handleReorderStops(runId: number, assignmentIds: number[]) {
+    await planningApi.reorderStops(runId, assignmentIds);
+    await loadRight(date);
+  }
+
   async function handlePublish(runId: number) {
     await planningApi.publish(runId);
     await loadRight(date);
@@ -1959,6 +2033,7 @@ export default function PlanningBoardPage() {
                 allRuns={runs}
                 onUpdate={handleUpdate}
                 onRemoveStop={handleRemoveStop}
+                onReorderStops={handleReorderStops}
                 onAddWaypoint={handleAddWaypoint}
                 onRemoveWaypoint={handleRemoveWaypoint}
                 onPublish={handlePublish}

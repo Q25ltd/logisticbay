@@ -512,6 +512,50 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     },
   );
 
+  // ── PATCH /planning/runs/:id/assignments/reorder ─────────────────────────
+  // Body: { assignmentIds: number[] }  — active assignment IDs in desired order.
+  // Updates each assignment's sequenceNumber to (index+1)*1000 so waypoints can
+  // still be inserted between stops.  Only active (removedAt=null) assignments
+  // belonging to this run are accepted.
+  app.patch(
+    "/planning/runs/:id/assignments/reorder",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const { companyId } = request.user!;
+      const runId = parseInt((request.params as { id: string }).id, 10);
+      const { assignmentIds } = request.body as { assignmentIds: number[] };
+
+      if (!Array.isArray(assignmentIds) || assignmentIds.length === 0) {
+        return reply.status(400).send({ error: "assignmentIds must be a non-empty array" });
+      }
+
+      // Verify run belongs to this company
+      const run = await prisma.run.findFirst({ where: { id: runId, companyId }, select: { id: true } });
+      if (!run) return reply.status(404).send({ error: "Run not found" });
+
+      // Verify every supplied ID is an active assignment on this run
+      const active = await prisma.runAssignment.findMany({
+        where: { id: { in: assignmentIds }, runId, companyId, removedAt: null },
+        select: { id: true },
+      });
+      if (active.length !== assignmentIds.length) {
+        return reply.status(400).send({ error: "One or more assignment IDs are invalid or already removed" });
+      }
+
+      // Space assignments at 1000, 2000, 3000 …
+      // Depot-start waypoints sit at seq=0, return-to-base at 999999, so this
+      // range keeps everything in the right visual order.
+      await prisma.$transaction(
+        assignmentIds.map((id, idx) =>
+          prisma.runAssignment.update({ where: { id }, data: { sequenceNumber: (idx + 1) * 1000 } })
+        )
+      );
+
+      const updated = await prisma.run.findFirst({ where: { id: runId }, include: RUN_INCLUDE });
+      return reply.send({ run: updated });
+    },
+  );
+
   // ── POST /planning/runs/:id/publish ──────────────────────────────────────
   app.post(
     "/planning/runs/:id/publish",
