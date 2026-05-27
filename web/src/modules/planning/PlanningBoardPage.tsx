@@ -837,10 +837,10 @@ function RunLane({
 
       {/* ── Inline driver + vehicle assign ── */}
       <div className="grid grid-cols-2 gap-px bg-slate-100 flex-shrink-0">
-        <div className="bg-white px-2 py-1.5">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-0.5">Driver</div>
+        <div className="bg-white px-3 py-2">
+          <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-1">Driver</div>
           <select
-            className="w-full text-[12px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            className="w-full text-sm text-primary bg-transparent border-none outline-none cursor-pointer truncate"
             value={run.assignedDriverId ?? ""}
             disabled={saving}
             onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
@@ -853,10 +853,10 @@ function RunLane({
             ))}
           </select>
         </div>
-        <div className="bg-white px-2 py-1.5">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-0.5">Trailer</div>
+        <div className="bg-white px-3 py-2">
+          <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-1">Trailer</div>
           <select
-            className="w-full text-[12px] text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            className="w-full text-sm text-primary bg-transparent border-none outline-none cursor-pointer truncate"
             value={run.assignedTrailerId ?? ""}
             disabled={saving}
             onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
@@ -877,12 +877,12 @@ function RunLane({
 
       {/* ── AI feasibility strip (compact 1-liner) ── */}
       {aiLoading && (
-        <div className="px-3 py-1 text-[10px] text-muted animate-pulse bg-slate-50 border-b border-slate-100 flex-shrink-0">
+        <div className="px-3 py-1.5 text-xs text-muted animate-pulse bg-slate-50 border-b border-slate-100 flex-shrink-0">
           🤖 Checking route…
         </div>
       )}
       {!aiLoading && aiCheck && (
-        <div className={`px-3 py-1 text-[10px] border-b flex-shrink-0 ${
+        <div className={`px-3 py-1.5 text-xs border-b flex-shrink-0 ${
           aiCheck.severity === "block" ? "bg-red-50 text-red-700 border-red-100" :
           aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700 border-amber-100" :
           "bg-green-50 text-green-700 border-green-100"
@@ -1030,14 +1030,14 @@ function RunLane({
 
             {/* Delivery-before-collection warning */}
             {deliveryBeforeCollection && (
-              <div className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1">
+              <div className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1.5">
                 ⚠ Delivery appears before collection — check order
               </div>
             )}
 
             {/* Day driver on multi-day run */}
             {dayDriverMultiDayWarning && (
-              <div className="text-[10px] bg-orange-50 text-orange-700 border border-orange-200 rounded px-2 py-1">
+              <div className="text-xs bg-orange-50 text-orange-700 border border-orange-200 rounded px-2 py-1.5">
                 ⚠ Day driver — stops span multiple days. Add a depot return and a new run for the following day.
               </div>
             )}
@@ -1055,13 +1055,13 @@ function RunLane({
       {/* ── Action bar ── */}
       <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50">
         {/* Waypoint + optimise tools */}
-        <div className="flex items-center gap-1 px-2 py-1 border-b border-slate-100">
+        <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-100">
           <button
             onClick={() => {
               if (!showWpForm) { setWpLocId(depot?.id ?? ""); setWpShowCreate(false); setWpPosition(-2); loadSavedLocs(); }
               setShowWpForm(v => !v);
             }}
-            className="text-[10px] text-slate-500 hover:text-primary"
+            className="text-xs text-slate-500 hover:text-primary font-medium"
           >
             {showWpForm ? "✕ Cancel" : "+ Waypoint"}
           </button>
@@ -1069,16 +1069,16 @@ function RunLane({
             <button
               onClick={() => onOptimiseRoute(run.id)}
               disabled={optimising}
-              className="text-[11px] text-slate-500 hover:text-primary disabled:opacity-40 ml-auto font-medium"
+              className="text-xs text-slate-500 hover:text-primary disabled:opacity-40 ml-auto font-medium"
               title="Sort stops in geographically optimal order"
             >
               {optimising ? "⟳ Sorting…" : "⟡ Optimise route"}
             </button>
           )}
           {confirmingOptimise && (
-            <div className="ml-auto flex items-center gap-1.5 text-[11px]">
+            <div className="ml-auto flex items-center gap-1.5 text-xs">
               <span className="text-slate-600 font-medium">Reorder stops?</span>
-              <button onClick={() => onConfirmOptimise(run.id)} className="text-white bg-primary rounded px-2 py-0.5 font-semibold">Yes</button>
+              <button onClick={() => onConfirmOptimise(run.id)} className="text-white bg-primary rounded px-2 py-1 font-semibold">Yes</button>
               <button onClick={() => onOptimiseRoute(-1)} className="text-slate-500 hover:text-slate-700">Cancel</button>
             </div>
           )}
@@ -1086,8 +1086,8 @@ function RunLane({
 
         {/* Waypoint form */}
         {showWpForm && (
-          <div className="px-2 py-2 border-b border-slate-100 space-y-1.5 text-xs bg-white">
-            <select className="input text-xs py-1 w-full" value={wpPosition}
+          <div className="px-2 py-2 border-b border-slate-100 space-y-2 bg-white">
+            <select className="input text-sm py-1.5 w-full" value={wpPosition}
               onChange={e => setWpPosition(parseInt(e.target.value, 10))}>
               <option value={-2}>Before all stops (depot start)</option>
               {(() => {
@@ -1110,7 +1110,7 @@ function RunLane({
 
             {/* Stop type — only for mid-route stops (not depot start / return to base) */}
             {wpPosition !== -2 && wpPosition !== -1 && (
-              <select className="input text-xs py-1 w-full" value={wpType}
+              <select className="input text-sm py-1.5 w-full" value={wpType}
                 onChange={e => setWpType(e.target.value)}>
                 <option value="custom">Stop / other</option>
                 <option value="yard_pickup">Yard pickup</option>
@@ -1119,11 +1119,11 @@ function RunLane({
               </select>
             )}
 
-            {locsLoading && <div className="text-muted animate-pulse text-[10px]">Loading locations…</div>}
+            {locsLoading && <div className="text-muted animate-pulse text-xs">Loading locations…</div>}
             {!locsLoading && !wpShowCreate && (
               <>
                 {savedLocs.length > 0 ? (
-                  <select className="input text-xs py-1 w-full" value={wpLocId}
+                  <select className="input text-sm py-1.5 w-full" value={wpLocId}
                     onChange={e => setWpLocId(e.target.value ? Number(e.target.value) : "")}>
                     <option value="">— select location —</option>
                     {savedLocs.map(l => (
@@ -1135,51 +1135,51 @@ function RunLane({
                     ))}
                   </select>
                 ) : (
-                  <div className="text-[10px] text-muted italic">No saved locations</div>
+                  <div className="text-xs text-muted italic">No saved locations</div>
                 )}
                 <button type="button" onClick={() => { setWpShowCreate(true); setWpLocId(""); }}
-                  className="text-[10px] text-accent hover:underline">+ New address</button>
+                  className="text-xs text-accent hover:underline">+ New address</button>
               </>
             )}
             {!locsLoading && wpShowCreate && (
               <>
-                <input type="text" className="input text-xs py-1 w-full"
+                <input type="text" className="input text-sm py-1.5 w-full"
                   placeholder={`${wpPosition === -2 || wpPosition === -1 ? "Depot name" : "Name"} *`}
                   value={wpNewName} onChange={e => setWpNewName(e.target.value)} />
-                <input type="text" className="input text-xs py-1 w-full" placeholder="Street *"
+                <input type="text" className="input text-sm py-1.5 w-full" placeholder="Street *"
                   value={wpNewStreet} onChange={e => setWpNewStreet(e.target.value)} />
                 <div className="grid grid-cols-2 gap-1">
-                  <input type="text" className="input text-xs py-1" placeholder="Town"
+                  <input type="text" className="input text-sm py-1.5" placeholder="Town"
                     value={wpNewTown} onChange={e => setWpNewTown(e.target.value)} />
-                  <input type="text" className="input text-xs py-1" placeholder="Postcode"
+                  <input type="text" className="input text-sm py-1.5" placeholder="Postcode"
                     value={wpNewPostcode} onChange={e => setWpNewPostcode(e.target.value.toUpperCase())} />
                 </div>
                 <div className="grid grid-cols-2 gap-1">
-                  <input type="number" step="any" className="input text-xs py-1" placeholder="Lat"
+                  <input type="number" step="any" className="input text-sm py-1.5" placeholder="Lat"
                     value={wpNewLat} onChange={e => setWpNewLat(e.target.value)} />
-                  <input type="number" step="any" className="input text-xs py-1" placeholder="Lng"
+                  <input type="number" step="any" className="input text-sm py-1.5" placeholder="Lng"
                     value={wpNewLng} onChange={e => setWpNewLng(e.target.value)} />
                 </div>
                 {wpNewPostcode.trim() && (
                   <button type="button" onClick={geocodePostcode} disabled={wpGeoLoading}
-                    className="text-[10px] text-accent hover:underline disabled:opacity-50">
+                    className="text-xs text-accent hover:underline disabled:opacity-50">
                     {wpGeoLoading ? "Looking up…" : "Auto-fill from postcode"}
                   </button>
                 )}
                 {savedLocs.length > 0 && (
                   <button type="button"
                     onClick={() => { setWpShowCreate(false); setWpNewName(""); setWpNewStreet(""); setWpNewTown(""); setWpNewPostcode(""); }}
-                    className="text-[10px] text-accent hover:underline block">← Pick existing</button>
+                    className="text-xs text-accent hover:underline block">← Pick existing</button>
                 )}
               </>
             )}
 
-            <input type="time" className="input text-xs py-1 w-full" placeholder="Expected time *"
+            <input type="time" className="input text-sm py-1.5 w-full" placeholder="Expected time *"
               value={wpTime} onChange={e => setWpTime(e.target.value)} />
             <button
               onClick={handleAddWaypoint}
               disabled={wpAdding || locsLoading || !wpTime || (!wpShowCreate && !wpLocId) || (wpShowCreate && (!wpNewName.trim() || !wpNewStreet.trim()))}
-              className="btn text-xs py-1 px-3 bg-accent text-white disabled:opacity-40 w-full"
+              className="btn text-sm py-2 px-3 bg-accent text-white disabled:opacity-40 w-full"
             >
               {wpAdding ? "Adding…" : wpShowCreate && (wpPosition === -2 || wpPosition === -1) ? "Save depot & add" : "Add stop"}
             </button>
@@ -1189,21 +1189,21 @@ function RunLane({
         {/* Settings toggle */}
         <button
           onClick={() => setShowSettings(v => !v)}
-          className="w-full text-left px-3 py-1.5 text-[10px] text-slate-400 hover:text-primary hover:bg-white transition-colors flex items-center gap-1"
+          className="w-full text-left px-3 py-2 text-xs text-slate-500 hover:text-primary hover:bg-white transition-colors flex items-center gap-1.5"
         >
           <span>{showSettings ? "▲" : "▼"}</span>
-          <span>{showSettings ? "Hide" : "⚙ Run settings"}</span>
-          {saving && <span className="ml-auto text-[10px] text-muted animate-pulse">Saving…</span>}
+          <span className="font-medium">{showSettings ? "Hide settings" : "⚙ Run settings"}</span>
+          {saving && <span className="ml-auto text-xs text-muted animate-pulse">Saving…</span>}
         </button>
 
         {showSettings && (
-          <div className="px-3 pb-3 pt-1 space-y-2 bg-white border-t border-slate-100">
-            {err && <div className="text-xs text-red-600">{err}</div>}
+          <div className="px-3 pb-3 pt-2 space-y-3 bg-white border-t border-slate-100">
+            {err && <div className="text-sm text-red-600">{err}</div>}
 
             {/* Run type */}
             <div>
-              <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Run type</label>
-              <select className="input text-xs w-full py-1" value={run.runType ?? "direct"} disabled={saving}
+              <label className="text-xs font-semibold text-muted block mb-1">Run type</label>
+              <select className="input text-sm w-full py-1.5" value={run.runType ?? "direct"} disabled={saving}
                 onChange={e => patch({ runType: e.target.value })}>
                 {Object.entries(RUN_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
@@ -1212,8 +1212,8 @@ function RunLane({
             {/* Relay dependency */}
             {(run.runType === "relay" || run.dependsOnRunId) && (
               <div>
-                <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Locked until run</label>
-                <select className="input text-xs w-full py-1" value={run.dependsOnRunId ?? ""} disabled={saving}
+                <label className="text-xs font-semibold text-muted block mb-1">Locked until run</label>
+                <select className="input text-sm w-full py-1.5" value={run.dependsOnRunId ?? ""} disabled={saving}
                   onChange={e => patch({ dependsOnRunId: e.target.value ? parseInt(e.target.value, 10) : null })}>
                   <option value="">— no dependency —</option>
                   {allRuns.filter(r => r.id !== run.id).map(r => (
@@ -1225,8 +1225,8 @@ function RunLane({
 
             {/* Truck */}
             <div>
-              <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Truck unit</label>
-              <select className="input text-xs w-full py-1" value={run.assignedTruckId ?? ""} disabled={saving}
+              <label className="text-xs font-semibold text-muted block mb-1">Truck unit</label>
+              <select className="input text-sm w-full py-1.5" value={run.assignedTruckId ?? ""} disabled={saving}
                 onChange={e => patch({ assignedTruckId: e.target.value ? parseInt(e.target.value, 10) : null })}>
                 <option value="">— no truck —</option>
                 {trucks.map(t => <option key={t.id} value={t.id}>{t.registration}{t.gvwClass ? ` · ${t.gvwClass}` : ""}</option>)}
@@ -1235,8 +1235,8 @@ function RunLane({
 
             {/* Planner notes */}
             <div>
-              <label className="text-[9px] uppercase tracking-wide font-bold text-muted block mb-0.5">Notes for driver</label>
-              <textarea className="input text-xs w-full resize-none" rows={2}
+              <label className="text-xs font-semibold text-muted block mb-1">Notes for driver</label>
+              <textarea className="input text-sm w-full resize-none" rows={2}
                 placeholder="Notes…"
                 defaultValue={run.plannerNotes ?? ""}
                 onBlur={e => { if (e.target.value !== (run.plannerNotes ?? "")) patch({ plannerNotes: e.target.value }); }}
@@ -1250,14 +1250,14 @@ function RunLane({
           {canPublish ? (
             <>
               {!run.assignedDriverId && run.assignments.length > 0 && (
-                <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                   Assign a driver before publishing
                 </div>
               )}
               <button
                 onClick={handlePublish}
                 disabled={publishing || run.assignments.length === 0 || !run.assignedDriverId}
-                className="btn text-xs px-3 py-1.5 bg-primary text-white disabled:opacity-40 w-full"
+                className="btn text-sm px-3 py-2 bg-primary text-white disabled:opacity-40 w-full"
               >
                 {publishing ? "Publishing…" : "📤 Publish to driver"}
               </button>
@@ -1327,15 +1327,15 @@ function Sidebar({
     return (
       <button
         onClick={onClick}
-        className={`w-full text-left flex items-center justify-between px-2.5 py-2 rounded text-[13px] transition-colors ${
+        className={`w-full text-left flex items-center justify-between px-2.5 py-2 rounded text-sm transition-colors ${
           active ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100 hover:text-primary"
         }`}
       >
         <span className="truncate">{label}</span>
         {active ? (
-          <span className="text-[11px] font-bold flex-shrink-0 ml-1 text-white/80">✕</span>
+          <span className="text-xs font-bold flex-shrink-0 ml-1 text-white/80">✕</span>
         ) : (
-          <span className="text-[11px] font-bold flex-shrink-0 ml-1 tabular-nums text-muted">{count}</span>
+          <span className="text-xs font-bold flex-shrink-0 ml-1 tabular-nums text-muted">{count}</span>
         )}
       </button>
     );
@@ -1344,7 +1344,7 @@ function Sidebar({
   return (
     <aside className="w-44 flex-shrink-0 border-r border-border bg-slate-50/50 overflow-y-auto flex flex-col gap-0.5 py-2">
       {/* Work Pools */}
-      <div className="px-2.5 py-1 text-[9px] uppercase tracking-wider font-bold text-muted">Work pools</div>
+      <div className="px-2.5 py-1 text-xs font-bold text-muted uppercase tracking-wide">Work pools</div>
       <SidebarItem label="⚠ Needs attention" count={counts.needs_attention} active={activePool === "needs_attention"} onClick={() => onPoolChange(activePool === "needs_attention" ? null : "needs_attention")} />
       <SidebarItem label="📦 In custody" count={counts.in_custody} active={activePool === "in_custody"} onClick={() => onPoolChange(activePool === "in_custody" ? null : "in_custody")} />
       <SidebarItem label="📅 Ready today" count={counts.ready_today} active={activePool === "ready_today"} onClick={() => onPoolChange(activePool === "ready_today" ? null : "ready_today")} />
@@ -1353,7 +1353,7 @@ function Sidebar({
       {/* By Vehicle */}
       {vehicleEntries.length > 0 && (
         <>
-          <div className="px-2.5 pt-3 pb-1 text-[9px] uppercase tracking-wider font-bold text-muted">By vehicle</div>
+          <div className="px-2.5 pt-3 pb-1 text-xs font-bold text-muted uppercase tracking-wide">By vehicle</div>
           {vehicleEntries.map(([v, c]) => (
             <SidebarItem
               key={v}
@@ -1369,7 +1369,7 @@ function Sidebar({
       {/* By Area (postcode district) */}
       {areaEntries.length > 0 && (
         <>
-          <div className="px-2.5 pt-3 pb-1 text-[9px] uppercase tracking-wider font-bold text-muted">By area</div>
+          <div className="px-2.5 pt-3 pb-1 text-xs font-bold text-muted uppercase tracking-wide">By area</div>
           {areaEntries.map(([a, c]) => (
             <SidebarItem
               key={a}
@@ -1387,7 +1387,7 @@ function Sidebar({
         <div className="px-2.5 pt-3">
           <button
             onClick={() => { onPoolChange(null); onVehicleChange(null); onAreaChange(null); }}
-            className="text-[10px] text-accent hover:underline"
+            className="text-xs text-accent hover:underline font-medium"
           >
             ✕ Clear filters
           </button>
@@ -1806,7 +1806,7 @@ export default function PlanningBoardPage() {
           <div className="px-3 pt-3 pb-2 border-b border-border flex-shrink-0 space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wide text-muted">{panelTitle}</div>
+                <div className="text-xs font-bold uppercase tracking-wide text-muted">{panelTitle}</div>
                 <div className="text-xl font-bold text-primary leading-tight">
                   {totalJobCount}
                   {filteredWorkItems.length !== workItems.length && (
@@ -1818,16 +1818,16 @@ export default function PlanningBoardPage() {
             </div>
 
             <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
               <input type="search" placeholder="Search customer, ref, postcode…"
                 value={search} onChange={e => setSearch(e.target.value)}
-                className="input text-xs py-1.5 pl-7 pr-2 w-full" />
+                className="input text-sm py-2 pl-8 pr-2 w-full" />
             </div>
 
             <div className="flex gap-1">
               {LOOK_AHEAD_OPTIONS.map(opt => (
                 <button key={opt.days} onClick={() => setLookAheadDays(opt.days)}
-                  className={`flex-1 text-[10px] font-semibold py-1 rounded border transition-colors ${
+                  className={`flex-1 text-xs font-semibold py-1.5 rounded border transition-colors ${
                     lookAheadDays === opt.days
                       ? "bg-primary text-white border-primary"
                       : "bg-white text-slate-500 border-slate-300 hover:border-primary hover:text-primary"
@@ -1852,7 +1852,7 @@ export default function PlanningBoardPage() {
               if (grps.length === 0) return null;
               return (
                 <div key={gk} className="mb-3">
-                  <div className={`text-[10px] font-bold uppercase tracking-wider px-1 py-1 mb-1 border-b flex items-center justify-between ${
+                  <div className={`text-xs font-bold uppercase tracking-wider px-1 py-1.5 mb-1 border-b flex items-center justify-between ${
                     gk === "needs_attention" ? "text-red-600 border-red-200" :
                     gk === "in_custody"      ? "text-blue-700 border-blue-200" :
                     gk === "today"           ? "text-violet-700 border-violet-200" :
