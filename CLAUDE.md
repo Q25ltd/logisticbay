@@ -1,7 +1,7 @@
 # LogisticBay — Agent Instructions
 
 > Read this file first, every session, no exceptions.
-> Last updated: 2026-05-19
+> Last updated: 2026-05-27
 
 ---
 
@@ -29,6 +29,32 @@
 3. `STATUS.md` — what is actually built
 4. `ARCHITECTURE.md` — target design (may be ahead of schema)
 5. `PRODUCT.md` — product vision
+
+---
+
+## Session start — mandatory checklist
+
+Every session, before writing any code, run these three steps and report results to the user:
+
+1. **Read STATUS.md** — state what is ✅ done, 🔶 partial, 🔲 not started in the area the user wants to work on.
+2. **Read DEVLOG.md top entry** — state what was last worked on and any open items from that session.
+3. **State what you will do** and what docs will need updating when you're done.
+
+If the user asks "before we start, check the status" — this is what they mean.
+If the user asks a question and you are about to write code, stop and do this first.
+
+---
+
+## Session end — mandatory checklist
+
+Before the session is considered done:
+
+1. **Update STATUS.md** — move any completed items from 🔲/🔶 to ✅, update partial tables.
+2. **Add a DEVLOG.md entry** — what was built, what was decided, what is deferred.
+3. **If a new open question emerged** — add it to QUESTIONS.md.
+4. **If a new field/concept was added** — add it to DATA_DICTIONARY.md.
+
+Do not wait to be asked. Do this automatically before saying "done".
 
 ---
 
