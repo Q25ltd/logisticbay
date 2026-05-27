@@ -898,11 +898,14 @@ function RunLane({
             }}
           >
             <option value="">— no driver assigned —</option>
-            {drivers.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.displayName}{d.nightsOutAllowed ? " 🌙" : ""}
-              </option>
-            ))}
+            {drivers.map(d => {
+              const wp = d.workPattern === "tramper" ? " 🚛" : d.workPattern === "night_driver" ? " 🌙" : d.workPattern === "day_driver" ? " ☀" : "";
+              return (
+                <option key={d.id} value={d.id}>
+                  {d.displayName}{wp}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div className="flex items-center px-3 py-2.5 gap-3">

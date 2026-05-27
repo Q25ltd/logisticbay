@@ -70,6 +70,7 @@ export interface DriverHolidayInput {
 export interface DriverPlanningFields {
   employmentStartDate?: string | null;
   driverType?: string;
+  workPattern?: "day_driver" | "night_driver" | "tramper" | null;
   licenceClass?: string;
   endorsements?: string[];
   canDriveCategories?: string[];
@@ -89,6 +90,9 @@ export interface DriverPlanningFields {
   nightsOutAllowed?: boolean;
   overtimeAllowed?: boolean;
   baseLocation?: string;
+  basePostcode?: string | null;
+  baseLat?: number | null;
+  baseLng?: number | null;
   operatingArea?: string;
   avoidAreas?: string;
   plannerNotes?: string;

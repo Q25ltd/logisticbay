@@ -34,7 +34,11 @@ export default function DriverForm({ initial, onSave, onCancel }: {
     nightWorkAllowed: Boolean(initial?.nightWorkAllowed),
     nightsOutAllowed: Boolean(initial?.nightsOutAllowed),
     overtimeAllowed: Boolean(initial?.overtimeAllowed),
+    workPattern: (initial?.workPattern ?? "") as string,
     baseLocation: initial?.baseLocation ?? "",
+    basePostcode: initial?.basePostcode ?? "",
+    baseLat: initial?.baseLat ?? null as number | null,
+    baseLng: initial?.baseLng ?? null as number | null,
     operatingArea: initial?.operatingArea ?? "",
     avoidAreas: initial?.avoidAreas ?? "",
     plannerNotes: initial?.plannerNotes ?? "",
@@ -50,6 +54,7 @@ export default function DriverForm({ initial, onSave, onCancel }: {
   const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
   const [loginDetails, setLoginDetails] = useState<{ email: string; pin: string } | null>(null);
+  const [postcodeGeoStatus, setPostcodeGeoStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [f]: e.target.value }));
 
@@ -92,10 +97,28 @@ export default function DriverForm({ initial, onSave, onCancel }: {
     }));
   }
 
+  async function geocodeBasePostcode(pc: string) {
+    const clean = pc.trim().replace(/\s+/g, "").toUpperCase();
+    if (!clean) { setForm(p => ({ ...p, baseLat: null, baseLng: null })); setPostcodeGeoStatus("idle"); return; }
+    setPostcodeGeoStatus("loading");
+    try {
+      const res  = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
+      const data = await res.json() as { result?: { latitude: number; longitude: number } };
+      if (data.result) {
+        setForm(p => ({ ...p, baseLat: data.result!.latitude, baseLng: data.result!.longitude }));
+        setPostcodeGeoStatus("ok");
+      } else {
+        setForm(p => ({ ...p, baseLat: null, baseLng: null }));
+        setPostcodeGeoStatus("error");
+      }
+    } catch { setPostcodeGeoStatus("error"); }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(""); setLoading(true);
     const payload = {
       ...form,
+      workPattern: form.workPattern || null,
       preferredShiftHours: form.preferredShiftHours === "" ? null : Number(form.preferredShiftHours),
       holidayAllowance: form.holidayAllowance === "" ? 28 : Number(form.holidayAllowance),
       holidayRequests: form.holidayRequests.filter((h) => h.startDate && h.endDate),
@@ -137,7 +160,27 @@ export default function DriverForm({ initial, onSave, onCancel }: {
   return (
     <form onSubmit={handleSubmit}>
       {error && <Alert type="error" message={error} />}
-      <Input label="Full Name *" value={form.displayName} onChange={set("displayName")} placeholder="John Smith" caseRule="proper_name" required />
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2">
+          <Input label="Full Name *" value={form.displayName} onChange={set("displayName")} placeholder="John Smith" caseRule="proper_name" required />
+        </div>
+        <div>
+          <Input
+            label="Base postcode"
+            value={form.basePostcode}
+            onChange={e => { set("basePostcode")(e); setPostcodeGeoStatus("idle"); }}
+            onBlur={() => geocodeBasePostcode(form.basePostcode)}
+            placeholder="TS29 6PX"
+            caseRule="upper"
+            hint={
+              postcodeGeoStatus === "loading" ? "Looking up…" :
+              postcodeGeoStatus === "ok"      ? "✓ Location found" :
+              postcodeGeoStatus === "error"   ? "Postcode not found" :
+              "Home depot — used for route calculations"
+            }
+          />
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Input label="Employee No." value={form.employeeNumber} onChange={set("employeeNumber")} placeholder="D001" />
         <Input label="Phone" value={form.phoneNumber} onChange={set("phoneNumber")} placeholder="07700 000000" />
@@ -150,13 +193,23 @@ export default function DriverForm({ initial, onSave, onCancel }: {
       <div className="mt-5 border-t pt-4">
         <h3 className="font-bold text-primary mb-3">Planner profile</h3>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <label className="block text-sm font-semibold">
-            Driver type
+            Employment type
             <select className="input mt-1 w-full" value={form.driverType} onChange={set("driverType")}>
               <option value="permanent">Permanent</option>
               <option value="agency">Agency</option>
               <option value="subcontractor">Subcontractor</option>
+            </select>
+          </label>
+
+          <label className="block text-sm font-semibold">
+            Work pattern
+            <select className="input mt-1 w-full" value={form.workPattern} onChange={set("workPattern")}>
+              <option value="">Not set</option>
+              <option value="day_driver">Day driver</option>
+              <option value="night_driver">Night driver</option>
+              <option value="tramper">Tramper</option>
             </select>
           </label>
 

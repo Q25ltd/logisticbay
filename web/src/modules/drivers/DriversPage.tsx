@@ -142,7 +142,13 @@ export default function DriversPage() {
                     {!driver.user?.email   && <div className="text-xs text-yellow-700 bg-yellow-50 px-2 py-1 rounded inline-block">No login account</div>}
                   </div>
 
-                  <div className="mt-3 text-sm text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {driver.workPattern === "day_driver"   && <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-700">☀ Day driver</span>}
+                    {driver.workPattern === "night_driver" && <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">🌙 Night driver</span>}
+                    {driver.workPattern === "tramper"      && <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">🚛 Tramper</span>}
+                  </div>
+
+                  <div className="mt-2 text-sm text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
                     <span>Type: {({"permanent":"Permanent","agency":"Agency","subcontractor":"Subcontractor"} as Record<string,string>)[driver.driverType ?? "permanent"] ?? (driver.driverType ?? "Permanent")}</span>
                     <span>Licence: {driver.licenceClass ? driver.licenceClass.replace(/_/g, " ").toUpperCase() : "Not set"}</span>
                     <span>Preferred start: {driver.preferredStartTime || "not set"}</span>

@@ -37,6 +37,7 @@ export interface Driver {
   contactEmail?: string | null;
   contactPhone?: string | null;
   driverType?: string;
+  workPattern?: "day_driver" | "night_driver" | "tramper" | null;
   licenceClass?: string;
   endorsements?: string[];
   canDriveCategories?: string[];
@@ -56,6 +57,9 @@ export interface Driver {
   nightsOutAllowed?: boolean;
   overtimeAllowed?: boolean;
   baseLocation?: string;
+  basePostcode?: string | null;
+  baseLat?: number | null;
+  baseLng?: number | null;
   operatingArea?: string;
   avoidAreas?: string;
   plannerNotes?: string;

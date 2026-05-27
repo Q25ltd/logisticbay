@@ -3,6 +3,7 @@ import { z } from "zod";
 const DriverPlanningFields = z.object({
   employmentStartDate:    z.string().nullable().optional(),
   driverType:             z.string().optional(),
+  workPattern:            z.enum(["day_driver", "night_driver", "tramper"]).nullable().optional(),
   licenceClass:           z.enum(["B", "C1", "C1E", "C", "CE", ""]).optional(),
   endorsements:           z.array(z.string()).optional(),
   canDriveCategories:     z.array(z.string()).optional(),
@@ -22,6 +23,9 @@ const DriverPlanningFields = z.object({
   nightsOutAllowed:       z.boolean().optional(),
   overtimeAllowed:        z.boolean().optional(),
   baseLocation:           z.string().optional(),
+  basePostcode:           z.string().nullable().optional(),
+  baseLat:                z.number().nullable().optional(),
+  baseLng:                z.number().nullable().optional(),
   operatingArea:          z.string().optional(),
   avoidAreas:             z.string().optional(),
   plannerNotes:           z.string().optional(),

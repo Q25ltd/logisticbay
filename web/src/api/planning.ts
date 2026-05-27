@@ -175,6 +175,10 @@ export interface PlanningDriver {
   displayName:      string;
   status:           string;
   nightsOutAllowed: boolean;
+  workPattern?:     "day_driver" | "night_driver" | "tramper" | null;
+  baseLat?:         number | null;
+  baseLng?:         number | null;
+  basePostcode?:    string | null;
   user?: { id: number; name: string; email: string } | null;
 }
 

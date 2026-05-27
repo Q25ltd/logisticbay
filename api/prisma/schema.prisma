@@ -176,6 +176,7 @@ model DriverProfile {
   contactEmail          String?
   contactPhone          String?
   driverType            String    @default("permanent")
+  workPattern           String?   // "day_driver" | "night_driver" | "tramper"
   licenceClass          String    @default("")
   endorsements          Json?
   canDriveCategories    Json?
@@ -195,6 +196,9 @@ model DriverProfile {
   nightsOutAllowed      Boolean   @default(false)
   overtimeAllowed       Boolean   @default(false)
   baseLocation          String    @default("")
+  basePostcode          String?   // home/depot postcode — geocoded to baseLat/baseLng
+  baseLat               Float?
+  baseLng               Float?
   operatingArea         String    @default("")
   avoidAreas            String    @default("")
   plannerNotes          String    @default("")
