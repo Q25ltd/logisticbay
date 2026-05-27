@@ -813,39 +813,39 @@ function RunLane({
 
   return (
     <div
-      className={`w-80 min-w-[320px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
+      className={`w-[420px] min-w-[380px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
         isLocked ? "opacity-60" : ""
       } ${isOver ? "ring-2 ring-primary shadow-lg" : "border-border"}`}
       style={{ maxHeight: "calc(100vh - 130px)" }}
     >
       {/* ── Lane header ── */}
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border-b border-slate-200 flex-shrink-0">
-        <span className="font-bold text-[13px] text-primary flex-shrink-0">{run.runReference}</span>
+      <div className="flex items-center gap-2 px-3 py-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
+        <span className="font-bold text-base text-primary flex-shrink-0">{run.runReference}</span>
         <StatusBadge status={run.status} />
-        {run.publishedToDriver && <Badge colour="bg-violet-100 text-violet-700">📤</Badge>}
-        {isLocked           && <Badge colour="bg-orange-100 text-orange-700">🔒</Badge>}
+        {run.publishedToDriver && <Badge colour="bg-violet-100 text-violet-700">📤 Sent</Badge>}
+        {isLocked           && <Badge colour="bg-orange-100 text-orange-700">🔒 Locked</Badge>}
         {run.hasHazardous   && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
         {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">❄</Badge>}
         <span className="flex-1" />
-        {aiDot && <span className="text-xs leading-none" title={aiCheck?.reason ?? "Checking…"}>{aiDot}</span>}
+        {aiDot && <span className="text-sm leading-none" title={aiCheck?.reason ?? "Checking…"}>{aiDot}</span>}
         <button
           onClick={() => onDelete(run.id)}
-          className="text-slate-400 hover:text-red-500 text-xs leading-none ml-1 flex-shrink-0"
+          className="text-slate-400 hover:text-red-500 text-sm leading-none ml-1 flex-shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50"
           title="Delete run"
         >✕</button>
       </div>
 
-      {/* ── Inline driver + vehicle assign ── */}
-      <div className="grid grid-cols-2 gap-px bg-slate-100 flex-shrink-0">
-        <div className="bg-white px-3 py-2">
-          <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-1">Driver</div>
+      {/* ── Driver + Trailer assign — full-width rows ── */}
+      <div className="flex-shrink-0 border-b border-slate-100 divide-y divide-slate-100">
+        <div className={`flex items-center px-3 py-2.5 gap-3 ${run.assignedDriverId ? "" : "bg-amber-50/40"}`}>
+          <span className="text-xs font-bold text-muted uppercase tracking-wide w-14 flex-shrink-0">Driver</span>
           <select
-            className="w-full text-sm text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            className={`flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer min-w-0 ${run.assignedDriverId ? "text-primary" : "text-slate-400"}`}
             value={run.assignedDriverId ?? ""}
             disabled={saving}
             onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
           >
-            <option value="">— assign —</option>
+            <option value="">— no driver assigned —</option>
             {drivers.map(d => (
               <option key={d.id} value={d.id}>
                 {d.displayName}{d.nightsOutAllowed ? " 🌙" : ""}
@@ -853,15 +853,15 @@ function RunLane({
             ))}
           </select>
         </div>
-        <div className="bg-white px-3 py-2">
-          <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-1">Trailer</div>
+        <div className="flex items-center px-3 py-2.5 gap-3">
+          <span className="text-xs font-bold text-muted uppercase tracking-wide w-14 flex-shrink-0">Trailer</span>
           <select
-            className="w-full text-sm text-primary bg-transparent border-none outline-none cursor-pointer truncate"
+            className={`flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer min-w-0 ${run.assignedTrailerId ? "text-primary" : "text-slate-400"}`}
             value={run.assignedTrailerId ?? ""}
             disabled={saving}
             onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
           >
-            <option value="">— assign —</option>
+            <option value="">— no trailer —</option>
             {trailers.map(t => (
               <option key={t.id} value={t.id}>
                 {t.registration} · {bodyTypeLabel(t.bodyType || t.trailerType)}
@@ -920,16 +920,16 @@ function RunLane({
                 if (item.kind === "waypoint") {
                   const w = item.data;
                   return (
-                    <div key={`w-${w.id}`} className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 border border-slate-100 text-xs">
+                    <div key={`w-${w.id}`} className="flex items-center gap-2 px-3 py-2 rounded bg-slate-50 border border-slate-100 hover:border-slate-200 group transition-colors">
                       <Badge colour="bg-slate-100 text-slate-600">
                         {WAYPOINT_TYPE_LABEL[w.waypointType] ?? w.waypointType}
                       </Badge>
-                      <span className="font-medium text-primary truncate flex-1 min-w-0">
+                      <span className="font-medium text-sm text-primary truncate flex-1 min-w-0">
                         {w.location?.siteName ?? w.location?.name ?? w.locationText ?? "—"}
                       </span>
-                      {w.scheduledTime && <span className="text-amber-600 flex-shrink-0 tabular-nums">{w.scheduledTime}</span>}
+                      {w.scheduledTime && <span className="text-amber-600 flex-shrink-0 tabular-nums text-sm font-bold">{w.scheduledTime}</span>}
                       <button onClick={() => onRemoveWaypoint(run.id, w.id)}
-                        className="text-slate-300 hover:text-red-500 flex-shrink-0" title="Remove">✕</button>
+                        className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove">✕</button>
                     </div>
                   );
                 } else {
@@ -951,7 +951,7 @@ function RunLane({
                   return (
                     <div
                       key={`a-${a.id}`}
-                      className="flex flex-col rounded bg-white border border-slate-100 hover:border-slate-200 overflow-hidden"
+                      className="flex flex-col rounded bg-white border border-slate-100 hover:border-slate-300 overflow-hidden group transition-colors"
                       style={{ borderLeft: `3px solid ${getJobColour(a.jobId)}` }}
                     >
                       {/* Row 1: stop number · type badge · customer · X */}
@@ -968,7 +968,7 @@ function RunLane({
                         </span>
                         <button
                           onClick={() => onRemoveStop(run.id, a.id)}
-                          className="text-slate-300 hover:text-red-500 flex-shrink-0 text-sm leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-red-50"
+                          className="text-slate-300 hover:text-red-500 flex-shrink-0 text-sm leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
                           title="Remove stop"
                         >✕</button>
                       </div>
@@ -1055,13 +1055,17 @@ function RunLane({
       {/* ── Action bar ── */}
       <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50">
         {/* Waypoint + optimise tools */}
-        <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-100">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100">
           <button
             onClick={() => {
               if (!showWpForm) { setWpLocId(depot?.id ?? ""); setWpShowCreate(false); setWpPosition(-2); loadSavedLocs(); }
               setShowWpForm(v => !v);
             }}
-            className="text-xs text-slate-500 hover:text-primary font-medium"
+            className={`text-xs font-semibold px-2.5 py-1.5 rounded border transition-colors ${
+              showWpForm
+                ? "bg-slate-100 text-slate-600 border-slate-200"
+                : "bg-white text-slate-600 border-slate-200 hover:border-primary hover:text-primary"
+            }`}
           >
             {showWpForm ? "✕ Cancel" : "+ Waypoint"}
           </button>
@@ -1069,17 +1073,17 @@ function RunLane({
             <button
               onClick={() => onOptimiseRoute(run.id)}
               disabled={optimising}
-              className="text-xs text-slate-500 hover:text-primary disabled:opacity-40 ml-auto font-medium"
+              className="text-xs font-semibold px-2.5 py-1.5 rounded border bg-white text-slate-600 border-slate-200 hover:border-primary hover:text-primary disabled:opacity-40 ml-auto transition-colors"
               title="Sort stops in geographically optimal order"
             >
               {optimising ? "⟳ Sorting…" : "⟡ Optimise route"}
             </button>
           )}
           {confirmingOptimise && (
-            <div className="ml-auto flex items-center gap-1.5 text-xs">
+            <div className="ml-auto flex items-center gap-2 text-xs">
               <span className="text-slate-600 font-medium">Reorder stops?</span>
-              <button onClick={() => onConfirmOptimise(run.id)} className="text-white bg-primary rounded px-2 py-1 font-semibold">Yes</button>
-              <button onClick={() => onOptimiseRoute(-1)} className="text-slate-500 hover:text-slate-700">Cancel</button>
+              <button onClick={() => onConfirmOptimise(run.id)} className="text-white bg-primary rounded px-3 py-1.5 font-semibold">Yes</button>
+              <button onClick={() => onOptimiseRoute(-1)} className="text-slate-500 hover:text-slate-700 px-2 py-1.5">Cancel</button>
             </div>
           )}
         </div>
@@ -1268,7 +1272,7 @@ function RunLane({
               <button
                 onClick={handleRecall}
                 disabled={recalling}
-                className="btn text-xs px-3 py-1.5 w-full border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 disabled:opacity-40"
+                className="btn text-sm px-3 py-2 w-full border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors"
               >
                 {recalling ? "Recalling…" : "↩ Recall run"}
               </button>
@@ -1950,7 +1954,7 @@ export default function PlanningBoardPage() {
             <button
               onClick={handleCreateRun}
               disabled={creatingRun}
-              className="w-48 min-w-[160px] flex-shrink-0 h-32 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all disabled:opacity-40 self-start"
+              className="w-[420px] min-w-[380px] flex-shrink-0 h-32 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all disabled:opacity-40 self-start"
             >
               <span className="text-3xl leading-none mb-1">{creatingRun ? "⟳" : "+"}</span>
               <span className="text-xs font-semibold">New run</span>
