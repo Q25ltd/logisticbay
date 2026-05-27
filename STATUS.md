@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-27 (Planning Board Phase 1 UX — colour coding, stop card redesign, publish gate, recall run)
+> Last updated: 2026-05-27 (DATA_DICTIONARY.md full cleanup — PlannedJob→Job rename, LoadDetails removed, all field names corrected, missing models/fields added)
 
 ---
 

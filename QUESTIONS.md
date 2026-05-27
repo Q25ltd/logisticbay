@@ -24,7 +24,7 @@
 
 ## 0a. Data dictionary inconsistency — flagged 2026-05-27
 
-- [ ] **`tempControlled` vs `temperatureControlled` — two names for the same concept.** `LoadDetails.tempControlled` (Boolean) and `JobPart.temperatureControlled` (Boolean) refer to the same thing. The rule-based services currently accept `tempControlled` from callers. Fix requires: pick one canonical name, migrate both schema columns in one migration, update all API routes, frontend forms, and mobile app field references. Candidate canonical name: `tempControlled` (shorter, already used in LoadDetails and the AI service input types). This is a P1 fix — wrong name causes silent bugs when the wrong field is checked in rules.
+- [ ] **`Job.tempControlled` vs `JobPart.temperatureControlled` — two names for the same concept.** `Job.tempControlled` (Boolean) and `JobPart.temperatureControlled` (Boolean) both mean "this load requires temperature control". `LoadDetails` no longer exists (merged into `Job`). Canonical name: `tempControlled` (shorter, on `Job` and in all rule-based service inputs). Fix requires migration to rename `JobPart.temperatureControlled` → `JobPart.tempControlled`, update all API routes, frontend forms, and mobile app. P1 — wrong name causes silent bugs when the wrong field is checked in rules.
 
 ---
 

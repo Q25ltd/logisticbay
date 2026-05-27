@@ -7,6 +7,51 @@
 
 ---
 
+## Session log — 2026-05-27c
+
+### DATA_DICTIONARY.md — full system audit and cleanup
+
+**Context:** Full audit of `api/prisma/schema.prisma` vs `DATA_DICTIONARY.md` found ~20 distinct discrepancies. The dictionary was documenting a model that was renamed, a table that no longer exists, and field names that had been updated without updating the dictionary.
+
+**Changes made to DATA_DICTIONARY.md:**
+
+1. **Model rename**: All `PlannedJob` references renamed to `Job` throughout. Added backward-compat note: `web/src/types/index.ts` exports `PlannedJob = Job` for backward compat — new code must use `Job`.
+
+2. **LoadDetails removed**: `LoadDetails` table does not exist in the schema. Its fields were merged into `Job` directly. Section replaced with a clear "REMOVED — merged into Job" tombstone with a complete field mapping (e.g. `LoadDetails.materialType` → `Job.goodsDescription`).
+
+3. **Job field names corrected** (critical — wrong names in old dictionary):
+   - `reqBodyCategory` → `vehicleCategory`
+   - `reqBodyType` → `bodyTypes` (Json array, not String)
+   - `reqGvwMin` → `minGvwClass`
+   - `reqEquipment` → `equipment`
+   - `trailerTypesAllowed` → `trailersAllowed` (on `Job` only — DriverProfile still uses `trailerTypesAllowed`)
+
+4. **Job fields updated**: Removed stale fields that don't exist in schema (`reqLicenceClass`, `minVehicleSize`, `vehicleRequirementSource`, `trailerRequirementSource`, `derivedVehicleType`, `finalVehicleType`, etc.). Added missing fields: `parentJobId`, `tunnelCode`, all load fields (`goodsType`, `goodsDescription`, `quantity`, `weight`, `tempControlled`, `hazardClass`, etc.), all exception policy fields as direct columns. Fixed status values: now shows all 8 values including `pending_review`, `ready_to_plan`, `in_planning`, `planned`.
+
+5. **Blob sections updated**: `Job.notesData`, `Job.exceptionPolicyData`, `Job.billingData` blobs no longer exist — these are now direct columns on `Job`. Sections updated accordingly. `Job.loadData` still exists for type-specific sub-details.
+
+6. **Company**: Added `type` (`carrier` | `sender` | `both`) and `depotLocationId` (FK → SavedLocation).
+
+7. **User**: Added `failedLoginAttempts` (Int) and `lockedUntil` (DateTime?) — used for login lockout.
+
+8. **SavedLocation**: Fixed nullable status — most text fields are `String?` in schema, not required `String @default("")`.
+
+9. **FleetUnit / FleetTrailer**: Added dimension fields: `heightM`, `widthM`, `lengthM`, `axleLoadT` (used for ORS route restriction checks).
+
+10. **Run**: Added `runType` and `dependsOnRunId`. Fixed status values: `published` → `assigned` (per CLAUDE.md and schema).
+
+11. **ClientRequestLink**: Added `rawToken` (String?) and `isMain` (Boolean).
+
+12. **Added two missing models**: `ShiftPreference` and `DriverWorkingTimeSummary` — both existed in schema, never documented.
+
+13. **Form mapping table**: Updated all `PlannedJob.xxx` → `Job.xxx`, `LoadDetails.xxx` → `Job.xxx`. Fixed Transport Requirements section field names.
+
+**Not fixed this session (still open):**
+- `Job.tempControlled` vs `JobPart.temperatureControlled` inconsistency — P1, requires migration + mobile update (tracked in QUESTIONS.md section 0a)
+- `JobRequest.transportRequirementsData` blob still stores `reqBodyCategory`/`reqBodyType` under old names — this is the customer-facing intake form structure and is separate from `Job` columns. Accept handler maps between them.
+
+---
+
 ## Session log — 2026-05-27b
 
 ### AI cost audit + rule-based service rewrites
