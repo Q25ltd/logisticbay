@@ -7,11 +7,36 @@
 
 ---
 
-## Session log — 2026-05-27
+## Session log — 2026-05-27b
+
+### AI cost audit + rule-based service rewrites
+
+**Commits:** `e896f2a`
+
+**Context:** User flagged ~1p per run construction. Traced to `checkRun` auto-firing on every stop change (800ms debounce × stops added = N Haiku API calls per run built).
+
+**Decision: which features genuinely need AI vs can be hardcoded**
+
+Full analysis: if the data needed to make a decision already exists in structured fields (weight, tempControlled, bodyType), rules are better — instant, free, testable, predictable. AI is only justified when meaning must be extracted from free text, or when judgment is needed on ambiguous edge cases.
+
+**Result:**
+- `checkRunService.ts` — removed Claude entirely. Service already computed all the hard data (ORS routing, leg distances, break threshold, rest stop detection). Added deterministic result function: 9h legal limit → high; break needed + no rest stop → medium; time window missed → high/medium; run >12h → medium; run >10h → low; no coords → informational none.
+- `suggestVehicleService.ts` — weight/pallet count decision tree selects vehicle category. Goods description keyword matching selects body type (fridge, ADR, flatbed for steel, tanker for liquid, etc.). Fleet body type filter applied. `suggestTrailerForRun` now pattern-matches available trailers by type.
+- `checkLoadVehicleService.ts` — payload capacity table by category; fridge body required for tempControlled; ADR unsafe bodies check; livestock body check.
+- `ai.ts` route — removed `AI_ENABLED` guard from 4 deterministic routes. Rate limits raised (no AI cost). Only `parse-request` still requires AI and keeps the guard.
+
+**Only remaining AI feature:** `POST /ai/parse-request` — free text → structured job. Already manual button. Genuinely requires AI (can't rule-match unstructured customer emails).
+
+**Known schema inconsistency flagged this session:**
+- `LoadDetails.tempControlled` vs `JobPart.temperatureControlled` — same concept, two names. Both pre-exist in the dictionary and schema. Not fixed this session (touching both would require migration + mobile sync changes). Added to QUESTIONS.md.
+
+---
+
+## Session log — 2026-05-27a
 
 ### Planning Board: Full UX audit + Phase 1 redesign (colour coding, stop cards, publish gate, recall)
 
-**Commits:** (in progress)
+**Commits:** `f5d736c`
 
 **UX audit findings (live app walkthrough):**
 - Publish gate critical bug: "Publish to driver" was active with no driver assigned. Run went DRAFT → ASSIGNED with `-- assign --` as driver. Discovered live during audit. Fixed this session.

@@ -82,12 +82,16 @@
   - Weight vs payload: declared weight vs approximate vehicle max payload → warning
   - Cancellation cascade: cancelling a job in active run assignments returns run IDs + warning
   - Accept flow (`POST /job-requests/:id/accept`) now runs full `validateStructuredJob` before accepting
-- **AI-assisted job creation** (requires `ANTHROPIC_API_KEY`, model: `claude-haiku-4-5`):
+- **Planning intelligence** (route checks, vehicle suggestion, load checks — all rule-based, no AI cost):
+  - `POST /ai/suggest-vehicle` — weight/goods decision tree → vehicle category + body type from fleet
+  - `POST /ai/check-vehicle-load` — payload capacity + fridge/ADR/livestock body rules
+  - `POST /ai/check-run` — ORS HGV routing + legal hours + break rule + time window checks (deterministic)
+  - `POST /ai/suggest-run-trailer` — pattern-match available trailers by temp/ADR/general needs
+  - `GET /ai/status` — returns `{ enabled: boolean }` for `parse-request` feature gate
+- **AI-assisted job creation** (requires `ANTHROPIC_API_KEY`, model: `claude-haiku-4-5` — only remaining AI call):
   - `POST /ai/parse-request` — paste email/WhatsApp/note → structured job data → pre-fills CJP form
   - Customer name auto-matched against database; contact fields filled from stored account
-  - `POST /ai/suggest-vehicle` — analyses load (weight, qty, goods type, temp, hazmat) → recommends vehicle category with one-line reason
   - CJP Section 5 shows violet "AI vehicle suggestion" panel — planner can accept or dismiss
-  - `GET /ai/status` — returns `{ enabled: boolean }` for frontend feature gating
   - AI panel hidden in edit mode and not present on PRF (planner-only feature)
 
 ### Client request links
@@ -181,6 +185,10 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] 1.11 "Suggest all runs" button — job-aware grouping (all stops from same job stay together), one run per cluster, AI vehicle suggestion per run
 - [ ] 1.12 Job progress update — job status derived from RunAssignment completion
 - [~] 1.13 Publish run → status set to "assigned", `publishedToDriver = true`. **No push notification to driver yet** (plan said driver gets notified). Trailer enforcement removed (see 1.6).
+
+**Planning board extras — 2026-05-27:**
+- [x] AI route feasibility (`checkRunService`) → replaced with deterministic rules (ORS routing kept, Claude call removed — zero AI cost per stop change)
+- [x] `suggestVehicle` + `suggestTrailerForRun` + `checkLoadVehicle` → all rule-based (weight table, body type matching, fleet filter)
 
 **Planning board extras built outside spec (2026-05-24):**
 - [x] Multi-day job support — unplanned filter uses stop's own `timeWindowStart` date not job date; cross-date labels on stops; companion-stop pairing indicators across clusters

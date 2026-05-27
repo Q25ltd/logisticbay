@@ -5,7 +5,7 @@
 > Before building any feature, check the relevant section — if questions are unanswered, answer them first.
 >
 > Key: [x] = answered · [~] = partial answer · [ ] = still open
-> Last updated: 2026-05-26
+> Last updated: 2026-05-27
 
 ---
 
@@ -19,6 +19,12 @@
 | Platform & compliance | 32 | 0 | 32 |
 | Product & notifications | 36 | 0 | 36 |
 | **Total** | **196** | **14** | **182** |
+
+---
+
+## 0a. Data dictionary inconsistency — flagged 2026-05-27
+
+- [ ] **`tempControlled` vs `temperatureControlled` — two names for the same concept.** `LoadDetails.tempControlled` (Boolean) and `JobPart.temperatureControlled` (Boolean) refer to the same thing. The rule-based services currently accept `tempControlled` from callers. Fix requires: pick one canonical name, migrate both schema columns in one migration, update all API routes, frontend forms, and mobile app field references. Candidate canonical name: `tempControlled` (shorter, already used in LoadDetails and the AI service input types). This is a P1 fix — wrong name causes silent bugs when the wrong field is checked in rules.
 
 ---
 
