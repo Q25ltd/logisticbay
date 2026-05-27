@@ -32,6 +32,22 @@
 
 - [ ] **Postcode district sidebar — threshold.** If a company has many small jobs spread across 30+ postcode districts, the "By area" sidebar becomes very long. Should there be a minimum count threshold (e.g. show only districts with ≥2 jobs)? Or a "show more" collapse?
 
+- [ ] **Relay cargo state — JobPart link.** When a delivery stop is on a different run from the collection stop (relay), how is the link stored? Is it one `JobPart` with two `RunAssignment` rows? Or two linked `JobPart` rows? Answer determines `getCargoStateForDeliveryStop()` query design.
+
+- [ ] **Trailer swap — simultaneous presence detection.** When building Driver 2's run that has a `trailer_swap` stop, the system needs to check Driver 1's ETA at the same location. How do we identify "Driver 1's run that delivers to this swap point"? Via `LoadTrack.swapPoint` matching? Via `hub_drop` waypoint on Driver 1's run?
+
+- [ ] **PlanningSettings — seed on company creation?** Should default dwell times (trailer swap 90min, live load 45min, etc.) be auto-seeded when a company is created, or created lazily on first use of a planning feature?
+
+- [ ] **GPS break detection — driver consent.** GDPR requires drivers to be informed about GPS location tracking during shifts. Should consent be captured at account creation, first app open, or both? What is the data processing lawful basis (legitimate interest for safety vs explicit consent)?
+
+- [ ] **Driver hours self-report — pre-fill logic.** The popup after collected/delivered pre-fills a time estimate. What is the pre-fill? Options: (a) zero always, (b) legal maximum remaining based on shift start time, (c) previous reported value. Which is least likely to cause drivers to just tap "confirm" without reading?
+
+- [ ] **Tacho integration — which provider?** When onboarding transport companies, ask which tachograph analysis software they use (Tachomaster, Optac3, TachoSafe, etc.). Build integration for the most common answer first. Add to onboarding questionnaire.
+
+- [ ] **Recall run — what does driver see on mobile?** When a planner recalls an ASSIGNED run, the run should disappear from the driver's active runs or show as "recalled". Does the driver app need a separate "recalled runs" history view, or does the run just vanish? What if the driver is mid-execution when recalled?
+
+- [ ] **Delay cause capture — mandatory or optional?** When a driver takes much longer than expected at a stop, the system prompts "what caused the delay?" Should this be mandatory (driver must tap a reason before marking complete) or optional (tap to add context, can skip)? Mandatory = better data, optional = less friction and driver trust.
+
 ---
 
 ## 1. Operations & load movement

@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-26 (Planning Board — postcode areas, relay runs, cargo state, driver types)
+> Last updated: 2026-05-27 (Planning Board Phase 1 UX — colour coding, stop card redesign, publish gate, recall run)
 
 ---
 
@@ -187,6 +187,14 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] `RunWaypoint` model + `POST/DELETE /planning/runs/:id/waypoints` — depot start, yard pickup, hub drop, return-to-base, custom waypoints on run card; `sequenceNumber` positions them in run order. Schema migration `20260524130000_add_run_waypoints` applied.
 - [x] AI route feasibility check (replaces load/vehicle check) — `POST /ai/check-run` with haversine leg distances, HGV speed estimate, time window compliance; `checkRunService.ts`
 
+**Planning board UX redesign — Phase 1 (2026-05-27):**
+- [x] Job colour coding — auto-assigned from 10-colour palette via `getJobColour(jobId % 10)`. Left border on every stop card in run lane. Same job = same colour across collect + deliver stops. No DB column needed.
+- [x] Stop card redesign — full customer name (no truncation), postcode + address on second line, time window (start–end), weight + quantity on third line, cargo state pill in same row. X button always visible (was hidden until hover).
+- [x] Publish gate — button disabled + replaced with "Assign a driver to publish" message when no driver selected. Was previously active with `-- assign --`.
+- [x] Recall run — "↩ Recall run" button shown when run is ASSIGNED/published. Sets `status: draft, publishedToDriver: false` via existing PATCH endpoint. Driver notification is a stub (Phase 4).
+- [x] Active filter shows ✕ inline on active sidebar button. Clicking deactivates. "Clear filters" link removed (redundant).
+- [x] AI analysis block replaced with compact scannable format — severity dot + one-line summary always visible, full text on hover/expand (title attribute for now).
+
 **Planning board extras built 2026-05-26:**
 - [x] Nearest-neighbour route optimise bug fix — `??` operator precedence corrected so distances are measured from the previous stop, not from a fixed origin point
 - [x] Date badge on wrong-day stops in run lane — neutral slate badge when stop's `timeWindowStart` date ≠ run's `plannedDate`
@@ -198,6 +206,29 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] `PlanningDriver.nightsOutAllowed` exposed from `DriverProfile` — driver dropdown in run lane shows 🌙 suffix for trampers
 - [x] Day driver multi-day warning — banner in run lane when a day driver (`nightsOutAllowed = false`) is assigned to a run whose stops span multiple calendar dates
 - [x] `overnight_rest` waypoint type added — appears in the waypoint type selector (alongside yard_pickup, hub_drop) for mid-route stops; renders as "Overnight rest" label on the run card
+
+**Planning board UX redesign — Phase 2 (not started):**
+- [ ] Stop hover tooltip — full address, contact, items list, job ref without leaving planning board
+- [ ] Cargo state query — `getCargoStateForDeliveryStop()` returning one of 5 states (no_collection_run → collected)
+- [ ] Cargo state badge on delivery stops — shows which run collected the cargo + link to that run
+- [ ] Yard pickup auto-suggest — when cargo state = `in_custody_yard`, show "Add yard pickup stop" with calculated collect-by time
+- [ ] `LoadTrack` custody fields — `custodyType`, `custodyLabel`, `custodyPostcode`, `custodyLat/Lng`, `swapType`, `custodyAt`
+- [ ] One-time swap locations — stored inline on `LoadTrack` event, never saved to Locations table
+
+**Planning board UX redesign — Phase 3 (not started):**
+- [ ] `PlanningSettings` model — configurable dwell times per swap type, yard start overhead, tramper wake time, break buffer
+- [ ] Auto-insert yard pickup waypoint when `hub_drop` fires and delivery run exists
+- [ ] Swap coordination check — simultaneous presence overlap for `trailer_swap` / `live_load`
+- [ ] Day driver publish gate — block (not just warn) when day driver assigned to multi-day run
+
+**Planning board UX redesign — Phase 4 (not started):**
+- [ ] `DriverGpsEvent` model — 15-min GPS pings, 48h retention, then delete
+- [ ] `DriverBreakEvent` model — break confirmations + escalations, 90-day retention
+- [ ] GPS break detection — stationary detection via 200m threshold between consecutive pings
+- [ ] Driver hours self-report popup — after major button presses (collected, delivered)
+- [ ] Delay cause capture — optional tap after long dwell; defends drivers against unfair blame
+- [ ] Break warning notification — push to driver when stationary, escalate to planner if no response
+- [ ] Recall driver notification — push to driver when run recalled/cancelled
 
 **Phase 2 — Depot operations (Type 4)**
 - [ ] 2.1  LoadTrack write path (API: POST /load-track)

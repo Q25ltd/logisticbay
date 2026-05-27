@@ -7,6 +7,47 @@
 
 ---
 
+## Session log — 2026-05-27
+
+### Planning Board: Full UX audit + Phase 1 redesign (colour coding, stop cards, publish gate, recall)
+
+**Commits:** (in progress)
+
+**UX audit findings (live app walkthrough):**
+- Publish gate critical bug: "Publish to driver" was active with no driver assigned. Run went DRAFT → ASSIGNED with `-- assign --` as driver. Discovered live during audit. Fixed this session.
+- No recall path from planning board: once ASSIGNED, planner had no way to revert. Added "↩ Recall run" button.
+- Stop cards unreadable at normal scale: customer name truncated, address invisible, time window missing, weight not shown, X button hidden until hover.
+- "Not collected" badge misfires: appears even when a collection stop precedes the delivery stop in same run. Root cause: badge driven by `Job.status` not by run stop sequence. Redesign deferred to Phase 2 (requires cargo state service).
+- AI analysis as prose paragraph: useful data, unreadable format. Compact to one-line with expandable detail.
+- Active filter had no × on button itself — "Clear filters" was tiny text at bottom.
+
+**Phase 1 built this session:**
+- `getJobColour(jobId)` — deterministic from `jobId % 10` palette. No DB column. Applied as 3px left border on every stop card. Same job = same colour across collect + deliver.
+- Stop card redesign: full customer name, `postcode · address` on line 2, time window (start–end), weight + quantity on line 3, cargo pill in same row. X always visible.
+- Publish gate: button hidden, replaced with "Assign a driver to publish" when `run.assignedDriverId` is null.
+- Recall button: shown when `run.publishedToDriver || run.status === "assigned"`. Patches `{ status: "draft", publishedToDriver: false }`. Driver push notification deferred to Phase 4.
+- Active filter ✕ inline on sidebar button (replaces hidden "Clear filters" at bottom).
+
+**Design decisions made this session (long discussion):**
+- **Job colour coding**: auto-assigned from 10-colour palette, deterministic, no user choice. Convenience over beauty.
+- **Cargo state on delivery stops**: 5 states (no_collection_run → collected). Source: `LoadTrack` + related run status. Phase 2.
+- **One-time swap locations**: stored inline on `LoadTrack` event as free text + GPS. Never saved to Locations table. Yard/depot swaps use `custodyDepotId`. Phase 2.
+- **Trailer swap requires simultaneous presence**: both drivers must be at meeting point together. System must calculate overlap window. Phase 3.
+- **PlanningSettings**: all dwell times, yard start overhead, tramper wake time, break buffer configurable per company. Phase 3.
+- **GPS break detection**: 15-min pings, stationary = <200m movement in 15 min. 48h raw event retention, then delete. 90-day for button-press events (shift actions).
+- **Driver hours self-report**: popup after major button presses. Self-reported > GPS-estimated. Pre-fill with estimate, driver confirms or adjusts.
+- **Delay cause capture**: optional after long dwell. Defends drivers against unfair blame. Creates paper trail that delays were customer/traffic not driver.
+- **Notification philosophy**: driver gets safety + care messages only. Planner gets operational. Never cross-stream. Never send notifications while driver is moving (wait for stationary ping).
+- **Product principle**: every notification must be on the side of the person receiving it. System cares about users, does not surveil them.
+
+**Gaps / deferred:**
+- "Not collected" badge still misfires until Phase 2 cargo state service is built.
+- Recall does not yet notify driver — stub only, Phase 4.
+- Stop hover tooltip (full job details) — Phase 2.
+- Linked relay run dependency message ("delivery can't happen because collection on RUN-XXX not done") — Phase 2.
+
+---
+
 ## Session log — 2026-05-26
 
 ### Planning Board: postcode area grouping, relay run support, cargo state, driver types, overnight waypoint

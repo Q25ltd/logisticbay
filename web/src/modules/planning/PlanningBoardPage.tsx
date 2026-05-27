@@ -150,6 +150,16 @@ const GOODS_COMPAT: Record<string, { label: string; colour: string }> = {
 
 const COLLECT_FIRST = new Set(["collection", "pickup"]);
 
+// ── Job colour palette ──────────────────────────────────────────────────────
+// Deterministic: jobId % 10 — no DB column, always consistent across the board
+const JOB_COLOURS = [
+  "#3B82F6", "#F97316", "#8B5CF6", "#14B8A6", "#EC4899",
+  "#EAB308", "#6366F1", "#22C55E", "#F43F5E", "#06B6D4",
+];
+function getJobColour(jobId: number): string {
+  return JOB_COLOURS[jobId % JOB_COLOURS.length];
+}
+
 const LOOK_AHEAD_OPTIONS = [
   { days: 0, label: "Today" },
   { days: 2, label: "3 days" },
@@ -562,6 +572,7 @@ function RunLane({
 }) {
   const [saving,     setSaving]     = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [recalling,  setRecalling]  = useState(false);
   const [err,        setErr]        = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isOver,     setIsOver]     = useState(false);
@@ -757,6 +768,14 @@ function RunLane({
     finally { setPublishing(false); }
   }
 
+  async function handleRecall() {
+    if (!window.confirm("Recall this run? The driver will no longer see it until you re-publish.")) return;
+    setRecalling(true); setErr("");
+    try { await onUpdate(run.id, { publishedToDriver: false }); }
+    catch (e: unknown) { setErr((e as Error).message ?? "Recall failed"); }
+    finally { setRecalling(false); }
+  }
+
   const canPublish   = run.status !== "completed" && run.status !== "cancelled" && !run.publishedToDriver;
   const dependsOnRun = allRuns.find(r => r.id === run.dependsOnRunId);
   const isLocked     = !!dependsOnRun && dependsOnRun.status !== "completed";
@@ -930,42 +949,76 @@ function RunLane({
                     isCollect && cargoReady   ? <span className="flex-shrink-0 text-[10px] font-semibold px-1 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">✅ Collected</span> :
                     null;
                   return (
-                    <div key={`a-${a.id}`} className="flex flex-col px-2 py-1.5 rounded bg-white border border-slate-100 hover:border-slate-200 group">
-                      <div className="flex items-center gap-2">
-                      <span className="w-5 text-center font-bold text-slate-400 flex-shrink-0 text-[11px]">{stopNum}</span>
-                      <Badge colour={
-                        a.jobPart.type === "collection" || a.jobPart.type === "pickup"
-                          ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
-                      }>
-                        {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
-                      </Badge>
-                      <span className="font-semibold text-[13px] text-primary truncate flex-1 min-w-0">
-                        {a.jobPart.job.customerName ?? "—"}
-                      </span>
-                      {a.jobPart.timeWindowStart && (() => {
-                        const tws = a.jobPart.timeWindowStart!;
-                        const stopLocalDate = new Date(tws).toLocaleDateString("en-GB");
-                        const runLocalDate  = run.plannedDate ? new Date(run.plannedDate).toLocaleDateString("en-GB") : null;
-                        const wrongDay      = runLocalDate && stopLocalDate !== runLocalDate;
-                        return (
-                          <span className="flex items-center gap-0.5 flex-shrink-0">
-                            {wrongDay && (
-                              <span className="text-[10px] text-slate-500 font-medium bg-slate-100 border border-slate-200 rounded px-1 leading-tight">
-                                {new Date(tws).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                    <div
+                      key={`a-${a.id}`}
+                      className="flex flex-col rounded bg-white border border-slate-100 hover:border-slate-200 overflow-hidden"
+                      style={{ borderLeft: `3px solid ${getJobColour(a.jobId)}` }}
+                    >
+                      {/* Row 1: stop number · type badge · customer · X */}
+                      <div className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5">
+                        <span className="w-5 text-center font-bold text-slate-400 flex-shrink-0 text-[11px]">{stopNum}</span>
+                        <Badge colour={
+                          a.jobPart.type === "collection" || a.jobPart.type === "pickup"
+                            ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                        }>
+                          {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
+                        </Badge>
+                        <span className="font-semibold text-[13px] text-primary truncate flex-1 min-w-0">
+                          {a.jobPart.job.customerName ?? "—"}
+                        </span>
+                        <button
+                          onClick={() => onRemoveStop(run.id, a.id)}
+                          className="text-slate-300 hover:text-red-500 flex-shrink-0 text-sm leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-red-50"
+                          title="Remove stop"
+                        >✕</button>
+                      </div>
+                      {/* Row 2: address · time window */}
+                      <div className="flex items-center gap-1.5 px-2 pb-1 pl-9">
+                        <span className="text-[11px] text-slate-500 truncate flex-1 min-w-0">
+                          {a.jobPart.postcode && a.jobPart.locationTextSnapshot
+                            ? <><span className="font-medium text-slate-600">{a.jobPart.postcode}</span> · {a.jobPart.locationTextSnapshot}</>
+                            : a.jobPart.postcode
+                            ? <span className="font-medium text-slate-600">{a.jobPart.postcode}</span>
+                            : a.jobPart.locationTextSnapshot
+                            ? a.jobPart.locationTextSnapshot
+                            : <span className="text-slate-400 italic">No address</span>
+                          }
+                        </span>
+                        {a.jobPart.timeWindowStart && (() => {
+                          const tws = a.jobPart.timeWindowStart!;
+                          const stopLocalDate = new Date(tws).toLocaleDateString("en-GB");
+                          const runLocalDate  = run.plannedDate ? new Date(run.plannedDate).toLocaleDateString("en-GB") : null;
+                          const wrongDay      = runLocalDate && stopLocalDate !== runLocalDate;
+                          return (
+                            <span className="flex items-center gap-0.5 flex-shrink-0">
+                              {wrongDay && (
+                                <span className="text-[10px] text-slate-500 font-medium bg-slate-100 border border-slate-200 rounded px-1 leading-tight">
+                                  {new Date(tws).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                </span>
+                              )}
+                              <span className="font-bold tabular-nums text-[12px] text-amber-700">
+                                {fmtTime(tws)}{a.jobPart.timeWindowEnd ? `–${fmtTime(a.jobPart.timeWindowEnd)}` : ""}
                               </span>
-                            )}
-                            <span className="font-bold tabular-nums text-[13px] text-amber-700">
-                              {fmtTime(tws)}
                             </span>
-                          </span>
-                        );
-                      })()}
-                      <button onClick={() => onRemoveStop(run.id, a.id)}
-                        className="text-slate-300 hover:text-red-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-sm" title="Remove stop">✕</button>
-                      </div>{/* end inner flex row */}
-                      {/* Cargo state row */}
+                          );
+                        })()}
+                      </div>
+                      {/* Row 3: load details (only when present) */}
+                      {((a.jobPart.job.weight ?? 0) > 0 || (a.jobPart.job.quantity ?? 0) > 0) && (
+                        <div className="flex items-center gap-2 px-2 pb-1 pl-9">
+                          {(a.jobPart.job.weight ?? 0) > 0 && (
+                            <span className="text-[10px] text-muted">{a.jobPart.job.weight!.toLocaleString()} kg</span>
+                          )}
+                          {(a.jobPart.job.quantity ?? 0) > 0 && (
+                            <span className="text-[10px] text-muted">
+                              {a.jobPart.job.quantity}{a.jobPart.job.quantityUnit ? ` ${cap(a.jobPart.job.quantityUnit)}` : ""}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Row 4: cargo state pill */}
                       {cargoPill && (
-                        <div className="flex items-center gap-1 pl-7 pt-0.5">
+                        <div className="flex items-center gap-1 px-2 pb-1 pl-9">
                           {cargoPill}
                         </div>
                       )}
@@ -1192,15 +1245,34 @@ function RunLane({
           </div>
         )}
 
-        {/* Publish */}
-        <div className="px-3 py-2">
+        {/* Publish / Recall */}
+        <div className="px-3 py-2 space-y-1.5">
           {canPublish ? (
-            <button onClick={handlePublish} disabled={publishing || run.assignments.length === 0}
-              className="btn text-xs px-3 py-1.5 bg-primary text-white disabled:opacity-40 w-full">
-              {publishing ? "Publishing…" : "📤 Publish to driver"}
-            </button>
+            <>
+              {!run.assignedDriverId && run.assignments.length > 0 && (
+                <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  Assign a driver before publishing
+                </div>
+              )}
+              <button
+                onClick={handlePublish}
+                disabled={publishing || run.assignments.length === 0 || !run.assignedDriverId}
+                className="btn text-xs px-3 py-1.5 bg-primary text-white disabled:opacity-40 w-full"
+              >
+                {publishing ? "Publishing…" : "📤 Publish to driver"}
+              </button>
+            </>
           ) : run.publishedToDriver ? (
-            <div className="text-center text-[11px] text-green-700 font-medium">✓ Published to driver</div>
+            <div className="space-y-1.5">
+              <div className="text-center text-[11px] text-green-700 font-medium">✓ Published to driver</div>
+              <button
+                onClick={handleRecall}
+                disabled={recalling}
+                className="btn text-xs px-3 py-1.5 w-full border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 disabled:opacity-40"
+              >
+                {recalling ? "Recalling…" : "↩ Recall run"}
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -1260,7 +1332,11 @@ function Sidebar({
         }`}
       >
         <span className="truncate">{label}</span>
-        <span className={`text-[11px] font-bold flex-shrink-0 ml-1 tabular-nums ${active ? "text-white/80" : "text-muted"}`}>{count}</span>
+        {active ? (
+          <span className="text-[11px] font-bold flex-shrink-0 ml-1 text-white/80">✕</span>
+        ) : (
+          <span className="text-[11px] font-bold flex-shrink-0 ml-1 tabular-nums text-muted">{count}</span>
+        )}
       </button>
     );
   }
