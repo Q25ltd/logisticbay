@@ -7,6 +7,30 @@
 
 ---
 
+## Session log — 2026-05-27f
+
+### Planning board features — series (manual reorder, driver work pattern, base postcode)
+
+**Commits:** `0f96339` (manual reorder), `11602bf` (driver work pattern + base postcode)
+
+**Context:** User confirmed a multi-feature build plan. Session covers items ① and ② of the agreed order.
+
+**① Manual drag-and-drop stop reorder within run lanes**
+- API: `PATCH /planning/runs/:id/assignments/reorder` — receives ordered array of assignment IDs, updates `sequenceNumber` to 1000/2000/3000… preserving waypoint positions (depot_start=0, return_to_base=999999)
+- Frontend: drag handle (⠿) on each stop card; `application/run-assignment` drag type distinguishes intra-lane reordering from inter-lane job assignment drags; blue drop-line appears above target; opacity fade on dragged card; "Reordering…" pulse; existing "Optimise route" + confirmation dialog unchanged
+
+**② Driver work pattern + geocoded base postcode**
+- Schema: `DriverProfile.workPattern String?` (day_driver | night_driver | tramper) — separate from `driverType` (employment type: permanent/agency/subcontractor); `basePostcode String?`, `baseLat Float?`, `baseLng Float?`
+- Migration: `20260527000001_add_driver_work_pattern_and_base_postcode`
+- Driver form: base postcode field next to name (auto-geocodes on blur via postcodes.io); work pattern select alongside employment type + licence class
+- Drivers list: coloured work pattern badge (☀ Day / 🌙 Night / 🚛 Tramper)
+- Planning board driver dropdown: icon suffix on driver name
+- `PlanningDriver` API type updated with `workPattern`, `basePostcode`, `baseLat`, `baseLng`
+
+**Deferred (next):** ③ Return-to-base warning (uses `baseLat`/`baseLng`), ④ DVLA rules hardcoded, ⑤ Warning audit trail
+
+---
+
 ## Session log — 2026-05-27e
 
 ### Planning board UI fixes — contradictory status badges
