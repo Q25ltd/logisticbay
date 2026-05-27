@@ -142,7 +142,7 @@ export default function DriversPage() {
                     {!driver.user?.email   && <div className="text-xs text-yellow-700 bg-yellow-50 px-2 py-1 rounded inline-block">No login account</div>}
                   </div>
 
-                  <div className="mt-3 text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+                  <div className="mt-3 text-sm text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
                     <span>Type: {({"permanent":"Permanent","agency":"Agency","subcontractor":"Subcontractor"} as Record<string,string>)[driver.driverType ?? "permanent"] ?? (driver.driverType ?? "Permanent")}</span>
                     <span>Licence: {driver.licenceClass ? driver.licenceClass.replace(/_/g, " ").toUpperCase() : "Not set"}</span>
                     <span>Preferred start: {driver.preferredStartTime || "not set"}</span>
@@ -178,10 +178,10 @@ export default function DriversPage() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 ml-4 text-right">
-                  <button onClick={() => { setEditDriver(driver); setShowForm(true); }} className="text-xs text-accent hover:underline font-semibold">Edit</button>
-                  {driver.user && <button onClick={() => handleResetPin(driver)} className="text-xs text-orange-600 hover:underline font-semibold">Reset PIN</button>}
+                  <button onClick={() => { setEditDriver(driver); setShowForm(true); }} className="text-sm text-accent border border-accent/30 rounded-lg px-3 py-1.5 font-semibold hover:bg-blue-50 transition-colors">Edit</button>
+                  {driver.user && <button onClick={() => handleResetPin(driver)} className="text-sm text-orange-600 border border-orange-200 rounded-lg px-3 py-1.5 font-semibold hover:bg-orange-50 transition-colors">Reset PIN</button>}
                   <button onClick={() => handleToggleStatus(driver)}
-                    className={"text-xs font-semibold hover:underline " + (driver.status === "active" ? "text-red-500" : "text-green-600")}>
+                    className={"text-sm font-semibold rounded-lg px-3 py-1.5 border transition-colors " + (driver.status === "active" ? "text-red-500 border-red-200 hover:bg-red-50" : "text-green-600 border-green-200 hover:bg-green-50")}>
                     {driver.status === "active" ? "Deactivate" : "Activate"}
                   </button>
                 </div>

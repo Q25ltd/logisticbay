@@ -16,7 +16,7 @@ body {
 
 /* ── Inputs ─────────────────────────────────────────────────────────────────── */
 .input {
-  @apply w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 bg-white outline-none
+  @apply w-full px-3.5 py-3 border border-slate-200 rounded-xl text-sm text-slate-900 bg-white outline-none
     transition-all duration-150
     placeholder:text-slate-400
     hover:border-slate-300;
@@ -68,7 +68,7 @@ textarea.input {
 .btn-ghost { @apply btn bg-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100; }
 
 /* ── Labels ─────────────────────────────────────────────────────────────────── */
-.label { @apply block text-xs font-bold uppercase tracking-wide mb-1; }
+.label { @apply block text-sm font-semibold text-slate-600 mb-1.5; }
 
 /* ── Badges ─────────────────────────────────────────────────────────────────── */
 .badge { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide; }

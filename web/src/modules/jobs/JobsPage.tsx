@@ -201,25 +201,25 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
       onClick={() => onView(job.id)}
     >
       {/* Date */}
-      <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "#6b7280" }}>
+      <td className="px-4 py-4 text-sm whitespace-nowrap" style={{ color: "#6b7280" }}>
         {job.plannedDate ? (
           <>
-            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#9ca3af" }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#9ca3af" }}>
               {fmtWeekday(job.plannedDate)}
             </div>
-            <div className="font-medium" style={{ color: "#0f172a" }}>
+            <div className="font-semibold text-base" style={{ color: "#0f172a" }}>
               {fmtShort(job.plannedDate)}
             </div>
           </>
         ) : (
-          <span className="text-xs italic" style={{ color: "#9ca3af" }}>Draft</span>
+          <span className="text-sm italic" style={{ color: "#9ca3af" }}>Draft</span>
         )}
       </td>
 
       {/* Route */}
-      <td className="px-4 py-3 max-w-xs">
-        <div className="text-sm font-medium truncate" style={{ color: "#0f172a" }}>{fromName}</div>
-        <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "#6b7280" }}>
+      <td className="px-4 py-4 max-w-xs">
+        <div className="text-sm font-semibold truncate" style={{ color: "#0f172a" }}>{fromName}</div>
+        <div className="text-sm flex items-center gap-1 mt-0.5" style={{ color: "#6b7280" }}>
           <span>→</span>
           <span className="truncate">{toName}</span>
         </div>
@@ -231,24 +231,24 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
       </td>
 
       {/* Job ref */}
-      <td className="px-4 py-3">
+      <td className="px-4 py-4">
         <div className="flex items-center gap-2 flex-wrap">
           {job.jobReference
             ? <span className="font-mono font-semibold text-sm" style={{ color: "#0f172a" }}>{job.jobReference}</span>
-            : <span className="text-xs italic" style={{ color: "#9ca3af" }}>No ref yet</span>}
+            : <span className="text-sm italic" style={{ color: "#9ca3af" }}>No ref yet</span>}
         </div>
         {job.customerName && (
-          <div className="text-xs mt-0.5 truncate" style={{ color: "#6b7280" }}>{job.customerName}</div>
+          <div className="text-sm mt-0.5 truncate" style={{ color: "#6b7280" }}>{job.customerName}</div>
         )}
       </td>
 
       {/* Material */}
-      <td className="px-4 py-3 text-sm max-w-xs">
+      <td className="px-4 py-4 text-sm max-w-xs">
         {material ? (
           <>
             <div className="truncate" style={{ color: "#374151" }}>{material}</div>
             {jobQuantity(job) && (
-              <div className="text-xs mt-0.5" style={{ color: "#9ca3af" }}>{jobQuantity(job)}</div>
+              <div className="text-sm mt-0.5" style={{ color: "#9ca3af" }}>{jobQuantity(job)}</div>
             )}
           </>
         ) : (
@@ -257,10 +257,10 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
       </td>
 
       {/* Status */}
-      <td className="px-4 py-3"><Badge status={job.status} /></td>
+      <td className="px-4 py-4"><Badge status={job.status} /></td>
 
       {/* Last update */}
-      <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: "#9ca3af" }}>
+      <td className="px-4 py-4 text-sm whitespace-nowrap" style={{ color: "#9ca3af" }}>
         {lastEvent
           ? new Date(lastEvent.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
           : "—"}
@@ -268,12 +268,12 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
       </td>
 
       {/* Actions */}
-      <td className="px-4 py-3">
+      <td className="px-4 py-4">
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
           {canProgress && nextStatus && (
             <button
               onClick={e => { e.stopPropagation(); onStatusChange(job.id, nextStatus); }}
-              className="text-xs text-accent hover:underline font-semibold whitespace-nowrap"
+              className="text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-1.5 font-semibold hover:bg-blue-100 transition-colors whitespace-nowrap"
             >
               {statusActionLabel(nextStatus)}
             </button>
@@ -471,30 +471,30 @@ export default function JobsPage() {
         })}
 
         {/* Custom date range */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <input type="date" value={dateRange.from}
             onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-            className="input py-1 text-xs w-32" />
-          <span className="text-xs text-muted">→</span>
+            className="input text-sm w-36" />
+          <span className="text-sm text-muted">→</span>
           <input type="date" value={dateRange.to}
             onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-            className="input py-1 text-xs w-32" />
+            className="input text-sm w-36" />
         </div>
 
         {/* Search input */}
         <div className="relative flex-shrink-0">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
           <input
             type="search"
             placeholder="Customer, ref, location…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="input py-1 text-xs pl-7 pr-2 w-44"
+            className="input text-sm pl-8 pr-2 w-52"
           />
         </div>
 
         {/* Status filter — inline, pushed right */}
-        <select className="input py-1 text-xs w-40 flex-shrink-0 ml-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+        <select className="input text-sm w-44 flex-shrink-0 ml-auto" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
@@ -521,8 +521,8 @@ export default function JobsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    {["Date", "Route", "Job ref / Planning", "Load", "Status", "Updated", ""].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide whitespace-nowrap">
+                    {["Date", "Route", "Job ref / Customer", "Load", "Status", "Updated", ""].map(h => (
+                      <th key={h} className="px-4 py-4 text-left text-sm font-semibold text-muted whitespace-nowrap">
                         {h}
                       </th>
                     ))}

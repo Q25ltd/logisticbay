@@ -34,27 +34,27 @@ export default function UnitsTable({ units, allEmpty, onEdit, onDelete, onAddFir
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface">
-              <th className="text-left px-4 py-3 font-bold text-primary">Registration</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Class</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Status</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Yard Location</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Notes</th>
-              <th className="px-4 py-3" />
+              <th className="text-left px-4 py-4 font-semibold text-muted">Registration</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Class</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Status</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Yard Location</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Notes</th>
+              <th className="px-4 py-4" />
             </tr>
           </thead>
           <tbody>
             {units.map((unit, i) => (
               <tr key={unit.id} className={"border-b border-border last:border-0 " + (i % 2 === 1 ? "bg-slate-50/50" : "")}>
-                <td className="px-4 py-3 font-bold text-primary">{unit.registration}</td>
-                <td className="px-4 py-3 text-muted">{unitSpec(unit)}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-4 font-bold text-primary text-base">{unit.registration}</td>
+                <td className="px-4 py-4 text-muted">{unitSpec(unit)}</td>
+                <td className="px-4 py-4">
                   <span className={statusBadgeClass(unit.status)}>{statusLabel(unit.status)}</span>
                 </td>
-                <td className="px-4 py-3 text-muted">{unit.yardLocation || <span className="text-slate-300">—</span>}</td>
-                <td className="px-4 py-3 text-muted max-w-[200px] truncate">{unit.notes || <span className="text-slate-300">—</span>}</td>
-                <td className="px-4 py-3 text-right whitespace-nowrap">
-                  <button onClick={() => onEdit(unit)} className="text-xs text-accent hover:underline font-semibold mr-3">Edit</button>
-                  <button onClick={() => onDelete(unit)} className="text-xs text-red-500 hover:underline font-semibold">Delete</button>
+                <td className="px-4 py-4 text-muted">{unit.yardLocation || <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-4 text-muted max-w-[200px] truncate">{unit.notes || <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-4 text-right whitespace-nowrap">
+                  <button onClick={() => onEdit(unit)} className="text-sm text-accent border border-accent/30 rounded-lg px-3 py-1.5 font-semibold hover:bg-blue-50 transition-colors mr-2">Edit</button>
+                  <button onClick={() => onDelete(unit)} className="text-sm text-red-500 border border-red-200 rounded-lg px-3 py-1.5 font-semibold hover:bg-red-50 transition-colors">Delete</button>
                 </td>
               </tr>
             ))}

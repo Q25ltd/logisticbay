@@ -68,21 +68,21 @@ export default function ShiftsPage() {
                 <thead>
                   <tr className="border-b border-border">
                     {["Date","Driver","Start","Finish","Hours","Fuel","Night Out","Status"].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-bold text-muted uppercase tracking-wide">{h}</th>
+                      <th key={h} className="px-4 py-4 text-left text-sm font-semibold text-muted">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filtered.map(s => (
                     <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-sm">{fmt(s.shiftDate)}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-primary">{s.driverName}</td>
-                      <td className="px-4 py-3 text-sm text-muted">{s.startTime || "—"}</td>
-                      <td className="px-4 py-3 text-sm text-muted">{s.endTime   || "—"}</td>
-                      <td className="px-4 py-3 text-sm font-bold">{s.totalHours || "—"}</td>
-                      <td className="px-4 py-3 text-sm text-muted">{s.fuelDrawn || "—"}</td>
-                      <td className="px-4 py-3 text-sm">{s.nightOut ? "✓ Yes" : "No"}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-4 text-sm">{fmt(s.shiftDate)}</td>
+                      <td className="px-4 py-4 text-sm font-semibold text-primary">{s.driverName}</td>
+                      <td className="px-4 py-4 text-sm text-muted">{s.startTime || "—"}</td>
+                      <td className="px-4 py-4 text-sm text-muted">{s.endTime   || "—"}</td>
+                      <td className="px-4 py-4 text-sm font-bold">{s.totalHours || "—"}</td>
+                      <td className="px-4 py-4 text-sm text-muted">{s.fuelDrawn || "—"}</td>
+                      <td className="px-4 py-4 text-sm">{s.nightOut ? "✓ Yes" : "No"}</td>
+                      <td className="px-4 py-4">
                         <span className={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold " + (s.status === "submitted" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")}>
                           {s.status === "submitted" ? "Submitted" : s.status === "draft" ? "Draft" : s.status}
                         </span>

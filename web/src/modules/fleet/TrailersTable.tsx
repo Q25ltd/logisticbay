@@ -32,27 +32,27 @@ export default function TrailersTable({ trailers, allEmpty, onEdit, onDelete, on
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface">
-              <th className="text-left px-4 py-3 font-bold text-primary">Registration</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Type</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Status</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Yard Location</th>
-              <th className="text-left px-4 py-3 font-bold text-primary">Notes</th>
-              <th className="px-4 py-3" />
+              <th className="text-left px-4 py-4 font-semibold text-muted">Registration</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Type</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Status</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Yard Location</th>
+              <th className="text-left px-4 py-4 font-semibold text-muted">Notes</th>
+              <th className="px-4 py-4" />
             </tr>
           </thead>
           <tbody>
             {trailers.map((trailer, i) => (
               <tr key={trailer.id} className={"border-b border-border last:border-0 " + (i % 2 === 1 ? "bg-slate-50/50" : "")}>
-                <td className="px-4 py-3 font-bold text-primary">{trailer.registration}</td>
-                <td className="px-4 py-3 text-muted">{trailerSpec(trailer)}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-4 font-bold text-primary text-base">{trailer.registration}</td>
+                <td className="px-4 py-4 text-muted">{trailerSpec(trailer)}</td>
+                <td className="px-4 py-4">
                   <span className={statusBadgeClass(trailer.status)}>{statusLabel(trailer.status)}</span>
                 </td>
-                <td className="px-4 py-3 text-muted">{trailer.yardLocation || <span className="text-slate-300">—</span>}</td>
-                <td className="px-4 py-3 text-muted max-w-[200px] truncate">{trailer.notes || <span className="text-slate-300">—</span>}</td>
-                <td className="px-4 py-3 text-right whitespace-nowrap">
-                  <button onClick={() => onEdit(trailer)} className="text-xs text-accent hover:underline font-semibold mr-3">Edit</button>
-                  <button onClick={() => onDelete(trailer)} className="text-xs text-red-500 hover:underline font-semibold">Delete</button>
+                <td className="px-4 py-4 text-muted">{trailer.yardLocation || <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-4 text-muted max-w-[200px] truncate">{trailer.notes || <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-4 text-right whitespace-nowrap">
+                  <button onClick={() => onEdit(trailer)} className="text-sm text-accent border border-accent/30 rounded-lg px-3 py-1.5 font-semibold hover:bg-blue-50 transition-colors mr-2">Edit</button>
+                  <button onClick={() => onDelete(trailer)} className="text-sm text-red-500 border border-red-200 rounded-lg px-3 py-1.5 font-semibold hover:bg-red-50 transition-colors">Delete</button>
                 </td>
               </tr>
             ))}
