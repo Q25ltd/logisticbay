@@ -3,7 +3,32 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-26
+> Last updated: 2026-05-27
+
+---
+
+## Session log — 2026-05-27e
+
+### Planning board UI fixes — contradictory status badges
+
+**Commit:** `57ab5f2`
+
+**Problems identified from screenshot analysis:**
+1. A run showed both "ASSIGNED" (blue) and "📤 SENT" (purple) badges simultaneously while the driver dropdown said "no driver assigned" — three contradictory signals at once.
+2. The dual badge layout (StatusBadge + separate Sent badge) made it look like two independent statuses existed, unclear which was authoritative.
+3. A run's planned date wasn't visible in the lane header.
+
+**Fixes:**
+- Added `RunStatusBadge` component that merges `run.status` + `run.publishedToDriver` into one coherent pill:
+  - `completed` → ✓ Done (green)
+  - `in_progress` → In progress (amber)
+  - `publishedToDriver = true` → 📤 Sent (violet) — overrides "Assigned"
+  - `assigned` (not sent) → Assigned (blue)
+  - `draft` → Draft (grey)
+- Driver select `onChange` now auto-syncs run status: assigning a driver promotes `draft → assigned`, removing a driver reverts `assigned → draft`. This prevents the "ASSIGNED but no driver" contradiction from occurring in future.
+- Run's planned date ("27 May") now shown in the lane header as a subtle grey label.
+
+**No schema or API changes.**
 
 ---
 
