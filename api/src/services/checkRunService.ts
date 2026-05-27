@@ -1,36 +1,35 @@
 /**
- * AI-powered run route feasibility check.
+ * Rule-based run route feasibility check.
  *
- * Given an ordered list of stops with coordinates and time windows, estimates
- * whether the run can be completed on time based on:
- *   - Haversine (straight-line) distances converted to approximate road time
- *   - 30 min dwell time per stop (loading / unloading)
- *   - Published time windows at each stop
- *   - UK HGV driving-hours rules (9 h driving max, 4.5 h before break)
+ * Uses real HGV routing (ORS) for distances — no AI needed.
+ * All feasibility decisions are deterministic rules:
+ *   - UK legal 9-hour daily driving limit
+ *   - EC 561/2006 break rule (45 min after 4.5 h driving)
+ *   - Time window arrival checks per stop
+ *   - Total run duration warnings
  *
  * Advisory only — the planner always makes the final call.
  */
 
-import { getAnthropicClient } from "../lib/anthropic.js";
 import { postcodeToCoords, getHgvLeg } from "../lib/routing.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface RunStop {
   sequenceNumber:   number;
-  type:             string;           // "collection" | "delivery" | etc.
+  type:             string;
   locationText?:    string | null;
   postcode?:        string | null;
   lat?:             number | null;
   lng?:             number | null;
-  timeWindowStart?: string | null;    // ISO datetime
+  timeWindowStart?: string | null;
   timeWindowEnd?:   string | null;
   bookedTime?:      string | null;
   customerName?:    string | null;
 }
 
 export interface VehicleRestrictions {
-  weightT?:   number | null;  // combined GVW in tonnes
+  weightT?:   number | null;
   heightM?:   number | null;
   widthM?:    number | null;
   lengthM?:   number | null;
@@ -39,7 +38,7 @@ export interface VehicleRestrictions {
 
 export interface RunFeasibilityInput {
   stops:               RunStop[];
-  estimatedStartTime?: string | null; // ISO datetime
+  estimatedStartTime?: string | null;
   vehicle?:            VehicleRestrictions | null;
 }
 
@@ -52,9 +51,16 @@ export interface RunFeasibilityResult {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const HGV_SPEED_KMH  = 60;   // average on UK roads including urban/motorway mix
-const ROAD_FACTOR    = 1.25; // straight-line → road distance multiplier
-const STOP_DWELL_MIN = 30;   // loading / unloading per stop
+const HGV_SPEED_KMH    = 60;
+const ROAD_FACTOR      = 1.25;
+const STOP_DWELL_MIN   = 30;
+const MAX_DRIVE_MIN    = 540;  // 9 h legal daily driving limit
+const BREAK_TRIGGER    = 270;  // 4.5 h — break required after this
+const BREAK_DURATION   = 45;   // 45-min mandatory break
+
+const WORK_STOP_TYPES = new Set([
+  "collection", "delivery", "pickup", "dropoff", "reload",
+]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,318 +76,207 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-function fmtUtcTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "—";
-    const h = String(d.getUTCHours()).padStart(2, "0");
-    const m = String(d.getUTCMinutes()).padStart(2, "0");
-    return `${h}:${m}`;
-  } catch {
-    return "—";
-  }
+function fmt12h(ms: number): string {
+  const d = new Date(ms);
+  let h = d.getUTCHours();
+  const m = String(d.getUTCMinutes()).padStart(2, "0");
+  const ampm = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return `${h}:${m}${ampm}`;
+}
+
+function stopLabel(s: RunStop, idx: number): string {
+  return s.customerName ?? s.locationText ?? s.postcode ?? `Stop ${idx + 1}`;
+}
+
+function fmtH(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h} h ${m} min` : `${h} h`;
 }
 
 // ── Main function ─────────────────────────────────────────────────────────────
 
 export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibilityResult> {
-  const client = getAnthropicClient();
-
-  // Sort stops by sequence
   const stops = [...input.stops].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
-  // ── Resolve postcodes → coords for any stop missing lat/lng ──────────────
-  // Uses postcodes.io (free, no key) so the AI gets real coordinates even
-  // when the SavedLocation has no geocoded lat/lng yet.
-  interface StopWithCoords {
-    lat: number | null;
-    lng: number | null;
-    resolvedFromPostcode: boolean;
+  if (stops.length === 0) {
+    return { concern: false, severity: "none", message: "" };
   }
+
+  // ── Resolve postcodes → coords ────────────────────────────────────────────
+
+  interface StopWithCoords { lat: number | null; lng: number | null }
+
   const resolvedCoords: StopWithCoords[] = await Promise.all(
     stops.map(async s => {
-      if (s.lat != null && s.lng != null) {
-        return { lat: s.lat, lng: s.lng, resolvedFromPostcode: false };
-      }
+      if (s.lat != null && s.lng != null) return { lat: s.lat, lng: s.lng };
       if (s.postcode) {
         const c = await postcodeToCoords(s.postcode).catch(() => null);
-        if (c) return { lat: c.lat, lng: c.lng, resolvedFromPostcode: true };
+        if (c) return { lat: c.lat, lng: c.lng };
       }
-      return { lat: null, lng: null, resolvedFromPostcode: false };
+      return { lat: null, lng: null };
     }),
   );
 
   // ── Leg calculations ──────────────────────────────────────────────────────
 
   interface LegInfo {
-    fromIdx:    number;
-    toIdx:      number;
-    straightKm: number | null;
-    roadKm:     number | null;
-    driveMin:   number | null;
-    source:     "ors" | "haversine" | "postcode_haversine" | "unknown";
+    roadKm:   number | null;
+    driveMin: number | null;
   }
 
-  const legPromises = stops.slice(0, -1).map(async (_, i) => {
-    const aC = resolvedCoords[i];
-    const bC = resolvedCoords[i + 1];
+  const hgvParams = input.vehicle ? {
+    ...(input.vehicle.weightT   != null ? { weight:    input.vehicle.weightT }   : {}),
+    ...(input.vehicle.heightM   != null ? { height:    input.vehicle.heightM }   : {}),
+    ...(input.vehicle.widthM    != null ? { width:     input.vehicle.widthM }    : {}),
+    ...(input.vehicle.lengthM   != null ? { length:    input.vehicle.lengthM }   : {}),
+    ...(input.vehicle.axleLoadT != null ? { axle_load: input.vehicle.axleLoadT } : {}),
+  } : {};
 
-    const aLat = aC.lat; const aLng = aC.lng;
-    const bLat = bC.lat; const bLng = bC.lng;
+  const legs: LegInfo[] = await Promise.all(
+    stops.slice(0, -1).map(async (_, i) => {
+      const a = resolvedCoords[i];
+      const b = resolvedCoords[i + 1];
+      if (a.lat == null || b.lat == null) return { roadKm: null, driveMin: null };
 
-    if (aLat == null || aLng == null || bLat == null || bLng == null) {
-      return { fromIdx: i, toIdx: i + 1, straightKm: null, roadKm: null, driveMin: null, source: "unknown" } as LegInfo;
-    }
+      const ors = await getHgvLeg(
+        { lat: a.lat, lng: a.lng! },
+        { lat: b.lat, lng: b.lng! },
+        hgvParams,
+      ).catch(() => null);
 
-    // Try ORS HGV routing — pass real vehicle dimensions so the route respects
-    // actual weight bridges, low bridges and width restrictions for this vehicle.
-    const hgvParams = input.vehicle ? {
-      ...(input.vehicle.weightT   != null ? { weight:    input.vehicle.weightT }   : {}),
-      ...(input.vehicle.heightM   != null ? { height:    input.vehicle.heightM }   : {}),
-      ...(input.vehicle.widthM    != null ? { width:     input.vehicle.widthM }    : {}),
-      ...(input.vehicle.lengthM   != null ? { length:    input.vehicle.lengthM }   : {}),
-      ...(input.vehicle.axleLoadT != null ? { axle_load: input.vehicle.axleLoadT } : {}),
-    } : {};
-    const ors = await getHgvLeg({ lat: aLat, lng: aLng }, { lat: bLat, lng: bLng }, hgvParams).catch(() => null);
-    if (ors) {
-      return {
-        fromIdx: i, toIdx: i + 1,
-        straightKm: haversineKm(aLat, aLng, bLat, bLng),
-        roadKm:     ors.distanceKm,
-        driveMin:   ors.durationMinutes,
-        source:     "ors",
-      } as LegInfo;
-    }
+      if (ors) return { roadKm: ors.distanceKm, driveMin: ors.durationMinutes };
 
-    // Fallback: Haversine + road factor (estimated)
-    const straightKm = haversineKm(aLat, aLng, bLat, bLng);
-    const roadKm     = straightKm * ROAD_FACTOR;
-    const driveMin   = (roadKm / HGV_SPEED_KMH) * 60;
-    return {
-      fromIdx: i, toIdx: i + 1, straightKm, roadKm, driveMin,
-      source: "haversine",
-    } as LegInfo;
-  });
+      const straight = haversineKm(a.lat, a.lng!, b.lat, b.lng!);
+      const road     = straight * ROAD_FACTOR;
+      return { roadKm: road, driveMin: (road / HGV_SPEED_KMH) * 60 };
+    }),
+  );
 
-  const legs: LegInfo[] = await Promise.all(legPromises);
+  const hasCoords    = legs.some(l => l.driveMin != null);
+  const totalDriveMin = legs.reduce((s, l) => s + (l.driveMin ?? 0), 0);
+  const totalDwellMin = stops.length * STOP_DWELL_MIN;
 
-  const hasAnyCoords   = legs.some(l => l.driveMin != null);
-  const hasUnknownLegs = legs.some(l => l.source === "unknown");
-  const hasEstLegs     = legs.some(l => l.source === "haversine");
-  const hasOrsLegs     = legs.some(l => l.source === "ors");
-  const totalDriveMin   = legs.reduce((s, l) => s + (l.driveMin ?? 0), 0);
-  const totalDwellMin   = stops.length * STOP_DWELL_MIN;
-  const totalRunMin     = totalDriveMin + totalDwellMin;
+  // ── Break rule (EC 561/2006) ──────────────────────────────────────────────
 
-  // ── UK HGV break law calculation ──────────────────────────────────────────
-  // EC Regulation 561/2006 (retained in UK law):
-  //   After 4.5 h (270 min) of accumulated driving the driver MUST take a
-  //   45-min break before driving again.  The break can be split into a first
-  //   part of ≥15 min followed by a second part of ≥30 min — always in that
-  //   order, never 30+15.
-  //
-  // We pre-calculate this in code so Claude gets concrete numbers rather than
-  // having to do the maths itself (where it repeatedly makes errors).
-
-  const BREAK_TRIGGER_MIN  = 270; // 4.5 h
-  const BREAK_DURATION_MIN = 45;
-
-  // Stop types that are loading/unloading work — a driver CANNOT take a rest break
-  // during these. Breaks must be taken at a rest area, services, or layby where the
-  // driver is doing absolutely nothing.
-  const WORK_STOP_TYPES = new Set([
-    "collection", "delivery", "pickup", "dropoff", "reload",
-  ]);
-
-  // Walk through legs accumulating drive time.
-  let cumulativeDriveMin = 0;
-  let driveBeforeLeg: number[] = [];
+  let breakRequired   = false;
+  let breakLegIdx     = -1;
+  let cumDrive        = 0;
 
   for (let i = 0; i < legs.length; i++) {
-    driveBeforeLeg.push(cumulativeDriveMin);
-    cumulativeDriveMin += legs[i].driveMin ?? 0;
-  }
-
-  const breakRequired     = totalDriveMin >= BREAK_TRIGGER_MIN;
-  const breakEffectiveMin = breakRequired ? BREAK_DURATION_MIN : 0;
-
-  // Find which leg crosses the 4.5 h threshold, then determine if there is a
-  // suitable (non-work) rest point in the route near that crossing.
-  let breakLegIdx    = -1;   // index of the leg where 4.5 h is crossed
-  let driveMinAtBreak = 0;
-
-  for (let i = 0; i < legs.length; i++) {
-    const driveAfter = driveBeforeLeg[i] + (legs[i].driveMin ?? 0);
-    if (driveAfter >= BREAK_TRIGGER_MIN) {
-      breakLegIdx    = i;
-      driveMinAtBreak = driveAfter;
-      break;
+    cumDrive += legs[i].driveMin ?? 0;
+    if (cumDrive >= BREAK_TRIGGER && breakLegIdx === -1) {
+      breakRequired = true;
+      breakLegIdx   = i;
     }
   }
 
-  // Is there a non-work waypoint already in the route at or after the break point?
-  // (custom / return_to_base / depot_start — any stop where the driver isn't loading)
   const restStopAfterBreak = breakLegIdx >= 0
     ? stops.slice(breakLegIdx + 1).find(s => !WORK_STOP_TYPES.has(s.type))
     : null;
 
-  // The stops immediately before and after the break crossing point
-  const stopBeforeBreak = breakLegIdx >= 0 ? stops[breakLegIdx]     : null;
-  const stopAfterBreak  = breakLegIdx >= 0 ? stops[breakLegIdx + 1] : null;
+  const totalRunMin = totalDriveMin + totalDwellMin + (breakRequired ? BREAK_DURATION : 0);
 
-  // Build the plain data note for the prompt
-  let breakNote = "";
-  if (breakRequired && breakLegIdx >= 0) {
-    const driveHrs        = (driveMinAtBreak / 60).toFixed(1);
-    const beforeLabel     = stopBeforeBreak ? `Stop ${breakLegIdx + 1} (${stopBeforeBreak.locationText ?? stopBeforeBreak.postcode ?? "unknown"})` : "the previous stop";
-    const afterLabel      = stopAfterBreak  ? `Stop ${breakLegIdx + 2} (${stopAfterBreak.locationText  ?? stopAfterBreak.postcode  ?? "unknown"})` : "the next stop";
-    const totalWithBreak  = Math.round((totalRunMin + breakEffectiveMin) / 60 * 10) / 10;
+  // ── Rule checks ───────────────────────────────────────────────────────────
 
-    // Key insight: loading/unloading does NOT count as a break
-    const restNote = restStopAfterBreak
-      ? `There is a non-work stop later in the route that could work as a rest point.`
-      : `There is NO dedicated rest stop in the route between ${beforeLabel} and the end — the driver will need to find a services or layby between ${beforeLabel} and ${afterLabel}.`;
-
-    breakNote =
-      `\nBREAK PLANNING (estimates only — actual depends on tachograph):\n` +
-      `  Estimated ~${driveHrs} h driving accumulated between ${beforeLabel} and ${afterLabel}.\n` +
-      `  The driver will likely need a ~45-min break somewhere between these two stops.\n` +
-      `  IMPORTANT: loading and unloading time does NOT count as a break — the driver must be completely stopped and resting, e.g. at services or a layby.\n` +
-      `  ${restNote}\n` +
-      `  Add ~45 min to all estimated arrivals from ${afterLabel} onwards.\n` +
-      `  Estimated total run including break: ~${totalWithBreak} h.`;
-  } else if (!breakRequired && totalDriveMin > 0) {
-    const driveHrs = (totalDriveMin / 60).toFixed(1);
-    breakNote = `\nBREAK PLANNING: estimated driving ~${driveHrs} h — under 4.5 h, no break expected to be needed.`;
+  // 1. Legal driving hours exceeded
+  if (hasCoords && totalDriveMin > MAX_DRIVE_MIN) {
+    return {
+      concern:    true,
+      severity:   "high",
+      message:    `Estimated driving is ${fmtH(Math.round(totalDriveMin))} — exceeds the 9-hour legal daily limit.`,
+      suggestion: "Split the run across two drivers or two days.",
+    };
   }
 
-  // ── Build prompt ──────────────────────────────────────────────────────────
+  // 2. Break needed but no rest stop in the route
+  if (breakRequired && !restStopAfterBreak) {
+    const before = breakLegIdx >= 0 ? stopLabel(stops[breakLegIdx],     breakLegIdx)     : "the previous stop";
+    const after  = breakLegIdx >= 0 ? stopLabel(stops[breakLegIdx + 1], breakLegIdx + 1) : "the next stop";
+    return {
+      concern:    true,
+      severity:   "medium",
+      message:    `Driver will need a 45-min break between ${before} and ${after} — no rest stop is planned there.`,
+      suggestion: "Add a waypoint (e.g. motorway services) between those two stops.",
+    };
+  }
 
-  const STOP_TYPE_LABEL: Record<string, string> = {
-    collection:     "Collection",
-    delivery:       "Delivery",
-    pickup:         "Pickup",
-    dropoff:        "Drop-off",
-    reload:         "Reload",
-    return:         "Return",
-    waypoint:       "Waypoint",
-    depot_start:    "Depot start",
-    return_to_base: "Return to depot",
-    yard_pickup:    "Yard pickup",
-    hub_drop:       "Hub drop",
-    custom:         "Intermediate stop",
+  // 3. Time window violations — walk through stops and check arrival vs window
+  if (input.estimatedStartTime && hasCoords) {
+    const startMs   = new Date(input.estimatedStartTime).getTime();
+    let   elapsedMin = 0;
+    let   breakApplied = false;
+
+    for (let i = 0; i < stops.length; i++) {
+      const s          = stops[i];
+      const arrivalMs  = startMs + elapsedMin * 60 * 1000;
+
+      // Check against booked time first, then window end
+      const deadline = s.bookedTime
+        ? new Date(s.bookedTime).getTime()
+        : s.timeWindowEnd ? new Date(s.timeWindowEnd).getTime() : null;
+
+      if (deadline !== null && arrivalMs > deadline) {
+        const lateMin = Math.round((arrivalMs - deadline) / 60000);
+        const label   = stopLabel(s, i);
+        const timeStr = fmt12h(deadline);
+        return {
+          concern:    true,
+          severity:   lateMin >= 30 ? "high" : "medium",
+          message:    `Estimated arrival at ${label} is ~${lateMin} min past the ${s.bookedTime ? "booked slot" : "window"} (${timeStr}).`,
+          suggestion: "Start earlier, adjust the stop order, or contact the customer.",
+        };
+      }
+
+      // Accumulate time: dwell at this stop + drive to next
+      elapsedMin += STOP_DWELL_MIN;
+      if (i < legs.length) {
+        elapsedMin += legs[i].driveMin ?? 0;
+        if (!breakApplied && breakRequired && i === breakLegIdx) {
+          elapsedMin += BREAK_DURATION;
+          breakApplied = true;
+        }
+      }
+    }
+  }
+
+  // 4. Very long day
+  if (hasCoords && totalRunMin > 720) { // 12 h
+    return {
+      concern:    true,
+      severity:   "medium",
+      message:    `Run is roughly ${fmtH(Math.round(totalRunMin))} total — a very long day for one driver.`,
+      suggestion: "Consider splitting across two drivers or starting earlier.",
+    };
+  }
+
+  // 5. Long day
+  if (hasCoords && totalRunMin > 600) { // 10 h
+    return {
+      concern:    true,
+      severity:   "low",
+      message:    `Run looks achievable but long — roughly ${fmtH(Math.round(totalRunMin))} total${breakRequired ? " including the required break" : ""}.`,
+    };
+  }
+
+  // 6. No coordinates — can't assess timing
+  if (!hasCoords) {
+    return {
+      concern:  false,
+      severity: "none",
+      message:  "No postcodes or coordinates on stops — add addresses for a timing check.",
+    };
+  }
+
+  // 7. All good — informational summary
+  const breakNote = breakRequired
+    ? ` Break needed between ${stopLabel(stops[breakLegIdx], breakLegIdx)} and ${stopLabel(stops[breakLegIdx + 1], breakLegIdx + 1)}.`
+    : "";
+
+  return {
+    concern:  false,
+    severity: "none",
+    message:  `Run looks feasible — roughly ${fmtH(Math.round(totalRunMin))} total.${breakNote}`,
   };
-
-  // One line per stop
-  const stopLines = stops.map((s, i) => {
-    const type     = STOP_TYPE_LABEL[s.type] ?? s.type;
-    const location = s.locationText ?? s.postcode ?? `location unknown`;
-    const customer = s.customerName ? ` (${s.customerName})` : "";
-    const window   = (s.timeWindowStart || s.timeWindowEnd)
-      ? ` | window ${fmtUtcTime(s.timeWindowStart)}–${fmtUtcTime(s.timeWindowEnd)} UTC`
-      : " | no time window";
-    const booked   = s.bookedTime
-      ? ` | booked slot ${fmtUtcTime(s.bookedTime)} UTC`
-      : "";
-
-    // Show leg drive time AFTER this stop (i.e., leg i = from stop i to stop i+1)
-    const leg = legs[i];
-    const legInfo = leg?.roadKm != null
-      ? ` → then ~${Math.round(leg.roadKm)} km / ~${Math.round(leg.driveMin!)} min${leg.source === "ors" ? " (HGV route)" : " (est.)"}`
-      : i < stops.length - 1 ? " → (no postcode or coords — distance unknown)" : "";
-
-    return `  Stop ${i + 1}: ${type} at ${location}${customer}${window}${booked}${legInfo}`;
-  });
-
-  const startLine = input.estimatedStartTime
-    ? `Estimated departure: ${fmtUtcTime(input.estimatedStartTime)} UTC`
-    : "No scheduled departure time set";
-
-  const distanceSource = hasOrsLegs && !hasEstLegs && !hasUnknownLegs ? "ORS HGV routing"
-    : hasOrsLegs ? "ORS HGV routing (some legs est.)"
-    : hasEstLegs ? "estimated (est., not guaranteed)"
-    : "calculated";
-
-  const totalLine = hasAnyCoords
-    ? [
-        `Total road distance: ~${Math.round(legs.reduce((s, l) => s + (l.roadKm ?? 0), 0))} km (${distanceSource}${hasUnknownLegs ? ", some legs still unknown" : ""})`,
-        `Driving time: ~${Math.round(totalDriveMin)} min (${(totalDriveMin / 60).toFixed(1)} h)`,
-        `Dwell time (${stops.length} stops × 30 min): ${totalDwellMin} min`,
-        `Total run (excl. break): ~${Math.round(totalRunMin / 60 * 10) / 10} hours`,
-        breakNote,
-      ].join("\n")
-    : `No coordinates available — all distances estimated from postcodes (est., not guaranteed).\nPostcodes: ${stops.map(s => s.postcode || "?").join(" → ")}\n${breakNote}`;
-
-  const systemPrompt =
-    `You are a UK road freight planning assistant. Plain English, like a helpful colleague. ` +
-
-    `These are ESTIMATES — all times, distances, and the break point are based on approximate distances. ` +
-    `Say "roughly", "around", "looks like" — never present estimates as exact. ` +
-
-    `For the break: the data tells you if a break is needed and where it falls. ` +
-    `Your job is to answer: does the break land at a real stop the driver can use, or is there no stop there? ` +
-    `If the break falls at a real stop — that's fine, say so. ` +
-    `If there's no stop at the break point — flag it: the planner needs to add a break stop to the run. ` +
-    `Do not give legal opinions. Just say "driver will likely need a break around here" and note whether there's a stop to take it at. ` +
-
-    `Time window maths: estimated arrival BEFORE close = window likely fine. Only flag a concern when estimated arrival is AFTER close. ` +
-    `Example: arrive roughly 9:16am, window closes 9:30am — 14 minutes to spare, that's fine. ` +
-
-    `Use 12-hour am/pm clock. No UTC, no API names, no technical terms. ` +
-    `Return ONLY valid JSON, no markdown.`;
-
-  const vehicleLine = input.vehicle
-    ? `Vehicle: ${input.vehicle.weightT != null ? `${input.vehicle.weightT}t GVW` : "weight unknown"}, ` +
-      `${input.vehicle.heightM != null ? `${input.vehicle.heightM}m high` : "height unknown"}, ` +
-      `${input.vehicle.lengthM != null ? `${input.vehicle.lengthM}m long` : "length unknown"}`
-    : "Vehicle: dimensions not set (ORS used default 44t / 4.0m / 16.5m constraints)";
-
-  const userPrompt =
-    `${startLine}\n${vehicleLine}\n${totalLine}\n\n` +
-    `STOPS IN ORDER:\n${stopLines.join("\n")}\n\n` +
-    `Question: Can the driver realistically complete this run and meet all time windows?\n\n` +
-    `Return exactly this JSON (no extra keys, no markdown):\n` +
-    `{\n` +
-    `  "concern": true or false,\n` +
-    `  "severity": "high" | "medium" | "low" | "none",\n` +
-    `  "message": "1–2 sentences in plain everyday English — times in 12-hour am/pm, no technical terms",\n` +
-    `  "suggestion": "short plain-English fix (omit this key when concern is false)"\n` +
-    `}\n\n` +
-    `Severity guide:\n` +
-    `  high   — run won't work: windows definitely missed, legal hours exceeded, or break cannot fit\n` +
-    `  medium — run is tight: break pushes a window close, or delays are likely\n` +
-    `  low    — minor concern but achievable\n` +
-    `  none   — run looks fine, break (if required) fits without missing any window (set concern: false)\n\n` +
-    `Remember: if the data shows a mandatory break, ALWAYS include it in your message and arrival estimates.`;
-
-  // ── Call Claude ───────────────────────────────────────────────────────────
-
-  const response = await client.messages.create({
-    model:      "claude-haiku-4-5",
-    max_tokens: 250,
-    system:     systemPrompt,
-    messages:   [{ role: "user", content: userPrompt }],
-  });
-
-  const raw      = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
-  const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    // Fail open — return no concern rather than crashing
-    return { concern: false, severity: "none", message: "" };
-  }
-
-  const concern    = parsed.concern === true;
-  const severity   =
-    parsed.severity === "high"   ? "high"   :
-    parsed.severity === "medium" ? "medium" :
-    parsed.severity === "low"    ? "low"    : "none";
-  const message    = typeof parsed.message    === "string" ? parsed.message.trim()    : "";
-  const suggestion = typeof parsed.suggestion === "string" ? parsed.suggestion.trim() : undefined;
-
-  return { concern, severity, message, ...(suggestion ? { suggestion } : {}) };
 }

@@ -1,12 +1,10 @@
 /**
- * AI-powered load ↔ vehicle compatibility check.
+ * Rule-based load ↔ vehicle compatibility check.
  *
- * Given the goods details and the planner's chosen vehicle/trailer,
- * Claude reads the description and returns a plain-English assessment.
- * This is advisory only — the planner always makes the final call.
+ * No AI — all logic is deterministic rules based on payload capacity,
+ * temperature requirements, ADR class, and body-type compatibility.
+ * Advisory only — the planner always makes the final call.
  */
-
-import { getAnthropicClient } from "../lib/anthropic.js";
 
 export interface LoadVehicleCheckInput {
   vehicleCategory:    string;          // e.g. "rigid"
@@ -21,135 +19,132 @@ export interface LoadVehicleCheckInput {
 }
 
 export interface LoadVehicleCheckResult {
-  concern:     boolean;                 // true = planner should read this
+  concern:     boolean;
   severity:    "high" | "medium" | "low" | "none";
-  message:     string;                  // plain English, 1–2 sentences max
-  suggestion?: string;                  // brief alternative (only when concern)
+  message:     string;
+  suggestion?: string;
 }
 
-// ── Vehicle descriptions sent to Claude ───────────────────────────────────────
+// ── Payload capacity limits by vehicle category (tonnes) ─────────────────────
 
-const CATEGORY_DESCRIPTIONS: Record<string, string> = {
-  van:          "Van (light goods, ≤3.5t GVW, ~500 kg payload)",
-  luton_van:    "Luton van (box van ≤3.5t, ~700 kg payload)",
-  pickup:       "Pickup / 4×4 (open bed, ~900 kg payload)",
-  rigid:        "Rigid (no trailer, 7.5–26t GVW, up to ~16t payload)",
-  tractor:      "Artic tractor unit (44t GVW with trailer, up to ~26t payload)",
-  drawbar:      "Drawbar (rigid truck + drawbar trailer, ~44t GVW)",
-  heavy_haulage:"Heavy haulage tractor (STGO, abnormal loads)",
-  spmt:         "Self-propelled modular transporter (SPMT)",
-  plant:        "Plant / off-highway vehicle",
+const PAYLOAD_T: Record<string, number> = {
+  van:           0.8,
+  luton_van:     0.9,
+  pickup:        1.0,
+  rigid:         16.0,   // worst-case 26 t GVW
+  tractor:       26.0,   // 44 t GVW + trailer
+  drawbar:       24.0,
+  heavy_haulage: 60.0,
+  spmt:          200.0,
+  plant:         20.0,
 };
 
-const BODY_DESCRIPTIONS: Record<string, string> = {
-  curtain_sider:     "Curtain sider / tautliner",
-  double_deck_curtain:"Double-deck curtain sider",
-  box:               "Box body",
-  double_deck_box:   "Double-deck box",
-  panel:             "Panel van body",
-  luton:             "Luton (overcab box)",
-  flatbed:           "Flatbed",
-  dropside:          "Dropside",
-  tipper:            "Tipper",
-  tanker_food:       "Food tanker (milk / food-grade liquid)",
-  tanker_fuel:       "Fuel tanker (petrol / diesel)",
-  tanker_chemical:   "Chemical tanker (ADR — hazardous liquids)",
-  tanker_water:      "Water tanker / bowser",
-  tanker_vacuum:     "Vacuum tanker (waste / slurry)",
-  tanker_bitumen:    "Bitumen tanker (heated asphalt)",
-  tanker_other:      "Tanker — other",
-  fridge:            "Refrigerated (fridge) body",
-  fridge_multi_temp: "Multi-temperature fridge",
-  fridge_pharma:     "Pharmaceutical-validated fridge",
-  insulated:         "Insulated (no active cooling)",
-  low_loader:        "Low loader",
-  step_frame:        "Step-frame trailer",
-  coil_carrier:      "Coil carrier (steel coils)",
-  glass_inloader:    "Glass inloader",
-  livestock:         "Livestock transporter",
-  car_transporter:   "Car transporter",
-  skeletal_20:       "Skeletal trailer — 20ft container",
-  skeletal_40:       "Skeletal trailer — 40ft container",
-};
+// Bodies that provide active/passive temperature control
+const FRIDGE_BODIES = new Set([
+  "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+]);
 
-// ── Main function ─────────────────────────────────────────────────────────────
+// Bodies that are NOT suitable for ADR hazardous loads
+// (fridge and enclosed box trap fumes — not safe for general ADR)
+const ADR_UNSAFE_BODIES = new Set([
+  "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+  "box", "double_deck_box", "panel", "luton",
+]);
 
-export async function checkLoadVehicle(
+// ── Main function (synchronous — no AI) ──────────────────────────────────────
+
+export function checkLoadVehicle(
   input: LoadVehicleCheckInput,
-): Promise<LoadVehicleCheckResult> {
+): LoadVehicleCheckResult {
+  const weightKg = input.weight ?? 0;
+  const weightT  = weightKg / 1000;
+  const bodies   = input.bodyTypes ?? [];
 
-  const client = getAnthropicClient();
-
-  // Build a compact load summary
-  const loadLines: string[] = [];
-  if (input.goodsType)         loadLines.push(`Type: ${input.goodsType}`);
-  if (input.goodsDescription)  loadLines.push(`Description: ${input.goodsDescription}`);
-  if (input.weight != null)    loadLines.push(`Weight: ${input.weight.toLocaleString()} kg`);
-  if (input.quantity != null)  loadLines.push(`Quantity: ${input.quantity} ${input.quantityUnit ?? "units"}`);
-  if (input.hazardClass)       loadLines.push(`ADR hazard class: ${input.hazardClass}`);
-  if (input.tempControlled)    loadLines.push(`Temperature controlled: yes`);
-
-  const loadBlock = loadLines.length > 0
-    ? loadLines.join("\n")
-    : "No load details provided.";
-
-  // Build a vehicle summary
-  const catDesc   = CATEGORY_DESCRIPTIONS[input.vehicleCategory] ?? input.vehicleCategory;
-  const bodyDescs = (input.bodyTypes ?? [])
-    .map(bt => BODY_DESCRIPTIONS[bt] ?? bt)
-    .join(", ");
-  const vehicleBlock = bodyDescs
-    ? `${catDesc}\nBody type: ${bodyDescs}`
-    : catDesc;
-
-  const systemPrompt =
-    `You are a UK road freight expert reviewing a vehicle/trailer selection for a load. ` +
-    `Be concise and practical. If there is a problem, explain it clearly in one or two sentences ` +
-    `that a transport planner would immediately understand — no jargon, no hedging. ` +
-    `Return ONLY valid JSON, no markdown.`;
-
-  const userPrompt =
-    `LOAD:\n${loadBlock}\n\n` +
-    `CHOSEN VEHICLE / TRAILER:\n${vehicleBlock}\n\n` +
-    `Is this vehicle / trailer combination suitable for this load?\n\n` +
-    `Return this exact JSON structure:\n` +
-    `{\n` +
-    `  "concern": true or false,\n` +
-    `  "severity": "high" | "medium" | "low" | "none",\n` +
-    `  "message": "one or two plain-English sentences — tell the planner exactly what the issue is",\n` +
-    `  "suggestion": "brief alternative in 5–10 words (only include this key when concern is true)"\n` +
-    `}\n\n` +
-    `severity guide:\n` +
-    `  high   — load would be damaged, spilled, or is illegal / unsafe\n` +
-    `  medium — likely wrong vehicle but job could still run with care\n` +
-    `  low    — minor mismatch or something worth noting\n` +
-    `  none   — selection looks fine (set concern: false)`;
-
-  const response = await client.messages.create({
-    model:      "claude-haiku-4-5",
-    max_tokens: 200,
-    system:     systemPrompt,
-    messages:   [{ role: "user", content: userPrompt }],
-  });
-
-  const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
-  const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    // If Claude returns something unparseable, fail open — return no concern
-    return { concern: false, severity: "none", message: "" };
+  // 1. Weight overload
+  if (weightT > 0) {
+    const maxT = PAYLOAD_T[input.vehicleCategory] ?? 16;
+    if (weightT > maxT) {
+      return {
+        concern:    true,
+        severity:   "high",
+        message:    `Load is ${weightT.toFixed(1)} t but this vehicle type carries up to ~${maxT} t.`,
+        suggestion: "Use a heavier vehicle category.",
+      };
+    }
+    // Slightly over 80 % capacity — worth flagging
+    if (weightT > maxT * 0.9) {
+      return {
+        concern:    true,
+        severity:   "low",
+        message:    `Load is ${weightT.toFixed(1)} t — close to the ~${maxT} t limit for this vehicle type.`,
+        suggestion: "Check vehicle's actual plated weight before dispatch.",
+      };
+    }
   }
 
-  const concern   = parsed.concern === true;
-  const severity  =
-    parsed.severity === "high"   ? "high"   :
-    parsed.severity === "medium" ? "medium" :
-    parsed.severity === "low"    ? "low"    : "none";
-  const message   = typeof parsed.message   === "string" ? parsed.message.trim()   : "";
-  const suggestion= typeof parsed.suggestion === "string" ? parsed.suggestion.trim() : undefined;
+  // 2. Temperature-controlled goods need a fridge/insulated body
+  if (input.tempControlled) {
+    const hasFridgeBody = bodies.some(b => FRIDGE_BODIES.has(b));
+    if (bodies.length > 0 && !hasFridgeBody) {
+      return {
+        concern:    true,
+        severity:   "high",
+        message:    "Temperature-controlled goods need a refrigerated or insulated body — this vehicle doesn't have one.",
+        suggestion: "Assign a fridge or insulated body type.",
+      };
+    }
+    // No body types specified — just warn
+    if (bodies.length === 0) {
+      return {
+        concern:    true,
+        severity:   "medium",
+        message:    "Temperature-controlled goods — confirm this vehicle has a refrigerated or insulated body.",
+      };
+    }
+  }
 
-  return { concern, severity, message, ...(suggestion ? { suggestion } : {}) };
+  // 3. ADR hazardous goods — certain bodies are unsafe
+  if (input.hazardClass) {
+    const unsafeBodies = bodies.filter(b => ADR_UNSAFE_BODIES.has(b));
+    if (unsafeBodies.length > 0) {
+      return {
+        concern:    true,
+        severity:   "high",
+        message:    `Hazardous goods (ADR class ${input.hazardClass}) should not be carried in a ${unsafeBodies[0].replace(/_/g, " ")} body — fumes can accumulate in enclosed spaces.`,
+        suggestion: "Use a curtain sider or flatbed for ADR loads.",
+      };
+    }
+    // No specific body — advisory flag
+    return {
+      concern:    true,
+      severity:   "medium",
+      message:    `Hazardous goods ADR class ${input.hazardClass} — confirm the vehicle has valid ADR certification and the body type is suitable.`,
+    };
+  }
+
+  // 4. Livestock or live animals — need a livestock body
+  const desc = (input.goodsDescription ?? "").toLowerCase();
+  const type = (input.goodsType ?? "").toLowerCase();
+  if ((desc.includes("live") && (desc.includes("animal") || desc.includes("stock") || desc.includes("cattle") || desc.includes("sheep") || desc.includes("pig")))
+      || type.includes("livestock")) {
+    const hasLivestockBody = bodies.some(b => b === "livestock");
+    if (!hasLivestockBody) {
+      return {
+        concern:    true,
+        severity:   "high",
+        message:    "Live animals require a livestock transporter body with ventilation and partitions.",
+        suggestion: "Assign a livestock body type.",
+      };
+    }
+  }
+
+  // All checks passed
+  return { concern: false, severity: "none", message: "" };
+}
+
+// Keep async wrapper for API route compatibility — no network I/O needed
+export async function checkLoadVehicleAsync(
+  input: LoadVehicleCheckInput,
+): Promise<LoadVehicleCheckResult> {
+  return checkLoadVehicle(input);
 }

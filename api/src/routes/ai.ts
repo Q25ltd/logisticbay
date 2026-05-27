@@ -1,15 +1,13 @@
 /**
- * AI-assisted features (require ANTHROPIC_API_KEY).
+ * Planning intelligence routes.
  *
- * POST /ai/parse-request
- *   Parses a free-text transport request (email, message, note) and returns
- *   structured job data ready to pre-fill the Create Job form.
- *   Auth: company_owner | planner
- *
- * POST /ai/suggest-vehicle
- *   Given load details (weight, quantity, goods type, temp, hazmat), returns
- *   a recommended vehicle category with a short plain-English reason.
- *   Auth: company_owner | planner
+ * POST /ai/parse-request       — AI only (free text → structured job). Requires ANTHROPIC_API_KEY.
+ * POST /ai/suggest-vehicle     — Rule-based. No AI.
+ * POST /ai/check-vehicle-load  — Rule-based. No AI.
+ * POST /ai/check-run           — Rule-based + ORS routing. No AI.
+ * POST /ai/suggest-run-trailer — Rule-based. No AI.
+ * POST /ai/area-lookup         — Reverse geocode via Nominatim. No AI.
+ * GET  /ai/status              — Returns whether AI (parse-request) is enabled.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -85,25 +83,18 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
     },
   );
 
-  // ── POST /ai/suggest-vehicle ───────────────────────────────────────────────
+  // ── POST /ai/suggest-vehicle  (rule-based — no AI) ────────────────────────
   app.post(
     "/ai/suggest-vehicle",
     {
       preHandler: [authenticate, requireRole("company_owner", "planner")],
-      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (!env.AI_ENABLED) {
-        return reply.status(503).send({
-          error:   "AI_UNAVAILABLE",
-          message: "AI features are not enabled on this server.",
-        });
-      }
-
       const body = request.body as VehicleSuggestionInput;
       const { companyId } = request.user!;
 
-      // Fetch the company's active fleet body types so Claude can suggest from real options
+      // Fetch the company's active fleet body types so rules can match real options
       const fleetTrailers = await prisma.fleetTrailer.findMany({
         where:  { companyId, status: { notIn: ["disposed"] } },
         select: { bodyType: true },
@@ -112,81 +103,49 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         fleetTrailers.map(t => t.bodyType).filter((b): b is string => !!b && b.trim() !== "")
       )];
 
-      try {
-        const suggestion = await suggestVehicle({
-          weight:              typeof body.weight === "number"   ? body.weight   : undefined,
-          quantity:            typeof body.quantity === "number" ? body.quantity : undefined,
-          quantityUnit:        typeof body.quantityUnit === "string" ? body.quantityUnit : undefined,
-          goodsType:           typeof body.goodsType === "string"    ? body.goodsType    : undefined,
-          goodsDescription:    typeof body.goodsDescription === "string" ? body.goodsDescription : undefined,
-          tempControlled:      typeof body.tempControlled === "boolean" ? body.tempControlled : undefined,
-          hazardClass:         typeof body.hazardClass === "string"  ? body.hazardClass  : undefined,
-          specialRequirements: Array.isArray(body.specialRequirements) ? body.specialRequirements : undefined,
-          stopCount:           typeof body.stopCount === "number" ? body.stopCount : undefined,
-          stops:               Array.isArray(body.stops) ? body.stops : undefined,
-          fleetBodyTypes:      fleetBodyTypes.length ? fleetBodyTypes : undefined,
-        });
-        return reply.send(suggestion);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "AI request failed";
-        const isAuthError = message.toLowerCase().includes("authentication") ||
-                            message.toLowerCase().includes("invalid api key") ||
-                            message.toLowerCase().includes("api key");
-        const status = isAuthError ? 503 : 502;
-        const code   = isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR";
-        app.log.error({ err, code }, "AI suggest-vehicle error");
-        return reply.status(status).send({ error: code, message });
-      }
+      const suggestion = await suggestVehicle({
+        weight:              typeof body.weight === "number"   ? body.weight   : undefined,
+        quantity:            typeof body.quantity === "number" ? body.quantity : undefined,
+        quantityUnit:        typeof body.quantityUnit === "string" ? body.quantityUnit : undefined,
+        goodsType:           typeof body.goodsType === "string"    ? body.goodsType    : undefined,
+        goodsDescription:    typeof body.goodsDescription === "string" ? body.goodsDescription : undefined,
+        tempControlled:      typeof body.tempControlled === "boolean" ? body.tempControlled : undefined,
+        hazardClass:         typeof body.hazardClass === "string"  ? body.hazardClass  : undefined,
+        specialRequirements: Array.isArray(body.specialRequirements) ? body.specialRequirements : undefined,
+        stopCount:           typeof body.stopCount === "number" ? body.stopCount : undefined,
+        stops:               Array.isArray(body.stops) ? body.stops : undefined,
+        fleetBodyTypes:      fleetBodyTypes.length ? fleetBodyTypes : undefined,
+      });
+      return reply.send(suggestion);
     },
   );
 
-  // ── POST /ai/check-vehicle-load ───────────────────────────────────────────
-  //
-  // Claude reads the goods description and chosen vehicle/trailer and
-  // returns a plain-English advisory. NOT a hard block — planner decides.
+  // ── POST /ai/check-vehicle-load  (rule-based — no AI) ────────────────────
   app.post(
     "/ai/check-vehicle-load",
     {
       preHandler: [authenticate, requireRole("company_owner", "planner")],
-      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (!env.AI_ENABLED) {
-        return reply.status(503).send({
-          error:   "AI_UNAVAILABLE",
-          message: "AI features are not enabled on this server.",
-        });
-      }
-
       const body = request.body as LoadVehicleCheckInput;
 
       if (typeof body.vehicleCategory !== "string" || !body.vehicleCategory) {
         return reply.status(400).send({ error: "vehicleCategory is required" });
       }
 
-      try {
-        const result = await checkLoadVehicle({
-          vehicleCategory:   body.vehicleCategory,
-          bodyTypes:         Array.isArray(body.bodyTypes)         ? body.bodyTypes         : undefined,
-          goodsDescription:  typeof body.goodsDescription === "string" ? body.goodsDescription  : undefined,
-          goodsType:         typeof body.goodsType         === "string" ? body.goodsType         : undefined,
-          weight:            typeof body.weight            === "number" ? body.weight            : undefined,
-          quantity:          typeof body.quantity          === "number" ? body.quantity          : undefined,
-          quantityUnit:      typeof body.quantityUnit      === "string" ? body.quantityUnit      : undefined,
-          hazardClass:       typeof body.hazardClass       === "string" ? body.hazardClass       : undefined,
-          tempControlled:    typeof body.tempControlled    === "boolean"? body.tempControlled    : undefined,
-        });
-        return reply.send(result);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "AI check failed";
-        const isAuthError = message.toLowerCase().includes("authentication") ||
-                            message.toLowerCase().includes("invalid api key");
-        app.log.error({ err }, "check-vehicle-load error");
-        return reply.status(isAuthError ? 503 : 502).send({
-          error:   isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR",
-          message,
-        });
-      }
+      const result = checkLoadVehicle({
+        vehicleCategory:   body.vehicleCategory,
+        bodyTypes:         Array.isArray(body.bodyTypes)             ? body.bodyTypes         : undefined,
+        goodsDescription:  typeof body.goodsDescription === "string" ? body.goodsDescription  : undefined,
+        goodsType:         typeof body.goodsType         === "string" ? body.goodsType         : undefined,
+        weight:            typeof body.weight            === "number" ? body.weight            : undefined,
+        quantity:          typeof body.quantity          === "number" ? body.quantity          : undefined,
+        quantityUnit:      typeof body.quantityUnit      === "string" ? body.quantityUnit      : undefined,
+        hazardClass:       typeof body.hazardClass       === "string" ? body.hazardClass       : undefined,
+        tempControlled:    typeof body.tempControlled    === "boolean"? body.tempControlled    : undefined,
+      });
+      return reply.send(result);
     },
   );
 
@@ -222,25 +181,14 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
     },
   );
 
-  // ── POST /ai/check-run ────────────────────────────────────────────────────
-  //
-  // Given an ordered stop list (with coordinates + time windows), Claude
-  // assesses whether the run is feasible — can the driver make all windows?
-  // Uses haversine distances + HGV speed estimate. Advisory only.
+  // ── POST /ai/check-run  (ORS routing + rules — no AI) ────────────────────
   app.post(
     "/ai/check-run",
     {
       preHandler: [authenticate, requireRole("company_owner", "planner")],
-      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (!env.AI_ENABLED) {
-        return reply.status(503).send({
-          error:   "AI_UNAVAILABLE",
-          message: "AI features are not enabled on this server.",
-        });
-      }
-
       const body = request.body as {
         stops?: unknown;
         estimatedStartTime?: unknown;
@@ -265,37 +213,20 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         });
         return reply.send(result);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "AI check failed";
-        const isAuthError = message.toLowerCase().includes("authentication") ||
-                            message.toLowerCase().includes("invalid api key");
         app.log.error({ err }, "check-run error");
-        return reply.status(isAuthError ? 503 : 502).send({
-          error:   isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR",
-          message,
-        });
+        return reply.status(500).send({ error: "RUN_CHECK_FAILED", message: (err as Error).message });
       }
     },
   );
 
-  // ── POST /ai/suggest-run-trailer ─────────────────────────────────────────────
-  //
-  // Given load details for a planning run, reads the company's available trailers
-  // from the DB and returns the most suitable one.
-  // Auth: company_owner | planner
+  // ── POST /ai/suggest-run-trailer  (rule-based — no AI) ──────────────────
   app.post(
     "/ai/suggest-run-trailer",
     {
       preHandler: [authenticate, requireRole("company_owner", "planner")],
-      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (!env.AI_ENABLED) {
-        return reply.status(503).send({
-          error:   "AI_UNAVAILABLE",
-          message: "AI features are not enabled on this server.",
-        });
-      }
-
       const { companyId } = request.user!;
       const body = request.body as {
         weight?:         unknown;
@@ -322,28 +253,17 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
         status:       t.status,
       }));
 
-      try {
-        const suggestion = await suggestTrailerForRun({
-          weight:           typeof body.weight         === "number"  ? body.weight         : undefined,
-          quantity:         typeof body.quantity       === "number"  ? body.quantity        : undefined,
-          quantityUnit:     typeof body.quantityUnit   === "string"  ? body.quantityUnit    : undefined,
-          goodsType:        typeof body.goodsType      === "string"  ? body.goodsType       : undefined,
-          tempControlled:   typeof body.tempControlled === "boolean" ? body.tempControlled  : undefined,
-          hazardClass:      typeof body.hazardClass    === "string"  ? body.hazardClass     : undefined,
-          stopCount:        typeof body.stopCount      === "number"  ? body.stopCount       : undefined,
-          availableTrailers,
-        });
-        return reply.send(suggestion);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "AI request failed";
-        const isAuthError = message.toLowerCase().includes("authentication") ||
-                            message.toLowerCase().includes("invalid api key") ||
-                            message.toLowerCase().includes("api key");
-        const status = isAuthError ? 503 : 502;
-        const code   = isAuthError ? "AI_AUTH_ERROR" : "AI_ERROR";
-        app.log.error({ err, code }, "AI suggest-run-trailer error");
-        return reply.status(status).send({ error: code, message });
-      }
+      const suggestion = await suggestTrailerForRun({
+        weight:           typeof body.weight         === "number"  ? body.weight         : undefined,
+        quantity:         typeof body.quantity       === "number"  ? body.quantity        : undefined,
+        quantityUnit:     typeof body.quantityUnit   === "string"  ? body.quantityUnit    : undefined,
+        goodsType:        typeof body.goodsType      === "string"  ? body.goodsType       : undefined,
+        tempControlled:   typeof body.tempControlled === "boolean" ? body.tempControlled  : undefined,
+        hazardClass:      typeof body.hazardClass    === "string"  ? body.hazardClass     : undefined,
+        stopCount:        typeof body.stopCount      === "number"  ? body.stopCount       : undefined,
+        availableTrailers,
+      });
+      return reply.send(suggestion);
     },
   );
 

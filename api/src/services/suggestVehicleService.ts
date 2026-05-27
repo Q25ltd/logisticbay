@@ -1,11 +1,16 @@
-import { getAnthropicClient } from "../lib/anthropic.js";
+/**
+ * Rule-based vehicle and trailer suggestion.
+ *
+ * No AI — all logic is deterministic rules based on weight, pallet count,
+ * temperature requirements, ADR class, and fleet availability.
+ */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface StopAreaHint {
-  type:      string;   // "collection" | "delivery"
-  areaType?: string;   // "industrial" | "residential" | "rural" | "urban" | "port" | "retail" | "unknown"
-  label?:    string;   // e.g. "Trafford Park Industrial Estate"
+  type:      string;
+  areaType?: string;
+  label?:    string;
 }
 
 export interface VehicleSuggestionInput {
@@ -18,143 +23,177 @@ export interface VehicleSuggestionInput {
   hazardClass?:          string;
   specialRequirements?:  string[];
   stopCount?:            number;
-  stops?:                StopAreaHint[];  // area context for each stop
-  // Fleet awareness — pass the body types the company actually has
-  fleetBodyTypes?:       string[];  // e.g. ["curtain_sider", "fridge", "flatbed"]
+  stops?:                StopAreaHint[];
+  fleetBodyTypes?:       string[];
   fleetHasAdr?:          boolean;
 }
 
 export interface VehicleSuggestion {
-  vehicleCategory:   string;           // van | luton_van | rigid | tractor | drawbar
-  suggestedBodyTypes: string[];        // body types from the fleet that suit this load
-  reasoning:          string;          // short plain-English sentence shown to the planner
+  vehicleCategory:    string;
+  suggestedBodyTypes: string[];
+  reasoning:          string;
   confidence:         "high" | "medium" | "low";
-  fleetWarning?:      string | null;   // set if company fleet cannot fulfil this job
+  fleetWarning?:      string | null;
 }
 
-// ── Main function ─────────────────────────────────────────────────────────────
+// ── Vehicle payload limits ────────────────────────────────────────────────────
 
-export async function suggestVehicle(
-  input: VehicleSuggestionInput,
-): Promise<VehicleSuggestion> {
+// Max payload in kg for each category (conservative real-world values)
+const PAYLOAD_KG: Record<string, number> = {
+  van:        500,
+  luton_van:  900,
+  rigid:      16_000,
+  tractor:    26_000,
+  drawbar:    24_000,
+};
 
-  const client = getAnthropicClient();
+// Minimum weight (kg) at which we step up to the next category
+// (use whichever threshold fits the load with headroom)
+function categoryFromWeight(kg: number): string {
+  if (kg > 16_000) return "tractor";
+  if (kg > 900)    return "rigid";
+  if (kg > 500)    return "luton_van";
+  return "van";
+}
 
-  const lines: string[] = [];
-  if (input.weight != null)           lines.push(`Weight: ${input.weight} kg (${(input.weight / 1000).toFixed(2)} tonnes)`);
-  if (input.quantity != null)         lines.push(`Quantity: ${input.quantity} ${input.quantityUnit ?? "units"}`);
-  if (input.goodsType)                lines.push(`Goods type: ${input.goodsType}`);
-  if (input.goodsDescription)         lines.push(`Description: ${input.goodsDescription}`);
-  if (input.tempControlled)           lines.push(`Temperature controlled: yes`);
-  if (input.hazardClass)              lines.push(`Hazardous goods: class ${input.hazardClass}`);
-  if (input.specialRequirements?.length) lines.push(`Special: ${input.specialRequirements.join(", ")}`);
-  if (input.stopCount != null)        lines.push(`Number of stops: ${input.stopCount}`);
+// Approximate weight per standard euro pallet (kg) — used as fallback
+const KG_PER_PALLET = 400;
 
-  const loadBlock = lines.length > 0 ? lines.join("\n") : "No load details provided.";
+// ── Body type selection rules ─────────────────────────────────────────────────
 
-  // Build stop area block
-  let stopBlock = "";
-  if (input.stops?.length) {
-    const stopLines = input.stops.map((s, i) => {
-      const area = (s.areaType && s.areaType !== "unknown")
-        ? ` — ${s.areaType}${s.label ? ` (${s.label})` : ""}`
-        : "";
-      return `  Stop ${i + 1}: ${s.type}${area}`;
-    });
-    stopBlock = `\nSTOP AREAS:\n${stopLines.join("\n")}`;
+// Temperature-controlled bodies (ordered by preference)
+const FRIDGE_BODIES = ["fridge", "fridge_multi_temp", "fridge_pharma", "insulated"];
+
+// Bodies for ADR hazardous loads (open/semi-open — no fume build-up)
+const ADR_BODIES = ["curtain_sider", "flatbed", "dropside"];
+
+// Keyword → preferred body types (checked in goodsType + goodsDescription)
+const DESCRIPTION_BODY_MAP: { patterns: string[]; bodies: string[] }[] = [
+  { patterns: ["steel", "coil", "metal", "machinery", "plant", "equipment", "oversized"],
+    bodies:   ["flatbed", "step_frame", "low_loader", "dropside"] },
+  { patterns: ["bulk", "grain", "aggregate", "sand", "gravel", "topsoil"],
+    bodies:   ["bulk_tipper", "walking_floor", "tipper"] },
+  { patterns: ["fuel", "petrol", "diesel", "lpg"],
+    bodies:   ["tanker_fuel"] },
+  { patterns: ["chemical", "acid", "solvent"],
+    bodies:   ["tanker_chemical"] },
+  { patterns: ["food liquid", "milk", "beverage", "drink"],
+    bodies:   ["tanker_food"] },
+  { patterns: ["container", "iso", "shipping container"],
+    bodies:   ["skeletal_40", "skeletal_20"] },
+  { patterns: ["livestock", "cattle", "sheep", "pigs", "poultry", "animals"],
+    bodies:   ["livestock"] },
+  { patterns: ["car", "vehicle", "cars"],
+    bodies:   ["car_transporter"] },
+  { patterns: ["glass"],
+    bodies:   ["glass_inloader", "curtain_sider"] },
+];
+
+// Default bodies for standard palletised / general freight
+const DEFAULT_BODIES = ["curtain_sider", "box"];
+
+function selectBodyTypes(input: VehicleSuggestionInput): string[] {
+  const desc = ((input.goodsDescription ?? "") + " " + (input.goodsType ?? "")).toLowerCase();
+
+  // Temperature-controlled loads
+  if (input.tempControlled) return FRIDGE_BODIES;
+
+  // ADR hazardous
+  if (input.hazardClass) return ADR_BODIES;
+
+  // Description keyword matching
+  for (const { patterns, bodies } of DESCRIPTION_BODY_MAP) {
+    if (patterns.some(p => desc.includes(p))) return bodies;
   }
 
-  // Build fleet body-type block
-  let fleetBlock = "";
-  if (input.fleetBodyTypes?.length) {
-    fleetBlock = `\nCOMPANY FLEET BODY TYPES AVAILABLE:\n${input.fleetBodyTypes.join(", ")}\nOnly suggest body types from this list. If none suit the load, return an empty array and set fleetWarning.`;
+  return DEFAULT_BODIES;
+}
+
+function filterByFleet(bodies: string[], fleetBodyTypes?: string[]): string[] {
+  if (!fleetBodyTypes?.length) return bodies;
+  const fleet = new Set(fleetBodyTypes);
+  return bodies.filter(b => fleet.has(b));
+}
+
+// ── Main function (synchronous — no AI) ──────────────────────────────────────
+
+export function suggestVehicleSync(input: VehicleSuggestionInput): VehicleSuggestion {
+  // Determine effective weight — use quantity × pallet weight as fallback
+  let effectiveKg = input.weight ?? 0;
+  if (effectiveKg === 0 && (input.quantity ?? 0) > 0) {
+    const unit = (input.quantityUnit ?? "").toLowerCase();
+    if (unit === "pallets" || unit === "pallet") {
+      effectiveKg = input.quantity! * KG_PER_PALLET;
+    }
+  }
+
+  // Has residential/narrow stops → prefer smaller vehicle unless weight forces up
+  const hasResidential = input.stops?.some(s =>
+    s.areaType === "residential" || s.areaType === "rural",
+  ) ?? false;
+
+  let vehicleCategory = effectiveKg > 0
+    ? categoryFromWeight(effectiveKg)
+    : "rigid"; // safe default when no weight given
+
+  // Downgrade to smaller category for residential areas if weight allows
+  if (hasResidential && vehicleCategory === "tractor" && effectiveKg <= 16_000) {
+    vehicleCategory = "rigid";
+  }
+
+  // Upgrade if special requirements say it
+  const specials = (input.specialRequirements ?? []).map(s => s.toLowerCase());
+  if (specials.some(s => s.includes("abnormal") || s.includes("heavy haulage") || s.includes("stgo"))) {
+    vehicleCategory = "heavy_haulage";
+  }
+
+  const idealBodies  = selectBodyTypes(input);
+  const fleetBodies  = filterByFleet(idealBodies, input.fleetBodyTypes);
+  const suggestedBodyTypes = fleetBodies.length > 0 ? fleetBodies : (input.fleetBodyTypes?.length ? [] : idealBodies);
+
+  // Fleet warnings
+  let fleetWarning: string | null = null;
+  if (input.tempControlled && input.fleetBodyTypes?.length) {
+    const hasFridge = input.fleetBodyTypes.some(b =>
+      ["fridge", "fridge_multi_temp", "fridge_pharma", "insulated"].includes(b),
+    );
+    if (!hasFridge) {
+      fleetWarning = "Your fleet has no refrigerated vehicles — this load requires temperature control.";
+    }
+  }
+  if (input.hazardClass && input.fleetHasAdr === false) {
+    fleetWarning = `Hazardous load (ADR class ${input.hazardClass}) requires an ADR-certified vehicle — none found in your fleet.`;
+  }
+  if (input.fleetBodyTypes?.length && suggestedBodyTypes.length === 0 && !fleetWarning) {
+    fleetWarning = "None of your fleet body types are a standard match for this load type.";
+  }
+
+  // Build reasoning sentence
+  const parts: string[] = [];
+  if (effectiveKg > 0) {
+    parts.push(`${(effectiveKg / 1000).toFixed(1)} t load`);
+  } else if ((input.quantity ?? 0) > 0) {
+    parts.push(`${input.quantity} ${input.quantityUnit ?? "units"}`);
   } else {
-    fleetBlock = `\nCOMPANY FLEET BODY TYPES AVAILABLE: unknown — suggest the ideal body type(s) regardless.`;
+    parts.push("load details not specified");
   }
+  if (input.tempControlled) parts.push("temperature controlled");
+  if (input.hazardClass)    parts.push(`ADR class ${input.hazardClass}`);
+  if (hasResidential)       parts.push("residential/rural stops — smaller vehicle preferred");
 
-  const systemPrompt = `You are a UK road freight expert. Given a load description, stop locations, and the company's available fleet body types, recommend the most appropriate vehicle category AND body type.
-Return ONLY a valid JSON object — no markdown, no explanation.`;
+  const reasoning = `${parts.join(", ")} — suggests ${vehicleCategory.replace(/_/g, " ")}.`;
 
-  const userPrompt = `VEHICLE CATEGORIES (pick exactly one):
-  van        — light goods vehicle ≤3.5t GVW; max ~500 kg payload; 1–2 standard pallets
-  luton_van  — box van ≤3.5t; ~700 kg payload; up to 3 pallets
-  rigid      — HGV without trailer; 7.5t–26t GVW; 5–15t payload; up to 26 pallets
-  tractor    — articulated lorry (artic); 44t GVW; up to 26t payload; 26–33 pallets
-  drawbar    — rigid truck + drawbar trailer; 44t GVW; similar capacity to tractor
+  const confidence: "high" | "medium" | "low" =
+    effectiveKg > 0 ? "high"
+    : (input.quantity ?? 0) > 0 ? "medium"
+    : "low";
 
-BODY TYPE SELECTION RULES:
-- Temperature-controlled loads MUST use: fridge | fridge_multi_temp | fridge_pharma | insulated
-- Hazardous ADR loads prefer: curtain_sider | flatbed (never fridge or box unless explicitly ADR-rated)
-- Palletised general freight: curtain_sider is the most common choice; box is also fine
-- Steel / machinery / oversized: flatbed | step_frame | low_loader
-- Bulk dry: walking_floor | bulk_tipper
-- Liquids / chemicals: tanker_chemical | tanker_food
-- If the company has a suitable body type in their fleet, prefer it over an ideal type they don't have.
-- If NO available fleet body type suits the load, return an empty suggestedBodyTypes array and set fleetWarning.
-- Only include body types that genuinely match — don't list everything available.
+  return { vehicleCategory, suggestedBodyTypes, reasoning, confidence, fleetWarning };
+}
 
-GENERAL NOTES:
-- Pallet count: 1 euro-pallet ≈ 300 kg average; a rigid fits up to ~26 pallets; an artic fits up to ~33.
-- When weight and pallet count conflict, use whichever requires the larger vehicle.
-- Residential and rural areas often have narrow roads — prefer smaller vehicles unless weight demands larger.
-- Industrial, port and distribution centre stops typically allow full-size artics.
-- If very little data is given, set confidence "low".
-
-LOAD DETAILS:
-${loadBlock}${stopBlock}${fleetBlock}
-
-RESPONSE SCHEMA:
-{
-  "vehicleCategory": "van"|"luton_van"|"rigid"|"tractor"|"drawbar",
-  "suggestedBodyTypes": ["curtain_sider"] (array of 1–2 body type values from fleet, or [] if none fit),
-  "reasoning": "one concise sentence explaining the choice (max 20 words)",
-  "confidence": "high"|"medium"|"low",
-  "fleetWarning": null | "short sentence if company fleet cannot handle this job"
-}`;
-
-  const response = await client.messages.create({
-    model:      "claude-haiku-4-5",
-    max_tokens: 256,
-    system:     systemPrompt,
-    messages:   [{ role: "user", content: userPrompt }],
-  });
-
-  const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
-  const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    throw new Error("AI returned an unexpected response — please try again");
-  }
-
-  const VALID_CATEGORIES = new Set(["van", "luton_van", "rigid", "tractor", "drawbar"]);
-  const cat = typeof parsed.vehicleCategory === "string" && VALID_CATEGORIES.has(parsed.vehicleCategory)
-    ? parsed.vehicleCategory
-    : "rigid"; // safe default
-
-  const reasoning = typeof parsed.reasoning === "string" && parsed.reasoning.trim()
-    ? parsed.reasoning.trim()
-    : "Vehicle selected based on load details.";
-
-  const confidence =
-    parsed.confidence === "high" || parsed.confidence === "medium" || parsed.confidence === "low"
-      ? parsed.confidence
-      : "medium";
-
-  // Validate suggested body types against the fleet (if provided)
-  const validBodyTypes = new Set(input.fleetBodyTypes ?? []);
-  const rawBodyTypes = Array.isArray(parsed.suggestedBodyTypes) ? parsed.suggestedBodyTypes : [];
-  const suggestedBodyTypes = input.fleetBodyTypes?.length
-    ? rawBodyTypes.filter((bt): bt is string => typeof bt === "string" && validBodyTypes.has(bt))
-    : rawBodyTypes.filter((bt): bt is string => typeof bt === "string");
-
-  const fleetWarning = typeof parsed.fleetWarning === "string" && parsed.fleetWarning.trim()
-    ? parsed.fleetWarning.trim()
-    : null;
-
-  return { vehicleCategory: cat, suggestedBodyTypes, reasoning, confidence, fleetWarning };
+// Async wrapper for API route compatibility
+export async function suggestVehicle(input: VehicleSuggestionInput): Promise<VehicleSuggestion> {
+  return suggestVehicleSync(input);
 }
 
 // ── Trailer suggestion for planning board ─────────────────────────────────────
@@ -162,8 +201,8 @@ RESPONSE SCHEMA:
 export interface TrailerOption {
   id:           number;
   registration: string;
-  trailerType:  string;   // e.g. "curtainsider", "flatbed", "fridge", "box"
-  bodyType:     string;   // e.g. "curtainsider", "fridge", "flatbed", "box"
+  trailerType:  string;
+  bodyType:     string;
   status:       string;
 }
 
@@ -173,6 +212,21 @@ export interface TrailerSuggestion {
   reasoning:            string;
   confidence:           "high" | "medium" | "low";
 }
+
+// Body types that provide temperature control
+const FRIDGE_TRAILER_BODIES = new Set([
+  "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
+  "reefer", "refrigerated",
+]);
+
+// Body types suitable for hazardous (ADR) loads
+const ADR_TRAILER_BODIES = new Set([
+  "curtain_sider", "curtainsider", "flatbed", "dropside",
+  "tanker_chemical", "tanker_fuel",
+]);
+
+// Statuses that mean the trailer is unavailable
+const UNAVAILABLE_STATUSES = new Set(["disposed", "off_road", "sold"]);
 
 export async function suggestTrailerForRun(input: {
   weight?:             number;
@@ -185,7 +239,11 @@ export async function suggestTrailerForRun(input: {
   availableTrailers:   TrailerOption[];
 }): Promise<TrailerSuggestion> {
 
-  if (!input.availableTrailers.length) {
+  const candidates = input.availableTrailers.filter(
+    t => !UNAVAILABLE_STATUSES.has(t.status),
+  );
+
+  if (!candidates.length) {
     return {
       trailerId:           null,
       trailerRegistration: null,
@@ -194,83 +252,61 @@ export async function suggestTrailerForRun(input: {
     };
   }
 
-  const client = getAnthropicClient();
-
-  const loadLines: string[] = [];
-  if (input.weight != null)       loadLines.push(`Weight: ${input.weight} kg (${(input.weight / 1000).toFixed(2)} t)`);
-  if (input.quantity != null)     loadLines.push(`Quantity: ${input.quantity} ${input.quantityUnit ?? "units"}`);
-  if (input.goodsType)            loadLines.push(`Goods type: ${input.goodsType}`);
-  if (input.tempControlled)       loadLines.push(`Temperature controlled: yes`);
-  if (input.hazardClass)          loadLines.push(`Hazardous goods: class ${input.hazardClass}`);
-  if (input.stopCount != null)    loadLines.push(`Number of stops: ${input.stopCount}`);
-  const loadBlock = loadLines.length > 0 ? loadLines.join("\n") : "No load details provided.";
-
-  const trailerRows = input.availableTrailers
-    .map(t => `  id=${t.id}  reg=${t.registration}  type=${t.trailerType}  body=${t.bodyType}  status=${t.status}`)
-    .join("\n");
-
-  const systemPrompt = `You are a UK road freight expert. Given a load description and a list of available trailers, choose the most suitable trailer. Return ONLY a valid JSON object — no markdown, no explanation.`;
-
-  const userPrompt = `LOAD DETAILS:
-${loadBlock}
-
-AVAILABLE TRAILERS:
-${trailerRows}
-
-SELECTION RULES:
-- Temperature-controlled goods MUST use a fridge/reefer trailer.
-- Hazardous goods MUST use an ADR-suitable trailer (flatbed or curtainsider — never fridge or box van).
-- If no suitable trailer exists, return trailerId null.
-- Prefer a curtainsider for general palletised goods.
-- Prefer a flatbed for machinery, steel, oversized loads.
-- Prefer a fridge/reefer for perishables.
-- Choose the trailer whose type and body best match the load; do not pick a trailer merely by id order.
-- Do not choose a trailer with status "disposed" or "off_road".
-
-RESPONSE SCHEMA:
-{
-  "trailerId": <number or null>,
-  "trailerRegistration": <string or null>,
-  "reasoning": "one concise sentence (max 20 words)",
-  "confidence": "high"|"medium"|"low"
-}`;
-
-  const response = await client.messages.create({
-    model:      "claude-haiku-4-5",
-    max_tokens: 256,
-    system:     systemPrompt,
-    messages:   [{ role: "user", content: userPrompt }],
-  });
-
-  const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
-  const jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    throw new Error("AI returned an unexpected response — please try again");
+  // Temperature-controlled load → must use fridge trailer
+  if (input.tempControlled) {
+    const fridge = candidates.find(
+      t => FRIDGE_TRAILER_BODIES.has(t.bodyType) || FRIDGE_TRAILER_BODIES.has(t.trailerType),
+    );
+    if (fridge) {
+      return {
+        trailerId:           fridge.id,
+        trailerRegistration: fridge.registration,
+        reasoning:           "Temperature-controlled load — refrigerated trailer selected.",
+        confidence:          "high",
+      };
+    }
+    return {
+      trailerId:           null,
+      trailerRegistration: null,
+      reasoning:           "Temperature-controlled load but no refrigerated trailer is available.",
+      confidence:          "high",
+    };
   }
 
-  // Validate trailerId is actually in the available list
-  const validIds = new Set(input.availableTrailers.map(t => t.id));
-  const rawId    = typeof parsed.trailerId === "number" ? parsed.trailerId : null;
-  const trailerId = rawId !== null && validIds.has(rawId) ? rawId : null;
-  const trailer = trailerId !== null ? input.availableTrailers.find(t => t.id === trailerId) : null;
+  // Hazardous load → curtainsider or flatbed preferred, never fridge/box
+  if (input.hazardClass) {
+    const adr = candidates.find(
+      t => ADR_TRAILER_BODIES.has(t.bodyType) || ADR_TRAILER_BODIES.has(t.trailerType),
+    );
+    if (adr) {
+      return {
+        trailerId:           adr.id,
+        trailerRegistration: adr.registration,
+        reasoning:           `ADR class ${input.hazardClass} — open-body trailer selected.`,
+        confidence:          "high",
+      };
+    }
+  }
 
-  const reasoning = typeof parsed.reasoning === "string" && parsed.reasoning.trim()
-    ? parsed.reasoning.trim()
-    : "Trailer selected based on load type.";
+  // General / palletised — prefer curtainsider, then any available
+  const curtain = candidates.find(
+    t => t.bodyType === "curtain_sider" || t.trailerType === "curtainsider" || t.trailerType === "curtain_sider",
+  );
+  if (curtain) {
+    return {
+      trailerId:           curtain.id,
+      trailerRegistration: curtain.registration,
+      reasoning:           "Curtain sider selected — best for general palletised freight.",
+      confidence:          "high",
+    };
+  }
 
-  const confidence =
-    parsed.confidence === "high" || parsed.confidence === "medium" || parsed.confidence === "low"
-      ? parsed.confidence
-      : "medium";
-
+  // Fallback: first available trailer
+  const first = candidates[0];
   return {
-    trailerId:           trailer?.id ?? null,
-    trailerRegistration: trailer?.registration ?? null,
-    reasoning,
-    confidence,
+    trailerId:           first.id,
+    trailerRegistration: first.registration,
+    reasoning:           "Best available trailer in fleet.",
+    confidence:          "low",
   };
 }
