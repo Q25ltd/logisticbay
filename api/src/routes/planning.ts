@@ -797,7 +797,7 @@ async function recalcDerived(runId: number, companyId: number, prisma: PrismaCli
   });
   const parts = activeAssignments.map(a => a.jobPart);
   const hasHazardous       = parts.some(p => p.hazardous);
-  const hasTemperatureLoad = parts.some(p => p.temperatureControlled);
+  const hasTemperatureLoad = parts.some(p => p.tempControlled);
   const hasOversized       = parts.some(p => p.oversized);
   const totalWeight        = parts.reduce((s, p) => s + (p.stopWeight ? Number(p.stopWeight) : 0), 0);
   let requiredTrailerType: string | null = null;

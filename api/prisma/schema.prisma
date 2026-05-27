@@ -488,8 +488,8 @@ model JobPart {
   // Stop-level load specification — drives trailer compatibility checks
   stopGoodsType        String?
   stopWeight           Decimal?
-  temperatureControlled Boolean  @default(false)
-  temperatureRange     String?
+  tempControlled       Boolean  @default(false)
+  tempRange            String?
   hazardous            Boolean  @default(false)
   hazardClass          String?
   oversized            Boolean  @default(false)

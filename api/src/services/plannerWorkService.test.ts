@@ -69,7 +69,7 @@ function makeJobPart(overrides: Partial<{
   timeWindowEnd: Date | null;
   bookedTime: Date | null;
   hazardous: boolean;
-  temperatureControlled: boolean;
+  tempControlled: boolean;
   stopWeight: number | null;
   status: string;
   job: Record<string, unknown>;
@@ -91,7 +91,7 @@ function makeJobPart(overrides: Partial<{
     timeWindowEnd:        overrides.timeWindowEnd ?? null,
     bookedTime:           overrides.bookedTime ?? null,
     hazardous:            overrides.hazardous ?? false,
-    temperatureControlled: overrides.temperatureControlled ?? false,
+    tempControlled: overrides.tempControlled ?? false,
     stopWeight:           overrides.stopWeight ?? null,
     status:               overrides.status ?? "pending",
     job: overrides.job ?? {

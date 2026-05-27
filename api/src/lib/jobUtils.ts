@@ -122,6 +122,13 @@ export function buildStopData(s: StructuredJobPartInput, companyId: number) {
     weightRestriction:         typeof s.weightRestriction    === "string" ? (s.weightRestriction.trim()    || null) : null,
     lengthRestriction:         typeof s.lengthRestriction    === "string" ? (s.lengthRestriction.trim()    || null) : null,
     standingChargeNote:        typeof s.standingChargeNote   === "string" ? (s.standingChargeNote.trim()   || null) : null,
+    tempControlled:            s.tempControlled ?? false,
+    tempRange:                 typeof s.tempRange === "string" ? (s.tempRange.trim() || null) : null,
+    stopGoodsType:             typeof s.stopGoodsType === "string" ? (s.stopGoodsType.trim() || null) : null,
+    stopWeight:                s.stopWeight != null ? Number(s.stopWeight) : null,
+    hazardous:                 s.hazardous ?? false,
+    hazardClass:               typeof s.hazardClass === "string" ? (s.hazardClass.trim() || null) : null,
+    oversized:                 s.oversized ?? false,
     status:                    "pending",
   };
 }

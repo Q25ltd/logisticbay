@@ -7,6 +7,29 @@
 
 ---
 
+## Session log — 2026-05-27d
+
+### Fix P1 field name inconsistency: JobPart temperature fields
+
+**Commits:** (this session)
+
+**Problem:** `Job` used `tempControlled` / `tempRange`. `JobPart` used `temperatureControlled` / `temperatureRange`. Same concept, two names. The read in `plannerWorkService.ts` had `part.temperatureControlled || job.tempControlled` — the `part` side was correct but the `job` side was using a different name. `buildStopData` wasn't writing the field at all (never set on stop create), so JobParts always had `temperatureControlled = false`.
+
+**Fix:**
+- Schema: renamed `JobPart.temperatureControlled` → `tempControlled`, `JobPart.temperatureRange` → `tempRange`
+- Migration: `20260527000000_rename_jobpart_temperature_fields` (two `RENAME COLUMN` statements)
+- API reads fixed: `runs.ts`, `planning.ts`, `plannerWorkService.ts`
+- Test mock fixed: `plannerWorkService.test.ts`
+- `StructuredJobPartInput` in `jobValidation.ts`: added `tempControlled`, `tempRange`, `stopGoodsType`, `stopWeight`, `hazardous`, `hazardClass`, `oversized` (were all missing — stops were being created without these fields)
+- `buildStopData` in `jobUtils.ts`: now writes all those fields to JobPart on create
+- Web `JobPart` interface in `types/index.ts`: added same stop-level load flag fields
+- DATA_DICTIONARY.md: fixed field names in JobPart section, removed inconsistency warning
+- QUESTIONS.md 0a: marked as resolved
+
+**TypeScript check:** both API and web pass clean.
+
+---
+
 ## Session log — 2026-05-27c
 
 ### DATA_DICTIONARY.md — full system audit and cleanup

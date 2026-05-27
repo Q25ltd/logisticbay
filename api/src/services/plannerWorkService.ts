@@ -510,7 +510,7 @@ export async function getPlannerWorkItems(
       quantity:         job.quantity  != null ? Number(job.quantity)  : null,
       quantityUnit:     job.quantityUnit,
       hasHazardous:     part.hazardous  || !!job.hazardClass,
-      hasTempControl:   part.temperatureControlled || job.tempControlled || false,
+      hasTempControl:   part.tempControlled || job.tempControlled || false,
       riskLevel,
       warnings,
       sortScore:        score,

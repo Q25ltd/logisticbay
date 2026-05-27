@@ -13,7 +13,7 @@
 
 | Section | Total | Answered | Remaining |
 |---|---|---|---|
-| Operations & load movement | 42 | 14 | 28 |
+| Operations & load movement | 42 | 15 | 27 |
 | Company management | 48 | 0 | 48 |
 | Financial system | 38 | 0 | 38 |
 | Platform & compliance | 32 | 0 | 32 |
@@ -24,7 +24,7 @@
 
 ## 0a. Data dictionary inconsistency — flagged 2026-05-27
 
-- [ ] **`Job.tempControlled` vs `JobPart.temperatureControlled` — two names for the same concept.** `Job.tempControlled` (Boolean) and `JobPart.temperatureControlled` (Boolean) both mean "this load requires temperature control". `LoadDetails` no longer exists (merged into `Job`). Canonical name: `tempControlled` (shorter, on `Job` and in all rule-based service inputs). Fix requires migration to rename `JobPart.temperatureControlled` → `JobPart.tempControlled`, update all API routes, frontend forms, and mobile app. P1 — wrong name causes silent bugs when the wrong field is checked in rules.
+- [x] **`Job.tempControlled` vs `JobPart.temperatureControlled` — two names for the same concept.** **Resolved 2026-05-27:** Renamed `JobPart.temperatureControlled` → `JobPart.tempControlled` and `JobPart.temperatureRange` → `JobPart.tempRange` via migration `20260527000000_rename_jobpart_temperature_fields`. Updated all API reads (`runs.ts`, `planning.ts`, `plannerWorkService.ts`), test mocks, `StructuredJobPartInput`, `buildStopData`, and web `JobPart` type. Both models now use `tempControlled` / `tempRange` consistently.
 
 ---
 

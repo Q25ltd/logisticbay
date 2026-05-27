@@ -33,7 +33,7 @@ async function recalculateDerivedRequirements(
   const parts = activeAssignments.map(a => a.jobPart);
 
   const hasHazardous      = parts.some(p => p.hazardous);
-  const hasTemperatureLoad = parts.some(p => p.temperatureControlled);
+  const hasTemperatureLoad = parts.some(p => p.tempControlled);
   const hasOversized       = parts.some(p => p.oversized);
 
   // Max load weight: sum of stop weights where provided

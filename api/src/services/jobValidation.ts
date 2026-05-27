@@ -59,6 +59,13 @@ export interface StructuredJobPartInput {
   heightRestriction?: unknown;
   weightRestriction?: unknown;
   lengthRestriction?: unknown;
+  tempControlled?: boolean;
+  tempRange?: unknown;
+  stopGoodsType?: unknown;
+  stopWeight?: number | null;
+  hazardous?: boolean;
+  hazardClass?: unknown;
+  oversized?: boolean;
 }
 
 export interface StructuredLoadDetailsInput {

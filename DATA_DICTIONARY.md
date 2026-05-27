@@ -314,7 +314,7 @@ The internal `CreateJobPage` (CJP) form writes directly to `Job`. The public `Pu
 | dimensions | String? | No | Free text (e.g. `4.5m × 2.2m × 3.1m`) | Overall load dimensions |
 | fragile | Boolean | Yes | Default: `false` | Whether the load is fragile |
 | stackable | Boolean | Yes | Default: `false` | Whether items can be stacked |
-| tempControlled | Boolean | Yes | Default: `false` | Whether temperature control is required for this job's load. **Note:** `JobPart` uses `temperatureControlled` (different name for the same concept at stop level — P1 inconsistency to resolve). |
+| tempControlled | Boolean | Yes | Default: `false` | Whether temperature control is required for this job's load |
 | tempRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range |
 | hazardClass | String? | No | ADR class string | ADR hazard class if applicable |
 | tunnelCode | String? | No | `B` \| `C` \| `C/D` \| `C/E` \| `D` \| `D/E` \| `E` | ADR tunnel restriction code — restricts which tunnel categories the vehicle may use |
@@ -430,8 +430,8 @@ One row per physical piece of work on a job (collection, delivery, etc.). Multip
 | loadReadiness | String | Yes | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure`, default `""` | Whether the load will be ready when the driver arrives (collection stops) |
 | stopGoodsType | String? | No | Free text | Type of goods being handled at this specific stop (drives trailer compatibility checks) |
 | stopWeight | Decimal? | No | Positive number (kg) | Weight of the goods at this specific stop |
-| temperatureControlled | Boolean | Yes | Default: `false` | Whether the goods at this stop require temperature control |
-| temperatureRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range if temperature-controlled |
+| tempControlled | Boolean | Yes | Default: `false` | Whether the goods at this stop require temperature control |
+| tempRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range if temperature-controlled |
 | hazardous | Boolean | Yes | Default: `false` | Whether the goods at this stop are hazardous |
 | hazardClass | String? | No | ADR class string (e.g. `Class 3`) | ADR hazard class for the goods at this stop |
 | oversized | Boolean | Yes | Default: `false` | Whether the load at this stop is oversized |

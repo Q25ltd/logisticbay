@@ -120,6 +120,14 @@ export interface JobPart {
   heightRestriction?: string;
   weightRestriction?: string;
   lengthRestriction?: string;
+  // Stop-level load flags
+  tempControlled?: boolean;
+  tempRange?: string;
+  stopGoodsType?: string;
+  stopWeight?: number | null;
+  hazardous?: boolean;
+  hazardClass?: string;
+  oversized?: boolean;
 }
 
 // LoadDetails is now merged into Job — this interface is kept only for legacy template blobs
