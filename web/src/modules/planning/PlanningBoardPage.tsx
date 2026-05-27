@@ -186,6 +186,17 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge colour={map[status] ?? "bg-slate-100 text-slate-600"}>{label[status] ?? status}</Badge>;
 }
 
+/** Single badge that merges run status + publishedToDriver into one coherent pill.
+ *  Replaces the confusing two-badge (StatusBadge + "Sent") pattern. */
+function RunStatusBadge({ run }: { run: PlanningRun }) {
+  if (run.status === "completed")   return <Badge colour="bg-green-100 text-green-700">✓ Done</Badge>;
+  if (run.status === "in_progress") return <Badge colour="bg-amber-100 text-amber-700">In progress</Badge>;
+  if (run.status === "cancelled")   return <Badge colour="bg-red-100 text-red-600">Cancelled</Badge>;
+  if (run.publishedToDriver)        return <Badge colour="bg-violet-100 text-violet-700">📤 Sent</Badge>;
+  if (run.status === "assigned")    return <Badge colour="bg-blue-100 text-blue-700">Assigned</Badge>;
+  return <Badge colour="bg-slate-100 text-slate-600">Draft</Badge>;
+}
+
 function goodsCompatBadge(goodsType: string | null | undefined) {
   if (!goodsType) return null;
   const m = GOODS_COMPAT[goodsType.toLowerCase()];
@@ -821,8 +832,12 @@ function RunLane({
       {/* ── Lane header ── */}
       <div className="flex items-center gap-2 px-3 py-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
         <span className="font-bold text-base text-primary flex-shrink-0">{run.runReference}</span>
-        <StatusBadge status={run.status} />
-        {run.publishedToDriver && <Badge colour="bg-violet-100 text-violet-700">📤 Sent</Badge>}
+        <RunStatusBadge run={run} />
+        {run.plannedDate && (
+          <span className="text-[10px] text-slate-500 font-medium tabular-nums">
+            {new Date(run.plannedDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+          </span>
+        )}
         {isLocked           && <Badge colour="bg-orange-100 text-orange-700">🔒 Locked</Badge>}
         {run.hasHazardous   && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
         {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">❄</Badge>}
@@ -843,7 +858,14 @@ function RunLane({
             className={`flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer min-w-0 ${run.assignedDriverId ? "text-primary" : "text-slate-400"}`}
             value={run.assignedDriverId ?? ""}
             disabled={saving}
-            onChange={e => patch({ assignedDriverId: e.target.value ? parseInt(e.target.value, 10) : null })}
+            onChange={e => {
+              const driverId = e.target.value ? parseInt(e.target.value, 10) : null;
+              const updates: Record<string, unknown> = { assignedDriverId: driverId };
+              // Keep status in sync: assigning → "assigned", removing → back to "draft"
+              if (!driverId && (run.status === "assigned")) updates.status = "draft";
+              if (driverId  && run.status === "draft")      updates.status = "assigned";
+              patch(updates);
+            }}
           >
             <option value="">— no driver assigned —</option>
             {drivers.map(d => (
