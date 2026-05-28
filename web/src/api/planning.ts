@@ -287,4 +287,18 @@ export const planningApi = {
 
   getLocations: () =>
     api.get<{ data: SavedLocationOption[] }>("/locations"),
+
+  /** Auto-create a follow-on delivery run for an overnight rest scenario.
+   *  Creates a new relay run with the same driver + trailer, a depot_start
+   *  waypoint at the rest location, and (optionally) moves delivery assignments
+   *  from the source run to the new run. */
+  createOvernightRestRun: (sourceRunId: number, body: {
+    restLocationText?: string;
+    restPostcode?:     string;
+    restLat?:          number;
+    restLng?:          number;
+    shiftEndIso?:      string;
+    restHours?:        9 | 11;
+    moveDeliveries?:   boolean;
+  }) => api.post<{ run: PlanningRun }>(`/planning/runs/${sourceRunId}/overnight-rest`, body),
 };

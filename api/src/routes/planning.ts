@@ -816,6 +816,150 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       return reply.send({ drivers });
     },
   );
+
+  // ── POST /planning/runs/:id/overnight-rest ─────────────────────────────────
+  //
+  // Auto-creates a follow-on delivery run when a driver ends their shift at a
+  // non-yard location (services, layby, etc.) — the "overnight rest" pattern.
+  //
+  // The new run inherits the same driver + trailer as the source run.
+  // Any unexecuted delivery-type assignments are moved from the source run
+  // to the new run.  A depot_start waypoint is added at the rest location.
+  // estimatedStartTime = shiftEndIso + restHours (DVLA daily rest).
+  //
+  // Body: {
+  //   restLocationText?: string      — friendly name (e.g. "M1 Northampton Services")
+  //   restPostcode?:      string      — e.g. "NN6 7XS"
+  //   restLat?:           number
+  //   restLng?:           number
+  //   shiftEndIso?:       string      — ISO datetime when driver rests (defaults to now)
+  //   restHours?:         9 | 11      — DVLA daily rest; 11 = standard, 9 = reduced (default 11)
+  //   moveDeliveries?:    boolean     — move delivery stops from source run (default true)
+  // }
+  app.post(
+    "/planning/runs/:id/overnight-rest",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const { companyId, userId } = request.user!;
+      const sourceRunId = parseInt((request.params as { id: string }).id, 10);
+
+      const b = request.body as {
+        restLocationText?: string;
+        restPostcode?:     string;
+        restLat?:          number;
+        restLng?:          number;
+        shiftEndIso?:      string;
+        restHours?:        number;
+        moveDeliveries?:   boolean;
+      };
+
+      // Load source run — verify ownership
+      const sourceRun = await prisma.run.findFirst({
+        where:   { id: sourceRunId, companyId },
+        include: {
+          assignments: {
+            where:   { removedAt: null },
+            include: {
+              jobPart: { select: { id: true, type: true, sequenceNumber: true } },
+            },
+          },
+        },
+      });
+      if (!sourceRun) return reply.status(404).send({ error: "Run not found" });
+
+      // ── Calculate delivery run date + start time ────────────────────────────
+      const restHours  = (b.restHours === 9 || b.restHours === 11) ? b.restHours : 11;
+      const shiftEnd   = b.shiftEndIso ? new Date(b.shiftEndIso) : new Date();
+      const startTime  = new Date(shiftEnd.getTime() + restHours * 60 * 60 * 1000);
+      const deliveryDate = startTime.toISOString().slice(0, 10);
+      const estStart   = startTime.toTimeString().slice(0, 5); // HH:MM
+
+      // ── Move delivery assignments ───────────────────────────────────────────
+      // Delivery-type stops (delivery, dropoff) that are still on the source run
+      // and haven't been removed — these need to happen after the overnight rest.
+      const deliveryTypes = new Set(["delivery", "dropoff"]);
+      const toMove = (b.moveDeliveries !== false)
+        ? sourceRun.assignments.filter(a => deliveryTypes.has(a.jobPart.type ?? ""))
+        : [];
+
+      // ── Create the new delivery run in a transaction ───────────────────────
+      const newRun = await prisma.$transaction(async tx => {
+        const txPrisma = tx as unknown as PrismaClient;
+
+        const ref = await generateRunReference(companyId, startTime.getFullYear(), txPrisma);
+
+        const created = await txPrisma.run.create({
+          data: {
+            companyId,
+            runReference:      ref,
+            status:            "draft",
+            runType:           "relay",
+            plannedDate:       new Date(`${deliveryDate}T12:00:00.000Z`),
+            estimatedStartTime: estStart,
+            assignedDriverId:  sourceRun.assignedDriverId  ?? null,
+            assignedTrailerId: sourceRun.assignedTrailerId ?? null,
+            dependsOnRunId:    sourceRunId,
+            createdBy:         userId,
+          },
+          include: RUN_INCLUDE,
+        });
+
+        // Add depot_start waypoint at the rest location
+        await txPrisma.runWaypoint.create({
+          data: {
+            companyId,
+            runId:         created.id,
+            waypointType:  "depot_start",
+            sequenceNumber: 0,
+            locationText:  b.restLocationText?.trim() || "Overnight rest location",
+            postcode:      b.restPostcode?.trim()     || null,
+            lat:           typeof b.restLat === "number" ? b.restLat : null,
+            lng:           typeof b.restLng === "number" ? b.restLng : null,
+            notes:         `Overnight rest — ${restHours}h DVLA rest from ${shiftEnd.toISOString()}`,
+          },
+        });
+
+        // Move delivery assignments to the new run and renumber
+        if (toMove.length > 0) {
+          // Remove from source run
+          await txPrisma.runAssignment.updateMany({
+            where: { id: { in: toMove.map(a => a.id) } },
+            data:  { removedAt: new Date() },
+          });
+
+          // Re-create on new run with fresh sequence numbers
+          let seq = 1000;
+          for (const a of toMove) {
+            await txPrisma.runAssignment.create({
+              data: {
+                companyId,
+                runId:            created.id,
+                jobId:            a.jobId,
+                jobPartId:        a.jobPartId,
+                sequenceNumber:   seq,
+                quantityAssigned: a.quantityAssigned,
+                quantityUnit:     a.quantityUnit,
+                status:           "pending",
+                addedBy:          userId,
+              },
+            });
+            seq += 1000;
+          }
+
+          // Recalculate derived requirements on source run (delivery stops removed)
+          await recalcDerived(sourceRunId, companyId, txPrisma);
+        }
+
+        // Return the new run with full include
+        return txPrisma.run.findUniqueOrThrow({
+          where:   { id: created.id },
+          include: RUN_INCLUDE,
+        });
+      });
+
+      return reply.status(201).send({ run: newRun });
+    },
+  );
 }
 
 // ── Recalculate derived run requirements ──────────────────────────────────────

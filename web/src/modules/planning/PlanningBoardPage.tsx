@@ -563,6 +563,7 @@ function RunLane({
   optimising,
   collapsed,
   onToggleCollapsed,
+  onCreateOvernightRun,
 }: {
   run:              PlanningRun;
   trailers:         FleetTrailer[];
@@ -586,6 +587,15 @@ function RunLane({
   optimising:         boolean;
   collapsed:          boolean;
   onToggleCollapsed:  () => void;
+  onCreateOvernightRun: (runId: number, body: {
+    restLocationText?: string;
+    restPostcode?: string;
+    restLat?: number;
+    restLng?: number;
+    shiftEndIso?: string;
+    restHours?: 9 | 11;
+    moveDeliveries?: boolean;
+  }) => Promise<void>;
 }) {
   const [saving,     setSaving]     = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -616,6 +626,18 @@ function RunLane({
   const [wpGeoLoading,  setWpGeoLoading]  = useState(false);
   const [savedLocs,     setSavedLocs]     = useState<SavedLocationOption[]>([]);
   const [locsLoading,   setLocsLoading]   = useState(false);
+
+  // Overnight rest form state
+  const [showOvernightForm, setShowOvernightForm] = useState(false);
+  const [orLocation,  setOrLocation]  = useState("");
+  const [orPostcode,  setOrPostcode]  = useState("");
+  const [orLat,       setOrLat]       = useState("");
+  const [orLng,       setOrLng]       = useState("");
+  const [orShiftEnd,  setOrShiftEnd]  = useState("");
+  const [orRestHours, setOrRestHours] = useState<9 | 11>(11);
+  const [orMoveParts, setOrMoveParts] = useState(true);
+  const [orGeoLoading, setOrGeoLoading] = useState(false);
+  const [orCreating,  setOrCreating]  = useState(false);
 
   // AI feasibility check
   const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
@@ -1173,11 +1195,12 @@ function RunLane({
       {/* ── Action bar ── */}
       <div className="flex-shrink-0 border-t border-slate-100 bg-slate-50">
         {/* Waypoint + optimise tools */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 flex-wrap">
           <button
             onClick={() => {
               if (!showWpForm) { setWpLocId(depot?.id ?? ""); setWpShowCreate(false); setWpPosition(-2); loadSavedLocs(); }
               setShowWpForm(v => !v);
+              setShowOvernightForm(false);
             }}
             className={`text-xs font-semibold px-2.5 py-1.5 rounded border transition-colors ${
               showWpForm
@@ -1186,6 +1209,17 @@ function RunLane({
             }`}
           >
             {showWpForm ? "✕ Cancel" : "+ Waypoint"}
+          </button>
+          <button
+            onClick={() => { setShowOvernightForm(v => !v); setShowWpForm(false); }}
+            className={`text-xs font-semibold px-2.5 py-1.5 rounded border transition-colors ${
+              showOvernightForm
+                ? "bg-indigo-100 text-indigo-700 border-indigo-300"
+                : "bg-white text-slate-600 border-slate-200 hover:border-indigo-400 hover:text-indigo-600"
+            }`}
+            title="Auto-create a delivery run for the next day after an overnight rest"
+          >
+            {showOvernightForm ? "✕ Cancel" : "🌙 Overnight run"}
           </button>
           {run.assignments.length >= 2 && !confirmingOptimise && (
             <button
@@ -1304,6 +1338,105 @@ function RunLane({
               className="btn text-sm py-2 px-3 bg-accent text-white disabled:opacity-40 w-full"
             >
               {wpAdding ? "Adding…" : wpShowCreate && (wpPosition === -2 || wpPosition === -1) ? "Save depot & add" : "Add stop"}
+            </button>
+          </div>
+        )}
+
+        {/* Overnight rest form */}
+        {showOvernightForm && (
+          <div className="px-2 py-2 border-b border-slate-100 space-y-2 bg-indigo-50/40">
+            <div className="text-xs font-semibold text-indigo-700 flex items-center gap-1.5">
+              🌙 Create overnight delivery run
+            </div>
+            <div className="text-xs text-slate-500 leading-relaxed">
+              Driver rests at a roadside location. System creates a new relay run for the next day — same driver &amp; trailer, starting at the rest coordinates.
+            </div>
+
+            {/* Rest location */}
+            <input
+              type="text" className="input text-sm py-1.5 w-full"
+              placeholder="Rest location name (e.g. M1 Northampton Services)"
+              value={orLocation} onChange={e => setOrLocation(e.target.value)}
+            />
+            <div className="grid grid-cols-2 gap-1">
+              <input
+                type="text" className="input text-sm py-1.5"
+                placeholder="Postcode (optional)"
+                value={orPostcode}
+                onChange={e => setOrPostcode(e.target.value.toUpperCase())}
+                onBlur={async () => {
+                  if (!orPostcode.trim()) return;
+                  setOrGeoLoading(true);
+                  try {
+                    const r = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(orPostcode.trim())}`);
+                    const j = await r.json();
+                    if (j.result) { setOrLat(String(j.result.latitude)); setOrLng(String(j.result.longitude)); }
+                  } catch { /* ignore */ } finally { setOrGeoLoading(false); }
+                }}
+              />
+              <div className="flex items-center gap-1">
+                <input type="number" step="any" className="input text-sm py-1.5 flex-1 min-w-0" placeholder="Lat" value={orLat} onChange={e => setOrLat(e.target.value)} />
+                <input type="number" step="any" className="input text-sm py-1.5 flex-1 min-w-0" placeholder="Lng" value={orLng} onChange={e => setOrLng(e.target.value)} />
+              </div>
+            </div>
+            {orGeoLoading && <div className="text-xs text-muted animate-pulse">Looking up postcode…</div>}
+
+            {/* Shift end time + rest hours */}
+            <div className="grid grid-cols-2 gap-1">
+              <div>
+                <label className="text-[10px] font-semibold text-muted block mb-0.5">Shift end (date + time)</label>
+                <input
+                  type="datetime-local" className="input text-sm py-1.5 w-full"
+                  value={orShiftEnd} onChange={e => setOrShiftEnd(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-muted block mb-0.5">DVLA rest</label>
+                <select className="input text-sm py-1.5 w-full" value={orRestHours}
+                  onChange={e => setOrRestHours(parseInt(e.target.value, 10) as 9 | 11)}>
+                  <option value={11}>11h — standard</option>
+                  <option value={9}>9h — reduced</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Move deliveries toggle */}
+            {run.assignments.filter(a => ["delivery","dropoff"].includes(a.jobPart.type ?? "")).length > 0 && (
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input type="checkbox" checked={orMoveParts} onChange={e => setOrMoveParts(e.target.checked)} />
+                <span>Move {run.assignments.filter(a => ["delivery","dropoff"].includes(a.jobPart.type ?? "")).length} delivery stop{run.assignments.filter(a => ["delivery","dropoff"].includes(a.jobPart.type ?? "")).length !== 1 ? "s" : ""} to new run</span>
+              </label>
+            )}
+
+            {orShiftEnd && (
+              <div className="text-xs text-indigo-600 font-medium">
+                Delivery run starts: {new Date(new Date(orShiftEnd).getTime() + orRestHours * 3600000).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            )}
+
+            <button
+              onClick={async () => {
+                setOrCreating(true);
+                try {
+                  await onCreateOvernightRun(run.id, {
+                    restLocationText: orLocation.trim() || undefined,
+                    restPostcode:     orPostcode.trim() || undefined,
+                    restLat:          orLat ? parseFloat(orLat) : undefined,
+                    restLng:          orLng ? parseFloat(orLng) : undefined,
+                    shiftEndIso:      orShiftEnd ? new Date(orShiftEnd).toISOString() : undefined,
+                    restHours:        orRestHours,
+                    moveDeliveries:   orMoveParts,
+                  });
+                  setShowOvernightForm(false);
+                  // Reset form
+                  setOrLocation(""); setOrPostcode(""); setOrLat(""); setOrLng("");
+                  setOrShiftEnd(""); setOrRestHours(11); setOrMoveParts(true);
+                } finally { setOrCreating(false); }
+              }}
+              disabled={orCreating}
+              className="btn text-sm py-2 px-3 bg-indigo-600 text-white disabled:opacity-40 w-full"
+            >
+              {orCreating ? "Creating…" : "🌙 Create delivery run"}
             </button>
           </div>
         )}
@@ -1891,6 +2024,27 @@ export default function PlanningBoardPage() {
     }
   }
 
+  async function handleCreateOvernightRun(
+    runId: number,
+    body: {
+      restLocationText?: string;
+      restPostcode?: string;
+      restLat?: number;
+      restLng?: number;
+      shiftEndIso?: string;
+      restHours?: 9 | 11;
+      moveDeliveries?: boolean;
+    }
+  ) {
+    try {
+      await planningApi.createOvernightRestRun(runId, body);
+      // Reload left panel (delivery stops may have moved) + right panel (new run appeared)
+      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    } catch (e: unknown) {
+      setErr((e as Error).message || "Failed to create overnight run");
+    }
+  }
+
   function toggleJobSelect(jobId: number) {
     setSelectedJobIds(prev => {
       const n = new Set(prev);
@@ -2142,6 +2296,7 @@ export default function PlanningBoardPage() {
                 optimising={optimisingRunIds.has(run.id)}
                 collapsed={collapsedRunIds.has(run.id)}
                 onToggleCollapsed={() => toggleRunCollapsed(run.id)}
+                onCreateOvernightRun={handleCreateOvernightRun}
               />
             ))}
 
