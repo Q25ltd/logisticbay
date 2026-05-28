@@ -33,30 +33,37 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
     const dateFrom = q.dateFrom ?? new Date().toISOString().slice(0, 10);
     const dateTo   = q.dateTo   ?? dateFrom;
 
-    // Jobs in the requested date range
+    const gte = new Date(`${dateFrom}T00:00:00.000Z`);
+    const lte = new Date(`${dateTo}T23:59:59.999Z`);
+
+    // Jobs whose collection stop falls in the requested date range.
+    // Fallback: plannedDate for legacy jobs without stop time windows.
     const rangeJobs = await prisma.job.findMany({
       where: {
         companyId,
-        plannedDate: {
-          gte: new Date(`${dateFrom}T00:00:00.000Z`),
-          lte: new Date(`${dateTo}T23:59:59.999Z`),
-        },
+        OR: [
+          { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
+          {
+            stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
+            plannedDate: { gte, lte },
+          },
+        ],
       },
       include: JOB_INCLUDE,
       orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
       take: 500,
     });
 
-    // Open carry-over jobs — non-closed jobs with no planned date or outside the range
+    // Open carry-over jobs — non-closed jobs with no collection date or before the range
     const rangeJobIds = new Set(rangeJobs.map(j => j.id));
     const carryOverJobs = await prisma.job.findMany({
       where: {
         companyId,
         status: { notIn: [...CLOSED_STATUSES] },
         OR: [
-          { plannedDate: null },
-          { plannedDate: { lt: new Date(`${dateFrom}T00:00:00.000Z`) } },
-          { plannedDate: { gt: new Date(`${dateTo}T23:59:59.999Z`) } },
+          { stops: { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } }, plannedDate: null },
+          { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { lt: gte } } } },
+          { stops: { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } }, plannedDate: { lt: gte } },
         ],
       },
       include: JOB_INCLUDE,

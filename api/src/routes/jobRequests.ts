@@ -380,8 +380,17 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (job.status !== "pending_review") {
         return reply.status(409).send({ error: "Job is not pending review" });
       }
-      if (!body.plannedDate) {
-        return reply.status(400).send({ error: "plannedDate is required to accept a job" });
+      // Derive plannedDate from the first collection stop if not explicitly supplied.
+      // This mirrors the CJP/accept-drawer behaviour where the field was removed from the UI.
+      const resolvedPlannedDate: string = body.plannedDate ||
+        job.stops.find(s => s.type === "collection" || s.type === "pickup")?.timeWindowStart?.toISOString().slice(0, 10) ||
+        job.stops[0]?.timeWindowStart?.toISOString().slice(0, 10) ||
+        "";
+      if (!resolvedPlannedDate) {
+        return reply.status(400).send({
+          error:   "DATE_REQUIRED",
+          message: "Cannot determine collection date — add a time window to a collection stop first.",
+        });
       }
 
       // Vehicle category must be known before a job can enter planning.
@@ -425,7 +434,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         saveMode:       "ready_to_plan",
         customerId:     job.customerId,
         customerName:   job.customerName,
-        plannedDate:    body.plannedDate,
+        plannedDate:    resolvedPlannedDate,
         vehicleCategory,
         minGvwClass:    job.minGvwClass ?? "",
         bodyType:       Array.isArray(job.bodyTypes)      ? (job.bodyTypes      as string[])[0] ?? "" : "",
@@ -463,7 +472,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           where: { id },
           data: {
             status:          "ready_to_plan",
-            plannedDate:     new Date(body.plannedDate),
+            plannedDate:     new Date(resolvedPlannedDate),
             plannerNotes:    note || job.plannerNotes,
             vehicleCategory,
             ...(Array.isArray(body.bodyTypes) && body.bodyTypes.length

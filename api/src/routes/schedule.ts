@@ -36,9 +36,10 @@ export async function scheduleRoutes(app: FastifyInstance, prisma: PrismaClient)
       const jobs = await prisma.job.findMany({
         where: {
           companyId,
-          id:          { in: jobIds },
-          plannedDate: { gte: dayStart, lte: dayEnd },
-          status:      { notIn: ["cancelled"] },
+          id:     { in: jobIds },
+          // Filter by any stop's time window on this day (collection or delivery)
+          stops:  { some: { timeWindowStart: { gte: dayStart, lte: dayEnd } } },
+          status: { notIn: ["cancelled"] },
         },
         include: { stops: { orderBy: { sequenceNumber: "asc" } } },
         orderBy: { id: "asc" },

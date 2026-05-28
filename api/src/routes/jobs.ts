@@ -86,15 +86,27 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     if (q.status) where.status = q.status;
     if (q.dateFrom && q.dateTo) {
-      where.plannedDate = {
-        gte: new Date(`${q.dateFrom}T00:00:00.000Z`),
-        lte: new Date(`${q.dateTo}T23:59:59.999Z`),
-      };
+      const gte = new Date(`${q.dateFrom}T00:00:00.000Z`);
+      const lte = new Date(`${q.dateTo}T23:59:59.999Z`);
+      // Primary: filter by collection stop's time window. Fallback: plannedDate for
+      // legacy jobs that have plannedDate set but no stop timeWindowStart.
+      where.OR = [
+        { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
+        {
+          stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
+          plannedDate: { gte, lte },
+        },
+      ];
     } else if (q.date) {
-      where.plannedDate = {
-        gte: new Date(`${q.date}T00:00:00.000Z`),
-        lt:  new Date(`${q.date}T23:59:59.999Z`),
-      };
+      const gte = new Date(`${q.date}T00:00:00.000Z`);
+      const lte = new Date(`${q.date}T23:59:59.999Z`);
+      where.OR = [
+        { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
+        {
+          stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
+          plannedDate: { gte, lte },
+        },
+      ];
     }
 
     // Pagination — cursor-based, backwards compatible (no params = max 200)
@@ -147,9 +159,16 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const jobs = await prisma.job.findMany({
       where: {
         companyId,
-        id:          { in: jobIds },
-        plannedDate: { gte: today, lt: in7 },
-        status:      { not: "cancelled" },
+        id:     { in: jobIds },
+        // Filter by collection stop time window (primary) or plannedDate fallback
+        OR: [
+          { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte: today, lt: in7 } } } },
+          {
+            stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
+            plannedDate: { gte: today, lt: in7 },
+          },
+        ],
+        status: { not: "cancelled" },
       },
       include: {
         customer:    true,
@@ -163,11 +182,18 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
     });
 
-    const todayStr     = today.toISOString().split("T")[0];
-    const datedJobs    = jobs.filter(j => j.plannedDate !== null);
-    const todayJobs    = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] === todayStr)
+    // Segment by first collection stop's date (fallback: plannedDate)
+    const todayStr = today.toISOString().split("T")[0];
+    const getCollectDate = (job: (typeof jobs)[0]): string | null => {
+      const coll = (job.stops ?? []).find(s => s.type === "collection" || s.type === "pickup");
+      if (coll?.timeWindowStart) return (coll.timeWindowStart as Date).toISOString().split("T")[0];
+      return job.plannedDate?.toISOString().split("T")[0] ?? null;
+    };
+    const todayJobs = jobs
+      .filter(j => getCollectDate(j) === todayStr)
       .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []) }));
-    const upcomingJobs = datedJobs.filter(j => j.plannedDate!.toISOString().split("T")[0] !== todayStr)
+    const upcomingJobs = jobs
+      .filter(j => getCollectDate(j) !== todayStr)
       .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []) }));
 
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
