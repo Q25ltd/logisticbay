@@ -561,6 +561,8 @@ function RunLane({
   onConfirmOptimise,
   confirmingOptimise,
   optimising,
+  collapsed,
+  onToggleCollapsed,
 }: {
   run:              PlanningRun;
   trailers:         FleetTrailer[];
@@ -578,10 +580,12 @@ function RunLane({
   onDelete:         (runId: number) => Promise<void>;
   onDropJob:         (jobId: number) => Promise<void>;
   onDropPart:        (jobPartId: number) => Promise<void>;
-  onOptimiseRoute:   (runId: number) => Promise<void>;
-  onConfirmOptimise: (runId: number) => Promise<void>;
+  onOptimiseRoute:    (runId: number) => Promise<void>;
+  onConfirmOptimise:  (runId: number) => Promise<void>;
   confirmingOptimise: boolean;
-  optimising:        boolean;
+  optimising:         boolean;
+  collapsed:          boolean;
+  onToggleCollapsed:  () => void;
 }) {
   const [saving,     setSaving]     = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -854,10 +858,10 @@ function RunLane({
 
   return (
     <div
-      className={`w-[420px] min-w-[380px] flex-shrink-0 flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
+      className={`w-full flex flex-col bg-white rounded-lg border shadow-sm overflow-hidden transition-all ${
         isLocked ? "opacity-60" : ""
       } ${isOver ? "ring-2 ring-primary shadow-lg" : "border-border"}`}
-      style={{ maxHeight: "calc(100vh - 130px)" }}
+      style={collapsed ? undefined : { maxHeight: "calc(100vh - 130px)" }}
     >
       {/* ── Lane header ── */}
       <div className="flex items-center gap-2 px-3 py-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
@@ -872,14 +876,34 @@ function RunLane({
         {run.hasHazardous   && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
         {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">❄</Badge>}
         <span className="flex-1" />
-        {aiDot && <span className="text-sm leading-none" title={aiCheck?.reason ?? "Checking…"}>{aiDot}</span>}
+        {!collapsed && aiDot && <span className="text-sm leading-none" title={aiCheck?.reason ?? "Checking…"}>{aiDot}</span>}
+        <button
+          onClick={onToggleCollapsed}
+          className="text-slate-400 hover:text-primary text-sm leading-none flex-shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100"
+          title={collapsed ? "Expand run" : "Collapse run"}
+        >{collapsed ? "▼" : "▲"}</button>
         <button
           onClick={() => onDelete(run.id)}
-          className="text-slate-400 hover:text-red-500 text-sm leading-none ml-1 flex-shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50"
+          className="text-slate-400 hover:text-red-500 text-sm leading-none flex-shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50"
           title="Delete run"
         >✕</button>
       </div>
 
+      {/* ── Collapsed summary ── */}
+      {collapsed && (
+        <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-2 flex-wrap bg-white border-t border-slate-100">
+          <span className="font-medium text-slate-600 truncate max-w-[180px]">
+            {assignedDriver?.displayName ?? "— no driver —"}
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>{run.assignments.length} stop{run.assignments.length !== 1 ? "s" : ""}</span>
+          {run.hasHazardous     && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
+          {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">❄</Badge>}
+        </div>
+      )}
+
+      {/* ── Expanded body ── */}
+      {!collapsed && (<>
       {/* ── Driver + Trailer assign — full-width rows ── */}
       <div className="flex-shrink-0 border-b border-slate-100 divide-y divide-slate-100">
         <div className={`flex items-center px-3 py-2.5 gap-3 ${run.assignedDriverId ? "" : "bg-amber-50/40"}`}>
@@ -1374,6 +1398,7 @@ function RunLane({
           ) : null}
         </div>
       </div>
+      </>)}
     </div>
   );
 }
@@ -1558,6 +1583,17 @@ export default function PlanningBoardPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<Set<number>>(new Set());
   const [batchRunId,     setBatchRunId]     = useState<number | "">("");
   const [batchAdding,    setBatchAdding]    = useState(false);
+
+  // Collapsed run cards (lifted so state survives data reloads)
+  const [collapsedRunIds, setCollapsedRunIds] = useState<Set<number>>(new Set());
+
+  function toggleRunCollapsed(runId: number) {
+    setCollapsedRunIds(prev => {
+      const n = new Set(prev);
+      if (n.has(runId)) n.delete(runId); else n.add(runId);
+      return n;
+    });
+  }
 
   // Route optimise loading + inline confirmation
   const [optimisingRunIds,   setOptimisingRunIds]   = useState<Set<number>>(new Set());
@@ -2009,11 +2045,11 @@ export default function PlanningBoardPage() {
         </div>
 
         {/* ── Kanban run lanes ── */}
-        <div className={`${mobileTab === "runs" ? "flex" : "hidden"} sm:flex flex-1 overflow-hidden`}>
-          <div className="flex flex-row gap-3 p-3 overflow-x-auto overflow-y-hidden h-full items-start">
+        <div className={`${mobileTab === "runs" ? "block" : "hidden"} sm:block flex-1 overflow-y-auto overflow-x-hidden`}>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 p-3 items-start">
 
             {!loadingRight && runs.length === 0 && (
-              <div className="flex-1 flex flex-col items-center justify-center text-muted py-16">
+              <div className="col-span-1 xl:col-span-2 flex flex-col items-center justify-center text-muted py-16">
                 <div className="text-5xl mb-3">🚚</div>
                 <div className="text-base font-medium mb-1">No runs yet for {fmtDate(date)}</div>
                 <div className="text-sm mb-4">Create a run, then drag jobs into it</div>
@@ -2047,14 +2083,16 @@ export default function PlanningBoardPage() {
                 onConfirmOptimise={confirmOptimise}
                 confirmingOptimise={confirmOptimiseId === run.id}
                 optimising={optimisingRunIds.has(run.id)}
+                collapsed={collapsedRunIds.has(run.id)}
+                onToggleCollapsed={() => toggleRunCollapsed(run.id)}
               />
             ))}
 
-            {/* Add new run lane */}
+            {/* Add new run tile */}
             <button
               onClick={handleCreateRun}
               disabled={creatingRun}
-              className="w-[420px] min-w-[380px] flex-shrink-0 h-32 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all disabled:opacity-40 self-start"
+              className="w-full h-28 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all disabled:opacity-40"
             >
               <span className="text-3xl leading-none mb-1">{creatingRun ? "⟳" : "+"}</span>
               <span className="text-xs font-semibold">New run</span>

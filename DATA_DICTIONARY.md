@@ -1,6 +1,6 @@
 # LogisticBay — Data Dictionary
 
-> Last updated: 2026-05-27. Source of truth: `api/prisma/schema.prisma`.
+> Last updated: 2026-05-27 (added workPattern, basePostcode, baseLat, baseLng to DriverProfile; added PlanningDriver response type; added Planning API endpoint table). Source of truth: `api/prisma/schema.prisma`.
 
 This document is the authoritative reference for every field that LogisticBay collects, stores, or processes. Fields are grouped by database model or logical data group. For each field the table shows: its column/key name, data type, whether it is required, the allowed values or format, and a plain-English description. JSON blob sub-fields are expanded into individual rows. Enum values list every known option. Multi-select chip arrays list every choosable value.
 
@@ -109,7 +109,8 @@ Table: `DriverProfile`
 | employmentStartDate | DateTime? | No | ISO 8601 date | Date the driver started employment |
 | contactEmail | String? | No | Email string | Driver's contact email |
 | contactPhone | String? | No | Phone string | Driver's direct contact phone (may differ from phoneNumber) |
-| driverType | String | Yes | `permanent` \| `agency` \| `subcontractor`, default `permanent` | Employment classification |
+| driverType | String | Yes | `permanent` \| `agency` \| `subcontractor`, default `permanent` | Employment classification — not the same as `workPattern` |
+| workPattern | String? | No | `day_driver` \| `night_driver` \| `tramper` | Operational work pattern. `day_driver` = starts and finishes at the same place each day; `night_driver` = works nights but still returns to base; `tramper` = away for extended shifts (weekly/monthly), sleeps at different locations, returns to base only at end of shift period. Separate from `driverType` (employment) and `nightsOutAllowed` (payment allowance). |
 | licenceClass | String | Yes | `""` \| `B` \| `C1` \| `C` \| `CE` \| `D` etc., default `""` | Highest held driving licence category |
 | endorsements | Json? | No | String array | Licence endorsement codes held by the driver |
 | canDriveCategories | Json? | No | String array | Additional vehicle categories the driver is approved for |
@@ -128,7 +129,10 @@ Table: `DriverProfile`
 | nightWorkAllowed | Boolean | Yes | Default: `false` | Whether the driver may be allocated night shifts |
 | nightsOutAllowed | Boolean | Yes | Default: `false` | Whether the driver may work away overnight |
 | overtimeAllowed | Boolean | Yes | Default: `false` | Whether the driver may work overtime |
-| baseLocation | String | Yes | Free text, default `""` | Driver's usual depot or starting location |
+| baseLocation | String | Yes | Free text, default `""` | Driver's usual depot or starting location (legacy free-text field) |
+| basePostcode | String? | No | Royal Mail postcode | Driver's home / base postcode. Geocoded client-side via postcodes.io on save; result stored in `baseLat` / `baseLng`. Used to calculate return-to-base drive time warnings on the planning board. |
+| baseLat | Float? | No | Decimal degrees | Latitude of the driver's base postcode centroid (geocoded from `basePostcode`) |
+| baseLng | Float? | No | Decimal degrees | Longitude of the driver's base postcode centroid (geocoded from `basePostcode`) |
 | operatingArea | String | Yes | Free text, default `""` | Geographic area the driver normally covers |
 | avoidAreas | String | Yes | Free text, default `""` | Areas or routes the driver should not be sent to |
 | plannerNotes | String | Yes | Free text, default `""` | Internal planner notes about the driver |
@@ -1343,6 +1347,24 @@ Non-job stops on a run (depot start, yard transfer, overnight rest, return to ba
 
 These are API-layer response shapes, not database models. They are computed and returned by planning endpoints.
 
+### PlanningDriver
+
+Returned by `GET /planning/drivers?date=YYYY-MM-DD`. One row per active driver available to be assigned to runs on that date.
+
+| Field | Type | Description |
+|---|---|---|
+| id | Int | DriverProfile ID |
+| displayName | String | Driver's display name |
+| status | String | `active` \| `inactive` |
+| nightsOutAllowed | Boolean | Whether the driver is approved for overnight stays away from base (payment allowance field — independent of workPattern) |
+| workPattern | String? | `day_driver` \| `night_driver` \| `tramper` — operational classification. Shown as icon in the driver dropdown on the planning board. |
+| baseLat | Float? | Latitude of the driver's base postcode — used for return-to-base drive time warnings |
+| baseLng | Float? | Longitude of the driver's base postcode — used for return-to-base drive time warnings |
+| basePostcode | String? | Driver's base postcode (raw string) |
+| user | Object? | `{ id, name, email }` — linked user account if one exists |
+
+---
+
 ### PlannerWorkItem
 
 Returned by `GET /planning/work-items`. One row per unplanned `JobPart`. Sorted and grouped by priority so planners can build runs in the right order.
@@ -1385,3 +1407,25 @@ Returned by `GET /planning/work-items`. One row per unplanned `JobPart`. Sorted 
 | `vehicle_van` / `vehicle_rigid` / `vehicle_artic_curtainsider` / `vehicle_artic_fridge` / `vehicle_flatbed` / `vehicle_taillift` / `vehicle_hiab` / `vehicle_adr` | Grouped by required vehicle type |
 | `direction_london` / `direction_midlands` / `direction_north` / `direction_east` / `direction_west_wales` / `direction_scotland` / `direction_local` | Broad UK geographic region (based on delivery postcode area) |
 | `future` | No time window today; planned for a future date |
+
+---
+
+## Planning API — Endpoints
+
+Key planning-specific API endpoints (supplement to the standard CRUD routes).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/planning/unplanned?date=YYYY-MM-DD` | Returns clustered unplanned stops for the given date. Clustering: haversine 5km radius with postcode-area fallback. |
+| `GET` | `/planning/work-items?dateFrom=…&dateTo=…` | Returns sorted, grouped `PlannerWorkItem` list for the planner sidebar. |
+| `GET` | `/planning/runs?date=YYYY-MM-DD` | Returns all runs (with full assignments and waypoints) for the given date. |
+| `POST` | `/planning/runs` | Create a new run for a date. |
+| `PATCH` | `/planning/runs/:id` | Update run fields (driver, truck, trailer, status, notes, start time). |
+| `POST` | `/planning/runs/:id/assignments` | Add a job stop to a run. Body: `{ jobPartId, quantityAssigned? }`. |
+| `DELETE` | `/planning/runs/:id/assignments/:assignmentId` | Remove a stop from a run (sets `removedAt`, does not hard-delete). |
+| `PATCH` | `/planning/runs/:id/assignments/reorder` | Reorder stops within a run. Body: `{ assignmentIds: number[] }` — array of active RunAssignment IDs in the desired sequence. Server renumbers to 1000/2000/3000… preserving depot_start (seq=0) and return_to_base (seq=999999) waypoints. |
+| `POST` | `/planning/runs/:id/publish` | Publish a run to the driver. Sets `status = assigned`, `publishedToDriver = true`. |
+| `POST` | `/planning/runs/:id/waypoints` | Add a non-job waypoint to a run (depot start, yard pickup, hub drop, overnight rest, return to base, custom). |
+| `DELETE` | `/planning/runs/:id/waypoints/:waypointId` | Remove a waypoint from a run. |
+| `GET` | `/planning/fleet` | Returns `{ trailers, trucks, depot }` for the planner's fleet picker. |
+| `GET` | `/planning/drivers?date=YYYY-MM-DD` | Returns available drivers for the given date (see `PlanningDriver` type above). |

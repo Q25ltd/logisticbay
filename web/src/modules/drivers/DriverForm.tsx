@@ -160,27 +160,7 @@ export default function DriverForm({ initial, onSave, onCancel }: {
   return (
     <form onSubmit={handleSubmit}>
       {error && <Alert type="error" message={error} />}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2">
-          <Input label="Full Name *" value={form.displayName} onChange={set("displayName")} placeholder="John Smith" caseRule="proper_name" required />
-        </div>
-        <div>
-          <Input
-            label="Base postcode"
-            value={form.basePostcode}
-            onChange={e => { set("basePostcode")(e); setPostcodeGeoStatus("idle"); }}
-            onBlur={() => geocodeBasePostcode(form.basePostcode)}
-            placeholder="TS29 6PX"
-            caseRule="upper"
-            hint={
-              postcodeGeoStatus === "loading" ? "Looking up…" :
-              postcodeGeoStatus === "ok"      ? "✓ Location found" :
-              postcodeGeoStatus === "error"   ? "Postcode not found" :
-              "Home depot — used for route calculations"
-            }
-          />
-        </div>
-      </div>
+      <Input label="Full Name *" value={form.displayName} onChange={set("displayName")} placeholder="John Smith" caseRule="proper_name" required />
       <div className="grid grid-cols-2 gap-3">
         <Input label="Employee No." value={form.employeeNumber} onChange={set("employeeNumber")} placeholder="D001" />
         <Input label="Phone" value={form.phoneNumber} onChange={set("phoneNumber")} placeholder="07700 000000" />
@@ -303,7 +283,27 @@ export default function DriverForm({ initial, onSave, onCancel }: {
 
       <div className="mt-5 border-t pt-4">
         <h3 className="font-bold text-primary mb-3">Base / area</h3>
-        <Input label="Base location" value={form.baseLocation} onChange={set("baseLocation")} placeholder="Depot / home base" caseRule="proper_name" />
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <Input label="Base location" value={form.baseLocation} onChange={set("baseLocation")} placeholder="Depot / home base" caseRule="proper_name" />
+          </div>
+          <div>
+            <Input
+              label="Base postcode"
+              value={form.basePostcode}
+              onChange={e => { set("basePostcode")(e); setPostcodeGeoStatus("idle"); }}
+              onBlur={() => geocodeBasePostcode(form.basePostcode)}
+              placeholder="TS29 6PX"
+              caseRule="upper"
+              hint={
+                postcodeGeoStatus === "loading" ? "Looking up…" :
+                postcodeGeoStatus === "ok"      ? "✓ Location found" :
+                postcodeGeoStatus === "error"   ? "Postcode not found" :
+                "Used for route calculations"
+              }
+            />
+          </div>
+        </div>
         <Input label="Operating area" value={form.operatingArea} onChange={set("operatingArea")} placeholder="North West, Liverpool, Manchester..." caseRule="proper_name" />
         <Input label="Avoid areas" value={form.avoidAreas} onChange={set("avoidAreas")} placeholder="Areas to avoid if possible" />
       </div>

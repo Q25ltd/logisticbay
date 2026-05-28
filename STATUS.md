@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-27 (DATA_DICTIONARY.md full cleanup — PlannedJob→Job rename, LoadDetails removed, all field names corrected, missing models/fields added)
+> Last updated: 2026-05-27 (planning board badge fixes; manual stop reorder; driver work pattern + base postcode)
 
 ---
 
@@ -157,7 +157,7 @@
 | **Job detail (web)** | All fields displayed | POD viewer, audit log display, stop-level execution status |
 | **Run detail (web)** | Add/remove assignments, resequence | Truck/trailer picker UI (schema supports it, UI doesn't wire it), live status from mobile |
 | **Planning dashboard** | Today's runs, driver names | "Ready to plan" jobs backlog panel, drag-to-assign |
-| **Driver profiles (web)** | CRUD — name, pay rate, min hours | Availability board (see all drivers week view), working time compliance display |
+| **Driver profiles (web)** | CRUD — name, pay rate, min hours, `workPattern` (day_driver/night_driver/tramper), `basePostcode` (auto-geocoded to `baseLat`/`baseLng` via postcodes.io), work pattern badge display in driver list | Availability board (see all drivers week view), working time compliance display |
 | **Shifts (web)** | Basic list | Full shift detail with PDF, delivery task breakdown |
 | **LoadTrack** | Schema + model fully defined | No write path from mobile or API yet — custody chain not recorded |
 | **Job audit log** | `JobAudit` rows written on accept/reject | No viewer in web planner UI |
@@ -214,6 +214,14 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] `PlanningDriver.nightsOutAllowed` exposed from `DriverProfile` — driver dropdown in run lane shows 🌙 suffix for trampers
 - [x] Day driver multi-day warning — banner in run lane when a day driver (`nightsOutAllowed = false`) is assigned to a run whose stops span multiple calendar dates
 - [x] `overnight_rest` waypoint type added — appears in the waypoint type selector (alongside yard_pickup, hub_drop) for mid-route stops; renders as "Overnight rest" label on the run card
+
+**Planning board extras built 2026-05-27 (session 2026-05-27e/f):**
+- [x] `RunStatusBadge` component — single priority-based pill replacing the old dual ASSIGNED + SENT badge pair. Logic: Done → In progress → Cancelled → 📤 Sent → Assigned → Draft. Eliminates contradictory states (e.g. ASSIGNED + SENT + no driver).
+- [x] Auto-sync run status on driver assign/remove — assigning a driver to a Draft run promotes it to Assigned; removing the driver from an Assigned run demotes it back to Draft. Happens inline in the PATCH call, no extra step.
+- [x] Planned date label in run lane header — run's `plannedDate` shown next to `RunStatusBadge` so planners can see the date without opening the run.
+- [x] Manual drag-and-drop stop reorder — ⠿ drag handle on each stop row in a run lane; blue drop-line indicator; dragged card fades. Intra-lane drag uses `application/run-assignment` MIME type (does not conflict with inter-lane `application/job-id` / `application/job-part-id` drags). Fires `PATCH /planning/runs/:id/assignments/reorder`.
+- [x] `PATCH /planning/runs/:id/assignments/reorder` API endpoint — accepts `{ assignmentIds: number[] }` in desired order; renumbers sequence to 1000/2000/3000… preserving depot_start (seq=0) and return_to_base (seq=999999) waypoints.
+- [x] Work pattern icon in driver dropdown — driver select in run lane shows 🚛 (tramper), 🌙 (night driver), or ☀ (day driver) next to each driver's name for quick identification.
 
 **Planning board UX redesign — Phase 2 (not started):**
 - [ ] Stop hover tooltip — full address, contact, items list, job ref without leaving planning board
