@@ -1659,42 +1659,79 @@ export default function PlanningBoardPage() {
     });
   }, [workItems, activePool, activeVehicle, activeArea, search]);
 
-  // ── Build JobWorkGroups ─────────────────────────────────────────────────────
-  const jobWorkGroupsByGroupKey = useMemo(() => {
-    const byJob = new Map<number, { groupKey: string; parts: PlannerWorkItem[] }>();
+  // ── Build JobWorkGroups (grouped by collection date) ────────────────────────
+  // Priority buckets: needs_attention → in_custody → date_YYYY-MM-DD (asc) → future
+  const jobWorkGroupsByDisplayKey = useMemo(() => {
+    // Step 1: bucket parts by job
+    const byJob = new Map<number, { apiGroupKey: string; parts: PlannerWorkItem[] }>();
     for (const item of filteredWorkItems) {
-      if (!byJob.has(item.jobId)) byJob.set(item.jobId, { groupKey: item.groupKey, parts: [] });
+      if (!byJob.has(item.jobId)) byJob.set(item.jobId, { apiGroupKey: item.groupKey, parts: [] });
       byJob.get(item.jobId)!.parts.push(item);
     }
 
+    // Step 2: build groups keyed by display bucket
     const byGroup = new Map<string, JobWorkGroup[]>();
-    for (const [jobId, { groupKey, parts }] of byJob) {
-      const rep      = parts[0];
+    for (const [jobId, { apiGroupKey, parts }] of byJob) {
+      const rep       = parts[0];
       const riskOrder = { high: 3, medium: 2, low: 1, none: 0 } as const;
       const riskLevel = parts.reduce<"high"|"medium"|"low"|"none">((best, p) =>
         riskOrder[p.riskLevel] > riskOrder[best] ? p.riskLevel : best, "none");
-      const warnings = [...new Set(parts.flatMap(p => p.warnings))];
+      const warnings  = [...new Set(parts.flatMap(p => p.warnings))];
       const grp: JobWorkGroup = { jobId, jobReference: rep.jobReference, customerName: rep.customerName, parts, riskLevel, warnings };
-      if (!byGroup.has(groupKey)) byGroup.set(groupKey, []);
-      byGroup.get(groupKey)!.push(grp);
+
+      let displayKey: string;
+      if (apiGroupKey === "needs_attention") {
+        displayKey = "needs_attention";
+      } else if (apiGroupKey === "in_custody") {
+        displayKey = "in_custody";
+      } else {
+        // Use the collection stop's date; fall back to any stop date, then "future"
+        const collectPart = parts.find(p => p.nextAction.startsWith("Collect")) ?? parts[0];
+        const d = partDate(collectPart);
+        displayKey = d ? `date_${d}` : "future";
+      }
+
+      if (!byGroup.has(displayKey)) byGroup.set(displayKey, []);
+      byGroup.get(displayKey)!.push(grp);
+    }
+
+    // Step 3: within each date group sort by collection time → postcode → goods type
+    for (const [key, grps] of byGroup) {
+      if (!key.startsWith("date_")) continue;
+      grps.sort((a, b) => {
+        const ca = a.parts.find(p => p.nextAction.startsWith("Collect")) ?? a.parts[0];
+        const cb = b.parts.find(p => p.nextAction.startsWith("Collect")) ?? b.parts[0];
+        const ta = ca.timeWindowStart ?? ca.bookedTime ?? "9999";
+        const tb = cb.timeWindowStart ?? cb.bookedTime ?? "9999";
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        const pa = ca.currentPostcode ?? "";
+        const pb = cb.currentPostcode ?? "";
+        if (pa !== pb) return pa < pb ? -1 : 1;
+        return (a.parts[0].goodsType ?? "").localeCompare(b.parts[0].goodsType ?? "");
+      });
     }
 
     return byGroup;
   }, [filteredWorkItems]);
 
-  const orderedGroupKeys = useMemo(() => {
-    const seen = new Set<string>(); const keys: string[] = [];
-    for (const item of filteredWorkItems) {
-      if (!seen.has(item.groupKey)) { seen.add(item.groupKey); keys.push(item.groupKey); }
-    }
+  const orderedDisplayKeys = useMemo(() => {
+    const keys: string[] = [];
+    if (jobWorkGroupsByDisplayKey.has("needs_attention")) keys.push("needs_attention");
+    if (jobWorkGroupsByDisplayKey.has("in_custody"))      keys.push("in_custody");
+    // Date groups sorted chronologically (ISO string sort = calendar order)
+    const dateKeys = [...jobWorkGroupsByDisplayKey.keys()]
+      .filter(k => k.startsWith("date_"))
+      .sort();
+    keys.push(...dateKeys);
+    if (jobWorkGroupsByDisplayKey.has("future")) keys.push("future");
     return keys;
-  }, [filteredWorkItems]);
+  }, [jobWorkGroupsByDisplayKey]);
 
   const allDisplayedGroups = useMemo(() => {
     const all: JobWorkGroup[] = [];
-    for (const gk of orderedGroupKeys) { all.push(...(jobWorkGroupsByGroupKey.get(gk) ?? [])); }
+    for (const dk of orderedDisplayKeys) { all.push(...(jobWorkGroupsByDisplayKey.get(dk) ?? [])); }
     return all;
-  }, [orderedGroupKeys, jobWorkGroupsByGroupKey]);
+  }, [orderedDisplayKeys, jobWorkGroupsByDisplayKey]);
 
   const totalJobCount = useMemo(() => new Set(filteredWorkItems.map(i => i.jobId)).size, [filteredWorkItems]);
 
@@ -1986,18 +2023,38 @@ export default function PlanningBoardPage() {
               </div>
             )}
 
-            {orderedGroupKeys.map(gk => {
-              const grps = jobWorkGroupsByGroupKey.get(gk) ?? [];
+            {orderedDisplayKeys.map(dk => {
+              const grps = jobWorkGroupsByDisplayKey.get(dk) ?? [];
               if (grps.length === 0) return null;
+
+              // Header label + colour
+              let headerLabel: string;
+              let headerClass: string;
+              if (dk === "needs_attention") {
+                headerLabel = "Needs attention";
+                headerClass = "text-red-600 border-red-200";
+              } else if (dk === "in_custody") {
+                headerLabel = "Collected — in custody";
+                headerClass = "text-blue-700 border-blue-200";
+              } else if (dk === "future") {
+                headerLabel = "Future";
+                headerClass = "text-slate-400 border-slate-200";
+              } else if (dk.startsWith("date_")) {
+                const d    = dk.slice(5);
+                const tom  = addDaysToISO(date, 1);
+                headerLabel = d === date ? `Today — ${fmtDate(d + "T12:00:00")}` :
+                              d === tom  ? `Tomorrow — ${fmtDate(d + "T12:00:00")}` :
+                              fmtDate(d + "T12:00:00");
+                headerClass = "text-violet-700 border-violet-200";
+              } else {
+                headerLabel = dk;
+                headerClass = "text-slate-400 border-slate-200";
+              }
+
               return (
-                <div key={gk} className="mb-3">
-                  <div className={`text-xs font-bold uppercase tracking-wider px-1 py-1.5 mb-1 border-b flex items-center justify-between ${
-                    gk === "needs_attention" ? "text-red-600 border-red-200" :
-                    gk === "in_custody"      ? "text-blue-700 border-blue-200" :
-                    gk === "today"           ? "text-violet-700 border-violet-200" :
-                    "text-slate-400 border-slate-200"
-                  }`}>
-                    <span>{GROUP_LABEL[gk] ?? gk}</span>
+                <div key={dk} className="mb-3">
+                  <div className={`text-xs font-bold uppercase tracking-wider px-1 py-1.5 mb-1 border-b flex items-center justify-between ${headerClass}`}>
+                    <span>{headerLabel}</span>
                     <span className="font-normal normal-case text-muted">{grps.length} job{grps.length !== 1 ? "s" : ""}</span>
                   </div>
                   {grps.map(grp => (
