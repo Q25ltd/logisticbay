@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-27 (planning board badge fixes; manual stop reorder; driver work pattern + base postcode)
+> Last updated: 2026-05-28 (jobs panel date grouping; overnight rest auto-create run)
 
 ---
 
@@ -214,6 +214,11 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] `PlanningDriver.nightsOutAllowed` exposed from `DriverProfile` — driver dropdown in run lane shows 🌙 suffix for trampers
 - [x] Day driver multi-day warning — banner in run lane when a day driver (`nightsOutAllowed = false`) is assigned to a run whose stops span multiple calendar dates
 - [x] `overnight_rest` waypoint type added — appears in the waypoint type selector (alongside yard_pickup, hub_drop) for mid-route stops; renders as "Overnight rest" label on the run card
+
+**Planning board extras built 2026-05-28 (session 2026-05-28a):**
+- [x] Jobs panel date-based grouping — left panel now groups jobs by collection date (Mon 28 May, Tue 29 May…) instead of old vehicle-type/direction groups. Needs attention + In custody stay as priority buckets at top. Cards sorted within each date group by collection time → postcode → goods type.
+- [x] `POST /planning/runs/:id/overnight-rest` API endpoint — auto-creates a relay delivery run when driver rests overnight at a roadside location. Same driver + trailer, depot_start waypoint at rest location, estimatedStartTime = shiftEndIso + restHours (DVLA 11h standard or 9h reduced per EC 561/2006), delivery assignments optionally moved from source run, dependsOnRunId links back to source run.
+- [x] "🌙 Overnight run" button in run lane action bar — inline form with rest location, postcode (auto-geocodes), shift end datetime, DVLA rest hours selector, move-deliveries toggle, calculated start time preview.
 
 **Planning board extras built 2026-05-27 (session 2026-05-27e/f):**
 - [x] `RunStatusBadge` component — single priority-based pill replacing the old dual ASSIGNED + SENT badge pair. Logic: Done → In progress → Cancelled → 📤 Sent → Assigned → Draft. Eliminates contradictory states (e.g. ASSIGNED + SENT + no driver).

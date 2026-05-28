@@ -7,6 +7,45 @@
 
 ---
 
+## Session log — 2026-05-28a
+
+### Jobs panel date grouping + overnight rest auto-create run
+
+**Commits:** `4f6f40e` (date grouping), `d1c9302` (overnight rest)
+
+**① Jobs panel — collection-date-based grouping**
+- Replaced the old `groupKey`-based display (vehicle type / direction groups like "Artic — Curtainsider", "North") with date-based groups
+- Priority buckets unchanged at top: "Needs attention" (risk=high), "Collected — in custody"
+- Everything else groups as "Mon 28 May", "Tue 29 May", etc. — label shows "Today — Mon 28 May" and "Tomorrow — Tue 29 May" for the current two days
+- Within each date group: cards sorted by collection time → postcode → goods type
+- Items with no date fall through to a "Future" bucket at the bottom
+- Sidebar area/vehicle filters continue to work unchanged — only the display grouping changed
+- No API changes. All pure frontend memo rewrite: `jobWorkGroupsByDisplayKey` + `orderedDisplayKeys` replace `jobWorkGroupsByGroupKey` + `orderedGroupKeys`
+
+**② Overnight rest auto-create run**
+
+Architecture confirmed with user: logic is **load-location-based**, NOT driver-type-based. Any run can trigger overnight rest if the driver's shift ends at a non-yard location (services/layby). The end-of-shift location check is a planning-time decision (planner fills in where they expect the driver to rest).
+
+- API: `POST /planning/runs/:id/overnight-rest`
+  - Body: `restLocationText?`, `restPostcode?`, `restLat?`, `restLng?`, `shiftEndIso?`, `restHours? (9|11)`, `moveDeliveries? (default true)`
+  - Creates a new relay run: same `assignedDriverId` + `assignedTrailerId`, `dependsOnRunId` = source run, `runType = "relay"`, `plannedDate` = start of delivery day, `estimatedStartTime` = shiftEnd + restHours (HH:MM)
+  - Adds a `depot_start` waypoint at rest location with notes recording the DVLA rest duration + ISO timestamp
+  - If `moveDeliveries = true` (default): moves delivery/dropoff assignments from source run to new run with fresh 1000/2000/3000… sequence numbers; recalculates derived requirements on source run
+  - DVLA EC 561/2006: 11h standard or 9h reduced (hardcoded, no DB table needed at this stage)
+- Frontend: "🌙 Overnight run" button in RunLane action bar
+  - Inline form below waypoint form: rest location name, postcode (auto-geocodes via postcodes.io), lat/lng, shift end datetime picker, DVLA rest selector (11h/9h), checkbox to move deliveries
+  - Preview line shows calculated delivery run start time before confirming
+  - On success: reloads both left panel (delivery stops may have moved) and right panel (new run appeared)
+  - `planningApi.createOvernightRestRun()` added to API client
+
+**Deferred:**
+- ③ Return-to-base warning using `baseLat`/`baseLng` — next
+- ④ DVLA rules compliance cron (annual review) — future
+- ⑤ Warning audit trail — future
+- Mobile "End shift at rest location" button — Phase 4 GPS work
+
+---
+
 ## Session log — 2026-05-27f
 
 ### Planning board features — series (manual reorder, driver work pattern, base postcode)
