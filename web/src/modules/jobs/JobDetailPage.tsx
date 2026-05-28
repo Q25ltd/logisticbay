@@ -257,9 +257,6 @@ export default function JobDetailPage() {
           </div>
           <div className="flex items-center gap-3 mt-1 text-sm" style={{ color: "#6b7280" }}>
             {job.customerName && <span>{job.customerName}</span>}
-            {job.plannedDate && (
-              <><span>·</span><span>📅 {fmtDate(job.plannedDate)}</span></>
-            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -292,7 +289,6 @@ export default function JobDetailPage() {
               <Field label="Priority"       value={job.priority ? cap(job.priority) : undefined} />
               <Field label="Customer ref"   value={job.customerRef} mono />
               <Field label="PO number"      value={job.purchaseOrderNumber} mono />
-              <Field label="Planned date"   value={fmtDate(job.plannedDate)} />
               {job.bookingContactName && (
                 <Field label="Booking contact" value={`${job.bookingContactName}${job.bookingContactPhone ? ` · ${job.bookingContactPhone}` : ""}`} />
               )}

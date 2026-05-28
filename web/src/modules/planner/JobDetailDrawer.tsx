@@ -86,7 +86,6 @@ export default function JobDetailDrawer({
           <DrawerSection title="Job summary">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <DetailRow label="Customer" value={context.customer} />
-              <DetailRow label="Planning date" value={dayKey(job.plannedDate) || "Unplanned"} />
               <DetailRow label="Status" value={context.statusLabel} />
               <DetailRow label="Reference" value={job.customerRef} />
               <DetailRow label="Service type" value={job.serviceType} />

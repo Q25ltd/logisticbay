@@ -200,22 +200,6 @@ function JobRow({ job, onStatusChange, onNote, onEdit, onDelete, onView }: {
       className={"hover:bg-blue-50/40 transition-colors cursor-pointer " + (hasNote ? "bg-yellow-50" : "")}
       onClick={() => onView(job.id)}
     >
-      {/* Date */}
-      <td className="px-4 py-4 text-sm whitespace-nowrap" style={{ color: "#6b7280" }}>
-        {job.plannedDate ? (
-          <>
-            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: "#9ca3af" }}>
-              {fmtWeekday(job.plannedDate)}
-            </div>
-            <div className="font-semibold text-base" style={{ color: "#0f172a" }}>
-              {fmtShort(job.plannedDate)}
-            </div>
-          </>
-        ) : (
-          <span className="text-sm italic" style={{ color: "#9ca3af" }}>Draft</span>
-        )}
-      </td>
-
       {/* Route */}
       <td className="px-4 py-4 max-w-xs">
         <div className="text-sm font-semibold truncate" style={{ color: "#0f172a" }}>{fromName}</div>
@@ -521,7 +505,7 @@ export default function JobsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-slate-50">
-                    {["Date", "Route", "Job ref / Customer", "Load", "Status", "Updated", ""].map(h => (
+                    {["Route", "Job ref / Customer", "Load", "Status", "Updated", ""].map(h => (
                       <th key={h} className="px-4 py-4 text-left text-sm font-semibold text-muted whitespace-nowrap">
                         {h}
                       </th>
@@ -563,7 +547,7 @@ export default function JobsPage() {
                     <Badge status={job.status} />
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
-                    {job.plannedDate && <span>📅 {fmtWeekday(job.plannedDate)} {fmtShort(job.plannedDate)}</span>}
+                    {/* planned date removed — collection date on stops is the source of truth */}
                     {material && <span>📦 {material}</span>}
                     <div className="flex items-center gap-2">
                       {job.jobReference

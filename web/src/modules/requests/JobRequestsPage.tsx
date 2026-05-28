@@ -318,19 +318,15 @@ function RequestRow({
   const [rejectReason,    setRejectReason]    = useState("no_capacity");
   const [rejectNotes,     setRejectNotes]     = useState("");
   const [accepting,       setAccepting]       = useState(false);
-  // Pre-fill from: (1) job.plannedDate if set, (2) first stop's time window date,
-  // (3) first stop's booked time date. PRF jobs often have no top-level plannedDate
-  // but always have a stop time window the customer specified.
-  // Note: inline j.stops?.[0] here — firstStop is declared further down and
-  // can't be referenced safely inside a useState initialiser.
+  // Derive planned date automatically from the first collection stop's time window.
+  // Not shown to the planner — the stop dates are the source of truth.
   const _initFirstStop = (j.stops ?? [])[0];
-  const firstStopDate =
+  const derivedPlannedDate =
+    (j.stops ?? []).find(s => s.type === "collection" || s.type === "pickup")?.timeWindowStart?.slice(0, 10) ??
     _initFirstStop?.timeWindowStart?.slice(0, 10) ??
     _initFirstStop?.bookedTime?.slice(0, 10) ??
+    j.plannedDate?.slice(0, 10) ??
     "";
-  const [plannedDate,     setPlannedDate]     = useState(
-    j.plannedDate ? j.plannedDate.slice(0, 10) : firstStopDate
-  );
   const [plannerNotes,    setPlannerNotes]    = useState("");
   const [vehicleCategory, setVehicleCategory] = useState(j.vehicleCategory ?? "");
   const [bodyTypes,       setBodyTypes]       = useState<string[]>((j.bodyTypes as string[] | null) ?? []);
@@ -341,7 +337,7 @@ function RequestRow({
   // Vehicle category is required to accept — either already on the job (customer specified)
   // or the planner must choose it now.
   const vehicleAlreadySet = !!j.vehicleCategory;
-  const canAccept = !!plannedDate && (vehicleAlreadySet || !!vehicleCategory);
+  const canAccept = vehicleAlreadySet || !!vehicleCategory;
 
   // Body types available for the selected (or pre-set) vehicle category
   const effectiveCategory = vehicleCategory || j.vehicleCategory || "";
@@ -358,13 +354,12 @@ function RequestRow({
   const firstStop   = stops[0];
 
   async function accept() {
-    if (!plannedDate) { setErr("Planned date is required"); return; }
     if (!vehicleAlreadySet && !vehicleCategory) { setErr("Vehicle type is required"); return; }
     setBusy(true); setErr("");
     try {
       await jobRequestsApi.accept(
         j.id,
-        plannedDate,
+        derivedPlannedDate,
         plannerNotes.trim() || undefined,
         vehicleAlreadySet ? undefined : vehicleCategory,
         bodyTypes.length ? bodyTypes : undefined,
@@ -505,19 +500,6 @@ function RequestRow({
             {accepting && (
               <div className="p-3 rounded-xl bg-green-50 border border-green-200 space-y-3">
                 <div className="font-semibold text-sm text-green-800">Accept this request</div>
-
-                {/* Planned date — required */}
-                <div>
-                  <label className="text-xs font-medium" style={{ color: "#374151" }}>
-                    Planned date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    className="input mt-1 text-sm"
-                    value={plannedDate}
-                    onChange={e => { setPlannedDate(e.target.value); setErr(""); }}
-                  />
-                </div>
 
                 {/* Vehicle type — required if customer didn't specify */}
                 {vehicleAlreadySet ? (

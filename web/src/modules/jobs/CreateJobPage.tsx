@@ -256,7 +256,6 @@ export default function CreateJobPage() {
   // ── Section 01 — Customer details ───────────────────────────────────────────
   const [customerName,    setCustomerName]    = useState("");
   const [customerId,      setCustomerId]      = useState<number | null>(null);
-  const [plannedDate,     setPlannedDate]     = useState(today());
   const [bookingContactName,  setBookingContactName]  = useState("");
   const [bookingContactPhone, setBookingContactPhone] = useState("");
   const [bookingContactEmail, setBookingContactEmail] = useState("");
@@ -617,7 +616,7 @@ export default function CreateJobPage() {
     jobsApi.get(editJobId).then((job: PlannedJob) => {
       setCustomerName(job.customerName || job.customer?.name || "");
       setCustomerId(job.customerId ?? null);
-      setPlannedDate(job.plannedDate ? job.plannedDate.slice(0, 10) : today());
+      // plannedDate is no longer shown in the form — derived from first collection stop
       setJobReference(job.jobReference ?? null);
       setBookingContactName(job.bookingContactName || "");
       setBookingContactPhone(job.bookingContactPhone || "");
@@ -962,11 +961,16 @@ export default function CreateJobPage() {
       };
     });
 
+    // Derive planned date from the first collection stop's date (no explicit field)
+    const firstCollectDate = stops
+      .find(s => s.type === "collection" && s.date)
+      ?.date?.slice(0, 10);
+
     return {
       saveMode,
       customerId,
       customerName,
-      plannedDate:              plannedDate || undefined,
+      plannedDate:              firstCollectDate || undefined,
       bookingContactName,
       bookingContactPhone,
       bookingContactEmail,
@@ -1173,11 +1177,6 @@ export default function CreateJobPage() {
                 {(s1Attempted || triedSave) && !customerName.trim() && (
                   <p className="text-xs text-red-600 mt-1">Required</p>
                 )}
-              </div>
-              <div>
-                <FieldLabel required>Planned date</FieldLabel>
-                <input type="date" className="input mt-1" value={plannedDate}
-                  onChange={e => setPlannedDate(e.target.value)} />
               </div>
               {jobReference && (
                 <div className="flex items-center gap-3 py-2 px-3 rounded-xl border bg-slate-50">
