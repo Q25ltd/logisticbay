@@ -10,7 +10,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Job, JobPart } from "../../types";
 import { jobRequestsApi } from "../../api/jobRequests";
-import { BODY_CATEGORIES, BODY_TYPES, BODY_TYPES_BY_CATEGORY } from "../../constants/vehicleTaxonomy";
+import { BODY_CATEGORIES, BODY_TYPES, BODY_TYPES_BY_CATEGORY, bodyTypeLabel } from "../../constants/vehicleTaxonomy";
+import { STOP_TYPE_LABEL } from "../../constants/jobStatuses";
+import { cap } from "../jobs/createJobUtils";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,16 +41,6 @@ const STATUS_LABEL: Record<string, string> = {
   completed:      "Completed",
   cancelled:      "Cancelled",
   draft:          "Draft",
-};
-
-const STOP_TYPE_LABEL: Record<string, string> = {
-  pickup:     "Pickup",
-  dropoff:    "Drop-off",
-  collection: "Collection",
-  delivery:   "Delivery",
-  handover:   "Handover",
-  yard:       "Yard",
-  depot:      "Depot",
 };
 
 const ACCESS_REQUIREMENT_LABELS: Record<string, string> = {
@@ -130,12 +122,6 @@ function fmtWindow(start: string | null | undefined, end: string | null | undefi
   if (!end) return `${date} from ${st}`;
   const et   = new Date(end).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return `${date} · ${st}–${et}`;
-}
-
-/** "some_snake_case" → "Some snake case" */
-function cap(s: string): string {
-  const spaced = s.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -942,7 +928,3 @@ function ChipRow({
   );
 }
 
-/** Label lookup for body/trailer type values */
-function bodyTypeLabel(v: string): string {
-  return BODY_TYPES.find(b => b.value === v)?.label ?? cap(v);
-}

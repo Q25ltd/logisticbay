@@ -4,8 +4,7 @@ import { runsApi } from "../../api/runs";
 import type { Run } from "../../types";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
-
-const today = () => new Date().toISOString().slice(0, 10);
+import { today } from "../jobs/createJobUtils";
 
 const RUN_STATUS_LABELS: Record<string, string> = {
   draft: "Draft",

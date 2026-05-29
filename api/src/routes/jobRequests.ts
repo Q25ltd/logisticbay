@@ -19,12 +19,12 @@
 
 import crypto                    from "node:crypto";
 import type { FastifyInstance }  from "fastify";
-import type { ZodType }          from "zod";
 import { PrismaClient, Prisma }  from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { env }                   from "../lib/env.js";
 import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
+import { parseBody }             from "../lib/validate.js";
 import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
 import {
   validateStructuredJob,
@@ -46,14 +46,6 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function parseBody<T>(schema: ZodType<T>, body: unknown): { data: T } | { error: string; errors: string[] } {
-  const result = schema.safeParse(body);
-  if (!result.success) {
-    const errors = result.error.issues.map(e => `${e.path.map(p => String(p)).join(".")}: ${e.message}`);
-    return { error: errors[0] ?? "Invalid request body", errors };
-  }
-  return { data: result.data };
-}
 
 const toJson = (arr: string[] | null | undefined): Prisma.InputJsonValue | typeof Prisma.DbNull =>
   Array.isArray(arr) && arr.length > 0 ? (arr as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
@@ -278,7 +270,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     }
 
     const parsed = parseBody(CreateJobSchema, request.body);
-    if ("error" in parsed) return reply.status(400).send(parsed);
+    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const b = parsed.data;
 
     if (!b.stops?.length) {

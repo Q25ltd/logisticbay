@@ -4,14 +4,7 @@ import { runsApi } from "../../api/runs";
 import { driversApi } from "../../api/drivers";
 import type { Run, Driver } from "../../types";
 import { Alert } from "../../components/Alert";
-
-const today = () => new Date().toISOString().slice(0, 10);
-
-function addDays(dateStr: string, n: number) {
-  const d = new Date(dateStr + "T12:00:00Z");
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
+import { today, addDays } from "../jobs/createJobUtils";
 
 const RUN_BADGE: Record<string, string> = {
   draft:       "pending",

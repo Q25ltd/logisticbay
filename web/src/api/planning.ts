@@ -241,14 +241,15 @@ export const planningApi = {
   }) => api.post<PlanningRun>("/planning/runs", body),
 
   patchRun: (id: number, body: {
-    runType?:           string | null;
-    dependsOnRunId?:    number | null;
-    assignedTrailerId?: number | null;
-    assignedDriverId?:  number | null;
-    assignedTruckId?:   number | null;
-    plannerNotes?:      string | null;
+    runType?:            string | null;
+    dependsOnRunId?:     number | null;
+    assignedTrailerId?:  number | null;
+    assignedDriverId?:   number | null;
+    assignedTruckId?:    number | null;
+    plannerNotes?:       string | null;
     estimatedStartTime?: string | null;
-    status?:            string;
+    status?:             string;
+    publishedToDriver?:  boolean;
   }) => api.patch<PlanningRun>(`/planning/runs/${id}`, body),
 
   addStop: (runId: number, jobPartId: number, quantityAssigned?: number) =>

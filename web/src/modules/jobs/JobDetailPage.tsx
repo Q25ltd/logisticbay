@@ -6,6 +6,8 @@ import type { Job, JobPart } from "../../types";
 import RepeatJobModal from "./RepeatJobModal";
 import { Badge } from "../../components/Badge";
 import { BODY_CATEGORIES, BODY_TYPES, BODY_TYPES_BY_CATEGORY, GVW_CLASSES } from "../../constants/vehicleTaxonomy";
+import { STOP_TYPE_LABEL } from "../../constants/jobStatuses";
+import { cap } from "./createJobUtils";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -30,16 +32,6 @@ function fmtWindow(start: string | null | undefined, end: string | null | undefi
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const STOP_TYPE_LABEL: Record<string, string> = {
-  pickup:     "Pickup",
-  dropoff:    "Drop-off",
-  collection: "Collection",
-  delivery:   "Delivery",
-  handover:   "Handover",
-  yard:       "Yard",
-  depot:      "Depot",
-};
 
 const STOP_DOT_COLOUR: Record<string, string> = {
   pickup:     "bg-blue-500",
@@ -141,12 +133,6 @@ const STOP_STATUS_LABEL: Record<string, string> = {
   arrived:   "Arrived",
   loading:   "Loading",
 };
-
-/** "some_snake_case" → "Some snake case" */
-function cap(s: string): string {
-  const spaced = s.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 

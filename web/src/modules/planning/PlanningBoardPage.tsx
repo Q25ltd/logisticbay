@@ -9,11 +9,10 @@ import {
 } from "../../api/planning";
 import { api } from "../../api/client";
 import { aiApi } from "../../api/ai";
-import { BODY_TYPES } from "../../constants/vehicleTaxonomy";
+import { bodyTypeLabel } from "../../constants/vehicleTaxonomy";
+import { today, addDays, cap } from "../jobs/createJobUtils";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function todayISO(): string { return new Date().toISOString().slice(0, 10); }
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -24,24 +23,8 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-function prevDay(d: string): string {
-  const dt = new Date(d); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10);
-}
-function nextDay(d: string): string {
-  const dt = new Date(d); dt.setDate(dt.getDate() + 1); return dt.toISOString().slice(0, 10);
-}
-function addDaysToISO(d: string, n: number): string {
-  const dt = new Date(d + "T12:00:00Z");
-  dt.setUTCDate(dt.getUTCDate() + n);
-  return dt.toISOString().slice(0, 10);
-}
-
-function cap(s: string): string {
-  return s.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
-}
-function bodyTypeLabel(v: string): string {
-  return BODY_TYPES.find(b => b.value === v)?.label ?? cap(v);
-}
+function prevDay(d: string): string { return addDays(d, -1); }
+function nextDay(d: string): string { return addDays(d, 1); }
 
 function relativeDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -98,7 +81,8 @@ const WAYPOINT_TYPE_LABEL: Record<string, string> = {
   return_to_base: "Return to base", overnight_rest: "Overnight rest", custom: "Stop",
 };
 
-const STOP_TYPE_LABEL: Record<string, string> = {
+/** Abbreviated labels for compact planning-board display */
+const STOP_TYPE_LABEL_SHORT: Record<string, string> = {
   collection: "Collect", delivery: "Deliver", pickup: "Pickup",
   dropoff: "Drop", reload: "Reload", return: "Return", waypoint: "Stop", other: "Other",
 };
@@ -112,27 +96,6 @@ const FLEET_STATUS_LABEL: Record<string, string> = {
   loaded: "Loaded", in_use: "In Use", repair: "In Repair",
 };
 
-const GROUP_LABEL: Record<string, string> = {
-  needs_attention:            "Needs attention",
-  in_custody:                 "Collected — in custody",
-  today:                      "Ready to plan today",
-  vehicle_van:                "Van",
-  vehicle_rigid:              "Rigid",
-  vehicle_artic_curtainsider: "Artic — Curtainsider",
-  vehicle_artic_fridge:       "Artic — Fridge",
-  vehicle_flatbed:            "Flatbed",
-  vehicle_taillift:           "Tail lift",
-  vehicle_hiab:               "HIAB",
-  vehicle_adr:                "ADR / Hazardous",
-  direction_london:           "London / M25",
-  direction_midlands:         "Midlands",
-  direction_north:            "North",
-  direction_east:             "East / Ports",
-  direction_west_wales:       "West / Wales",
-  direction_scotland:         "Scotland",
-  direction_local:            "Local",
-  future:                     "Future jobs",
-};
 
 const GOODS_COMPAT: Record<string, { label: string; colour: string }> = {
   liquid:            { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
@@ -171,19 +134,6 @@ const LOOK_AHEAD_OPTIONS = [
 
 function Badge({ children, colour }: { children: React.ReactNode; colour: string }) {
   return <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${colour}`}>{children}</span>;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: "bg-slate-100 text-slate-600", assigned: "bg-blue-100 text-blue-700",
-    in_progress: "bg-amber-100 text-amber-700", completed: "bg-green-100 text-green-700",
-    cancelled: "bg-red-100 text-red-600",
-  };
-  const label: Record<string, string> = {
-    draft: "Draft", assigned: "Assigned", in_progress: "In progress",
-    completed: "Done", cancelled: "Cancelled",
-  };
-  return <Badge colour={map[status] ?? "bg-slate-100 text-slate-600"}>{label[status] ?? status}</Badge>;
 }
 
 /** Single badge that merges run status + publishedToDriver into one coherent pill.
@@ -269,14 +219,14 @@ function JobWorkCard({
   group,
   onAddJobToRun,
   onAddPartToRun,
-  runs,
+  draftRuns,
   selected,
   onSelectToggle,
 }: {
   group:           JobWorkGroup;
-  onAddJobToRun:   (jobId: number, runId: number) => Promise<void>;
+  onAddJobToRun:   (jobId: number, runId: number, partIds?: number[]) => Promise<void>;
   onAddPartToRun:  (jobPartId: number, runId: number) => Promise<void>;
-  runs:            PlanningRun[];
+  draftRuns:       PlanningRun[];
   selected:        boolean;
   onSelectToggle:  (jobId: number) => void;
 }) {
@@ -284,13 +234,13 @@ function JobWorkCard({
   const [adding, setAdding] = useState(false);
   const [addingPartId, setAddingPartId] = useState<number | null>(null);
 
-  const draftRuns      = runs.filter(r => r.status === "draft" || r.status === "assigned");
   const effectiveRunId = selectedRunId || (draftRuns.length === 1 ? draftRuns[0].id : "");
 
   async function handleAdd() {
     if (!effectiveRunId) return;
     setAdding(true);
-    try { await onAddJobToRun(group.jobId, Number(effectiveRunId)); }
+    // Pass this card's part IDs so only the date-scoped parts are added
+    try { await onAddJobToRun(group.jobId, Number(effectiveRunId), group.parts.map(p => p.jobPartId)); }
     finally { setAdding(false); }
   }
 
@@ -317,8 +267,6 @@ function JobWorkCard({
   const isADR           = rep.hasHazardous;
   const isTemp          = rep.hasTempControl;
 
-  const today = new Date().toISOString().slice(0, 10);
-
   const borderColour =
     impossible             ? "border-l-red-600"    :
     deliveryBlocked        ? "border-l-orange-500" :
@@ -335,6 +283,7 @@ function JobWorkCard({
       draggable
       onDragStart={e => {
         e.dataTransfer.setData("application/job-id", String(group.jobId));
+        e.dataTransfer.setData("application/job-part-ids", group.parts.map(p => p.jobPartId).join(","));
         e.dataTransfer.effectAllowed = "copy";
       }}
       className={`bg-white rounded border border-border border-l-4 ${borderColour} mb-1.5 overflow-hidden cursor-grab active:cursor-grabbing transition-shadow hover:shadow-sm ${
@@ -398,7 +347,7 @@ function JobWorkCard({
           const location  = part.currentLocation ?? part.finalDestination ?? "—";
           const postcode  = isCollect ? part.currentPostcode : part.finalPostcode;
           const dDate     = partDate(part);
-          const dateLabel = dDate && dDate !== today ? relativeDate(dDate) : null;
+          const dateLabel = dDate && dDate !== today() ? relativeDate(dDate) : null;
           const isBlocked = isDrop && deliveryBlocked;
 
           return (
@@ -579,7 +528,7 @@ function RunLane({
   onRemoveWaypoint: (runId: number, waypointId: number) => Promise<void>;
   onPublish:        (runId: number) => Promise<void>;
   onDelete:         (runId: number) => Promise<void>;
-  onDropJob:         (jobId: number) => Promise<void>;
+  onDropJob:         (jobId: number, partIds?: number[]) => Promise<void>;
   onDropPart:        (jobPartId: number) => Promise<void>;
   onOptimiseRoute:    (runId: number) => Promise<void>;
   onConfirmOptimise:  (runId: number) => Promise<void>;
@@ -999,10 +948,18 @@ function RunLane({
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsOver(false); }}
         onDrop={async e => {
           e.preventDefault(); setIsOver(false);
+          // Single-part row drag (individual stop row)
           const partId = parseInt(e.dataTransfer.getData("application/job-part-id"), 10);
           if (!isNaN(partId)) { await onDropPart(partId); return; }
-          const jobId  = parseInt(e.dataTransfer.getData("application/job-id"), 10);
-          if (!isNaN(jobId)) await onDropJob(jobId);
+          // Card-level drag — job-id always present; part-ids present when date-scoped card
+          const jobId = parseInt(e.dataTransfer.getData("application/job-id"), 10);
+          if (!isNaN(jobId)) {
+            const partIdsStr = e.dataTransfer.getData("application/job-part-ids");
+            const partIds = partIdsStr
+              ? partIdsStr.split(",").map(s => parseInt(s, 10)).filter(n => !isNaN(n))
+              : undefined;
+            await onDropJob(jobId, partIds);
+          }
         }}
       >
         {routeItems.length === 0 ? (
@@ -1095,7 +1052,7 @@ function RunLane({
                           a.jobPart.type === "collection" || a.jobPart.type === "pickup"
                             ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
                         }>
-                          {STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type}
+                          {STOP_TYPE_LABEL_SHORT[a.jobPart.type] ?? a.jobPart.type}
                         </Badge>
                         <span className="font-semibold text-[13px] text-primary truncate flex-1 min-w-0">
                           {a.jobPart.job.customerName ?? "—"}
@@ -1250,7 +1207,7 @@ function RunLane({
                 const items = [
                   ...[...run.assignments].sort((a, b) => a.sequenceNumber - b.sequenceNumber).map(a => ({
                     key: `a-${a.id}`, seq: a.sequenceNumber,
-                    label: `${STOP_TYPE_LABEL[a.jobPart.type] ?? a.jobPart.type} — ${a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}`,
+                    label: `${STOP_TYPE_LABEL_SHORT[a.jobPart.type] ?? a.jobPart.type} — ${a.jobPart.job.customerName ?? a.jobPart.locationTextSnapshot ?? "Unknown"}`,
                   })),
                   ...[...run.waypoints].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
                     .filter(w => w.waypointType !== "depot_start" && w.waypointType !== "return_to_base")
@@ -1653,32 +1610,6 @@ function Sidebar({
   );
 }
 
-// ── JobGroup helpers (kept for handleAddJobToRun fallback) ────────────────────
-
-interface JobGroup {
-  jobId: number; jobReference: string | null; customerName: string | null;
-  goodsType: string | null; weight: number | null; quantity: number | null;
-  quantityUnit: string | null; plannedDate: string | null; stops: UnplannedStop[];
-}
-
-function buildJobGroups(clusters: StopCluster[]): JobGroup[] {
-  const allStops = clusters.flatMap(c => c.stops);
-  const byJob = new Map<number, JobGroup>();
-  for (const stop of allStops) {
-    if (!byJob.has(stop.jobId)) {
-      byJob.set(stop.jobId, {
-        jobId: stop.jobId, jobReference: stop.jobReference, customerName: stop.customerName,
-        goodsType: stop.goodsType, weight: stop.weight, quantity: stop.quantity,
-        quantityUnit: stop.quantityUnit,
-        plannedDate: stop.plannedDate ? (stop.plannedDate as string).slice(0, 10) : null,
-        stops: [],
-      });
-    }
-    byJob.get(stop.jobId)!.stops.push(stop);
-  }
-  return [...byJob.values()];
-}
-
 function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
   const lq = q.toLowerCase();
   return [
@@ -1691,7 +1622,7 @@ function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PlanningBoardPage() {
-  const [date,           setDate]           = useState(todayISO());
+  const [date,           setDate]           = useState(today());
   const [lookAheadDays,  setLookAheadDays]  = useState(0);
   const [search,         setSearch]         = useState("");
   const [workItems,      setWorkItems]      = useState<PlannerWorkItem[]>([]);
@@ -1733,13 +1664,13 @@ export default function PlanningBoardPage() {
   const [confirmOptimiseId,  setConfirmOptimiseId]  = useState<number | null>(null);
 
   // End date of unplanned window
-  const dateTo = useMemo(() => addDaysToISO(date, lookAheadDays), [date, lookAheadDays]);
+  const dateTo = useMemo(() => addDays(date, lookAheadDays), [date, lookAheadDays]);
 
   // ── Sidebar counts ──────────────────────────────────────────────────────────
   const sidebarCounts = useMemo<SidebarCounts>(() => {
     const needs = new Set<number>();
     const custody = new Set<number>();
-    const today = new Set<number>();
+    const todayIds = new Set<number>();
     const future = new Set<number>();
     const byVehicle: Record<string, Set<number>> = {};
     const byArea: Record<string, Set<number>> = {};
@@ -1749,7 +1680,7 @@ export default function PlanningBoardPage() {
       if (gk === "needs_attention") needs.add(item.jobId);
       else if (gk === "in_custody") custody.add(item.jobId);
       else if (gk === "future")     future.add(item.jobId);
-      else                          today.add(item.jobId);
+      else                          todayIds.add(item.jobId);
 
       const vc = item.vehicleCategory?.toLowerCase();
       if (vc) {
@@ -1767,7 +1698,7 @@ export default function PlanningBoardPage() {
     return {
       needs_attention: needs.size,
       in_custody:      custody.size,
-      ready_today:     today.size,
+      ready_today:     todayIds.size,
       future:          future.size,
       byVehicle: Object.fromEntries(Object.entries(byVehicle).map(([k, v]) => [k, v.size])),
       byArea:    Object.fromEntries(Object.entries(byArea).map(([k, v]) => [k, v.size])),
@@ -1792,43 +1723,51 @@ export default function PlanningBoardPage() {
     });
   }, [workItems, activePool, activeVehicle, activeArea, search]);
 
-  // ── Build JobWorkGroups (grouped by collection date) ────────────────────────
+  // ── Build JobWorkGroups (grouped by part date) ──────────────────────────────
+  // Each part is placed under its OWN date bucket so multi-day jobs appear in
+  // BOTH a collection-date card AND a delivery-date card.
+  // Parts with the same jobId AND the same date are merged into one card.
   // Priority buckets: needs_attention → in_custody → date_YYYY-MM-DD (asc) → future
   const jobWorkGroupsByDisplayKey = useMemo(() => {
-    // Step 1: bucket parts by job
-    const byJob = new Map<number, { apiGroupKey: string; parts: PlannerWorkItem[] }>();
+    const riskOrder = { high: 3, medium: 2, low: 1, none: 0 } as const;
+
+    // Step 1: bucket each part into (jobId × displayKey) cards
+    // cardKey = `${jobId}:${displayKey}`
+    const byCard = new Map<string, { displayKey: string; parts: PlannerWorkItem[] }>();
     for (const item of filteredWorkItems) {
-      if (!byJob.has(item.jobId)) byJob.set(item.jobId, { apiGroupKey: item.groupKey, parts: [] });
-      byJob.get(item.jobId)!.parts.push(item);
+      const gk = item.groupKey;
+      let displayKey: string;
+      if      (gk === "needs_attention") displayKey = "needs_attention";
+      else if (gk === "in_custody")      displayKey = "in_custody";
+      else {
+        const d = partDate(item);
+        displayKey = d ? `date_${d}` : "future";
+      }
+      const cardKey = `${item.jobId}:${displayKey}`;
+      if (!byCard.has(cardKey)) byCard.set(cardKey, { displayKey, parts: [] });
+      byCard.get(cardKey)!.parts.push(item);
     }
 
-    // Step 2: build groups keyed by display bucket
+    // Step 2: build JobWorkGroups and bucket by displayKey
     const byGroup = new Map<string, JobWorkGroup[]>();
-    for (const [jobId, { apiGroupKey, parts }] of byJob) {
+    for (const [, { displayKey, parts }] of byCard) {
       const rep       = parts[0];
-      const riskOrder = { high: 3, medium: 2, low: 1, none: 0 } as const;
       const riskLevel = parts.reduce<"high"|"medium"|"low"|"none">((best, p) =>
         riskOrder[p.riskLevel] > riskOrder[best] ? p.riskLevel : best, "none");
       const warnings  = [...new Set(parts.flatMap(p => p.warnings))];
-      const grp: JobWorkGroup = { jobId, jobReference: rep.jobReference, customerName: rep.customerName, parts, riskLevel, warnings };
-
-      let displayKey: string;
-      if (apiGroupKey === "needs_attention") {
-        displayKey = "needs_attention";
-      } else if (apiGroupKey === "in_custody") {
-        displayKey = "in_custody";
-      } else {
-        // Use the collection stop's date; fall back to any stop date, then "future"
-        const collectPart = parts.find(p => p.nextAction.startsWith("Collect")) ?? parts[0];
-        const d = partDate(collectPart);
-        displayKey = d ? `date_${d}` : "future";
-      }
-
+      const grp: JobWorkGroup = {
+        jobId:        rep.jobId,
+        jobReference: rep.jobReference,
+        customerName: rep.customerName,
+        parts,
+        riskLevel,
+        warnings,
+      };
       if (!byGroup.has(displayKey)) byGroup.set(displayKey, []);
       byGroup.get(displayKey)!.push(grp);
     }
 
-    // Step 3: within each date group sort by collection time → postcode → goods type
+    // Step 3: within each date group sort by stop time → postcode → goods type
     for (const [key, grps] of byGroup) {
       if (!key.startsWith("date_")) continue;
       grps.sort((a, b) => {
@@ -1859,12 +1798,6 @@ export default function PlanningBoardPage() {
     if (jobWorkGroupsByDisplayKey.has("future")) keys.push("future");
     return keys;
   }, [jobWorkGroupsByDisplayKey]);
-
-  const allDisplayedGroups = useMemo(() => {
-    const all: JobWorkGroup[] = [];
-    for (const dk of orderedDisplayKeys) { all.push(...(jobWorkGroupsByDisplayKey.get(dk) ?? [])); }
-    return all;
-  }, [orderedDisplayKeys, jobWorkGroupsByDisplayKey]);
 
   const totalJobCount = useMemo(() => new Set(filteredWorkItems.map(i => i.jobId)).size, [filteredWorkItems]);
 
@@ -1911,17 +1844,19 @@ export default function PlanningBoardPage() {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  async function handleAddJobToRun(jobId: number, runId: number) {
-    // Use workItems as primary source (they have jobPartId directly)
-    const jobParts = workItems.filter(i => i.jobId === jobId)
+  // partIds — when provided, only those parts are added (date-scoped card drop/button).
+  // When omitted, all parts of the job are added (batch select, full-job drop).
+  async function handleAddJobToRun(jobId: number, runId: number, partIds?: number[]) {
+    const jobParts = workItems
+      .filter(i => i.jobId === jobId && (!partIds || partIds.includes(i.jobPartId)))
       .sort((a, b) => (a.nextAction.startsWith("Collect") ? 0 : 1) - (b.nextAction.startsWith("Collect") ? 0 : 1));
 
     if (jobParts.length > 0) {
       for (const part of jobParts) {
         try { await planningApi.addStop(runId, part.jobPartId); } catch { /* skip */ }
       }
-    } else {
-      // Fallback: clusters
+    } else if (!partIds) {
+      // Fallback to clusters only when doing a full-job add (no partIds filter)
       const allStops = clusters.flatMap(c => c.stops)
         .filter(s => s.jobId === jobId)
         .sort((a, b) => (COLLECT_FIRST.has(a.type) ? 0 : 1) - (COLLECT_FIRST.has(b.type) ? 0 : 1));
@@ -2077,7 +2012,7 @@ export default function PlanningBoardPage() {
             className="input text-sm px-2 py-1 w-32" />
           <button onClick={() => setDate(nextDay(date))}
             className="btn px-2 py-1 text-sm border border-border bg-white hover:bg-slate-50">→</button>
-          <button onClick={() => setDate(todayISO())}
+          <button onClick={() => setDate(today())}
             className="btn px-2 py-1 text-xs border border-border bg-white hover:bg-slate-50 text-muted">Today</button>
         </div>
 
@@ -2195,7 +2130,7 @@ export default function PlanningBoardPage() {
                 headerClass = "text-slate-400 border-slate-200";
               } else if (dk.startsWith("date_")) {
                 const d    = dk.slice(5);
-                const tom  = addDaysToISO(date, 1);
+                const tom  = addDays(date, 1);
                 headerLabel = d === date ? `Today — ${fmtDate(d + "T12:00:00")}` :
                               d === tom  ? `Tomorrow — ${fmtDate(d + "T12:00:00")}` :
                               fmtDate(d + "T12:00:00");
@@ -2213,9 +2148,9 @@ export default function PlanningBoardPage() {
                   </div>
                   {grps.map(grp => (
                     <JobWorkCard
-                      key={grp.jobId}
+                      key={`${grp.jobId}:${dk}`}
                       group={grp}
-                      runs={runs}
+                      draftRuns={draftRuns}
                       selected={selectedJobIds.has(grp.jobId)}
                       onSelectToggle={toggleJobSelect}
                       onAddJobToRun={handleAddJobToRun}
@@ -2288,7 +2223,7 @@ export default function PlanningBoardPage() {
                 onRemoveWaypoint={handleRemoveWaypoint}
                 onPublish={handlePublish}
                 onDelete={handleDeleteRun}
-                onDropJob={jobId   => handleAddJobToRun(jobId, run.id)}
+                onDropJob={(jobId, partIds) => handleAddJobToRun(jobId, run.id, partIds)}
                 onDropPart={partId => handleAddPartToRun(partId, run.id)}
                 onOptimiseRoute={handleOptimiseRoute}
                 onConfirmOptimise={confirmOptimise}

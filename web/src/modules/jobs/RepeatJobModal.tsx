@@ -13,16 +13,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { jobsApi } from "../../api/jobs";
 import type { PlannedJob } from "../../types";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+import { today, addDays } from "./createJobUtils";
 
 function daysBetween(a: string, b: string): number {
   return Math.round(

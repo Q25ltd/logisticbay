@@ -12,16 +12,9 @@ import {
   PENDING_JOB_STATUSES,
   PROGRESSABLE_JOB_STATUSES,
 } from "../../constants/jobStatuses";
+import { today, addDays, cap } from "./createJobUtils";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-
-const today = () => new Date().toISOString().split("T")[0];
-
-function addDays(dateStr: string, n: number) {
-  const d = new Date(dateStr + "T12:00:00Z");
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 /** "2026-05-27" or "2026-05-27T00:00:00.000Z" → "27 May" */
 const fmtShort = (iso: string) =>
@@ -30,12 +23,6 @@ const fmtShort = (iso: string) =>
 /** "2026-05-27" or "2026-05-27T00:00:00.000Z" → "Wed" */
 const fmtWeekday = (iso: string) =>
   new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" });
-
-/** "some_snake" → "Some snake" */
-function cap(s: string): string {
-  const spaced = s.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

@@ -17,20 +17,7 @@ import { PrismaClient }         from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
-
-// ── Haversine distance (km) between two GPS points ───────────────────────────
-
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R    = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+import { haversineKm }               from "../lib/geo.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -374,15 +361,16 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const { companyId } = request.user!;
       const id = parseInt((request.params as { id: string }).id, 10);
       const b  = request.body as {
-        runType?:           string | null;
-        dependsOnRunId?:    number | null;
-        assignedTrailerId?: number | null;
-        assignedDriverId?:  number | null;
-        assignedTruckId?:   number | null;
-        plannerNotes?:      string | null;
+        runType?:            string | null;
+        dependsOnRunId?:     number | null;
+        assignedTrailerId?:  number | null;
+        assignedDriverId?:   number | null;
+        assignedTruckId?:    number | null;
+        plannerNotes?:       string | null;
         estimatedStartTime?: string | null;
         estimatedEndTime?:   string | null;
-        status?:            string;
+        status?:             string;
+        publishedToDriver?:  boolean;
       };
 
       const run = await prisma.run.findFirst({ where: { id, companyId } });
@@ -415,6 +403,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           ...(b.estimatedStartTime !== undefined ? { estimatedStartTime: b.estimatedStartTime } : {}),
           ...(b.estimatedEndTime   !== undefined ? { estimatedEndTime:   b.estimatedEndTime }   : {}),
           ...(b.status            !== undefined ? { status:            b.status }            : {}),
+          ...(b.publishedToDriver !== undefined ? { publishedToDriver: b.publishedToDriver } : {}),
         },
         include: RUN_INCLUDE,
       });
@@ -668,17 +657,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           ? desiredSeq
           : Math.round((prevSeq + nextSeq) / 2);
       } else {
-        // No room — renumber all existing items with step=1000 then insert
-        let counter = 0;
-        const reseqOps = combined.map(item => {
-          counter += 1000;
-          const newSeq = item.kind === "a" && item.id === prevItem?.id
-            ? (newSeqForPrev => newSeqForPrev)(counter)
-            : counter;
-          return item;
-        });
-
-        // Simpler: just multiply all existing seqs by 1000
+        // No room — multiply all existing sequence numbers by 1000 to create gaps, then insert
         await Promise.all([
           ...existingAssignments.map(a =>
             prisma.runAssignment.update({ where: { id: a.id }, data: { sequenceNumber: a.sequenceNumber * 1000 } })
@@ -687,9 +666,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
             prisma.runWaypoint.update({ where: { id: w.id }, data: { sequenceNumber: w.sequenceNumber * 1000 } })
           ),
         ]);
-        // Now there are gaps — insert at midpoint of the scaled neighbours
         finalSeq = Math.round((prevSeq * 1000 + nextSeq * 1000) / 2);
-        void reseqOps; // suppress unused warning
       }
 
       const waypoint = await prisma.runWaypoint.create({

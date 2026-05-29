@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-28 (jobs panel date grouping; overnight rest auto-create run)
+> Last updated: 2026-05-28c (full deduplication pass — shared utils, STOP_TYPE_LABEL, bodyTypeLabel, cap, today, addDays)
 
 ---
 
@@ -215,10 +215,13 @@ Full spec in **PLANNING_BOARD.md**. Three phases.
 - [x] Day driver multi-day warning — banner in run lane when a day driver (`nightsOutAllowed = false`) is assigned to a run whose stops span multiple calendar dates
 - [x] `overnight_rest` waypoint type added — appears in the waypoint type selector (alongside yard_pickup, hub_drop) for mid-route stops; renders as "Overnight rest" label on the run card
 
-**Planning board extras built 2026-05-28 (session 2026-05-28a):**
+**Planning board extras built 2026-05-28 (sessions 2026-05-28a + 2026-05-28b):**
 - [x] Jobs panel date-based grouping — left panel now groups jobs by collection date (Mon 28 May, Tue 29 May…) instead of old vehicle-type/direction groups. Needs attention + In custody stay as priority buckets at top. Cards sorted within each date group by collection time → postcode → goods type.
+- [x] **Multi-day job splitting** — jobs panel now places each job part under its OWN date. A Monday-collect / Wednesday-deliver job shows a "Collect" card under Monday AND a "Deliver" card under Wednesday. Same-day collect+deliver stays as one card. Drag/drop is date-scope-aware: card drag now sets `application/job-part-ids` (comma-separated IDs for the card's visible parts only); drop handler priority: single-part → multi-part card → legacy full-job. New `handleAddPartsToRun` parent handler.
 - [x] `POST /planning/runs/:id/overnight-rest` API endpoint — auto-creates a relay delivery run when driver rests overnight at a roadside location. Same driver + trailer, depot_start waypoint at rest location, estimatedStartTime = shiftEndIso + restHours (DVLA 11h standard or 9h reduced per EC 561/2006), delivery assignments optionally moved from source run, dependsOnRunId links back to source run.
 - [x] "🌙 Overnight run" button in run lane action bar — inline form with rest location, postcode (auto-geocodes), shift end datetime, DVLA rest hours selector, move-deliveries toggle, calculated start time preview.
+- [x] Planned date removed from all planner-facing forms — CJP, job requests accept drawer, jobs list, job detail page, job detail drawer. Date is now auto-derived from the first collection stop's `timeWindowStart`.
+- [x] All API date filters migrated from `plannedDate` to stop `timeWindowStart` — `GET /jobs`, `GET /jobs/my`, `GET /dashboard`, `GET /drivers/:id/schedule`, `POST /job-requests/:id/accept`.
 
 **Planning board extras built 2026-05-27 (session 2026-05-27e/f):**
 - [x] `RunStatusBadge` component — single priority-based pill replacing the old dual ASSIGNED + SENT badge pair. Logic: Done → In progress → Cancelled → 📤 Sent → Assigned → Draft. Eliminates contradictory states (e.g. ASSIGNED + SENT + no driver).

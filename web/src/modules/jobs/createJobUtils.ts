@@ -3,7 +3,20 @@ import type { StopState } from "./createJobTypes";
 
 // ── Helper date functions ─────────────────────────────────────────────────────
 
+/** "some_snake_case" → "Some snake case" */
+export function cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 export const today = () => new Date().toISOString().split("T")[0];
+
+export function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split("T")[0];
+}
+
 export const nowDisplay = () =>
   new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 

@@ -12,6 +12,7 @@ import {
   warningDot,
 } from "./dashboardUtils";
 import { BODY_TYPES, ONBOARD_EQUIPMENT } from "../../constants/vehicleTaxonomy";
+import { cap } from "../jobs/createJobUtils";
 
 const STOP_STATUS_LABELS: Record<string, string> = {
   pending:   "Pending",
@@ -21,11 +22,6 @@ const STOP_STATUS_LABELS: Record<string, string> = {
   arrived:   "Arrived",
   loading:   "Loading",
 };
-
-function cap(s: string): string {
-  const spaced = s.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (

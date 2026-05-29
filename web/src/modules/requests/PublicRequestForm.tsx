@@ -13,6 +13,7 @@ import {
   TRAILER_BODY_TYPE_VALUES,
 } from "../../constants/vehicleTaxonomy";
 import { useParams } from "react-router-dom";
+import { today } from "../jobs/createJobUtils";
 import {
   jobRequestsPublicApi,
   type PublicLinkInfo,
@@ -444,10 +445,6 @@ interface StopState {
 
 let _uid = 0;
 function uid() { return `s${++_uid}`; }
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function blankStop(type: string): StopState {
   return {

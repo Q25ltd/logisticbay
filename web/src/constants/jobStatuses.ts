@@ -66,3 +66,14 @@ export const DRIVER_STATUS_LABELS: Record<string, string> = {
   inactive: "Inactive",
   trial:    "Trial",
 };
+
+/** Full stop type labels — for detail views and review queues */
+export const STOP_TYPE_LABEL: Record<string, string> = {
+  pickup:     "Pickup",
+  dropoff:    "Drop-off",
+  collection: "Collection",
+  delivery:   "Delivery",
+  handover:   "Handover",
+  yard:       "Yard",
+  depot:      "Depot",
+};

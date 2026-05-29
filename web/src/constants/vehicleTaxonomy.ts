@@ -421,3 +421,15 @@ export function equipmentForBodyType(
   const allowed = new Set([...alwaysGroups, ...extra]);
   return ONBOARD_EQUIPMENT.filter(e => allowed.has(e.group));
 }
+
+// ── Display helpers ───────────────────────────────────────────────────────────
+
+function _cap(s: string): string {
+  const spaced = s.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** Resolve a body/trailer type value → human-readable label */
+export function bodyTypeLabel(v: string): string {
+  return BODY_TYPES.find(b => b.value === v)?.label ?? _cap(v);
+}

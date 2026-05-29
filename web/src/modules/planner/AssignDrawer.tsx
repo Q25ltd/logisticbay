@@ -149,7 +149,7 @@ export default function AssignDrawer({
             ? `${t.bookedDate}T${t.bookedTime}:00.000Z`
             : (t.bookedDate || t.bookedTime ? null : undefined);
           return {
-            stopId: stop.id!,
+            jobPartId: stop.id!,
             ...(bookedIso !== undefined ? { bookedTime: bookedIso } : {}),
             ...(t.earliestArrival !== "" ? { earliestArrivalMinutes: parseInt(t.earliestArrival, 10) } : {}),
             ...(t.unloading !== "" ? { unloadingAllowanceMinutes: parseInt(t.unloading, 10) } : {}),

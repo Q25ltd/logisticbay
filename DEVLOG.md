@@ -7,6 +7,82 @@
 
 ---
 
+## Session log — 2026-05-28c
+
+### Full codebase deduplication pass
+
+Continued from 2026-05-28b. User instruction: "go treu all system and clean it as much as you can."
+
+**Canonical utilities established in `createJobUtils.ts`:**
+- `cap(s)` — snake_case → "Sentence case". Removed local copies from: `JobsPage.tsx`, `PlanningBoardPage.tsx`, `JobRequestsPage.tsx`, `JobDetailDrawer.tsx`, `JobDetailPage.tsx`
+- `today()` — ISO date string for today. Removed local copies from: `DashboardPage.tsx`, `JobsPage.tsx`, `RepeatJobModal.tsx`, `PublicRequestForm.tsx`, `RunsPage.tsx`. `PlanningBoardPage.tsx` had two aliases: `todayISO()` (removed, call sites updated) and a local `const today` inside `JobWorkCard` (replaced with `today()` call).
+- `addDays(dateStr, n)` — new export. Removed local copies from: `DashboardPage.tsx`, `JobsPage.tsx`, `RepeatJobModal.tsx`. `PlanningBoardPage.tsx` had `addDaysToISO()` — removed, call sites updated. `prevDay`/`nextDay` wrappers in PlanningBoardPage now delegate to `addDays`.
+
+**`bodyTypeLabel(v)` exported from `vehicleTaxonomy.ts`** (uses `BODY_TYPES` from there). Removed local copies from `PlanningBoardPage.tsx` and `JobRequestsPage.tsx`.
+
+**`STOP_TYPE_LABEL` exported from `jobStatuses.ts`** (full labels: "Collection", "Delivery", etc.). Removed local copies from `JobDetailPage.tsx` and `JobRequestsPage.tsx`. `PlanningBoardPage.tsx` had a deliberately abbreviated version — renamed to `STOP_TYPE_LABEL_SHORT` to make intent clear (keeps "Collect", "Deliver" etc. for compact UI).
+
+**Other cleanups in `PlanningBoardPage.tsx`:**
+- `const today = new Set<number>()` inside `sidebarCounts` useMemo renamed to `todayIds` — was shadowing the imported `today` function, confusing.
+- `JobWorkCard` prop renamed `runs` → `draftRuns` — parent already computed `draftRuns` via filter; card now receives pre-filtered list directly, no duplicate filter computation inside.
+
+**Previously completed in 2026-05-28b (carried forward for completeness):**
+- `publishedToDriver` silent recall bug fixed (was missing from patchRun client type and server PATCH body)
+- Dead `reseqOps` block removed from `planning.ts`
+- `stopId` → `jobPartId` naming consistency in PATCH `/jobs/:id/stop-times` and `AssignDrawer.tsx`
+- `haversineKm` deduplicated: canonical in `geo.ts`, removed from `planning.ts` and `checkRunService.ts`
+- `parseBody` deduplicated: canonical in `validate.ts`, removed from `jobs.ts` and `jobRequests.ts`
+- Dead code removed from PlanningBoardPage: `GROUP_LABEL`, `StatusBadge`, `buildJobGroups`/`JobGroup`, `allDisplayedGroups`
+- Near-duplicate handlers deleted: `handleAddPartsToRun`, `onAddPartsToRun`, `onDropParts` — `handleAddJobToRun` extended with optional `partIds?: number[]` instead
+
+**Left deferred (needs investigation, not mechanical cleanup):**
+- `clusters` state: fallback path in `handleAddJobToRun` when `workItems` is empty for a jobId — unclear if ever triggered; removing it would be a functional change requiring testing
+
+---
+
+## Session log — 2026-05-28b
+
+### Planning board — per-part date splitting + planned-date removal
+
+**① Jobs panel — split multi-day jobs across collection AND delivery date**
+
+Previous session grouped ALL parts of a job under its collection date, so a Monday-collect / Wednesday-deliver job never appeared in Wednesday's panel. Fixed.
+
+**Architecture:**
+- `jobWorkGroupsByDisplayKey` now keys by `(jobId × displayKey)` not just `jobId`
+- Each `PlannerWorkItem` is bucketed by its own `partDate()` — collection parts go under their date, delivery parts go under theirs
+- Parts with the same `jobId` AND the same date are merged into one card (same-day collect+deliver stays as one card — no change for the common case)
+- Multi-day jobs produce two separate cards: one under the collection date (showing the Collect row), one under the delivery date (showing the Deliver row)
+- `needs_attention` and `in_custody` group keys still bucket all job parts together (no split) — those groups are status-based, not date-based
+- Card `key` prop changed from `grp.jobId` to `${grp.jobId}:${dk}` so the same job can appear under multiple date groups without React key collision
+
+**Drag/drop now date-scope-aware:**
+- Card-level drag now sets `application/job-part-ids` (comma-separated list of `jobPartId`s for the card's parts) instead of `application/job-id`
+- `RunLane` drop handler priority: `application/job-part-id` (single stop row) → `application/job-part-ids` (card-level, date-scoped) → `application/job-id` (legacy fallback for full-job add)
+- New `onDropParts: (jobPartIds: number[]) => Promise<void>` prop on RunLane
+- `JobWorkCard.handleAdd` uses new `onAddPartsToRun(group.parts.map(p => p.jobPartId), runId)` — adds only the card's parts, not all job parts
+- New `handleAddPartsToRun(jobPartIds, runId)` in parent: loops `planningApi.addStop`, then single reload
+
+**② Planned date removed from all planner-facing forms/lists**
+- `CreateJobPage` — no planned date field; auto-derived from first collection stop
+- `JobRequestsPage` accept drawer — planned date derived from stop time, not manual input
+- `JobsPage` — date column removed from table
+- `JobDetailPage` — planned date removed from header + detail grid
+- `JobDetailDrawer` — "Planning date" row removed
+
+**③ API date filters migrated from `plannedDate` to stop `timeWindowStart`**
+- `GET /jobs` filter, `GET /jobs/my` filter
+- `GET /dashboard` range + carry-over queries
+- `GET /drivers/:id/schedule` filter
+- `POST /job-requests/:id/accept` now auto-derives `resolvedPlannedDate` from stops
+
+**Deferred:**
+- ③ Return-to-base warning using `baseLat`/`baseLng`
+- ④ DVLA rules compliance
+- ⑤ Warning audit trail
+
+---
+
 ## Session log — 2026-05-28a
 
 ### Jobs panel date grouping + overnight rest auto-create run

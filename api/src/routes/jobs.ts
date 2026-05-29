@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import type { ZodType } from "zod";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import {
@@ -11,17 +10,7 @@ import {
 import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES, EVENT_TYPE_MAP } from "../sync/sync.constants.js";
 import { appendPlannerReason } from "../lib/jobUtils.js";
 import { createJob, patchJob } from "../services/jobService.js";
-
-// ── Parse helper ──────────────────────────────────────────────────────────────
-
-function parseBody<T>(schema: ZodType<T>, body: unknown): { data: T } | { error: string; errors: string[] } {
-  const result = schema.safeParse(body);
-  if (!result.success) {
-    const errors = result.error.issues.map(e => `${e.path.map(p => String(p)).join(".")}: ${e.message}`);
-    return { error: errors[0] ?? "Invalid request body", errors };
-  }
-  return { data: result.data };
-}
+import { parseBody } from "../lib/validate.js";
 
 // Standard include for job detail views
 const JOB_DETAIL_INCLUDE = {
@@ -228,7 +217,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /jobs — create structured job ────────────────────────────────────
   app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const parsed = parseBody(CreateJobSchema, request.body);
-    if ("error" in parsed) return reply.status(400).send(parsed);
+    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const { companyId, userId } = request.user!;
     const result = await createJob(prisma, { companyId, userId, body: parsed.data });
     if (!result.ok) return reply.status(result.status).send(result);
@@ -239,7 +228,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.patch("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
     const parsed = parseBody(PatchJobSchema, request.body);
-    if ("error" in parsed) return reply.status(400).send(parsed);
+    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const { companyId, userId } = request.user!;
     const job = await prisma.job.findFirst({
       where:   { id, companyId },
@@ -323,7 +312,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const { companyId, userId } = request.user!;
     const body = request.body as {
       stopTimes?: {
-        stopId:                     number;
+        jobPartId:                  number;
         bookedTime?:                string | null;
         earliestArrivalMinutes?:    number | null;
         unloadingAllowanceMinutes?: number | null;
@@ -342,7 +331,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           if ("unloadingAllowanceMinutes" in st) patch.unloadingAllowanceMinutes = st.unloadingAllowanceMinutes ?? null;
           if (Object.keys(patch).length > 0) {
             await tx.jobPart.updateMany({
-              where: { id: st.stopId, jobId: id, companyId },
+              where: { id: st.jobPartId, jobId: id, companyId },
               data:  patch,
             });
           }
@@ -372,7 +361,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
     const parsed = parseBody(UpdateJobStatusSchema, request.body);
-    if ("error" in parsed) return reply.status(400).send(parsed);
+    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const body = parsed.data;
     const { companyId, userId, role } = request.user!;
 
@@ -483,7 +472,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.post("/jobs/:id/note", { preHandler: authenticate }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
     const parsed = parseBody(AddJobNoteSchema, request.body);
-    if ("error" in parsed) return reply.status(400).send(parsed);
+    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const body = parsed.data;
     const { companyId, userId } = request.user!;
 
