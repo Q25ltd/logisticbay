@@ -3,6 +3,7 @@
 **Audience:** the coding agent (Sonnet) executing the cleanup.
 **Authority:** this file is your contract for this work. If anything in here conflicts with your own judgement, this file wins — escalate to the user instead of "improving" the plan.
 **Last updated:** 2026-05-30
+**Tracking branch:** `cleanup/main-tracker` — all cleanup PRs target this branch, not `main`.
 
 ---
 
@@ -558,7 +559,7 @@ Update after every task. This is the single source of truth between sessions.
 | Phase | Task | Status | Owner | Commit | Date |
 |-------|------|--------|-------|--------|------|
 | 0     | 0.1  | done   | sonnet | cleanup/p0-0.1-baseline | 2026-05-30 |
-| 0     | 0.2  | open   |       |        |      |
+| 0     | 0.2  | done   | sonnet | cleanup/p0-0.2-branch-hygiene | 2026-05-30 |
 | 1     | 1.1  | open   |       |        |      |
 | 2     | 2.1  | blocked-by-1.1 | | | |
 | 2     | 2.2  | blocked-by-2.1 | | | |
