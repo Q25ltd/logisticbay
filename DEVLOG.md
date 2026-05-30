@@ -3,7 +3,64 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-27
+> Last updated: 2026-05-30
+
+---
+
+## Cleanup baseline 2026-05-30 — TASK 0.1
+
+**Typecheck:** OK (exit 0, both API and WEB)
+
+**Tests:** 35 pass, 0 fail
+- Suite 1: Job form parity — 9 subtests, all pass
+- Suite 2: Tenant isolation — 24 subtests + 2 top-level, all pass
+
+**check:vocab:** EXIT 1 — pre-existing drift detected at baseline
+```
+❌ Vocabulary files have drifted (API / web / shared):
+  fb88d080...  shared/vehicleTaxonomy.ts
+  fb88d080...  api/src/constants/vehicleTaxonomy.ts      ← matches shared
+  257a4286...  web/src/constants/vehicleTaxonomy.ts      ← DRIFTED
+```
+`web/src/constants/vehicleTaxonomy.ts` diverged from the shared copy (the `bodyTypeLabel()` export added in session 2026-05-28c was added only to the web copy, not synced back to `shared/vehicleTaxonomy.ts`). This is a pre-existing failure, not introduced by this task.
+
+**PlannedJob refs:** 154 (across `*.ts`, `*.tsx`, `*.md`, excluding `node_modules` and `generated`)
+
+**TODO/FIXME/XXX in api/src:** 1
+```
+api/src/sync/sync.service.ts:81:
+  // TODO(phase-2): migrate JobExecutionEvent.driverId to reference DriverProfile instead of User.
+```
+
+**Note:** `RELEASE_READINESS.md` referenced in `CLEANUP_PLAN.md` does not exist in the repo. Logged as a gap — do not let the cleanup plan reference a non-existent file cause confusion.
+
+---
+
+## Session log — 2026-05-30
+
+### Overnight-rest deleted; shift-end GPS capture built
+
+**Decision:** The manual "🌙 Overnight run" feature was replaced entirely by automatic GPS capture on shift submit. Rationale (from user): system should always know where driver and load are when shift ends — this covers day drivers, trampers, and anyone who occasionally stays out. Planner doesn't need to manually create relay runs; they can move deliveries to a different date via the planning board's date-split view (already works).
+
+**Deleted (all three layers):**
+- `POST /planning/runs/:id/overnight-rest` API endpoint (~145 lines) — removed in previous session
+- `createOvernightRestRun` function from `web/src/api/planning.ts` — removed in previous session
+- `PlanningBoardPage.tsx` overnight state (`showOvernightForm`, `orLocation`, `orPostcode`, `orLat`, `orLng`, `orShiftEnd`, `orRestHours`, `orMoveParts`, `orGeoLoading`, `orCreating`), "🌙 Overnight run" button, inline overnight form (~100 lines), `handleCreateOvernightRun` function, `onCreateOvernightRun` prop on `RunLane`, `overnight_rest` from `WAYPOINT_TYPE_LABEL`
+- Duplicate prop declarations in `RunLane` destructuring (2× `onOptimiseRoute` etc.) found and fixed during this cleanup
+
+**Built — shift-end GPS:**
+1. **Schema** — `Shift.endLat Float?` + `Shift.endLng Float?` added to `api/prisma/schema.prisma`. Migration `20260529000000_add_shift_end_location` created manually and applied via `prisma migrate deploy`.
+2. **API** — `SubmitShiftSchema` (`api/src/schemas/shifts.ts`) and `SubmitShiftBody` interface (`api/src/types/requests.ts`) both extended with optional `endLat: number` / `endLng: number`. `PATCH /shifts/:id/submit` handler (`api/src/routes/shifts.ts`) now: (a) persists `endLat`/`endLng` to `Shift`; (b) if GPS present, looks up `DriverProfile` for the submitting user, then finds the driver's next-calendar-day run (status draft/assigned), and upserts a `depot_start` waypoint at the shift-end coordinates. Entire GPS block is wrapped in try/catch — failure is logged but submit still returns 200.
+3. **Mobile** — `ReviewScreen.tsx` (`mobile/src/screens/ReviewScreen.tsx`) now imports `expo-location`, requests foreground permission, and calls `Location.getCurrentPositionAsync()` immediately before the submit PATCH. `endLat`/`endLng` added to the PATCH body. Non-fatal: if permission denied or GPS throws, submit proceeds without coordinates.
+
+**Use cases enabled:**
+- Day driver finishing in the yard → next-day run's depot_start = yard (GPS matches company depot)
+- Tramper stopping roadside → next-day run's depot_start = rest stop location (trailer last known position)
+- Planner can still override depot_start via waypoint form
+
+**Deferred / not yet built:**
+- No planner UI showing "shift-end GPS captured" confirmation
+- No trailer-tracking dashboard (planned in Phase 4)
 
 ---
 
