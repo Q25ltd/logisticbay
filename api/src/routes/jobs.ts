@@ -7,10 +7,12 @@ import {
   UpdateJobStatusSchema,
   AddJobNoteSchema,
 } from "../schemas/jobs.js";
-import { ALLOWED_JOB_TRANSITIONS, SYNC_REVIEW_RULES, EVENT_TYPE_MAP } from "../sync/sync.constants.js";
+import { ALLOWED_JOB_TRANSITIONS, EVENT_TYPE_MAP } from "../sync/sync.constants.js";
 import { appendPlannerReason } from "../lib/jobUtils.js";
 import { createJob, patchJob } from "../services/jobService.js";
 import { parseBody } from "../lib/validate.js";
+import { validateGpsPair } from "../lib/gps.js";
+import { validateClientTimestamp } from "../lib/eventTimestamp.js";
 
 // Standard include for job detail views
 const JOB_DETAIL_INCLUDE = {
@@ -402,28 +404,20 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       }
     }
 
-    let clientTs = new Date();
-    if (body.clientTimestamp) {
-      const parsedClientTs = new Date(body.clientTimestamp);
-      const parsedTime = parsedClientTs.getTime();
-      if (Number.isNaN(parsedTime)) {
-        return reply.status(400).send({ error: "BAD_REQUEST", message: "clientTimestamp must be a valid ISO date" });
-      }
-      const now = Date.now();
-      if (now - parsedTime > SYNC_REVIEW_RULES.MAX_EVENT_AGE_MS) {
-        return reply.status(400).send({ error: "BAD_REQUEST", message: "clientTimestamp is older than 7 days" });
-      }
-      if (parsedTime - now > SYNC_REVIEW_RULES.MAX_FUTURE_DRIFT_MS) {
-        return reply.status(400).send({ error: "BAD_REQUEST", message: "clientTimestamp is more than 1 hour in the future" });
-      }
-      clientTs = parsedClientTs;
+    // E.4: stale/future timestamps are flagged (needsReview) not rejected.
+    // needsReview is persisted in TASK 2.3 (applyJobEvent). For now it is computed
+    // here so the behaviour change (no more 400 on stale timestamps) is live.
+    const tsResult = validateClientTimestamp(body.clientTimestamp ?? null);
+    if (!tsResult.valid) {
+      return reply.status(400).send({ error: "BAD_REQUEST", message: tsResult.reason });
     }
+    const clientTs   = body.clientTimestamp ? tsResult.date : new Date();
+    const tsNeedsReview = body.clientTimestamp ? tsResult.needsReview : false;
+    const tsReviewReason = body.clientTimestamp ? tsResult.reviewReason : undefined;
 
-    if (
-      (body.gpsLat !== undefined && body.gpsLng === undefined) ||
-      (body.gpsLat === undefined && body.gpsLng !== undefined)
-    ) {
-      return reply.status(400).send({ error: "BAD_REQUEST", message: "gpsLat and gpsLng must be provided together" });
+    const gpsResult = validateGpsPair(body.gpsLat, body.gpsLng);
+    if (!gpsResult.valid) {
+      return reply.status(400).send({ error: "BAD_REQUEST", message: gpsResult.reason });
     }
 
     // Cascade check: if cancelling, warn planner if job is still in active runs
@@ -455,6 +449,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           clientTimestamp: clientTs,
           gpsLat:          body.gpsLat,
           gpsLng:          body.gpsLng,
+          needsReview:     tsNeedsReview,
+          reviewReason:    tsReviewReason ?? null,
         },
       }),
     ]);

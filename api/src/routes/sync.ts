@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '../generated/client.js';
 import { authenticate } from '../middleware.js';
 import { processSyncEvents, IncomingEvent } from '../sync/sync.service.js';
+import { validateGpsPair } from '../lib/gps.js';
+import { validateClientTimestamp } from '../lib/eventTimestamp.js';
 
 interface SyncEventsBody {
   events: IncomingEvent[];
@@ -56,49 +58,20 @@ export async function syncRoutes(app: FastifyInstance, prisma: PrismaClient): Pr
             message: 'Each event must have a numeric jobId',
           });
         }
-        if (!event.clientTimestamp || typeof event.clientTimestamp !== 'string') {
+        const tsCheck = validateClientTimestamp(event.clientTimestamp ?? null);
+        if (!tsCheck.valid) {
           return reply.status(400).send({
             error: 'BAD_REQUEST',
-            message: 'Each event must have a clientTimestamp ISO string',
+            message: tsCheck.reason,
           });
         }
 
-        if (
-          (event.gpsLat !== undefined && event.gpsLng === undefined) ||
-          (event.gpsLat === undefined && event.gpsLng !== undefined)
-        ) {
+        const gpsCheck = validateGpsPair(event.gpsLat, event.gpsLng);
+        if (!gpsCheck.valid) {
           return reply.status(400).send({
             error: 'BAD_REQUEST',
-            message: 'gpsLat and gpsLng must be provided together',
+            message: gpsCheck.reason,
           });
-        }
-
-        if (event.gpsLat !== undefined) {
-          if (
-            typeof event.gpsLat !== 'number' ||
-            !Number.isFinite(event.gpsLat) ||
-            event.gpsLat < -90 ||
-            event.gpsLat > 90
-          ) {
-            return reply.status(400).send({
-              error: 'BAD_REQUEST',
-              message: 'gpsLat must be a number between -90 and 90',
-            });
-          }
-        }
-
-        if (event.gpsLng !== undefined) {
-          if (
-            typeof event.gpsLng !== 'number' ||
-            !Number.isFinite(event.gpsLng) ||
-            event.gpsLng < -180 ||
-            event.gpsLng > 180
-          ) {
-            return reply.status(400).send({
-              error: 'BAD_REQUEST',
-              message: 'gpsLng must be a number between -180 and 180',
-            });
-          }
         }
       }
 

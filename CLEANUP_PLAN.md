@@ -679,8 +679,8 @@ Update after every task. This is the single source of truth between sessions.
 | 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
 | 1     | 1.1  | done | sonnet + user | cleanup/p1-1.1-design-decisions | 2026-05-31 |
 | 2     | 2.1  | done | sonnet | cleanup/p2-2.1-event-definitions | 2026-05-31 |
-| 2     | 2.2  | open | | | |
-| 2     | 2.3  | blocked-by-2.2 | | | |
+| 2     | 2.2  | done | sonnet | cleanup/p2-2.2-gps-timestamp-helpers | 2026-05-31 |
+| 2     | 2.3  | open — STOP S3 needed before starting (behaviour change: no planner bypass) | | | |
 | 2     | 2.4  | blocked-by-2.3 | | | |
 | 2     | 2.5  | blocked-by-2.4 | | | |
 | 3     | 3.1  | blocked-by-2.5 | | | |
