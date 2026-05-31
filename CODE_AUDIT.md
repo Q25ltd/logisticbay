@@ -690,6 +690,74 @@ Refuse to mark an item complete without all four lines. The reviewer must be abl
 
 ---
 
+---
+
+# DESIGN DECISIONS (from user, 2026-05-31)
+
+Recorded verbatim from user answers to Section E questions. These are binding — no Phase 2+ task may contradict them without a new explicit decision.
+
+---
+
+## E.1 — Driver cancellation: **Option B — NO, drivers cannot cancel**
+
+Drivers may NOT transition a job to `cancelled`. Remove `"cancelled"` from `ALLOWED_JOB_TRANSITIONS` entries for all driver-reachable statuses (`pending`, `accepted`, `in_progress`, `arrived_pickup`, `collected`). Only planners/owners may cancel via a separate `plannerOverrideStatus` endpoint or directly via the planner UI.
+
+**Affects:** TASK 2.1 (narrow ALLOWED_JOB_TRANSITIONS), TASK 2.3 (applyJobEvent must reject cancel events from driver role).
+
+---
+
+## E.2 — "Is this job today": **Option A — `timeWindowStart` everywhere**
+
+`timeWindowStart` on the first collection stop is the single source of truth for job date. `plannedDate` is no longer needed and **must be deleted from the schema** — it was already removed from all planner-facing forms (session 2026-05-28b). No code should read or write `plannedDate` going forward.
+
+Migration plan: verify all `plannedDate` reads/writes in `api/src/` are gone or migrated, then `DROP COLUMN plannedDate` from `Job`. This is a new task — log in CLEANUP_PLAN.md DISCOVERED.
+
+**Affects:** TASK 2.3 (applyJobEvent timestamp context), TASK 3.6 (Job.status direct writes — no plannedDate in those writes).
+
+---
+
+## E.3 — LoadTrack granularity: **Option A — per-(run, jobPart)**
+
+Every `LoadTrack` row must record both `runId` AND `jobPartId`. A single run picking up multiple loads produces one row per load, not one row per run leg. This is required for trailer tracking — knowing where each individual load is, not just which truck it was on.
+
+**Affects:** TASK 2.4 (cancelRun soft-archive must scope to jobPart), TASK 4.3 (LoadTrack schema — add `jobPartId` NOT NULL if not already present).
+
+---
+
+## E.4 — Stale offline events: **Option A — flag everywhere, never reject**
+
+Both the sync path and the online path should **flag** events older than 7 days as `needsReview = true` and save them. Neither path should reject. A driver who was offline for more than 7 days must not silently lose their work records.
+
+Document this explicitly in `sync.constants.ts` next to `SYNC_REVIEW_RULES`.
+
+**Affects:** TASK 2.2 (validateClientTimestamp returns `{ valid: true, needsReview: true }` for stale events — never `{ valid: false }`), TASK 2.3 (applyJobEvent must honour this for both paths).
+
+---
+
+## E.5 — Cascade-cancel run when last job cancelled: **Option B — NO auto-cancel**
+
+Do not auto-cancel a run when all its assignments are cancelled. Leave the empty run for the planner to clean up manually. A warning banner in the planning board UI when a run has 0 stops is the correct UX response.
+
+**Affects:** TASK 2.3 (no cascade run-cancel from applyJobEvent), TASK 2.4 (cancelRun does not trigger run auto-cancel).
+
+---
+
+## E.6 — JobPart without stops: **Option A — valid only during creation**
+
+A `JobPart` may exist with zero stops transiently during job creation. The `ready_to_plan` gate must enforce ≥1 stop per part. Document this in ARCHITECTURE.md. No DB constraint needed — the validation gate is the enforcement point.
+
+**Affects:** TASK 2.1 (event definitions — events on a zero-stop part are invalid), TASK 2.3 (applyJobEvent — guard: reject events on parts with no stops).
+
+---
+
+## E.7 — Customer required for `ready_to_plan`: **Option B — NO, customer is optional**
+
+Internal moves (depot-to-depot yard shuffles, own-fleet repositioning) are valid jobs with no external customer. `ready_to_plan` does not require `customerId`. If a distinction is needed in future, add an `isInternalJob` boolean flag as a separate task.
+
+**Affects:** TASK 2.3 (applyJobEvent — no customer check in transition guard), TASK 3.6 (Job.status writes — no customer constraint to add).
+
+---
+
 # Audit limits — what I did NOT cover
 
 So you know what's still unaudited:
