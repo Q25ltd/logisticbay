@@ -738,8 +738,8 @@ Update after every task. This is the single source of truth between sessions.
 | 2     | 2.1  | done | sonnet | cleanup/p2-2.1-event-definitions | 2026-05-31 |
 | 2     | 2.2  | done | sonnet | cleanup/p2-2.2-gps-timestamp-helpers | 2026-05-31 |
 | 2     | 2.3  | done | sonnet | cleanup/p2-2.3-apply-job-event | 2026-05-31 |
-| 2     | 2.4  | open | | | |
-| 2     | 2.5  | blocked-by-2.4 | | | |
+| 2     | 2.4  | done | sonnet | cleanup/p2-2.4-cancel-run | 2026-05-31 |
+| 2     | 2.5  | open | | | |
 | 3     | 3.1  | blocked-by-2.5 | | | |
 | 3     | 3.2  | open | | | |
 | 3     | 3.3  | blocked-by-2.5 | | | |
@@ -749,7 +749,7 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.7  | blocked-by-2.5 — error envelope | | | |
 | 4     | 4.1  | blocked-by-3.6 | | | |
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
-| 4     | 4.3  | blocked-by-2.4 | | | |
+| 4     | 4.3  | open | | | |
 | 4     | 4.4  | blocked-by-4.3 | | | |
 | 4     | 4.5  | open | | | |
 | 5     | 5.1  | blocked-by-2.5 | | | |

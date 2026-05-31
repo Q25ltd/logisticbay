@@ -18,6 +18,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 import { haversineKm }               from "../lib/geo.js";
+import { cancelRun }                 from "../services/runService.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -358,7 +359,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     "/planning/runs/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const { companyId } = request.user!;
+      const { companyId, userId } = request.user!;
       const id = parseInt((request.params as { id: string }).id, 10);
       const b  = request.body as {
         runType?:            string | null;
@@ -376,19 +377,12 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const run = await prisma.run.findFirst({ where: { id, companyId } });
       if (!run) return reply.status(404).send({ error: "Run not found" });
 
-      // When cancelling a run, release all active assignments so the job parts
-      // return to the unplanned pool immediately, then revert job statuses.
+      // When cancelling a run, delegate to the shared cancelRun service.
+      // This fixes A.7 (duplicate logic), B.4 (LoadTrack preserved), B.15 (now transactional).
       if (b.status === "cancelled") {
-        const affectedJobIds = (await prisma.runAssignment.findMany({
-          where:  { runId: id, companyId, removedAt: null },
-          select: { jobId: true },
-        })).map(a => a.jobId);
-
-        await prisma.runAssignment.updateMany({
-          where: { runId: id, companyId, removedAt: null },
-          data:  { removedAt: new Date() },
+        await prisma.$transaction(async (tx) => {
+          await cancelRun(tx, { runId: id, companyId, actorUserId: userId, reason: "run_cancelled_by_planner" });
         });
-        await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, prisma);
       }
 
       const updated = await prisma.run.update({
