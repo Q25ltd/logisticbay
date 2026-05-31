@@ -2,10 +2,10 @@ import type { PrismaClient } from '../generated/client.js';
 import {
   ALLOWED_JOB_TRANSITIONS,
   STATUS_BY_EVENT_TYPE,
-  SYNC_REVIEW_RULES,
   SUPPORTED_EVENT_TYPES,
   SupportedEventType,
 } from './sync.constants.js';
+import { validateClientTimestamp } from '../lib/eventTimestamp.js';
 
 export interface IncomingEvent {
   clientEventId: string;
@@ -29,20 +29,6 @@ export interface SyncResult {
   failureReason?: string;
 }
 
-function checkNeedsReview(clientTimestamp: Date): { needsReview: boolean; reviewReason?: string } {
-  const now = Date.now();
-  const eventTime = clientTimestamp.getTime();
-
-  if (now - eventTime > SYNC_REVIEW_RULES.MAX_EVENT_AGE_MS) {
-    return { needsReview: true, reviewReason: SYNC_REVIEW_RULES.MAX_EVENT_AGE_REASON };
-  }
-
-  if (eventTime - now > SYNC_REVIEW_RULES.MAX_FUTURE_DRIFT_MS) {
-    return { needsReview: true, reviewReason: SYNC_REVIEW_RULES.MAX_FUTURE_DRIFT_REASON };
-  }
-
-  return { needsReview: false };
-}
 
 function isSupportedEventType(eventType: string): eventType is SupportedEventType {
   return (SUPPORTED_EVENT_TYPES as readonly string[]).includes(eventType);
@@ -116,17 +102,17 @@ export async function processSyncEvents(
       continue;
     }
 
-    const clientTimestamp = new Date(event.clientTimestamp);
-
-    if (isNaN(clientTimestamp.getTime())) {
+    const tsResult = validateClientTimestamp(event.clientTimestamp);
+    if (!tsResult.valid) {
       await updateSyncLog(prisma, event.clientEventId, companyId, 'failed', 'invalid_client_timestamp');
       results.push({
         clientEventId: event.clientEventId,
         status: 'failed',
-        failureReason: 'clientTimestamp is not a valid ISO date',
+        failureReason: tsResult.reason,
       });
       continue;
     }
+    const clientTimestamp = tsResult.date;
 
     const existing = await prisma.jobExecutionEvent.findUnique({
       where: { companyId_clientEventId: { companyId, clientEventId: event.clientEventId } },
@@ -193,7 +179,7 @@ export async function processSyncEvents(
       continue;
     }
 
-    const { needsReview, reviewReason } = checkNeedsReview(clientTimestamp);
+    const { needsReview, reviewReason } = tsResult;
 
     try {
       await prisma.$transaction(async (tx) => {

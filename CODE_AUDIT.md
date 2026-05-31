@@ -67,7 +67,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.3 🔴 `clientTimestamp` validation logic exists in 2 places — **high confidence**
+## [x] A.3 🔴 `clientTimestamp` validation logic exists in 2 places — **high confidence**
+
+Done: cleanup/p2-2.2-gps-timestamp-helpers
+Files: api/src/lib/eventTimestamp.ts (new), api/src/routes/jobs.ts, api/src/routes/sync.ts, api/src/sync/sync.service.ts
+Verified: typecheck OK; 61 tests pass (18 new in src/lib/); checkNeedsReview private fn deleted; both paths use validateClientTimestamp
+Notes: E.4 decision implemented — online path no longer rejects stale timestamps with 400; both paths flag with needsReview=true. needsReview now persisted in online path too.
 
 **Where:**
 - `api/src/sync/sync.service.ts:32-45` (`checkNeedsReview`) — flags but **does not reject**.
@@ -82,7 +87,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.4 🔴 GPS validation duplicated 3 ways — **high confidence**
+## [x] A.4 🔴 GPS validation duplicated 3 ways — **high confidence**
+
+Done: cleanup/p2-2.2-gps-timestamp-helpers
+Files: api/src/lib/gps.ts (new), api/src/routes/jobs.ts, api/src/routes/sync.ts
+Verified: typecheck OK; 61 tests pass (12 new in src/lib/gps.test.ts); inline GPS range checks removed from both routes; both use validateGpsPair
+Notes: A.4 bug fixed — online path now enforces lat/lng range (-90/90, -180/180) which it previously skipped
 
 **Where:**
 - `api/src/routes/sync.ts:64-102` — pairing + range check.
