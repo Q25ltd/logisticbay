@@ -54,3 +54,9 @@ jobs:
 
       - name: Run integration tests
         run: npm test --prefix api
+
+      - name: Dead code check (knip) — advisory, non-blocking
+        continue-on-error: true
+        run: |
+          npm install --ignore-scripts 2>/dev/null || true
+          npx knip

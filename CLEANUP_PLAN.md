@@ -676,7 +676,7 @@ Update after every task. This is the single source of truth between sessions.
 | 0     | 0.2  | done   | sonnet | cleanup/p0-0.2-branch-hygiene | 2026-05-30 |
 | 0     | 0.3  | done — Path A: bodyTypeLabel added to shared/ + api/ | sonnet | e10ccdd (PR #2) | 2026-05-30 |
 | 0     | 0.4  | done | sonnet | cleanup/p0-0.4-reconcile-audit | 2026-05-30 |
-| 0     | 0.5  | open — install knip baseline       |       |        |      |
+| 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
 | 1     | 1.1  | blocked-by-0.4 |       |        |      |
 | 2     | 2.1  | blocked-by-1.1 | | | |
 | 2     | 2.2  | blocked-by-2.1 | | | |
