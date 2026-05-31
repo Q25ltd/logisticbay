@@ -50,7 +50,7 @@ function isSupportedEventType(eventType: string): eventType is SupportedEventTyp
 
 function buildJobUpdate(event: IncomingEvent): Record<string, unknown> {
   // Only update the job status — quantity/pod fields are now captured on
-  // RunAssignment and LoadTrack, not on PlannedJob.
+  // RunAssignment and LoadTrack, not on Job directly.
   return {
     status: STATUS_BY_EVENT_TYPE[event.eventType as SupportedEventType],
   };

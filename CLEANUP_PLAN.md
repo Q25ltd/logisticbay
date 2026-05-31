@@ -678,8 +678,8 @@ Update after every task. This is the single source of truth between sessions.
 | 0     | 0.4  | done | sonnet | cleanup/p0-0.4-reconcile-audit | 2026-05-30 |
 | 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
 | 1     | 1.1  | done | sonnet + user | cleanup/p1-1.1-design-decisions | 2026-05-31 |
-| 2     | 2.1  | open | | | |
-| 2     | 2.2  | blocked-by-2.1 | | | |
+| 2     | 2.1  | done | sonnet | cleanup/p2-2.1-event-definitions | 2026-05-31 |
+| 2     | 2.2  | open | | | |
 | 2     | 2.3  | blocked-by-2.2 | | | |
 | 2     | 2.4  | blocked-by-2.3 | | | |
 | 2     | 2.5  | blocked-by-2.4 | | | |
@@ -694,7 +694,7 @@ Update after every task. This is the single source of truth between sessions.
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
 | 4     | 4.3  | blocked-by-2.4 | | | |
 | 4     | 4.4  | blocked-by-4.3 | | | |
-| 4     | 4.5  | blocked-by-2.1 | | | |
+| 4     | 4.5  | open | | | |
 | 5     | 5.1  | blocked-by-2.5 | | | |
 | 5     | 5.2  | blocked-by-2.5 | | | |
 | 5     | 5.3  | blocked-by-soak| | | |
