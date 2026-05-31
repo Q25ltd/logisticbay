@@ -707,6 +707,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Finder | Description | Suggested audit section | Status |
 |------|--------|-------------|-------------------------|--------|
+| 2026-05-31 | user (TASK 2.3 S3 decision) | New endpoint `POST /jobs/:id/status_override` — planner/manager exceptional path: requires `reason` (mandatory string), accepts `notes` (optional), writes `AuditLog` row, sets `needsReview: true` + `reviewReason: 'planner_override'` on `JobExecutionEvent`. Allows: cancel, reopen, force-close from any status. Forbidden for driver role. Separate from `applyJobEvent` normal path. | Phase 3 (new TASK 3.8) | open |
 | 2026-05-31 | user (E.2 decision) | Drop `Job.plannedDate` column — field was removed from all planner UI in session 2026-05-28b; user confirmed it is no longer needed. Requires: (1) audit all `plannedDate` reads/writes in `api/src/`; (2) migration `DROP COLUMN plannedDate` from `Job`. S2 stop gate answered affirmatively by user in Phase 1 design decisions. | Phase 4 (schema drop) | open — needs its own task |
 
 ---
@@ -723,7 +724,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Question | Answer | Affects tasks |
 |------|----------|--------|---------------|
-|      |          |        |               |
+| 2026-05-31 | TASK 2.3 S3: should planners be able to bypass ALLOWED_JOB_TRANSITIONS? | No silent bypass. Two explicit paths: (1) normal path — planners follow EVENT_DEFINITIONS same as drivers; (2) override path — planners can cancel/reopen/force-close via a dedicated endpoint that requires `reason` (mandatory), `notes` (optional), writes audit log, sets `needsReview`/exception flag. E.1 stands: drivers cannot cancel at all. | 2.3, new TASK 3.8 |
 
 ---
 

@@ -723,6 +723,25 @@ Recorded verbatim from user answers to Section E questions. These are binding �
 
 ---
 
+## TASK 2.3 planner override design — clarified 2026-05-31
+
+**Two-path model for planner status changes:**
+
+**Path 1 — Normal path (`applyJobEvent`):** Planners follow the same `EVENT_DEFINITIONS` transitions as drivers. No silent bypass. If a planner tries an invalid transition via the normal endpoint, they get the same 400 error a driver would.
+
+**Path 2 — Override path (`POST /jobs/:id/status_override`):** For exceptional actions (cancel a collected job, reopen a completed job, force-close a stalled job). This endpoint:
+- `reason` field is **mandatory** — planner must explain why
+- `notes` field is optional
+- Always writes an `AuditLog` row with actor, timestamp, from-status, to-status, reason
+- Sets `needsReview: true` + `reviewReason: 'planner_override'` on the resulting `JobExecutionEvent`
+- Forbidden for driver role
+
+This endpoint is scoped to: cancel, reopen (`completed → accepted`), force-close (any → `completed`), and any other transition not possible via `applyJobEvent`.
+
+**Affects:** TASK 2.3 (applyJobEvent — normal path only), new TASK 3.8 (build the override endpoint).
+
+---
+
 ## E.1 — Driver cancellation: **Option B — NO, drivers cannot cancel**
 
 Drivers may NOT transition a job to `cancelled`. Remove `"cancelled"` from `ALLOWED_JOB_TRANSITIONS` entries for all driver-reachable statuses (`pending`, `accepted`, `in_progress`, `arrived_pickup`, `collected`). Only planners/owners may cancel via a separate `plannerOverrideStatus` endpoint or directly via the planner UI.
