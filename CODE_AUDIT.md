@@ -152,7 +152,12 @@ Notes: all stale PlannedJob references in api/src replaced with correct model na
 
 ---
 
-## [ ] A.7 🟠 Run-cancellation logic duplicated across routes — **high confidence**
+## [x] A.7 🟠 Run-cancellation logic duplicated across routes — **high confidence**
+
+Done: cleanup/p2-2.4-cancel-run
+Files: api/src/services/runService.ts (new), api/src/routes/runs.ts, api/src/routes/planning.ts
+Verified: typecheck OK; check:vocab OK; 70 tests pass; knip baseline unchanged; cancelRun imported in 2 prod files
+Notes: planning.ts cancel block was not transactional and didn't set removalReason — both fixed. LoadTrack hard-delete disabled per B.4 decision.
 
 **Where:**
 - `api/src/routes/runs.ts:336-388` — `DELETE /runs/:id` (cancel branch).
@@ -334,7 +339,12 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.4 🔴 `LoadTrack` rows hard-deleted on cancelled-run delete — **high confidence**
+## [x] B.4 🔴 `LoadTrack` rows hard-deleted on cancelled-run delete — **high confidence**
+
+Done: cleanup/p2-2.4-cancel-run
+Files: api/src/routes/runs.ts (hard-delete branch), api/src/services/runService.ts
+Verified: tx.loadTrack.deleteMany removed from both cancel paths; grep → 0 hits
+Notes: S3 confirmed by user 2026-05-31 ("LoadTrack is operational custody history"). Soft-delete schema fields deferred to TASK 4.3.
 
 **Where:** `api/src/routes/runs.ts:356` — `tx.loadTrack.deleteMany({ where: { runId: id } })` runs when a planner hard-deletes a cancelled run.
 
@@ -465,7 +475,12 @@ Partial fix — commit `48f84d2` feat(security): fail fast on missing JWT secret
 
 ---
 
-## [ ] B.15 🟠 Background `syncJobPlanningStatuses` called from non-tx contexts — **medium confidence**
+## [x] B.15 🟠 Background `syncJobPlanningStatuses` called from non-tx contexts — **medium confidence**
+
+Done: cleanup/p2-2.4-cancel-run
+Files: api/src/routes/planning.ts (cancel path now uses cancelRun inside $transaction)
+Verified: planning.ts cancel path was the only non-tx call site; cancelRun always calls syncJobPlanningStatuses inside the caller's tx
+Notes: the other syncJobPlanningStatuses call sites in planning.ts (add/remove assignment) were already inside transactions — not touched.
 
 **Where:** `api/src/routes/planning.ts:396` calls `syncJobPlanningStatuses(..., prisma)` outside of a transaction. The helper itself does `tx.job.findMany` followed by per-row `tx.job.update`. If a competing request modifies one of these jobs between the read and the update, the planning status flips back.
 

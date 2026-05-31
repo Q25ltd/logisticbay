@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
+import { cancelRun } from "../services/runService.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
 async function generateRunReference(
@@ -346,39 +347,25 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     if (run.status === "cancelled") {
-      // Hard delete — collect job IDs before deleting so we can sync their statuses
+      // Run already cancelled — hard-delete the empty shell (assignments and run row only).
+      // LoadTrack rows are PRESERVED per SAFETY §7 and the B.4 decision (2026-05-31):
+      // custody history must not be erased. TASK 4.3 will add soft-delete fields if needed.
       const affectedJobIds = (await prisma.runAssignment.findMany({
         where:  { runId: id },
         select: { jobId: true },
       })).map(a => a.jobId);
 
       await prisma.$transaction(async (tx) => {
-        await tx.loadTrack.deleteMany({ where: { runId: id } });
         await tx.runAssignment.deleteMany({ where: { runId: id } });
         await tx.run.delete({ where: { id } });
-        // After hard-delete all assignments are gone — sync affected jobs
         await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, tx);
       });
       return reply.status(204).send();
     }
 
-    // Not yet cancelled — soft cancel first
-    const affectedJobIds = (await prisma.runAssignment.findMany({
-      where:  { runId: id, companyId, removedAt: null },
-      select: { jobId: true },
-    })).map(a => a.jobId);
-
+    // Not yet cancelled — delegate to shared cancelRun service
     await prisma.$transaction(async (tx) => {
-      await tx.runAssignment.updateMany({
-        where: { runId: id, companyId, removedAt: null },
-        data:  { removedAt: new Date(), removedBy: userId, removalReason: "run_cancelled" },
-      });
-      await tx.run.update({
-        where: { id },
-        data:  { status: "cancelled" },
-      });
-      // Revert any in_planning/planned jobs whose last stop just got released
-      await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, tx);
+      await cancelRun(tx, { runId: id, companyId, actorUserId: userId, reason: "run_cancelled" });
     });
 
     return reply.status(204).send();
