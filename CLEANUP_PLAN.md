@@ -307,6 +307,61 @@ Goal: leave a known-good starting point and a way to detect drift.
 
 ---
 
+### TASK 0.6 — Scope `AuthCtx.Provider` and `useAuthProvider()` to `/app/*`
+
+- **STATUS:** open
+- **Audit refs:** new (web — was out of original audit scope, surfaced during public/private review).
+- **Why:** today `web/src/App.tsx:42` wraps the entire `<BrowserRouter>` in `AuthCtx.Provider`, and `useAuthProvider()` (`web/src/hooks/useAuth.ts:30-71`) starts a 5-minute `setInterval` that hits `/auth/refresh`. This runs on every page, including:
+  - `/` LandingPage
+  - `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`
+  - `/request/:token` PublicRequestForm (the customer-facing intake form a planner shares with end customers)
+
+  Effects: (1) a logged-in planner who opens `/request/:token` to test/share leaks `/auth/me` and `/auth/refresh` traffic from that public URL; (2) public visitors trigger `setInterval` and unnecessary fetches on the landing page; (3) any future provider added at the root will inherit the same leak.
+- **Scope:** restructure `web/src/App.tsx` so the auth-bearing context only mounts under `/app/*`. Public routes get either no auth context or a frozen stub.
+- **Files (modify):**
+  - `web/src/App.tsx` (the structural rewrite — single file)
+  - `web/src/modules/planner/AppShell.tsx` (likely lifts `useAuthProvider()` invocation into here, or into a new `AuthLayout` route element wrapping `/app`)
+  - **Read-only:** `web/src/hooks/useAuth.ts` — leave the hook untouched, only change *where* it is invoked.
+- **Implementation sketch (do not deviate without asking):**
+  1. Pull `useAuthProvider()` out of `App()` body.
+  2. Replace the root `<AuthCtx.Provider>` wrapping `<BrowserRouter>` with a plain `<BrowserRouter>`.
+  3. Create an `<AuthLayout>` route element that calls `useAuthProvider()`, renders the loading state, then renders `<AuthCtx.Provider><Outlet /></AuthCtx.Provider>`.
+  4. Wrap only the `/app` route in `<AuthLayout>`. Public routes render directly without the provider.
+  5. The `/login`, `/register`, `/verify-email` routes still need to call `auth.refresh` after submit — they can either import the context conditionally (it won't be present) or use a smaller dedicated `useLoginRedirect()` hook that reads `getToken()` and decides without subscribing to the full provider.
+- **STOP gate:** **S3** — user-visible behaviour change. Public pages will no longer fire `/auth/me` or poll `/auth/refresh`. Logged-in users visiting `/` will no longer auto-redirect (they already had to click "go to app"); confirm with the user this is desired before merging.
+- **Acceptance:**
+  1. Incognito visit to `/` shows **zero** network calls to `/auth/*` in the Network tab.
+  2. Incognito visit to `/login` shows zero `/auth/*` calls until the user submits the form.
+  3. Incognito visit to `/request/:token` shows the form and the public link-info endpoint only — no `/auth/*`.
+  4. `/app/dashboard` in incognito redirects to `/login` (existing behaviour preserved).
+  5. Logged-in `/app/dashboard` still receives the 5-minute refresh poll (existing behaviour preserved).
+  6. Console clean on all of the above (no React errors about missing context, no failed fetches).
+- **Verification:**
+  - `npm run typecheck` (web): exit 0.
+  - Manual Chrome Network tab capture pasted in the PR for steps 1–5.
+  - `grep -rn "useAuthProvider\|AuthCtx.Provider" web/src` returns exactly one invocation site (the new `AuthLayout`).
+
+---
+
+### TASK 0.7 — Audit `jobRequestsPublicApi` for Bearer-token leakage (read-only)
+
+- **STATUS:** open
+- **Audit refs:** new.
+- **Why:** the public request form (`/request/:token`) is meant to be opened by end customers — people who are not logged in to LogisticBay. If `web/src/api/jobRequests.ts` shares the same axios/fetch instance as `web/src/api/client.ts` (the authed client), then any logged-in planner testing the link from their own browser will accidentally send their Bearer token to the public endpoint. Worse, if the public endpoint then stores or echoes anything from the request headers, the token leaks downstream.
+- **Scope:** read-only audit of three files. No code change unless a leak is found — if found, raise as TASK 0.7.b under DISCOVERED.
+- **Files (read):**
+  - `web/src/api/jobRequests.ts`
+  - `web/src/api/client.ts`
+  - `web/src/modules/requests/PublicRequestForm.tsx` (imports)
+- **Acceptance:** post a one-paragraph finding to the PR:
+  - "`jobRequestsPublicApi` uses the same client as `client.ts` — Bearer token IS attached to public endpoints. **Leak confirmed.**" → opens follow-up task to use a separate fetch instance.
+  - **or** "`jobRequestsPublicApi` uses a separate fetch instance with no Authorization header. **No leak.**" → done.
+- **STOP gate:** none (read-only).
+- **Verification:**
+  - `grep -nE "Authorization|Bearer|getToken" web/src/api/jobRequests.ts web/src/api/client.ts` output pasted into the PR.
+
+---
+
 ## PHASE 1 — Design decisions (HUMAN ONLY)
 
 You will NOT execute any code in this phase. You will hand the user a numbered list of decisions from Section E of `CODE_AUDIT.md`, plus any new design questions you discover during Phase 0, and wait.
@@ -677,14 +732,16 @@ Update after every task. This is the single source of truth between sessions.
 | 0     | 0.3  | done — Path A: bodyTypeLabel added to shared/ + api/ | sonnet | e10ccdd (PR #2) | 2026-05-30 |
 | 0     | 0.4  | done | sonnet | cleanup/p0-0.4-reconcile-audit | 2026-05-30 |
 | 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
+| 0     | 0.6  | open — scope AuthProvider to /app/* (STOP S3) | | | |
+| 0     | 0.7  | open — audit public API client for Bearer leak (read-only) | | | |
 | 1     | 1.1  | done | sonnet + user | cleanup/p1-1.1-design-decisions | 2026-05-31 |
 | 2     | 2.1  | done | sonnet | cleanup/p2-2.1-event-definitions | 2026-05-31 |
 | 2     | 2.2  | done | sonnet | cleanup/p2-2.2-gps-timestamp-helpers | 2026-05-31 |
-| 2     | 2.3  | open — STOP S3 needed before starting (behaviour change: no planner bypass) | | | |
-| 2     | 2.4  | blocked-by-2.3 | | | |
+| 2     | 2.3  | done | sonnet | cleanup/p2-2.3-apply-job-event | 2026-05-31 |
+| 2     | 2.4  | open | | | |
 | 2     | 2.5  | blocked-by-2.4 | | | |
 | 3     | 3.1  | blocked-by-2.5 | | | |
-| 3     | 3.2  | blocked-by-2.3 | | | |
+| 3     | 3.2  | open | | | |
 | 3     | 3.3  | blocked-by-2.5 | | | |
 | 3     | 3.4  | open — awaits S1 confirmation (B.12 agency PIN) | | | |
 | 3     | 3.5  | blocked-by-0.1 | | | |

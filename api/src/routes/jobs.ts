@@ -7,12 +7,13 @@ import {
   UpdateJobStatusSchema,
   AddJobNoteSchema,
 } from "../schemas/jobs.js";
-import { ALLOWED_JOB_TRANSITIONS, EVENT_TYPE_MAP } from "../sync/sync.constants.js";
+import { EVENT_TYPE_MAP } from "../sync/sync.constants.js";
 import { appendPlannerReason } from "../lib/jobUtils.js";
 import { createJob, patchJob } from "../services/jobService.js";
 import { parseBody } from "../lib/validate.js";
 import { validateGpsPair } from "../lib/gps.js";
 import { validateClientTimestamp } from "../lib/eventTimestamp.js";
+import { applyJobEvent } from "../sync/applyJobEvent.js";
 
 // Standard include for job detail views
 const JOB_DETAIL_INCLUDE = {
@@ -359,7 +360,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send(updated);
   });
 
-  // ── PATCH /jobs/:id/status — driver updates job status ────────────────────
+  // ── PATCH /jobs/:id/status — driver / planner normal status path ─────────
+  // Exceptional planner changes (cancel, reopen, force-close) → POST /jobs/:id/status_override (TASK 3.8).
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
     const id = parseInt((request.params as { id: string }).id, 10);
     const parsed = parseBody(UpdateJobStatusSchema, request.body);
@@ -367,9 +369,17 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = parsed.data;
     const { companyId, userId, role } = request.user!;
 
+    // B.5 fix: clientEventId is required — no server-generated fallback.
+    if (!body.clientEventId?.trim()) {
+      return reply.status(400).send({ error: "BAD_REQUEST", message: "clientEventId is required" });
+    }
+    const clientEventId = body.clientEventId.trim();
+
+    // Job must exist and belong to this company (tenant-scoped 404 before any role checks)
     const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return reply.status(404).send({ error: "Job not found" });
 
+    // Driver assignment guard (online path only — sync checks via driverProfile)
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile) return reply.status(403).send({ error: "Not your job" });
@@ -379,40 +389,21 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       if (!assignment) return reply.status(403).send({ error: "Not your job" });
     }
 
-    const clientEventId = body.clientEventId?.trim() || `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const duplicateEvent = await prisma.jobExecutionEvent.findUnique({
-      where: { companyId_clientEventId: { companyId, clientEventId } },
-    });
-    if (duplicateEvent) {
-      return reply.send({ status: job.status, id, duplicate: true });
+    // ready_to_plan gate: vehicle category required (planning-specific rule, not an event concern)
+    if (body.status === "ready_to_plan" && !job.vehicleCategory) {
+      return reply.status(400).send({
+        error:   "VEHICLE_REQUIRED",
+        message: "Vehicle type must be selected before this job can be marked as Ready to plan.",
+      });
     }
 
-    if (role === "driver") {
-      // Drivers must follow the strict execution-state machine
-      const allowed = ALLOWED_JOB_TRANSITIONS[job.status] ?? [];
-      if (!allowed.includes(body.status)) {
-        return reply.status(400).send({ error: `Cannot move from ${job.status} to ${body.status}` });
-      }
-    } else {
-      // Planners / company owners: free to set any planner status, but
-      // moving to ready_to_plan requires a vehicle category to be set.
-      if (body.status === "ready_to_plan" && !job.vehicleCategory) {
-        return reply.status(400).send({
-          error:   "VEHICLE_REQUIRED",
-          message: "Vehicle type must be selected before this job can be marked as Ready to plan.",
-        });
-      }
-    }
-
-    // E.4: stale/future timestamps are flagged (needsReview) not rejected.
-    // needsReview is persisted in TASK 2.3 (applyJobEvent). For now it is computed
-    // here so the behaviour change (no more 400 on stale timestamps) is live.
+    // Timestamp and GPS validation (helpers from lib/ added in TASK 2.2)
     const tsResult = validateClientTimestamp(body.clientTimestamp ?? null);
     if (!tsResult.valid) {
       return reply.status(400).send({ error: "BAD_REQUEST", message: tsResult.reason });
     }
-    const clientTs   = body.clientTimestamp ? tsResult.date : new Date();
-    const tsNeedsReview = body.clientTimestamp ? tsResult.needsReview : false;
+    const clientTs       = body.clientTimestamp ? tsResult.date : new Date();
+    const tsNeedsReview  = body.clientTimestamp ? tsResult.needsReview  : false;
     const tsReviewReason = body.clientTimestamp ? tsResult.reviewReason : undefined;
 
     const gpsResult = validateGpsPair(body.gpsLat, body.gpsLng);
@@ -420,48 +411,38 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(400).send({ error: "BAD_REQUEST", message: gpsResult.reason });
     }
 
-    // Cascade check: if cancelling, warn planner if job is still in active runs
-    let cancellationWarnings: string[] = [];
-    let cancellationAffectedRunIds: number[] = [];
-    if (body.status === "cancelled" && role !== "driver") {
-      const activeAssignments = await prisma.runAssignment.findMany({
-        where:  { companyId, jobId: id, removedAt: null },
-        select: { run: { select: { id: true } } },
+    // Resolve the event type from the target status
+    const eventType = EVENT_TYPE_MAP[body.status] ?? "note_added";
+
+    // Delegate to the shared state machine
+    let result: Awaited<ReturnType<typeof applyJobEvent>>;
+    await prisma.$transaction(async (tx) => {
+      result = await applyJobEvent(tx, {
+        companyId,
+        actorUserId:     userId,
+        role,
+        jobId:           id,
+        eventType,
+        clientEventId,
+        clientTimestamp: clientTs,
+        needsReview:     tsNeedsReview,
+        reviewReason:    tsReviewReason,
+        gpsLat:          body.gpsLat,
+        gpsLng:          body.gpsLng,
+        note:            body.note,
       });
-      cancellationAffectedRunIds = [...new Set(activeAssignments.map(a => a.run.id))];
-      if (cancellationAffectedRunIds.length > 0) {
-        cancellationWarnings = [
-          `This job was assigned to ${cancellationAffectedRunIds.length} run(s) — remove it from those runs before dispatching.`,
-        ];
-      }
-    }
-
-    await prisma.$transaction([
-      prisma.job.update({ where: { id }, data: { status: body.status } }),
-      prisma.jobExecutionEvent.create({
-        data: {
-          jobId:           id,
-          companyId,
-          driverId:        userId,
-          eventType:       EVENT_TYPE_MAP[body.status] ?? "note_added",
-          note:            body.note ?? "",
-          clientEventId,
-          clientTimestamp: clientTs,
-          gpsLat:          body.gpsLat,
-          gpsLng:          body.gpsLng,
-          needsReview:     tsNeedsReview,
-          reviewReason:    tsReviewReason ?? null,
-        },
-      }),
-    ]);
-
-    return reply.send({
-      status: body.status,
-      id,
-      ...(cancellationWarnings.length > 0
-        ? { warnings: cancellationWarnings, affectedRunIds: cancellationAffectedRunIds }
-        : {}),
     });
+
+    // result is always assigned because $transaction runs synchronously w.r.t. result
+    const r = result!;
+
+    if (r.status === 'failed') {
+      return reply.status(400).send({ error: "TRANSITION_FAILED", message: r.reason });
+    }
+    if (r.status === 'duplicate') {
+      return reply.send({ status: r.jobStatus, id, duplicate: true });
+    }
+    return reply.send({ status: r.jobStatus, id });
   });
 
   // ── POST /jobs/:id/note ───────────────────────────────────────────────────

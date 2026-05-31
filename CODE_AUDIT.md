@@ -28,7 +28,12 @@
 
 These are the highest-risk findings. Every duplicate is a place where one copy will get fixed and the other won't, producing inconsistent behaviour between the online and offline paths (which is exactly how customers lose loads).
 
-## [ ] A.1 🔴 Status state machine implemented twice (online vs sync) — **high confidence**
+## [x] A.1 🔴 Status state machine implemented twice (online vs sync) — **high confidence**
+
+Done: cleanup/p2-2.3-apply-job-event
+Files: api/src/sync/applyJobEvent.ts (new), api/src/routes/jobs.ts, api/src/sync/sync.service.ts
+Verified: typecheck OK; check:vocab OK; 67 tests pass (4 new in applyJobEvent.test.ts); grep for server-generated clientEventId in PATCH handler → 0 hits; both paths delegate to applyJobEvent
+Notes: cancel not handled by applyJobEvent (planner override path in TASK 3.8). clientTimestamp now required by both paths.
 
 **Where (both implement the same flow with different code):**
 - `api/src/routes/jobs.ts:360-469` — `PATCH /jobs/:id/status` (online)
@@ -53,7 +58,10 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.2 🔴 Cancel-cascade warning only fires for planners online — **high confidence**
+## [~partial] A.2 🔴 Cancel-cascade warning only fires for planners online — **high confidence**
+
+Partial fix — cleanup/p2-2.3-apply-job-event:
+Cancel via the normal PATCH /jobs/:id/status now returns 400 TRANSITION_FAILED for all roles (cancel is not in SUPPORTED_EVENT_TYPES). The old planner-only cancel + cascade block is removed from the route. Full cascade (RunAssignment.removedAt, syncJobPlanningStatuses) will be implemented in TASK 3.8 (planner override endpoint) where cancel is intentionally handled.
 
 **Where:** `api/src/routes/jobs.ts:429-443`. The block is wrapped in `if (body.status === "cancelled" && role !== "driver")`.
 
@@ -338,7 +346,11 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.5 🔴 Idempotency disabled when caller forgets `clientEventId` — **high confidence**
+## [~partial] B.5 🔴 Idempotency disabled when caller forgets `clientEventId` — **high confidence**
+
+Partial fix — cleanup/p2-2.3-apply-job-event:
+PATCH /jobs/:id/status now returns 400 BAD_REQUEST if clientEventId is missing. No server-generated fallback.
+Still open: POST /jobs/:id/note still generates server-${Date.now()}-... — fixed in TASK 3.2.
 
 **Where:** `api/src/routes/jobs.ts:380` — `clientEventId = body.clientEventId?.trim() || \`server-${Date.now()}-${Math.random()...}\``.
 
