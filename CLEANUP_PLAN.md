@@ -3,24 +3,28 @@
 **Audience:** the coding agent (Sonnet) executing the cleanup.
 **Authority:** this file is your contract for this work. If anything in here conflicts with your own judgement, this file wins — escalate to the user instead of "improving" the plan.
 **Last updated:** 2026-05-30
+**Tracking branch:** `cleanup/main-tracker` — all cleanup PRs target this branch, not `main`.
 
 ---
 
 ## YOU MUST READ THESE FIRST, IN THIS ORDER
 
 1. `CLAUDE.md` — session-start checklist and authority hierarchy.
-2. `CODE_AUDIT.md` — the audit you are executing. Every task in this plan maps back to an audit item ID (A.1, B.3, C.2, etc.).
-3. `RELEASE_READINESS.md` — overlapping work; do not duplicate effort, cross-reference instead.
-4. `SAFETY.md` — sections 4 (event-based model), 6 (tenant isolation), 7 (data cleanup), 14 (soft delete). These are non-negotiable.
-5. `DATA_DICTIONARY.md` and `ARCHITECTURE.md` — for naming.
-6. `api/prisma/schema.prisma` — implementation truth.
-7. `DEVLOG.md` top 3 entries — last sessions' context.
+2. `CODE_AUDIT.md` — the audit you are executing. Every task in this plan maps back to an audit item ID (A.1, B.3, C.2, etc.). **Note: the audit was taken on 2026-05-30. Recent commits to `main` have already addressed some items — TASK 0.4 will reconcile this.**
+3. `STATUS.md` — current build state. Cross-reference here so you do not duplicate something already complete.
+4. `QUESTIONS.md` — open product/design questions. May overlap with Section E of `CODE_AUDIT.md`.
+5. `SAFETY.md` — sections 4 (event-based model), 6 (tenant isolation), 7 (data cleanup), 14 (soft delete). These are non-negotiable.
+6. `DATA_DICTIONARY.md` and `ARCHITECTURE.md` — for naming.
+7. `api/prisma/schema.prisma` — implementation truth.
+8. `DEVLOG.md` top 3 entries — last sessions' context.
+
+> Older planning docs (`RELEASE_READINESS.md`, `PROJECT_STATUS.md`, etc.) live in `docs/archive/` and are **read-only historical reference**. If something in this plan refers to a doc that lives in `docs/archive/`, that reference is for context only — do not act on it as a source of truth.
 
 **You may not begin any task before reading the above. Confirm to the user, in your first message of every session, that you have re-read this file and the audit.**
 
 ---
 
-## THE 14 COMMANDMENTS — non-negotiable
+## THE 21 COMMANDMENTS — non-negotiable
 
 1. **One task at a time.** Finish, verify, commit, update checkpoint, move on. No bundling.
 2. **No scope creep.** If you spot something else that needs fixing, log it under "DISCOVERED" at the bottom of this file. Do NOT fix it inline.
@@ -36,6 +40,13 @@
 12. **Stop on doubt.** If you cannot answer "what is the user-visible change here?" in one sentence, stop and ask.
 13. **No new dependencies.** Adding an npm package needs explicit approval. Use what's already in `package.json`.
 14. **Update the checkpoint after every task.** The checkpoint is the only state that survives between sessions.
+15. **Register what you create.** Every new route file must be imported and registered in `api/src/app.ts` in the same commit it's created. Every new web page must be added to the router in `web/src/App.tsx`. After creating a file, run `grep -rn "<filename>" api/src web/src` and confirm at least one import exists before committing.
+16. **Search before writing.** Before adding a function whose name contains `validate*`, `format*`, `build*`, `parse*`, `check*`, `compute*`, or any verb that smells generic, run `grep -rn "functionName" api/src` first. If it exists, import it. If a near-duplicate exists, extend or extract — do not create a parallel implementation.
+17. **No `any`, no unvalidated casts.** `any` is forbidden. `as Type` is only allowed immediately after a Zod parse, a `typeof` check, an `instanceof` check, or a Prisma raw query that types are known to misrepresent (cite which one in a one-line comment). Use `unknown` and narrow it.
+18. **Every Zod string has `.max()`.** No `z.string()` is allowed without a `.max(N)` chained somewhere in the same schema definition. User-visible string fields also have `.trim()`. Open-bounded text (notes, descriptions) caps at 4000; references and codes cap at 64; names cap at 200. CI grep gate: `grep -nE "z\.string\(\)([^.]|\.[^m])" api/src/schemas` must return zero hits unless the next chain is `.max(`.
+19. **Never comment out code.** Delete it. Git history is the archive. A `//` followed by what looks like a former code line, or a `/* … */` wrapping a function body, fails review automatically.
+20. **One error envelope.** All API error responses use `{ error: string, code?: string, details?: unknown }` — no other shape. Use the helpers in `api/src/lib/errors.ts` (created by TASK 3.7): `notFound("Job")`, `badRequest("VEHICLE_REQUIRED", "Vehicle type must be selected")`, `forbidden("Not your job")`, `conflict("DUPLICATE_REPEAT", "...")`. Do not inline `reply.status(404).send({ error: "..." })`.
+21. **Auth check lives in middleware only.** No `jwt.verify` outside `api/src/middleware.ts` and `api/src/lib/tokens.ts`. Every route that touches user-owned data has `{ preHandler: authenticate }` (or `[authenticate, requireRole(...)]`) on its declaration. CI grep gate: `grep -rn "jwt.verify" api/src --include="*.ts" | grep -v middleware.ts | grep -v lib/tokens.ts` must return zero hits.
 
 Breach any of these → revert your work and ask the user.
 
@@ -50,6 +61,8 @@ Active task scope is defined per-task below. By default, treat these as read-onl
 - `DEVLOG.md` historical entries — only append new entries at the top.
 - `SAFETY.md` — only the auditor adds new vulnerability rows. Body unchanged unless instructed.
 - `CODE_AUDIT.md` — only flip status boxes per the rules in that file.
+- `CLEANUP_PLAN.md` — only the CHECKPOINT table, DISCOVERED, BLOCKED, and DECISIONS sections. The plan body, commandments, STOP gates, and task definitions are immutable to the agent. If you believe a task definition is wrong, log it under BLOCKED and ask the user.
+- `docs/archive/**` — historical context only, never modify.
 - `node_modules/`, `dist/`, `.expo/`, `.vercel/`, `.clone/`, `.claude/worktrees/`.
 
 ---
@@ -134,9 +147,13 @@ You must run these before claiming done. Output goes into the PR body.
 npm run typecheck
 npm run check:vocab
 npm test --prefix api
+npx knip                                                 # added — see TASK 0.5
+grep -rn "z\.string\(\)([^.]|\.[^m])" api/src/schemas    # Commandment 18 gate — must return 0
+grep -rn "jwt.verify" api/src --include="*.ts" | grep -v middleware.ts | grep -v lib/tokens.ts   # Commandment 21 gate — must return 0
+grep -rn " as any" api/src --include="*.ts"              # Commandment 17 gate — must return 0
 ```
 
-All three must exit 0. If any fail and the failure is unrelated to your task, STOP and ask — do not "fix" the unrelated failure.
+All must exit 0 / return 0 hits. If any fail and the failure is unrelated to your task, STOP and ask — do not "fix" the unrelated failure.
 
 ### If you touched a route handler:
 - Add a happy-path test in `api/src/tests/` using `app.inject()`.
@@ -224,6 +241,69 @@ Goal: leave a known-good starting point and a way to detect drift.
   2. Open this file and add: `Tracking branch: cleanup/main-tracker` under the title.
   3. Confirm Vercel and Railway will NOT auto-deploy from `cleanup/main-tracker`.
 - **STOP gate:** **S5** — touching deploy config. **STOP and ask** before disabling auto-deploy.
+
+---
+
+### TASK 0.3 — Fix vocab drift (precondition for Phase 2 verification)
+
+- **STATUS:** open
+- **Audit refs:** none — this is plumbing.
+- **Why:** `npm run check:vocab` currently exits 1 because `web/src/constants/vehicleTaxonomy.ts` (435 lines) carries an extra `bodyTypeLabel(...)` helper at line 433 that is not in `shared/vehicleTaxonomy.ts` or `api/src/constants/vehicleTaxonomy.ts` (423 lines each). Until this is fixed, every Phase 2+ task's verification protocol fails — and Commandment 11 says "verification is part of done".
+- **Scope:** decide where `bodyTypeLabel` belongs and resync.
+- **Files (modify) — one of the two paths:**
+  - **Path A (preferred):** move `bodyTypeLabel` into `shared/vehicleTaxonomy.ts`, copy to `api/src/constants/vehicleTaxonomy.ts` and `mobile/src/constants/vehicleTaxonomy.ts` so the three core files are byte-identical. Web continues to import from its local copy.
+  - **Path B:** delete `bodyTypeLabel` from `web/src/constants/vehicleTaxonomy.ts` and inline the logic at its call sites. Only viable if the helper is used in ≤ 3 places.
+- **STOP gate:** none if Path A. **S3** if Path B (call-site changes can affect UX rendering of body type labels).
+- **Acceptance:**
+  1. `npm run check:vocab` exits 0.
+  2. `diff` of the three core files produces no output.
+  3. Web compiles and the page using `bodyTypeLabel` still renders identical text (manual smoke test acceptable — no need for a full e2e).
+  4. The PR description states which path was taken and why.
+
+---
+
+### TASK 0.4 — Reconcile CODE_AUDIT.md against current `main`
+
+- **STATUS:** open
+- **Why:** the audit was taken at a commit before recent security work. Several items are already addressed in `main`:
+  - `48f84d2 feat(security): fail fast on missing JWT secrets` → likely fixes audit B.7.
+  - `71d4716 feat(security): refresh token rotation, 15m access TTL, /auth/logout` → may affect audit B.17.
+  - `08d6fd6 feat(security): full tenant isolation test suite + GitHub Actions CI` → covers the audit's "tenant test only covers 2 endpoints" concern.
+  - `48bbe82 feat(security): per-route rate limits` → covers register/refresh/change-password rate-limit concerns.
+  - `44aa5a0 Codebase deduplication: shared utils, recall fix, naming consistency` → may have addressed parts of Section A.
+  - `e896f2a Replace AI calls with deterministic rules` → architectural change; verify the audit didn't make assumptions that no longer hold.
+- **Scope:** read-only reconciliation. For every audit item, determine its current state and tag it accordingly.
+- **Files (modify):** `CODE_AUDIT.md` only — flip status boxes per the rules in that file.
+- **Acceptance:** for every item in `CODE_AUDIT.md` Sections A, B, C, D:
+  1. Read the cited `file:line` references against `main`.
+  2. Tag the item as one of:
+     - `[x]` **already-fixed** — cite the commit sha in the verification block; example: `Already fixed: commit 48f84d2 — feat(security): fail fast on missing JWT secrets`.
+     - `[~partial]` — some sites fixed but duplication still exists elsewhere; cite which sites remain.
+     - `[ ]` — still applies as written.
+     - `[~obsolete]` — the underlying code no longer exists (architectural change). Cite which commit removed it.
+  3. Do **not** modify any code in this task — read-only.
+  4. Post a summary in the PR: "N items already-fixed, M partial, P still-open, Q obsolete."
+- **STOP gate:** none — read-only.
+
+---
+
+### TASK 0.5 — Install knip and baseline current dead-code state
+
+- **STATUS:** open
+- **Audit refs:** D.1–D.6 (and prevention going forward).
+- **Why:** Section D of `CODE_AUDIT.md` is six dead-code findings caught by hand. `knip` finds them automatically and prevents new ones.
+- **Files (modify):** `package.json` (root), `knip.json` (new), `.github/workflows/ci.yml` (add knip step).
+- **Scope:**
+  1. `npm install --save-dev knip` at repo root.
+  2. Create `knip.json` with `workspaces` entry for `api`, `web`, `mobile`, `shared`.
+  3. Run `npx knip` once to record baseline. **Do not fix findings in this task** — fixes belong in Phase 5.
+  4. Commit the baseline as a snapshot in `DEVLOG.md`.
+  5. Add `npx knip` to CI as a non-blocking check first (warning only). Once Phase 5 closes the baseline list, flip it to blocking.
+- **STOP gate:** **S4** — adds a dependency. **STOP and confirm before running `npm install`.**
+- **Acceptance:**
+  - `npx knip` runs and produces output.
+  - CI configured.
+  - Baseline numbers (unused files, unused exports, unused dependencies) recorded in `DEVLOG.md`.
 
 ---
 
@@ -450,6 +530,41 @@ Each task is small and independent — execute in numeric order but they can be 
 
 ---
 
+### TASK 3.7 — Consistent error envelope + helpers
+
+- **STATUS:** blocked-by-2.5
+- **Audit refs:** new (preventative — addresses inconsistency noted around B.14, C.7, error response sites).
+- **Why:** the API returns at least three error envelope shapes today:
+  - `{ error: "Job not found" }` (most routes)
+  - `{ error: "BAD_REQUEST", message: "..." }` (sync, GPS validation in `routes/sync.ts`, parts of `routes/jobs.ts`)
+  - `{ error: "Validation failed", details: [...] }` (Zod parse failures)
+  - `{ error: "VEHICLE_REQUIRED", message: "..." }` (some structured paths)
+
+  Web and mobile clients have to guess. Standardise on one shape and provide helpers.
+- **Files (modify):**
+  - Create `api/src/lib/errors.ts` exporting:
+    ```ts
+    export const HttpError = (status: number, error: string, code?: string, details?: unknown) => …
+    export const notFound = (entity: string) => HttpError(404, `${entity} not found`, `${entity.toUpperCase()}_NOT_FOUND`);
+    export const badRequest = (code: string, message: string, details?: unknown) => …
+    export const forbidden = (message = "Forbidden") => …
+    export const conflict = (code: string, message: string) => …
+    export const validationFailed = (errors: string[]) => HttpError(400, "Validation failed", "VALIDATION_FAILED", errors);
+    ```
+  - Update Fastify error handler in `api/src/app.ts` to emit the unified shape (`{ error, code?, details? }`).
+  - Migrate route handlers to use the helpers — one route file per commit.
+- **Acceptance:**
+  - Every API response from a non-200 status code returns `{ error: string, code?: string, details?: unknown }` and nothing else.
+  - CI grep gate: `grep -rn "reply.status(4" api/src/routes --include="*.ts" | grep -v "errors.ts"` returns zero hits (all 4xx replies go through helpers).
+  - Web and mobile clients updated to read `code` over `error` for branching (separate PR; coordinate).
+- **STOP gate:** **S3** — client-visible. Coordinate web/mobile rollout.
+- **Verification:**
+  - Type-check OK.
+  - One integration test per helper asserting envelope shape.
+  - Manual review: any 4xx in `api/src/routes` that does not call a helper fails review.
+
+---
+
 ## PHASE 4 — Semantic cleanup (renames, schema)
 
 These are riskier because they touch the schema and ripple to clients. Each requires an additive migration first.
@@ -558,8 +673,11 @@ Update after every task. This is the single source of truth between sessions.
 | Phase | Task | Status | Owner | Commit | Date |
 |-------|------|--------|-------|--------|------|
 | 0     | 0.1  | done   | sonnet | cleanup/p0-0.1-baseline | 2026-05-30 |
-| 0     | 0.2  | open   |       |        |      |
-| 1     | 1.1  | open   |       |        |      |
+| 0     | 0.2  | done   | sonnet | cleanup/p0-0.2-branch-hygiene | 2026-05-30 |
+| 0     | 0.3  | open — fix vocab drift             |       |        |      |
+| 0     | 0.4  | open — reconcile audit vs main     |       |        |      |
+| 0     | 0.5  | open — install knip baseline       |       |        |      |
+| 1     | 1.1  | blocked-by-0.4 |       |        |      |
 | 2     | 2.1  | blocked-by-1.1 | | | |
 | 2     | 2.2  | blocked-by-2.1 | | | |
 | 2     | 2.3  | blocked-by-2.2 | | | |
@@ -571,6 +689,7 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.4  | blocked-by-1.1 | | | |
 | 3     | 3.5  | blocked-by-0.1 | | | |
 | 3     | 3.6  | blocked-by-2.3 | | | |
+| 3     | 3.7  | blocked-by-2.5 — error envelope | | | |
 | 4     | 4.1  | blocked-by-3.6 | | | |
 | 4     | 4.2  | blocked-by-1.1 | | | |
 | 4     | 4.3  | blocked-by-2.4 | | | |
