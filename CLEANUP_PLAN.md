@@ -677,8 +677,8 @@ Update after every task. This is the single source of truth between sessions.
 | 0     | 0.3  | done — Path A: bodyTypeLabel added to shared/ + api/ | sonnet | e10ccdd (PR #2) | 2026-05-30 |
 | 0     | 0.4  | done | sonnet | cleanup/p0-0.4-reconcile-audit | 2026-05-30 |
 | 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
-| 1     | 1.1  | blocked-by-0.4 |       |        |      |
-| 2     | 2.1  | blocked-by-1.1 | | | |
+| 1     | 1.1  | done | sonnet + user | cleanup/p1-1.1-design-decisions | 2026-05-31 |
+| 2     | 2.1  | open | | | |
 | 2     | 2.2  | blocked-by-2.1 | | | |
 | 2     | 2.3  | blocked-by-2.2 | | | |
 | 2     | 2.4  | blocked-by-2.3 | | | |
@@ -686,12 +686,12 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.1  | blocked-by-2.5 | | | |
 | 3     | 3.2  | blocked-by-2.3 | | | |
 | 3     | 3.3  | blocked-by-2.5 | | | |
-| 3     | 3.4  | blocked-by-1.1 | | | |
+| 3     | 3.4  | open — awaits S1 confirmation (B.12 agency PIN) | | | |
 | 3     | 3.5  | blocked-by-0.1 | | | |
 | 3     | 3.6  | blocked-by-2.3 | | | |
 | 3     | 3.7  | blocked-by-2.5 — error envelope | | | |
 | 4     | 4.1  | blocked-by-3.6 | | | |
-| 4     | 4.2  | blocked-by-1.1 | | | |
+| 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
 | 4     | 4.3  | blocked-by-2.4 | | | |
 | 4     | 4.4  | blocked-by-4.3 | | | |
 | 4     | 4.5  | blocked-by-2.1 | | | |
@@ -707,7 +707,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Finder | Description | Suggested audit section | Status |
 |------|--------|-------------|-------------------------|--------|
-|      |        |             |                         |        |
+| 2026-05-31 | user (E.2 decision) | Drop `Job.plannedDate` column — field was removed from all planner UI in session 2026-05-28b; user confirmed it is no longer needed. Requires: (1) audit all `plannedDate` reads/writes in `api/src/`; (2) migration `DROP COLUMN plannedDate` from `Job`. S2 stop gate answered affirmatively by user in Phase 1 design decisions. | Phase 4 (schema drop) | open — needs its own task |
 
 ---
 
