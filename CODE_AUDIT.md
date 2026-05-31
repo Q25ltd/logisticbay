@@ -338,13 +338,17 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.7 🟠 Auth.ts `/auth/me` and `/auth/change-password` re-verify JWT inline — **high confidence**
+## [~partial] B.7 🟠 Auth.ts `/auth/me` and `/auth/change-password` re-verify JWT inline — **high confidence**
 
 **Where:** `api/src/routes/auth.ts:78-89` and `:91-111` (before the most recent rewrite — please confirm in current file). Inline `jwt.verify(...)` instead of using the `authenticate` middleware. If middleware logic changes, these paths get out of sync.
 
 **Acceptance:**
 - All routes use `{ preHandler: authenticate }`. Inline `jwt.verify` only allowed inside `middleware.ts` and `lib/env.ts`.
 - The `JWT_SECRET` fallback (`?? process.env.JWT_SECRET`) must be removed everywhere at the same time — see RELEASE_READINESS.md P0.4.
+
+Partial fix — commit `48f84d2` feat(security): fail fast on missing JWT secrets:
+- `api/src/lib/env.ts` now throws on startup if `JWT_ACCESS_SECRET` or `JWT_REFRESH_SECRET` are missing or equal. The `?? process.env.JWT_SECRET` fallback is gone.
+- **Still open:** inline `jwt.verify` remains at `auth.ts:119` (refresh endpoint), `auth.ts:190`, `auth.ts:210`. These are outside `middleware.ts` and `lib/tokens.ts`. Commandment 21 grep gate will catch these.
 
 ---
 
@@ -446,11 +450,15 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.17 🟡 Refresh-token rotation `updateMany` revokes without companyId — **medium confidence**
+## [~partial] B.17 🟡 Refresh-token rotation `updateMany` revokes without companyId — **medium confidence**
 
 **Where:** `api/src/routes/auth.ts:178, 278` (RefreshToken table). RefreshToken is per-user not per-company, but check the rotation logic does not orphan tokens for the *other* membership when an agency driver is impersonated by Company A's planner reset.
 
 **Acceptance:** read `RefreshToken` rotation code carefully; ensure rotating a token issued for `(userId=5, companyId=10)` does not affect tokens for `(userId=5, companyId=20)`.
+
+Partial fix — commit `71d4716` feat(security): refresh token rotation, 15m access TTL, /auth/logout:
+- `revokeTokenFamily(prisma, familyId)` in `lib/tokens.ts:47` revokes `where: { familyId, revokedAt: null }` — **safe**: familyId is per-login-session, revoking a family does not affect tokens from other companies.
+- **Still open:** `auth.ts:279` — logout/PIN-reset revokes `where: { userId: tokenRow.userId, revokedAt: null }` with no companyId filter. An agency driver whose Company A planner triggers this loses their Company B session too.
 
 ---
 
@@ -599,9 +607,14 @@ Delete.
 
 ---
 
-## [ ] D.3 🟡 `trailerTypesForbidden` column — slated for drop — **high confidence**
+## [x] D.3 🟡 `trailerTypesForbidden` column — slated for drop — **high confidence**
 
 DEVLOG 2026-05-10 says: "Column left in DB (null on new records) — can be dropped in Phase 0.8 soak." Check soak window has passed, drop in a migration.
+
+Done: already dropped — confirmed 2026-05-30 during TASK 0.4 reconciliation
+Files: api/prisma/schema.prisma (column absent), api/src/ (zero references)
+Verified: `grep -rn "trailerTypesForbidden" api/src api/prisma/schema.prisma` → 0 hits
+Notes: column was removed in an earlier migration; soak window passed
 
 ---
 
@@ -625,6 +638,8 @@ Confirm with `grep`. If unreferenced, delete.
 ## [ ] D.6 🟡 `routes/customers.ts` is tiny — confirm coverage — **low confidence**
 
 `customers.ts` is 102 lines. Confirm it implements `list`, `create`, `patch`, `archive`, and not just two of those. Currently no `archive`/`status` change endpoint visible from earlier grep.
+
+Reconciliation note (TASK 0.4, 2026-05-30): confirmed endpoints present — `GET /customers`, `GET /customers/:id`, `POST /customers`, `PATCH /customers/:id`. Missing: no `DELETE` or archive/status-change endpoint. A customer can be created and edited but never deactivated. Still open.
 
 ---
 
