@@ -97,7 +97,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.5 🟠 `STATUS_BY_EVENT_TYPE` and `EVENT_TYPE_MAP` are inverses, maintained separately — **high confidence**
+## [x] A.5 🟠 `STATUS_BY_EVENT_TYPE` and `EVENT_TYPE_MAP` are inverses, maintained separately — **high confidence**
+
+Done: cleanup/p2-2.1-event-definitions
+Files: api/src/sync/sync.constants.ts, api/src/tests/sync.constants.test.ts
+Verified: typecheck OK; 43 tests pass (8 new in sync.constants.test.ts); both constants derived from EVENT_DEFINITIONS — no hand-editing possible
+Notes: ALLOWED_JOB_TRANSITIONS output is byte-identical to the previous hand-maintained version; test asserts this
 
 **Where:** `api/src/sync/sync.constants.ts:32-49`.
 
@@ -114,7 +119,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.6 🟠 Stale schema comment refers to `PlannedJob` — **high confidence**
+## [x] A.6 🟠 Stale schema comment refers to `PlannedJob` — **high confidence**
+
+Done: cleanup/p2-2.1-event-definitions
+Files: api/src/sync/sync.constants.ts (comments rewritten), api/src/sync/sync.service.ts:53 (comment fixed)
+Verified: `grep -rn "PlannedJob|plannedJob" api/src --include="*.ts" | grep -v generated` → 0 hits
+Notes: all stale PlannedJob references in api/src replaced with correct model name (Job)
 
 **Where:** `api/src/sync/sync.constants.ts:40-41`. Comment says "Maps PlannedJob.status values to the eventType string". Model is `Job` now, not `PlannedJob`. **The PROJECT_STATUS.md and CLAUDE.md also still mention PlannedJob in places.**
 
@@ -210,7 +220,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.13 🟡 Mobile event type strings duplicated across 3 files — **high confidence**
+## [x] A.13 🟡 Mobile event type strings duplicated across 3 files — **high confidence**
+
+Done: cleanup/p2-2.1-event-definitions
+Files: api/src/sync/sync.constants.ts
+Verified: EventType and SUPPORTED_EVENT_TYPES exported from sync.constants.ts; comment updated to say this file is the source of truth; mobile should import from here (or a shared package) rather than maintaining its own copy
+Notes: full cross-workspace shared package (shared/eventTypes.ts) is a separate follow-on; this task establishes the API as the authority
 
 **Where:**
 - `api/src/sync/sync.constants.ts` (SUPPORTED_EVENT_TYPES)
