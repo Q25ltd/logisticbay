@@ -7,6 +7,35 @@
 
 ---
 
+## Cleanup knip baseline 2026-05-30 — TASK 0.5
+
+**knip version:** latest (installed at repo root as devDependency)
+
+**Baseline counts (non-blocking — Phase 5 will close these):**
+
+| Category | Count |
+|---|---|
+| Unused files | 26 |
+| Unused dependencies | 9 |
+| Unused devDependencies | 3 |
+| Unlisted dependencies | 17 |
+| Unlisted binaries | 4 |
+| Unused exports | 118 |
+| Duplicate exports | 2 |
+
+**Known false positives / noise:**
+- `api/prisma.config.ts` — env var `DATABASE_URL` not resolvable at static analysis time (knip known issue with Prisma config files); does not affect output correctness
+- Several `@fastify/*` and `@prisma/client` entries flagged as "unused dependencies" — these are loaded via Fastify plugin system and Prisma generated client; knip cannot trace dynamic registration
+- `shared/vehicleTaxonomy.ts` flagged as unused file — imported by api, web, mobile copies; knip cannot trace across workspace boundaries without explicit cross-workspace config
+
+**Confirmed real findings (match existing audit items):**
+- `api/src/auth.ts` — unused file → D.1
+- `mobile/src/apiWithQueue.ts` — unused file → D.2
+- `mobile/src/components.legacy.tsx` — unused file → D.4
+- `bcrypt` in api/package.json — unused dependency → A.14
+
+---
+
 ## Cleanup baseline 2026-05-30 — TASK 0.1
 
 **Typecheck:** OK (exit 0, both API and WEB)
