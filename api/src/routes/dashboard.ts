@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate } from "../middleware.js";
+import { dayRangeUtc } from "../lib/dateUtils.js";
 
 const CLOSED_STATUSES = new Set(["completed", "cancelled"]);
 
@@ -33,8 +34,7 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
     const dateFrom = q.dateFrom ?? new Date().toISOString().slice(0, 10);
     const dateTo   = q.dateTo   ?? dateFrom;
 
-    const gte = new Date(`${dateFrom}T00:00:00.000Z`);
-    const lte = new Date(`${dateTo}T23:59:59.999Z`);
+    const { gte, lte } = dayRangeUtc(dateFrom, dateTo);
 
     // Jobs whose collection stop falls in the requested date range.
     // Fallback: plannedDate for legacy jobs without stop time windows.

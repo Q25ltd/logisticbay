@@ -19,6 +19,8 @@ import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 import { haversineKm }               from "../lib/geo.js";
 import { cancelRun }                 from "../services/runService.js";
+import { parseIdParam }              from "../lib/validate.js";
+import { dayRangeUtc }               from "../lib/dateUtils.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -208,8 +210,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       let parts: Awaited<ReturnType<typeof prisma.jobPart.findMany<{ include: typeof jobPartInclude }>>>;
 
       if (dateFrom && dateTo) {
-        const gte = new Date(`${dateFrom}T00:00:00.000Z`);
-        const lte = new Date(`${dateTo}T23:59:59.999Z`);
+        const { gte, lte } = dayRangeUtc(dateFrom, dateTo);
 
         const [withPlannedDate, withWindow, withBookedTime] = await Promise.all([
           // Q1: jobs with plannedDate in range — show all their unassigned stops
@@ -295,12 +296,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const where = {
         companyId,
-        ...(q.date ? {
-          plannedDate: {
-            gte: new Date(`${q.date}T00:00:00.000Z`),
-            lte: new Date(`${q.date}T23:59:59.999Z`),
-          },
-        } : {}),
+        ...(q.date ? { plannedDate: dayRangeUtc(q.date, q.date) } : {}),
         status: { notIn: ["cancelled"] as string[] },
       };
 
@@ -360,7 +356,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const id = parseInt((request.params as { id: string }).id, 10);
+      const id = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
       const b  = request.body as {
         runType?:            string | null;
         dependsOnRunId?:     number | null;
@@ -412,7 +409,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const runId = parseInt((request.params as { id: string }).id, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
       const b     = request.body as { jobPartId: number; quantityAssigned?: number };
 
       if (!b.jobPartId) return reply.status(400).send({ error: "jobPartId is required" });
@@ -473,8 +471,10 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const runId = parseInt((request.params as { id: string; aId: string }).id,  10);
-      const aId   = parseInt((request.params as { id: string; aId: string }).aId, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      const aId   = parseIdParam(request.params, "aId");
+      if (aId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "aId must be a valid integer" });
 
       const a = await prisma.runAssignment.findFirst({
         where: { id: aId, runId, companyId, removedAt: null },
@@ -505,7 +505,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const runId = parseInt((request.params as { id: string }).id, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
       const { assignmentIds } = request.body as { assignmentIds: number[] };
 
       if (!Array.isArray(assignmentIds) || assignmentIds.length === 0) {
@@ -545,7 +546,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const id = parseInt((request.params as { id: string }).id, 10);
+      const id = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
 
       const run = await prisma.run.findFirst({
         where:   { id, companyId },
@@ -576,7 +578,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const runId = parseInt((request.params as { id: string }).id, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
       if (!run) return reply.status(404).send({ error: "Run not found" });
@@ -694,8 +697,10 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const runId = parseInt((request.params as { id: string; wId: string }).id,  10);
-      const wId   = parseInt((request.params as { id: string; wId: string }).wId, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      const wId   = parseIdParam(request.params, "wId");
+      if (wId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "wId must be a valid integer" });
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
       if (!run) return reply.status(404).send({ error: "Run not found" });
@@ -812,7 +817,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const sourceRunId = parseInt((request.params as { id: string }).id, 10);
+      const sourceRunId = parseIdParam(request.params);
+      if (sourceRunId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "sourceRunId must be a valid integer" });
 
       const b = request.body as {
         restLocationText?: string;

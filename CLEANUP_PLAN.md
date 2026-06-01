@@ -739,14 +739,14 @@ Update after every task. This is the single source of truth between sessions.
 | 2     | 2.2  | done | sonnet | cleanup/p2-2.2-gps-timestamp-helpers | 2026-05-31 |
 | 2     | 2.3  | done | sonnet | cleanup/p2-2.3-apply-job-event | 2026-05-31 |
 | 2     | 2.4  | done | sonnet | cleanup/p2-2.4-cancel-run | 2026-05-31 |
-| 2     | 2.5  | open | | | |
-| 3     | 3.1  | blocked-by-2.5 | | | |
+| 2     | 2.5  | done | sonnet | cleanup/p2-2.5-shared-helpers | 2026-05-31 |
+| 3     | 3.1  | open | | | |
 | 3     | 3.2  | open | | | |
-| 3     | 3.3  | blocked-by-2.5 | | | |
+| 3     | 3.3  | open | | | |
 | 3     | 3.4  | open — awaits S1 confirmation (B.12 agency PIN) | | | |
-| 3     | 3.5  | blocked-by-0.1 | | | |
-| 3     | 3.6  | blocked-by-2.3 | | | |
-| 3     | 3.7  | blocked-by-2.5 — error envelope | | | |
+| 3     | 3.5  | open | | | |
+| 3     | 3.6  | open | | | |
+| 3     | 3.7  | open — build error envelope helpers | | | |
 | 4     | 4.1  | blocked-by-3.6 | | | |
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
 | 4     | 4.3  | open | | | |
@@ -764,6 +764,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Finder | Description | Suggested audit section | Status |
 |------|--------|-------------|-------------------------|--------|
+| 2026-05-31 | sonnet (TASK 2.5) | `schedule.ts:26-27` uses local-time date literals (`T00:00:00` / `T23:59:59` without Z). Different semantics from UTC patterns — not replaced. Review: works on UTC servers but silently shifts day boundaries if TZ changes. | A.11 follow-on | open |
 | 2026-05-31 | user (E.2 decision) | Drop `Job.plannedDate` column — field was removed from all planner UI in session 2026-05-28b; user confirmed it is no longer needed. Requires: (1) audit all `plannedDate` reads/writes in `api/src/`; (2) migration `DROP COLUMN plannedDate` from `Job`. S2 stop gate answered affirmatively by user in Phase 1 design decisions. | Phase 4 (schema drop) | open — needs its own task |
 
 ---

@@ -17,7 +17,7 @@ import {
   CreateDeliverySchema,
   SubmitShiftSchema,
 } from "../schemas/shifts.js";
-import { parseBody } from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
 import { normalizeShiftVehicleClass } from "../lib/vehicleCompat.js";
 
 export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -52,7 +52,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /shifts/:id/segments ───────────────────────────────────────────────
   app.post("/shifts/:id/segments", { preHandler: authenticate }, async (request, reply) => {
-    const shiftId = parseInt((request.params as { id: string }).id, 10);
+    const shiftId = parseIdParam(request.params);
+    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
     const zodParsed = parseBody(CreateSegmentSchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body    = zodParsed.data as CreateSegmentBody;
@@ -128,8 +129,10 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /shifts/:id/segments/:segId/deliveries ─────────────────────────────
   app.post("/shifts/:id/segments/:segId/deliveries", { preHandler: authenticate }, async (request, reply) => {
-    const shiftId   = parseInt((request.params as { id: string; segId: string }).id, 10);
-    const segmentId = parseInt((request.params as { id: string; segId: string }).segId, 10);
+    const shiftId   = parseIdParam(request.params);
+    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
+    const segmentId = parseIdParam(request.params, "segId");
+    if (segmentId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "segmentId must be a valid integer" });
     const zodParsed = parseBody(CreateDeliverySchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body      = zodParsed.data as CreateDeliveryBody;
@@ -166,7 +169,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /shifts/:id/submit ────────────────────────────────────────────────
   app.patch("/shifts/:id/submit", { preHandler: authenticate }, async (request, reply) => {
-    const shiftId = parseInt((request.params as { id: string }).id, 10);
+    const shiftId = parseIdParam(request.params);
+    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
     const zodParsed = parseBody(SubmitShiftSchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body    = zodParsed.data as SubmitShiftBody;
@@ -281,7 +285,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /shifts/:id/retry — re-trigger PDF+email for failed shifts ─────────
   app.post("/shifts/:id/retry", { preHandler: authenticate }, async (request, reply) => {
     const { userId, companyId } = request.user!;
-    const shiftId = parseInt((request.params as { id: string }).id, 10);
+    const shiftId = parseIdParam(request.params);
+    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
 
     const shift = await prisma.shift.findFirst({
       where:   { id: shiftId, companyId, driverId: userId, status: "failed" },
@@ -356,7 +361,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /shifts/:id ─────────────────────────────────────────────────────────
   app.get("/shifts/:id", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { userId, companyId, role } = request.user!;
 
     const shift = await prisma.shift.findFirst({
@@ -374,7 +380,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /shifts/:id/pdf ─────────────────────────────────────────────────────
   app.get("/shifts/:id/pdf", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { userId, companyId, role } = request.user!;
 
     const shift = await prisma.shift.findFirst({
@@ -409,7 +416,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     "/shifts/:id",
     { preHandler: [authenticate, requireRole("company_owner", "driver")] },
     async (request, reply) => {
-      const id   = parseInt((request.params as { id: string }).id, 10);
+      const id   = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
       const user = request.user!;
 
       const shift = await prisma.shift.findFirst({ where: { id, companyId: user.companyId } });

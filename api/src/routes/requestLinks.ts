@@ -1,4 +1,5 @@
 import crypto                    from "node:crypto";
+import { parseIdParam } from "../lib/validate.js";
 import type { FastifyInstance }  from "fastify";
 import { PrismaClient, Prisma }  from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
@@ -90,7 +91,8 @@ export async function requestLinkRoutes(app: FastifyInstance, prisma: PrismaClie
     "/request-links/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const id   = parseInt((request.params as { id: string }).id, 10);
+      const id   = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
       const body = request.body as Record<string, unknown>;
 
       const existing = await prisma.clientRequestLink.findFirst({
@@ -126,7 +128,8 @@ export async function requestLinkRoutes(app: FastifyInstance, prisma: PrismaClie
     "/request-links/:id/regenerate",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const id = parseInt((request.params as { id: string }).id, 10);
+      const id = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
 
       const existing = await prisma.clientRequestLink.findFirst({
         where: { id, companyId: request.user!.companyId },

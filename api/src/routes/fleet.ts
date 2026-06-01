@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { parseIdParam } from "../lib/validate.js";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { gvwForCategory, isBodyCategory, isBodyType, isGvwClass, isOnboardEquipment } from "../constants/jobCreation.js";
@@ -178,7 +179,8 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /fleet/units/:id ───────────────────────────────────────────────
   app.patch("/fleet/units/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const body = request.body as PatchUnitBody;
     const { companyId } = request.user!;
 
@@ -217,7 +219,8 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /fleet/units/:id ──────────────────────────────────────────────
   app.delete("/fleet/units/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId } = request.user!;
 
     const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId } });
@@ -289,7 +292,8 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /fleet/trailers/:id ────────────────────────────────────────────
   app.patch("/fleet/trailers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const body = request.body as PatchTrailerBody;
     const { companyId } = request.user!;
 
@@ -324,7 +328,8 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /fleet/trailers/:id ───────────────────────────────────────────
   app.delete("/fleet/trailers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId } = request.user!;
 
     const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId } });

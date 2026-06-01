@@ -1,3 +1,24 @@
+/**
+ * Build a Prisma { gte, lte } date range from ISO-date strings.
+ *
+ * A.11 fix: the pattern `new Date(\`\${dateFrom}T00:00:00.000Z\`)` was
+ * copy-pasted across 4+ list endpoints. This is the single place to change
+ * if range boundaries ever shift.
+ *
+ * Usage:
+ *   const range = dayRangeUtc(q.dateFrom, q.dateTo);
+ *   where: { plannedDate: range }
+ */
+export function dayRangeUtc(
+  dateFrom?: string | null,
+  dateTo?:   string | null,
+): { gte?: Date; lte?: Date } {
+  const result: { gte?: Date; lte?: Date } = {};
+  if (dateFrom) result.gte = new Date(`${dateFrom}T00:00:00.000Z`);
+  if (dateTo)   result.lte = new Date(`${dateTo}T23:59:59.999Z`);
+  return result;
+}
+
 // UK bank holidays England & Wales 2025–2026 (mirrors mobile constant)
 export const BANK_HOLIDAYS = new Set([
   "2025-01-01","2025-04-18","2025-04-21","2025-05-05","2025-05-26",
