@@ -732,7 +732,7 @@ Update after every task. This is the single source of truth between sessions.
 | 0     | 0.3  | done — Path A: bodyTypeLabel added to shared/ + api/ | sonnet | e10ccdd (PR #2) | 2026-05-30 |
 | 0     | 0.4  | done | sonnet | cleanup/p0-0.4-reconcile-audit | 2026-05-30 |
 | 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
-| 0     | 0.6  | open — scope AuthProvider to /app/* (STOP S3) | | | |
+| 0     | 0.6  | done | sonnet | cleanup/p0-0.6-auth-scope | 2026-06-01 |
 | 0     | 0.7  | done — NO LEAK confirmed | sonnet | cleanup/p0-0.7-bearer-audit | 2026-06-01 |
 | 1     | 1.1  | done | sonnet + user | cleanup/p1-1.1-design-decisions | 2026-05-31 |
 | 2     | 2.1  | done | sonnet | cleanup/p2-2.1-event-definitions | 2026-05-31 |
