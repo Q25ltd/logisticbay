@@ -185,7 +185,19 @@ export const AddJobNoteSchema = z.object({
   note: z.string().min(1, "Note cannot be empty"),
 });
 
-export type CreateJobInput        = z.infer<typeof CreateJobSchema>;
-export type PatchJobInput         = z.infer<typeof PatchJobSchema>;
-export type UpdateJobStatusInput  = z.infer<typeof UpdateJobStatusSchema>;
-export type AddJobNoteInput       = z.infer<typeof AddJobNoteSchema>;
+/**
+ * TASK 3.8 — Planner override status change.
+ * Used by POST /jobs/:id/status_override.
+ * reason is mandatory so planners cannot silently override without explanation.
+ */
+export const StatusOverrideSchema = z.object({
+  status:  z.string().max(64).trim(),
+  reason:  z.string().min(1, "Reason is required").max(1000).trim(),
+  notes:   z.string().max(4000).trim().optional(),
+});
+
+export type CreateJobInput         = z.infer<typeof CreateJobSchema>;
+export type PatchJobInput          = z.infer<typeof PatchJobSchema>;
+export type UpdateJobStatusInput   = z.infer<typeof UpdateJobStatusSchema>;
+export type AddJobNoteInput        = z.infer<typeof AddJobNoteSchema>;
+export type StatusOverrideInput    = z.infer<typeof StatusOverrideSchema>;

@@ -6,9 +6,11 @@ import {
   PatchJobSchema,
   UpdateJobStatusSchema,
   AddJobNoteSchema,
+  StatusOverrideSchema,
+  type StatusOverrideInput,
 } from "../schemas/jobs.js";
 import { EVENT_TYPE_MAP } from "../sync/sync.constants.js";
-import { appendPlannerReason } from "../lib/jobUtils.js";
+import { appendPlannerReason, syncJobPlanningStatuses } from "../lib/jobUtils.js";
 import { createJob, patchJob } from "../services/jobService.js";
 import { parseBody, parseIdParam } from "../lib/validate.js";
 import { dayRangeUtc } from "../lib/dateUtils.js";
@@ -470,6 +472,114 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     return reply.status(201).send({ ok: true });
   });
+
+  // ── POST /jobs/:id/status_override — planner exceptional status change ───────
+  // Normal status changes go through PATCH /jobs/:id/status (follows EVENT_DEFINITIONS).
+  // This endpoint handles exceptional cases: cancel, reopen, force-close from any status.
+  // Requires: reason (mandatory), optional notes. Writes AuditLog + JobExecutionEvent.
+  // Forbidden for drivers. Closes A.2 cancel cascade.
+  app.post(
+    "/jobs/:id/status_override",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const id = parseIdParam(request.params);
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
+
+      const parsed = parseBody(StatusOverrideSchema, request.body);
+      if (!parsed.ok) return validationFailed(reply, parsed.errors);
+      const body = parsed.data as StatusOverrideInput;
+
+      const { companyId, userId } = request.user!;
+
+      const job = await prisma.job.findFirst({ where: { id, companyId } });
+      if (!job) return notFound(reply, "Job");
+
+      const fromStatus = job.status;
+      const toStatus   = body.status;
+
+      // Generate a server-side clientEventId for the audit event
+      // (planner override is not a driver event — no mobile retry needed)
+      const clientEventId = `override-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      let cancellationWarnings: string[] = [];
+
+      await prisma.$transaction(async (tx) => {
+        // ── Cancel cascade (A.2 fix) ──────────────────────────────────────────
+        if (toStatus === "cancelled") {
+          const activeAssignments = await tx.runAssignment.findMany({
+            where:  { jobId: id, companyId, removedAt: null },
+            select: { id: true, jobId: true, run: { select: { id: true } } },
+          });
+
+          if (activeAssignments.length > 0) {
+            const affectedRunIds = [...new Set(activeAssignments.map(a => a.run.id))];
+            cancellationWarnings = [
+              `Job removed from ${affectedRunIds.length} run(s): ${affectedRunIds.join(", ")}`,
+            ];
+
+            // Soft-remove all active assignments for this job
+            await tx.runAssignment.updateMany({
+              where: { jobId: id, companyId, removedAt: null },
+              data:  { removedAt: new Date(), removedBy: userId, removalReason: "job_cancelled" },
+            });
+
+            // Find other jobs in the affected runs and re-sync their planning status
+            const otherAssignments = await tx.runAssignment.findMany({
+              where:  { runId: { in: affectedRunIds }, companyId, removedAt: null },
+              select: { jobId: true },
+            });
+            const otherJobIds = [...new Set(otherAssignments.map(a => a.jobId))];
+            if (otherJobIds.length > 0) {
+              await syncJobPlanningStatuses(otherJobIds, companyId, tx);
+            }
+          }
+        }
+
+        // ── Update Job.status ─────────────────────────────────────────────────
+        await tx.job.updateMany({
+          where: { id, companyId },
+          data:  { status: toStatus },
+        });
+
+        // ── Write JobExecutionEvent (override-flagged) ─────────────────────────
+        await tx.jobExecutionEvent.create({
+          data: {
+            jobId:           id,
+            companyId,
+            driverId:        userId,
+            eventType:       `status_override:${toStatus}`,
+            note:            body.notes ?? `Override: ${body.reason}`,
+            clientEventId,
+            clientTimestamp: new Date(),
+            needsReview:     true,
+            reviewReason:    "planner_override",
+          },
+        });
+
+        // ── Write AuditLog ────────────────────────────────────────────────────
+        await tx.auditLog.create({
+          data: {
+            companyId,
+            actorId:    userId,
+            entityType: "Job",
+            entityId:   id,
+            action:     "status_change",
+            field:      "status",
+            oldValue:   { status: fromStatus } as import("../generated/client.js").Prisma.InputJsonValue,
+            newValue:   { status: toStatus } as import("../generated/client.js").Prisma.InputJsonValue,
+            note:       body.reason,
+          },
+        });
+      });
+
+      return reply.send({
+        id,
+        status:   toStatus,
+        from:     fromStatus,
+        ...(cancellationWarnings.length > 0 ? { warnings: cancellationWarnings } : {}),
+      });
+    },
+  );
 
   // ── POST /jobs/:id/repeat ──────────────────────────────────────────────────
   // Creates a new job by copying an existing one.
