@@ -14,7 +14,7 @@ import {
   SetAvailabilitySchema,
   SetShiftPreferenceSchema,
 } from "../schemas/availability.js";
-import { parseBody } from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
 import { writeAudit } from "../lib/audit.js";
 import { toISODate, isWorkingDay, getWeekStart, checkRestPeriod } from "../lib/dateUtils.js";
 
@@ -87,7 +87,8 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
 
   // ── POST /availability/:id/approve ────────────────────────────────────────
   app.post("/availability/:id/approve", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId } = request.user!;
 
     const avail = await prisma.driverAvailability.findFirst({ where: { id, companyId } });
@@ -352,7 +353,8 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
 
   // ── PATCH /holiday-requests/:id ───────────────────────────────────────────
   app.patch("/holiday-requests/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const zodParsed = parseBody(PatchHolidaySchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body = zodParsed.data as PatchHolidayBody;

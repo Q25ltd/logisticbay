@@ -10,7 +10,8 @@ import {
 import { EVENT_TYPE_MAP } from "../sync/sync.constants.js";
 import { appendPlannerReason } from "../lib/jobUtils.js";
 import { createJob, patchJob } from "../services/jobService.js";
-import { parseBody } from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
+import { dayRangeUtc } from "../lib/dateUtils.js";
 import { validateGpsPair } from "../lib/gps.js";
 import { validateClientTimestamp } from "../lib/eventTimestamp.js";
 import { applyJobEvent } from "../sync/applyJobEvent.js";
@@ -78,8 +79,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     if (q.status) where.status = q.status;
     if (q.dateFrom && q.dateTo) {
-      const gte = new Date(`${q.dateFrom}T00:00:00.000Z`);
-      const lte = new Date(`${q.dateTo}T23:59:59.999Z`);
+      const { gte, lte } = dayRangeUtc(q.dateFrom, q.dateTo);
       // Primary: filter by collection stop's time window. Fallback: plannedDate for
       // legacy jobs that have plannedDate set but no stop timeWindowStart.
       where.OR = [
@@ -90,8 +90,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         },
       ];
     } else if (q.date) {
-      const gte = new Date(`${q.date}T00:00:00.000Z`);
-      const lte = new Date(`${q.date}T23:59:59.999Z`);
+      const { gte, lte } = dayRangeUtc(q.date, q.date);
       where.OR = [
         { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
         {
@@ -193,7 +192,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /jobs/:id ─────────────────────────────────────────────────────────
   app.get("/jobs/:id", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId, userId, role } = request.user!;
 
     const job = await prisma.job.findFirst({
@@ -229,7 +229,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /jobs/:id — edit structured job before execution ────────────────
   app.patch("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const parsed = parseBody(PatchJobSchema, request.body);
     if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const { companyId, userId } = request.user!;
@@ -245,7 +246,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /jobs/:id ──────────────────────────────────────────────────────
   app.delete("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId, userId } = request.user!;
 
     const job = await prisma.job.findFirst({ where: { id, companyId } });
@@ -311,7 +313,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /jobs/:id/stop-times — planner edits per-stop timing ───────────
   app.patch("/jobs/:id/stop-times", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId, userId } = request.user!;
     const body = request.body as {
       stopTimes?: {
@@ -363,7 +366,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── PATCH /jobs/:id/status — driver / planner normal status path ─────────
   // Exceptional planner changes (cancel, reopen, force-close) → POST /jobs/:id/status_override (TASK 3.8).
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const parsed = parseBody(UpdateJobStatusSchema, request.body);
     if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const body = parsed.data;
@@ -447,7 +451,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /jobs/:id/note ───────────────────────────────────────────────────
   app.post("/jobs/:id/note", { preHandler: authenticate }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const parsed = parseBody(AddJobNoteSchema, request.body);
     if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
     const body = parsed.data;
@@ -478,7 +483,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.post("/jobs/:id/repeat", {
     preHandler: [authenticate, requireRole("company_owner", "planner")],
   }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId } = request.user!;
 
     const source = await prisma.job.findFirst({

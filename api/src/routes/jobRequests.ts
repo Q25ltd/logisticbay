@@ -24,7 +24,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { env }                   from "../lib/env.js";
 import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
-import { parseBody }             from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
 import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
 import {
   validateStructuredJob,
@@ -343,7 +343,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/job-requests/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const id  = parseInt((request.params as { id: string }).id, 10);
+      const id  = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
       const job = await prisma.job.findFirst({
         where:   { id, companyId: request.user!.companyId },
         include: {
@@ -361,7 +362,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/job-requests/:id/accept",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const id   = parseInt((request.params as { id: string }).id, 10);
+      const id   = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
       const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[] };
 
       const job = await prisma.job.findFirst({
@@ -495,7 +497,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     "/job-requests/:id/reject",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const id   = parseInt((request.params as { id: string }).id, 10);
+      const id   = parseIdParam(request.params);
+      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
       const body = request.body as { reason?: string; notes?: string };
 
       const job = await prisma.job.findFirst({

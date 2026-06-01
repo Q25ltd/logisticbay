@@ -189,7 +189,11 @@ Notes: planning.ts cancel block was not transactional and didn't set removalReas
 
 ---
 
-## [ ] A.9 🟠 Same `Omit<PrismaClient, "$connect" | …>` tx type signature copy-pasted — **high confidence**
+## [x] A.9 🟠 Same `Omit<PrismaClient, "$connect" | …>` tx type signature copy-pasted — **high confidence**
+
+Done: cleanup/p2-2.5-shared-helpers
+Files: api/src/lib/types.ts (new — exports TxClient), api/src/lib/jobUtils.ts, api/src/routes/runs.ts
+Verified: `grep -rn 'Omit<PrismaClient' api/src --include="*.ts" | grep -v generated | grep -v types.ts` → 0 hits
 
 **Where:**
 - `api/src/lib/jobUtils.ts:20`
@@ -215,7 +219,12 @@ Notes: planning.ts cancel block was not transactional and didn't set removalReas
 
 ---
 
-## [ ] A.11 🟠 Date-range parsing identical across list endpoints — **high confidence**
+## [x] A.11 🟠 Date-range parsing identical across list endpoints — **high confidence**
+
+Done: cleanup/p2-2.5-shared-helpers
+Files: api/src/lib/dateUtils.ts (added dayRangeUtc), api/src/routes/jobs.ts, runs.ts, dashboard.ts, planning.ts
+Verified: `grep -rn "T00:00:00.000Z" api/src/routes` → 0 hits
+Notes: schedule.ts has `T00:00:00` (no Z, local time) — different semantics, not replaced. Logged in DISCOVERED.
 
 **Where:** at least three places do the same `new Date(\`${dateFrom}T00:00:00.000Z\`) … T23:59:59.999Z` construction:
 - `api/src/routes/jobs.ts` GET /jobs
@@ -231,7 +240,11 @@ Notes: planning.ts cancel block was not transactional and didn't set removalReas
 
 ---
 
-## [ ] A.12 🟠 `parseInt((request.params as { id: string }).id, 10)` repeated everywhere — **high confidence**
+## [x] A.12 🟠 `parseInt((request.params as { id: string }).id, 10)` repeated everywhere — **high confidence**
+
+Done: cleanup/p2-2.5-shared-helpers
+Files: api/src/lib/validate.ts (added parseIdParam), all 11 route files
+Verified: `grep -rn "parseInt((request.params" api/src/routes` → 0 hits; 52 call sites replaced; null guards added at all call sites — NaN id now returns 400 not silent 404
 
 **Where:** every single route handler. Search: `grep -rn "parseInt((request.params" api/src/routes`. Easily 50+ sites.
 

@@ -23,7 +23,7 @@ import {
   PatchDriverStatusSchema,
 } from "../schemas/drivers.js";
 import { RegisterCompanySchema } from "../schemas/auth.js";
-import { parseBody } from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
 import { writeAudit } from "../lib/audit.js";
 import { driverProfileData } from "../lib/driverUtils.js";
 import { optionalNumber } from "../lib/coerce.js";
@@ -328,7 +328,8 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
   // ── PATCH /drivers/:id ─────────────────────────────────────────────────────
   app.patch("/drivers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const zodParsed = parseBody(PatchDriverSchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body = zodParsed.data as PatchDriverBody;
@@ -415,7 +416,8 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
   // ── PATCH /drivers/:id/status ──────────────────────────────────────────────
   app.patch("/drivers/:id/status", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const zodParsed = parseBody(PatchDriverStatusSchema, request.body);
     if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
     const body = zodParsed.data as PatchDriverStatusBody;
@@ -448,7 +450,8 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
 
   // ── POST /drivers/:id/reset-password ──────────────────────────────────────
   app.post("/drivers/:id/reset-password", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId } = request.user!;
 
     const driver = await prisma.driverProfile.findFirst({

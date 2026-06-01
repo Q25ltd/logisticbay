@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { parseIdParam } from "../lib/validate.js";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 
@@ -46,7 +47,8 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
 
   // ── GET /customers/:id ───────────────────────────────────────────────────
   app.get("/customers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const { companyId } = request.user!;
 
     const customer = await prisma.customer.findFirst({ where: { id, companyId } });
@@ -79,7 +81,8 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
 
   // ── PATCH /customers/:id ──────────────────────────────────────────────────
   app.patch("/customers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
     const body = request.body as PatchCustomerBody;
     const { companyId } = request.user!;
 
