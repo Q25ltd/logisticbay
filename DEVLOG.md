@@ -7,6 +7,24 @@
 
 ---
 
+## Cleanup Phase 3 in progress 2026-06-01
+
+Phase 3 (bug fixes) partial completion — PRs #14–18 merged to `cleanup/main-tracker`:
+
+| Task | PR | What |
+|---|---|---|
+| 3.7 | #14 | `api/src/lib/errors.ts` — 6 helpers, 266 inline `reply.status(4xx)` replaced, CI gate at 0 hits |
+| 0.6 | #16 | `AuthCtx.Provider` scoped to `/app/*` — public pages no longer fire `/auth/me` or refresh poll |
+| 0.7 | #15 | Read-only audit: `jobRequestsPublicApi` confirmed NO Bearer leak |
+| 3.3 | #17 | B.10 — `companyId` added to 10 bare-id `update`/`delete` calls (defence-in-depth) |
+| 3.5 | #18 | B.2 — `autoCleanupOldShifts` extracted to `api/src/jobs/autoCleanupWorker.ts`; per-tenant loop, `pg_advisory_lock`, no longer in route file |
+
+Phase 0 is now fully complete (all 7 tasks done).
+
+Open Phase 3 tasks: 3.1 (S3), 3.2 (S3), 3.6 (read-only → S3 on findings), 3.8 (planner override, approved)
+
+---
+
 ## Cleanup Phase 2 complete 2026-06-01
 
 Phase 2 (foundation refactors) finished. Five tasks, all merged to `cleanup/main-tracker`:
