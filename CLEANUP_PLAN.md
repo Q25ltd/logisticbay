@@ -747,6 +747,7 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.5  | done | sonnet | cleanup/p3-3.5-auto-cleanup-worker | 2026-06-01 |
 | 3     | 3.6  | done — 7 sites found; 2 direct writes (planner cancel/reject — acceptable for intake tier); reconciler deferred | sonnet | cleanup/p3-3.6-job-status-audit | 2026-06-01 |
 | 3     | 3.7  | done | sonnet | cleanup/p3-3.7-error-envelope | 2026-06-01 |
+| 3     | 3.8  | done | sonnet | cleanup/p3-3.8-planner-override | 2026-06-01 |
 | 4     | 4.1  | open | | | |
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
 | 4     | 4.3  | open | | | |
