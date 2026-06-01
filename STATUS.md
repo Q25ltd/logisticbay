@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-06-01 (API cleanup Phase 2 complete — applyJobEvent, cancelRun, shared helpers)
+> Last updated: 2026-06-01 (Phase 0 complete; Phase 3 in progress — error envelope, auth scope, companyId defence, cleanup worker)
 
 ---
 

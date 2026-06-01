@@ -339,7 +339,25 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.3 🔴 Direct `Job.status` writes bypass event reconstruction — **high confidence**
+## [~partial] B.3 🔴 Direct `Job.status` writes bypass event reconstruction — **high confidence**
+
+TASK 3.6 reconciliation (2026-06-01) — full discovery of all Job.status write sites:
+
+**Classified — 7 sites total:**
+
+| Site | Status | Classification |
+|---|---|---|
+| `sync/applyJobEvent.ts:136` | `def.resultingStatus` (event-driven) | ✅ **Executes through applyJobEvent** — the canonical path |
+| `lib/jobUtils.ts:47` | `in_planning` | ✅ **Planning transition** — `syncJobPlanningStatuses()` reconciles planning tier only; never touches execution statuses |
+| `lib/jobUtils.ts:49` | `ready_to_plan` | ✅ **Planning transition** — same as above |
+| `routes/jobRequests.ts:456` | `ready_to_plan` | ✅ **Planning transition** — planner accepts a pending-review job into planning |
+| `routes/jobRequests.ts:508` | `cancelled` | ⚠️ **Direct write** — planner rejects a job-request. No event log written. No `JobExecutionEvent` row. Acceptable for the intake pipeline (job never entered execution) but inconsistent. |
+| `routes/jobs.ts:278` | `cancelled` | ⚠️ **Direct write** — planner deletes a job. `plannerNotes` appended but no `JobExecutionEvent`. Same caveat. |
+| `services/jobService.ts:181` | `draft` | ✅ **Initial creation** — only on create, not a status transition |
+
+**Verdict:** 2 direct writes remain (both `cancelled` for planner operations). These are in the intake/planning tier — the job was never in execution, so there's no event log to be inconsistent with. Both should eventually route through the planner override path (TASK 3.8) for audit completeness.
+
+**Remaining concern:** `recalculateJobStatus` reconciler (the full B.3 fix) is still not implemented. If the event log and `Job.status` drift, there's no recovery mechanism. TASK 3.8 (planner override) and a future reconciler task should address this.
 
 **Where:** `api/src/routes/jobs.ts:446` writes `Job.status` directly. SAFETY §4 says `Job.status` must always be consistent with the event log; the file admits "Recalculation of job status from events on conflict" is not implemented.
 
