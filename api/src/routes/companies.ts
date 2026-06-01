@@ -27,6 +27,7 @@ import { parseBody, parseIdParam } from "../lib/validate.js";
 import { writeAudit } from "../lib/audit.js";
 import { driverProfileData } from "../lib/driverUtils.js";
 import { optionalNumber } from "../lib/coerce.js";
+import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -48,22 +49,22 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     config: { rateLimit: { max: 5, timeWindow: "1 hour" } },
   }, async (request, reply) => {
     const zodParsed = parseBody(RegisterCompanySchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body = zodParsed.data as RegisterCompanyBody;
 
     const v = validateRegisterCompany(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
+    if (!v.valid) return validationFailed(reply, v.errors);
 
     const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-    if (existing) return reply.status(409).send({ error: "Email already registered" });
+    if (existing) return conflict(reply, "CONFLICT", "Email already registered");
 
     const companyNameTrimmed = body.companyName.trim();
     const nameExists = await prisma.company.findFirst({ where: { name: { equals: companyNameTrimmed, mode: "insensitive" } } });
-    if (nameExists) return reply.status(409).send({ error: "A company with this name is already registered. Please use a different name.", field: "companyName" });
+    if (nameExists) return conflict(reply, "COMPANYNAME_CONFLICT", "A company with this name is already registered. Please use a different name.");
 
     const ticker = body.ticker.trim().toUpperCase();
     const tickerExists = await prisma.company.findUnique({ where: { ticker } });
-    if (tickerExists) return reply.status(409).send({ error: "This ticker is already taken. Please choose another one.", field: "ticker" });
+    if (tickerExists) return conflict(reply, "TICKER_CONFLICT", "This ticker is already taken. Please choose another one.");
 
     let slug = slugify(companyNameTrimmed);
     let slugSuffix = 2;
@@ -155,8 +156,8 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     if (body.ticker !== undefined) {
       const t = body.ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (t) {
-        const conflict = await prisma.company.findFirst({ where: { ticker: t, id: { not: companyId } } });
-        if (conflict) return reply.status(409).send({ error: "That ticker is already taken. Choose another." });
+        const tickerConflict = await prisma.company.findFirst({ where: { ticker: t, id: { not: companyId } } });
+        if (tickerConflict) return conflict(reply, "CONFLICT", "That ticker is already taken. Choose another.");
       }
     }
 
@@ -203,7 +204,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         },
       },
     });
-    if (!company) return reply.status(404).send({ error: "Company not found" });
+    if (!company) return notFound(reply, "Company");
     return reply.send(company);
   });
 
@@ -227,12 +228,12 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   // ── POST /drivers ──────────────────────────────────────────────────────────
   app.post("/drivers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const zodParsed = parseBody(CreateDriverSchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body = zodParsed.data as CreateDriverBody;
     const { companyId, userId: actorId } = request.user!;
 
     const v = validateCreateDriver(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
+    if (!v.valid) return validationFailed(reply, v.errors);
 
     let userId: number | null = null;
     let isNewUser = false;
@@ -245,7 +246,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
         where: { companyId, contactEmail: emailLower },
       });
       if (existingInCompany) {
-        return reply.status(409).send({ error: "A driver with this email already exists in your company" });
+        return conflict(reply, "CONFLICT", "A driver with this email already exists in your company");
       }
 
       let targetUser = await prisma.user.findUnique({ where: { email: emailLower } });
@@ -329,9 +330,9 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   // ── PATCH /drivers/:id ─────────────────────────────────────────────────────
   app.patch("/drivers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const zodParsed = parseBody(PatchDriverSchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body = zodParsed.data as PatchDriverBody;
     const { companyId, userId: actorId } = request.user!;
 
@@ -339,14 +340,14 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       where: { id, companyId },
       include: { user: { select: { id: true, email: true } } },
     });
-    if (!driver) return reply.status(404).send({ error: "Driver not found" });
+    if (!driver) return notFound(reply, "Driver");
 
     // Validate new email before entering the transaction
     const newEmail = body.email?.toLowerCase().trim();
     if (newEmail && driver.user && newEmail !== driver.user.email) {
-      const conflict = await prisma.user.findUnique({ where: { email: newEmail } });
-      if (conflict && conflict.id !== driver.user.id) {
-        return reply.status(409).send({ error: "A login account with this email already exists" });
+      const emailConflict = await prisma.user.findUnique({ where: { email: newEmail } });
+      if (emailConflict && emailConflict.id !== driver.user.id) {
+        return conflict(reply, "CONFLICT", "A login account with this email already exists");
       }
     }
 
@@ -417,17 +418,17 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   // ── PATCH /drivers/:id/status ──────────────────────────────────────────────
   app.patch("/drivers/:id/status", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const zodParsed = parseBody(PatchDriverStatusSchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body = zodParsed.data as PatchDriverStatusBody;
     const { companyId, userId: actorId } = request.user!;
 
     const v = validatePatchDriverStatus(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
+    if (!v.valid) return validationFailed(reply, v.errors);
 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
-    if (!driver) return reply.status(404).send({ error: "Driver not found" });
+    if (!driver) return notFound(reply, "Driver");
 
     const oldStatus = driver.status;
     const updated = await prisma.driverProfile.update({
@@ -451,23 +452,21 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
   // ── POST /drivers/:id/reset-password ──────────────────────────────────────
   app.post("/drivers/:id/reset-password", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const driver = await prisma.driverProfile.findFirst({
       where: { id, companyId },
       include: { user: true },
     });
-    if (!driver)        return reply.status(404).send({ error: "Driver not found" });
-    if (!driver.userId) return reply.status(400).send({ error: "Driver has no login account" });
+    if (!driver)        return notFound(reply, "Driver");
+    if (!driver.userId) return badRequest(reply, "BAD_REQUEST", "Driver has no login account");
 
     const activeMembershipCount = await prisma.companyMembership.count({
       where: { userId: driver.userId, status: "active" },
     });
     if (activeMembershipCount > 1) {
-      return reply.status(409).send({
-        error: "This driver account is shared with another company. Ask the driver to change their PIN, or create a company-only driver login before resetting it.",
-      });
+      return conflict(reply, "MULTI_COMPANY_DRIVER", "This driver account is shared with another company. Ask the driver to change their PIN, or create a company-only driver login before resetting it.");
     }
 
     const DEFAULT_PIN  = "123456";

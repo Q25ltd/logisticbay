@@ -68,9 +68,10 @@ test("applyJobEvent — shared state machine", async (t) => {
       });
       assert.strictEqual(res.statusCode, 400, `body: ${res.body}`);
       const body = JSON.parse(res.body);
+      // New envelope: { error: "<message>", code: "BAD_REQUEST" }
       assert.ok(
-        body.error === "BAD_REQUEST" || body.message?.toLowerCase().includes("clienteventid"),
-        `Expected BAD_REQUEST, got: ${res.body}`,
+        body.code === "BAD_REQUEST" || body.error?.toLowerCase().includes("clienteventid"),
+        `Expected BAD_REQUEST code, got: ${res.body}`,
       );
     });
 
@@ -80,13 +81,14 @@ test("applyJobEvent — shared state machine", async (t) => {
         method:  "PATCH",
         url:     `/jobs/${job.id}/status`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { status: "cancelled", clientEventId: `${PREFIX}cancel-${TS}` },
+        payload: { status: "cancelled", clientEventId: `${PREFIX}cancel-${TS}`, clientTimestamp: new Date().toISOString() },
       });
       assert.strictEqual(res.statusCode, 400, `body: ${res.body}`);
       const body = JSON.parse(res.body);
+      // New envelope: { error: "<reason>", code: "TRANSITION_FAILED" }
       assert.ok(
-        body.error === "TRANSITION_FAILED" || body.error === "BAD_REQUEST",
-        `Expected TRANSITION_FAILED or BAD_REQUEST, got: ${res.body}`,
+        body.code === "TRANSITION_FAILED" || body.code === "BAD_REQUEST",
+        `Expected TRANSITION_FAILED or BAD_REQUEST code, got: ${res.body}`,
       );
     });
 
@@ -127,7 +129,8 @@ test("applyJobEvent — shared state machine", async (t) => {
       });
       assert.strictEqual(res.statusCode, 400, `body: ${res.body}`);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, "TRANSITION_FAILED", `got: ${res.body}`);
+      // New envelope: { error: "<reason>", code: "TRANSITION_FAILED" }
+      assert.strictEqual(body.code, "TRANSITION_FAILED", `got: ${res.body}`);
     });
 
   } finally {

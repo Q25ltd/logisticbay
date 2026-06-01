@@ -15,6 +15,7 @@ import { dayRangeUtc } from "../lib/dateUtils.js";
 import { validateGpsPair } from "../lib/gps.js";
 import { validateClientTimestamp } from "../lib/eventTimestamp.js";
 import { applyJobEvent } from "../sync/applyJobEvent.js";
+import { badRequest, conflict, forbidden, notFound, validationFailed } from "../lib/errors.js";
 
 // Standard include for job detail views
 const JOB_DETAIL_INCLUDE = {
@@ -67,7 +68,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     } else if (q.driverId) {
       const requestedDriverId = parseInt(q.driverId, 10);
       if (!Number.isInteger(requestedDriverId)) {
-        return reply.status(400).send({ error: "driverId must be a valid number" });
+        return badRequest(reply, "BAD_REQUEST", "driverId must be a valid number");
       }
       const assignments = await prisma.runAssignment.findMany({
         where:  { companyId, removedAt: null, run: { assignedDriverId: requestedDriverId } },
@@ -104,7 +105,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const limit  = Math.min(parseInt(q.limit  ?? "200", 10) || 200, 200);
     const cursor = q.cursor ? parseInt(q.cursor, 10) : undefined;
     if (cursor && !Number.isInteger(cursor)) {
-      return reply.status(400).send({ error: "cursor must be a valid job id" });
+      return badRequest(reply, "BAD_REQUEST", "cursor must be a valid job id");
     }
 
     const jobs = await prisma.job.findMany({
@@ -193,22 +194,22 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── GET /jobs/:id ─────────────────────────────────────────────────────────
   app.get("/jobs/:id", { preHandler: authenticate }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId, userId, role } = request.user!;
 
     const job = await prisma.job.findFirst({
       where:   { id, companyId },
       include: JOB_DETAIL_INCLUDE,
     });
-    if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (!job) return notFound(reply, "Job");
 
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
-      if (!profile) return reply.status(403).send({ error: "Not your job" });
+      if (!profile) return forbidden(reply, "Not your job");
       const assignment = await prisma.runAssignment.findFirst({
         where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } },
       });
-      if (!assignment) return reply.status(403).send({ error: "Not your job" });
+      if (!assignment) return forbidden(reply, "Not your job");
     }
 
     return reply.send({
@@ -220,7 +221,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /jobs — create structured job ────────────────────────────────────
   app.post("/jobs", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const parsed = parseBody(CreateJobSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const { companyId, userId } = request.user!;
     const result = await createJob(prisma, { companyId, userId, body: parsed.data });
     if (!result.ok) return reply.status(result.status).send(result);
@@ -230,15 +231,15 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── PATCH /jobs/:id — edit structured job before execution ────────────────
   app.patch("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const parsed = parseBody(PatchJobSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const { companyId, userId } = request.user!;
     const job = await prisma.job.findFirst({
       where:   { id, companyId },
       include: { customer: true, stops: { orderBy: { sequenceNumber: "asc" } } },
     });
-    if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (!job) return notFound(reply, "Job");
     const result = await patchJob(prisma, { id, companyId, userId, body: parsed.data, job });
     if (!result.ok) return reply.status(result.status).send(result);
     return reply.send({ ...(result.job as object), validation: result.validation, quality: result.quality });
@@ -247,11 +248,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── DELETE /jobs/:id ──────────────────────────────────────────────────────
   app.delete("/jobs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId, userId } = request.user!;
 
     const job = await prisma.job.findFirst({ where: { id, companyId } });
-    if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (!job) return notFound(reply, "Job");
     if (job.status === "cancelled") return reply.status(204).send();
 
     const loadedTrailer = await prisma.fleetTrailer.findFirst({
@@ -259,10 +260,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       select: { registration: true },
     });
     if (loadedTrailer) {
-      return reply.status(409).send({
-        error:   "Cannot delete a job with a loaded linked trailer",
-        message: `Loaded trailer ${loadedTrailer.registration} is still linked to this job. Replan or unload it before deleting the job.`,
-      });
+      return conflict(reply, "LOADED_TRAILER", `Loaded trailer ${loadedTrailer.registration} is still linked to this job. Replan or unload it before deleting the job.`);
     }
 
     // Cascade check: job assigned to active runs
@@ -314,7 +312,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── PATCH /jobs/:id/stop-times — planner edits per-stop timing ───────────
   app.patch("/jobs/:id/stop-times", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId, userId } = request.user!;
     const body = request.body as {
       stopTimes?: {
@@ -326,7 +324,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     };
 
     const job = await prisma.job.findFirst({ where: { id, companyId }, include: { stops: true } });
-    if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (!job) return notFound(reply, "Job");
 
     if (Array.isArray(body.stopTimes) && body.stopTimes.length > 0) {
       await prisma.$transaction(async (tx) => {
@@ -367,44 +365,41 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // Exceptional planner changes (cancel, reopen, force-close) → POST /jobs/:id/status_override (TASK 3.8).
   app.patch("/jobs/:id/status", { preHandler: authenticate }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const parsed = parseBody(UpdateJobStatusSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data;
     const { companyId, userId, role } = request.user!;
 
     // B.5 fix: clientEventId is required — no server-generated fallback.
     if (!body.clientEventId?.trim()) {
-      return reply.status(400).send({ error: "BAD_REQUEST", message: "clientEventId is required" });
+      return badRequest(reply, "BAD_REQUEST", "clientEventId is required");
     }
     const clientEventId = body.clientEventId.trim();
 
     // Job must exist and belong to this company (tenant-scoped 404 before any role checks)
     const job = await prisma.job.findFirst({ where: { id, companyId } });
-    if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (!job) return notFound(reply, "Job");
 
     // Driver assignment guard (online path only — sync checks via driverProfile)
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
-      if (!profile) return reply.status(403).send({ error: "Not your job" });
+      if (!profile) return forbidden(reply, "Not your job");
       const assignment = await prisma.runAssignment.findFirst({
         where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } },
       });
-      if (!assignment) return reply.status(403).send({ error: "Not your job" });
+      if (!assignment) return forbidden(reply, "Not your job");
     }
 
     // ready_to_plan gate: vehicle category required (planning-specific rule, not an event concern)
     if (body.status === "ready_to_plan" && !job.vehicleCategory) {
-      return reply.status(400).send({
-        error:   "VEHICLE_REQUIRED",
-        message: "Vehicle type must be selected before this job can be marked as Ready to plan.",
-      });
+      return badRequest(reply, "VEHICLE_REQUIRED", "Vehicle type must be selected before this job can be marked as Ready to plan.");
     }
 
     // Timestamp and GPS validation (helpers from lib/ added in TASK 2.2)
     const tsResult = validateClientTimestamp(body.clientTimestamp ?? null);
     if (!tsResult.valid) {
-      return reply.status(400).send({ error: "BAD_REQUEST", message: tsResult.reason });
+      return badRequest(reply, "BAD_REQUEST", tsResult.reason);
     }
     const clientTs       = body.clientTimestamp ? tsResult.date : new Date();
     const tsNeedsReview  = body.clientTimestamp ? tsResult.needsReview  : false;
@@ -412,7 +407,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const gpsResult = validateGpsPair(body.gpsLat, body.gpsLng);
     if (!gpsResult.valid) {
-      return reply.status(400).send({ error: "BAD_REQUEST", message: gpsResult.reason });
+      return badRequest(reply, "BAD_REQUEST", gpsResult.reason);
     }
 
     // Resolve the event type from the target status
@@ -441,7 +436,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const r = result!;
 
     if (r.status === 'failed') {
-      return reply.status(400).send({ error: "TRANSITION_FAILED", message: r.reason });
+      return badRequest(reply, "TRANSITION_FAILED", r.reason);
     }
     if (r.status === 'duplicate') {
       return reply.send({ status: r.jobStatus, id, duplicate: true });
@@ -452,14 +447,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /jobs/:id/note ───────────────────────────────────────────────────
   app.post("/jobs/:id/note", { preHandler: authenticate }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const parsed = parseBody(AddJobNoteSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data;
     const { companyId, userId } = request.user!;
 
     const job = await prisma.job.findFirst({ where: { id, companyId } });
-    if (!job) return reply.status(404).send({ error: "Job not found" });
+    if (!job) return notFound(reply, "Job");
 
     await prisma.jobExecutionEvent.create({
       data: {
@@ -484,14 +479,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     preHandler: [authenticate, requireRole("company_owner", "planner")],
   }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const source = await prisma.job.findFirst({
       where:   { id, companyId },
       include: { stops: { orderBy: { sequenceNumber: "asc" } } },
     });
-    if (!source) return reply.status(404).send({ error: "Job not found" });
+    if (!source) return notFound(reply, "Job");
 
     interface StopOverride {
       sequenceNumber:    number;
@@ -511,7 +506,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     };
 
     if (!body.plannedDate) {
-      return reply.status(400).send({ error: "plannedDate is required" });
+      return badRequest(reply, "BAD_REQUEST", "plannedDate is required");
     }
 
     // Block duplicate repeats: one non-cancelled copy per source job per date
@@ -525,10 +520,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       select: { id: true },
     });
     if (existing) {
-      return reply.status(409).send({
-        error: "DUPLICATE_REPEAT",
-        message: `A repeat of this job already exists for ${body.plannedDate} (Job #${existing.id}). Cancel that job first if you need to replace it.`,
-      });
+      return conflict(reply, "DUPLICATE_REPEAT", `A repeat of this job already exists for ${body.plannedDate} (Job #${existing.id}). Cancel that job first if you need to replace it.`);
     }
 
     // Build stop overrides indexed by sequenceNumber

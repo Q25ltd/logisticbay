@@ -20,6 +20,7 @@ import {
 import type { ForgotPasswordBody, ResetPasswordBody, VerifyEmailBody } from "../schemas/auth.js";
 import { parseBody } from "../lib/validate.js";
 import { sendPasswordResetEmail } from "../email.js";
+import { badRequest, forbidden, notFound, unauthorized, validationFailed } from "../lib/errors.js";
 
 const LOCKOUT_MAX_ATTEMPTS = 5;
 const LOCKOUT_WINDOW_MS    = 15 * 60 * 1000;  // 15 minutes
@@ -30,7 +31,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
   }, async (request, reply) => {
     const parsed = parseBody(LoginSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as LoginBody;
     const { email, password } = body;
 
@@ -40,11 +41,11 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
 
     // Generic message — do not leak whether the account exists
-    if (!user || user.status !== "active") return reply.status(401).send({ error: "Invalid email or password" });
+    if (!user || user.status !== "active") return unauthorized(reply, "Invalid email or password");
 
     // Lockout check
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      return reply.status(401).send({ error: "Invalid email or password" });
+      return unauthorized(reply, "Invalid email or password");
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
@@ -55,7 +56,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { id: user.id },
         data:  { failedLoginAttempts: attempts, ...(lockedUntil ? { lockedUntil } : {}) },
       });
-      return reply.status(401).send({ error: "Invalid email or password" });
+      return unauthorized(reply, "Invalid email or password");
     }
 
     // Reset lockout on successful credential check
@@ -67,7 +68,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     const memberships = user.memberships;
-    if (!memberships.length) return reply.status(401).send({ error: "No active company membership" });
+    if (!memberships.length) return unauthorized(reply, "No active company membership");
 
     const selectedCompanyId = body.companyId ? parseInt(body.companyId) : null;
 
@@ -80,11 +81,11 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     const membership = selectedCompanyId ? memberships.find(m => m.companyId === selectedCompanyId) : memberships[0];
-    if (!membership) return reply.status(401).send({ error: "Company not found or access denied" });
+    if (!membership) return unauthorized(reply, "Company not found or access denied");
 
     // Block login for companies that have not verified their email yet
     if (membership.company.status === "pending") {
-      return reply.status(403).send({ error: "Please verify your email address before signing in.", code: "EMAIL_NOT_VERIFIED" });
+      return forbidden(reply, "Please verify your email address before signing in.", "EMAIL_NOT_VERIFIED");
     }
 
     const tokenPayload = { userId: user.id, companyId: membership.companyId, role: membership.role };
@@ -111,30 +112,30 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
   }, async (request, reply) => {
     const parsed = parseBody(RefreshSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as RefreshBody;
 
     let decoded: { userId: number; companyId: number; role: string };
     try {
       decoded = jwt.verify(body.refreshToken, env.JWT_REFRESH_SECRET) as typeof decoded;
     } catch {
-      return reply.status(401).send({ error: "Token expired or invalid" });
+      return unauthorized(reply, "Token expired or invalid");
     }
 
     const hash = hashToken(body.refreshToken);
     const stored = await prisma.refreshToken.findUnique({ where: { tokenHash: hash } });
 
     if (!stored) {
-      return reply.status(401).send({ error: "Token expired or invalid" });
+      return unauthorized(reply, "Token expired or invalid");
     }
 
     if (stored.revokedAt) {
       await revokeTokenFamily(prisma, stored.familyId);
-      return reply.status(401).send({ error: "Token reuse detected. Please log in again." });
+      return unauthorized(reply, "Token reuse detected. Please log in again.");
     }
 
     if (stored.expiresAt < new Date()) {
-      return reply.status(401).send({ error: "Token expired or invalid" });
+      return unauthorized(reply, "Token expired or invalid");
     }
 
     await prisma.refreshToken.update({
@@ -146,9 +147,9 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
       where:   { id: decoded.userId },
       include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } },
     });
-    if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found or inactive" });
+    if (!user || user.status !== "active") return unauthorized(reply, "User not found or inactive");
     const membership = user.memberships[0];
-    if (!membership) return reply.status(401).send({ error: "No active membership" });
+    if (!membership) return unauthorized(reply, "No active membership");
 
     const newPayload      = { userId: user.id, companyId: membership.companyId, role: membership.role };
     const newAccessToken  = generateAccessToken(newPayload);
@@ -185,37 +186,37 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   app.get("/auth/me", async (request, reply) => {
     const auth = request.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
+    if (!auth?.startsWith("Bearer ")) return unauthorized(reply, "Not authenticated");
     try {
       const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as { userId: number; companyId: number; role: string };
       const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
-      if (!user || user.status !== "active") return reply.status(401).send({ error: "User not found" });
+      if (!user || user.status !== "active") return unauthorized(reply, "User not found");
       const membership = user.memberships[0];
-      if (!membership) return reply.status(401).send({ error: "No active membership" });
+      if (!membership) return unauthorized(reply, "No active membership");
       return reply.send({ id: user.id, name: user.name, email: user.email, companyId: membership.companyId, companyName: membership.company.name, role: membership.role });
-    } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
+    } catch { return unauthorized(reply, "Token expired or invalid"); }
   });
 
   app.post("/auth/change-password", {
     config: { rateLimit: { max: 5, timeWindow: "10 minutes" } },
   }, async (request, reply) => {
     const auth = request.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) return reply.status(401).send({ error: "Not authenticated" });
+    if (!auth?.startsWith("Bearer ")) return unauthorized(reply, "Not authenticated");
     const parsed = parseBody(ChangePasswordSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as ChangePasswordBody;
     const { currentPassword, newPassword } = body;
-    if (newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
+    if (newPassword === "123456") return badRequest(reply, "BAD_REQUEST", "You cannot use the default PIN");
     try {
       const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as { userId: number };
       const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-      if (!user) return reply.status(404).send({ error: "User not found" });
+      if (!user) return notFound(reply, "User");
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
-      if (!valid) return reply.status(401).send({ error: "Current password is incorrect" });
+      if (!valid) return unauthorized(reply, "Current password is incorrect");
       const passwordHash = await bcrypt.hash(newPassword, 12);
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
       return reply.send({ ok: true, message: "Password changed successfully" });
-    } catch { return reply.status(401).send({ error: "Token expired or invalid" }); }
+    } catch { return unauthorized(reply, "Token expired or invalid"); }
   });
 
   // Only company_owner accounts can request a password reset — drivers/planners reset via admin panel
@@ -223,7 +224,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
   }, async (request, reply) => {
     const parsed = parseBody(ForgotPasswordSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as ForgotPasswordBody;
 
     // Always return success to prevent email enumeration
@@ -252,15 +253,15 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
   }, async (request, reply) => {
     const parsed = parseBody(ResetPasswordSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as ResetPasswordBody;
-    if (body.newPassword === "123456") return reply.status(400).send({ error: "You cannot use the default PIN" });
+    if (body.newPassword === "123456") return badRequest(reply, "BAD_REQUEST", "You cannot use the default PIN");
 
     const hash = hashToken(body.token);
     const tokenRow = await prisma.passwordResetToken.findUnique({ where: { tokenHash: hash } });
 
     if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
-      return reply.status(400).send({ error: "Token is invalid or has expired" });
+      return badRequest(reply, "BAD_REQUEST", "Token is invalid or has expired");
     }
 
     const passwordHash = await bcrypt.hash(body.newPassword, 12);
@@ -288,7 +289,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
   }, async (request, reply) => {
     const parsed = parseBody(VerifyEmailSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as VerifyEmailBody;
 
     const hash = hashToken(body.token);
@@ -298,12 +299,12 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
 
     if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
-      return reply.status(400).send({ error: "Verification link is invalid or has expired" });
+      return badRequest(reply, "BAD_REQUEST", "Verification link is invalid or has expired");
     }
 
     const user = tokenRow.user;
     const ownerMembership = user.memberships.find(m => m.role === "company_owner");
-    if (!ownerMembership) return reply.status(400).send({ error: "No company owner membership found" });
+    if (!ownerMembership) return badRequest(reply, "BAD_REQUEST", "No company owner membership found");
 
     await prisma.$transaction([
       prisma.emailVerificationToken.update({

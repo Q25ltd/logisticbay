@@ -74,13 +74,15 @@ export async function buildApp(
         url:       request.url,
       }, "Internal server error");
       return reply.status(500).send({
-        error: "Internal Server Error",
-        message: "Something went wrong. Please try again.",
+        error:   "Internal Server Error",
+        code:    "INTERNAL_ERROR",
+        details: "Something went wrong. Please try again.",
       });
     }
+    // Unified envelope for all 4xx errors surfaced through Fastify
     return reply.status(statusCode).send({
-      error: err.code ?? "ERROR",
-      message: err.message,
+      error: err.message ?? "Error",
+      code:  err.code    ?? "ERROR",
     });
   });
 

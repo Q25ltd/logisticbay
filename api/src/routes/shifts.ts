@@ -19,13 +19,14 @@ import {
 } from "../schemas/shifts.js";
 import { parseBody, parseIdParam } from "../lib/validate.js";
 import { normalizeShiftVehicleClass } from "../lib/vehicleCompat.js";
+import { badRequest, conflict, forbidden, notFound, validationFailed } from "../lib/errors.js";
 
 export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /shifts ────────────────────────────────────────────────────────────
   app.post("/shifts", { preHandler: authenticate }, async (request, reply) => {
     const parsed = parseBody(CreateShiftSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: "Validation failed", details: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const body = parsed.data as CreateShiftBody;
     const { userId, companyId } = request.user!;
 
@@ -33,7 +34,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       where:   { id: userId },
       include: { memberships: { include: { company: true }, take: 1 } },
     });
-    if (!driver) return reply.status(404).send({ error: "Driver not found" });
+    if (!driver) return notFound(reply, "Driver");
 
     const shift = await prisma.shift.create({
       data: {
@@ -53,29 +54,29 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /shifts/:id/segments ───────────────────────────────────────────────
   app.post("/shifts/:id/segments", { preHandler: authenticate }, async (request, reply) => {
     const shiftId = parseIdParam(request.params);
-    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
+    if (shiftId === null) return badRequest(reply, "BAD_REQUEST", "shiftId must be a valid integer");
     const zodParsed = parseBody(CreateSegmentSchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body    = zodParsed.data as CreateSegmentBody;
     const { userId, companyId } = request.user!;
 
     const segValidation = validateCreateSegment(body);
     if (!segValidation.valid) {
-      return reply.status(400).send({ error: "Validation failed", details: segValidation.errors });
+      return validationFailed(reply, segValidation.errors);
     }
 
     const shift = await prisma.shift.findFirst({
       where:   { id: shiftId, companyId, driverId: userId, status: "draft" },
       include: { segments: { orderBy: { segmentNumber: "asc" } } },
     });
-    if (!shift) return reply.status(404).send({ error: "Shift not found or not in draft" });
+    if (!shift) return notFound(reply, "Shift or not in draft");
 
     const truckErrors = validateSegmentChecks(body.truckChecks ?? [], ALL_TRUCK_KEYS, "truckChecks");
-    if (truckErrors.length) return reply.status(400).send({ error: "Validation failed", details: truckErrors });
+    if (truckErrors.length) return validationFailed(reply, truckErrors);
 
     if (body.trailerReg && body.trailerChecks) {
       const trailerErrors = validateSegmentChecks(body.trailerChecks, TRAILER_CHECK_KEYS, "trailerChecks");
-      if (trailerErrors.length) return reply.status(400).send({ error: "Validation failed", details: trailerErrors });
+      if (trailerErrors.length) return validationFailed(reply, trailerErrors);
     }
 
     const prevSegment = shift.segments[shift.segments.length - 1];
@@ -130,18 +131,18 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── POST /shifts/:id/segments/:segId/deliveries ─────────────────────────────
   app.post("/shifts/:id/segments/:segId/deliveries", { preHandler: authenticate }, async (request, reply) => {
     const shiftId   = parseIdParam(request.params);
-    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
+    if (shiftId === null) return badRequest(reply, "BAD_REQUEST", "shiftId must be a valid integer");
     const segmentId = parseIdParam(request.params, "segId");
-    if (segmentId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "segmentId must be a valid integer" });
+    if (segmentId === null) return badRequest(reply, "BAD_REQUEST", "segmentId must be a valid integer");
     const zodParsed = parseBody(CreateDeliverySchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body      = zodParsed.data as CreateDeliveryBody;
     const { userId, companyId } = request.user!;
 
     const segment = await prisma.shiftSegment.findFirst({
       where: { id: segmentId, shiftId, shift: { companyId, driverId: userId } },
     });
-    if (!segment) return reply.status(404).send({ error: "Segment not found" });
+    if (!segment) return notFound(reply, "Segment");
 
     const delivery = await prisma.deliveryTask.create({
       data: {
@@ -170,9 +171,9 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── PATCH /shifts/:id/submit ────────────────────────────────────────────────
   app.patch("/shifts/:id/submit", { preHandler: authenticate }, async (request, reply) => {
     const shiftId = parseIdParam(request.params);
-    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
+    if (shiftId === null) return badRequest(reply, "BAD_REQUEST", "shiftId must be a valid integer");
     const zodParsed = parseBody(SubmitShiftSchema, request.body);
-    if (!zodParsed.ok) return reply.status(400).send({ error: "Validation failed", details: zodParsed.errors });
+    if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body    = zodParsed.data as SubmitShiftBody;
     const { userId, companyId } = request.user!;
 
@@ -184,7 +185,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         company:  { select: { name: true } },
       },
     });
-    if (!shift) return reply.status(404).send({ error: "Shift not found or already submitted" });
+    if (!shift) return notFound(reply, "Shift or already submitted");
 
     // Spare drivers have no segments — that is valid, skip the segment close-out
     const lastSeg = shift.segments[shift.segments.length - 1];
@@ -286,7 +287,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.post("/shifts/:id/retry", { preHandler: authenticate }, async (request, reply) => {
     const { userId, companyId } = request.user!;
     const shiftId = parseIdParam(request.params);
-    if (shiftId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "shiftId must be a valid integer" });
+    if (shiftId === null) return badRequest(reply, "BAD_REQUEST", "shiftId must be a valid integer");
 
     const shift = await prisma.shift.findFirst({
       where:   { id: shiftId, companyId, driverId: userId, status: "failed" },
@@ -296,7 +297,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         driver:   { select: { name: true } },
       },
     });
-    if (!shift) return reply.status(404).send({ error: "Shift not found or not in failed state" });
+    if (!shift) return notFound(reply, "Shift or not in failed state");
 
     await prisma.shift.update({ where: { id: shiftId }, data: { status: "submitted" } });
     reply.status(202).send({ status: "retrying", id: shiftId });
@@ -362,7 +363,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── GET /shifts/:id ─────────────────────────────────────────────────────────
   app.get("/shifts/:id", { preHandler: authenticate }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { userId, companyId, role } = request.user!;
 
     const shift = await prisma.shift.findFirst({
@@ -374,14 +375,14 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       },
     });
 
-    if (!shift) return reply.status(404).send({ error: "Shift not found" });
+    if (!shift) return notFound(reply, "Shift");
     return reply.send(shift);
   });
 
   // ── GET /shifts/:id/pdf ─────────────────────────────────────────────────────
   app.get("/shifts/:id/pdf", { preHandler: authenticate }, async (request, reply) => {
     const id = parseIdParam(request.params);
-    if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { userId, companyId, role } = request.user!;
 
     const shift = await prisma.shift.findFirst({
@@ -393,7 +394,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       },
     });
 
-    if (!shift) return reply.status(404).send({ error: "Shift not found" });
+    if (!shift) return notFound(reply, "Shift");
 
     try {
       const pdfBuffer = await generateShiftPDF(shift as any);
@@ -417,16 +418,16 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     { preHandler: [authenticate, requireRole("company_owner", "driver")] },
     async (request, reply) => {
       const id   = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const user = request.user!;
 
       const shift = await prisma.shift.findFirst({ where: { id, companyId: user.companyId } });
-      if (!shift)                     return reply.status(404).send({ error: "Shift not found" });
-      if (shift.status === "deleted") return reply.status(409).send({ error: "Already deleted" });
+      if (!shift)                     return notFound(reply, "Shift");
+      if (shift.status === "deleted") return conflict(reply, "CONFLICT", "Already deleted");
 
       if (user.role === "driver") {
-        if (shift.driverId !== user.userId)                return reply.status(403).send({ error: "Not your shift" });
-        if (!["draft", "failed"].includes(shift.status))   return reply.status(403).send({ error: "Only draft or failed shifts can be deleted" });
+        if (shift.driverId !== user.userId)                return forbidden(reply, "Not your shift");
+        if (!["draft", "failed"].includes(shift.status))   return forbidden(reply, "Only draft or failed shifts can be deleted");
       }
 
       await prisma.shift.update({ where: { id }, data: { status: "deleted" } });
@@ -476,7 +477,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── DEV: reset all shifts for testing ─────────────────────────────────────
   app.delete("/dev/reset-shifts", { preHandler: [authenticate, requireRole("company_owner")] }, async (request, reply) => {
     if (process.env.NODE_ENV === "production") {
-      return reply.status(404).send({ error: "Not found" });
+      return notFound(reply, "Not found");
     }
     const { companyId } = request.user!;
     await prisma.shift.updateMany({ where: { companyId }, data: { status: "deleted" } });

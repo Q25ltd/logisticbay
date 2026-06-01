@@ -3,6 +3,7 @@ import { parseIdParam } from "../lib/validate.js";
 import type { FastifyInstance }  from "fastify";
 import { PrismaClient, Prisma }  from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
+import { badRequest, notFound } from "../lib/errors.js";
 
 function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
@@ -92,13 +93,13 @@ export async function requestLinkRoutes(app: FastifyInstance, prisma: PrismaClie
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id   = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const body = request.body as Record<string, unknown>;
 
       const existing = await prisma.clientRequestLink.findFirst({
         where: { id, companyId: request.user!.companyId },
       });
-      if (!existing) return reply.status(404).send({ error: "Link not found" });
+      if (!existing) return notFound(reply, "Link");
 
       const updated = await prisma.clientRequestLink.update({
         where: { id },
@@ -129,12 +130,12 @@ export async function requestLinkRoutes(app: FastifyInstance, prisma: PrismaClie
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
 
       const existing = await prisma.clientRequestLink.findFirst({
         where: { id, companyId: request.user!.companyId },
       });
-      if (!existing) return reply.status(404).send({ error: "Link not found" });
+      if (!existing) return notFound(reply, "Link");
 
       const rawToken  = generateRawToken();
       const tokenHash = hashToken(rawToken);
