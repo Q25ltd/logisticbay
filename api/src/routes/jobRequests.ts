@@ -505,7 +505,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         : "Rejected by planner";
 
       await prisma.$transaction([
-        prisma.job.update({ where: { id }, data: { status: "cancelled" } }),
+        prisma.job.updateMany({ where: { id, companyId: request.user!.companyId }, data: { status: "cancelled" } }),
         prisma.jobAudit.create({
           data: {
             companyId: job.companyId,

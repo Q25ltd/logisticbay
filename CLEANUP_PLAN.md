@@ -742,7 +742,7 @@ Update after every task. This is the single source of truth between sessions.
 | 2     | 2.5  | done | sonnet | cleanup/p2-2.5-shared-helpers | 2026-05-31 |
 | 3     | 3.1  | open | | | |
 | 3     | 3.2  | open | | | |
-| 3     | 3.3  | open | | | |
+| 3     | 3.3  | done | sonnet | cleanup/p3-3.3-companyid-where | 2026-06-01 |
 | 3     | 3.4  | open — awaits S1 confirmation (B.12 agency PIN) | | | |
 | 3     | 3.5  | open | | | |
 | 3     | 3.6  | open | | | |

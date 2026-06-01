@@ -472,6 +472,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const DEFAULT_PIN  = "123456";
     const passwordHash = await bcrypt.hash(DEFAULT_PIN, 12);
 
+    // User has no companyId column — safe: driver.userId fetched via companyId-scoped driverProfile lookup above
     await prisma.user.update({ where: { id: driver.userId }, data: { passwordHash } });
 
     return reply.send({
