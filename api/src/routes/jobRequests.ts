@@ -26,6 +26,7 @@ import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
 import { parseBody, parseIdParam } from "../lib/validate.js";
 import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
+import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
 import {
   validateStructuredJob,
   findInvalidStopLocationId,
@@ -238,10 +239,10 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     const link = await resolveLink(prisma, token);
 
     if (!link || !link.isActive) {
-      return reply.status(404).send({ error: "Link not found or inactive" });
+      return notFound(reply, "Link or inactive");
     }
     if (link.expiresAt && link.expiresAt < new Date()) {
-      return reply.status(410).send({ error: "This link has expired" });
+      return badRequest(reply, "GONE", "This link has expired");
     }
 
     return reply.send({
@@ -263,18 +264,18 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     const link = await resolveLink(prisma, token);
 
     if (!link || !link.isActive) {
-      return reply.status(404).send({ error: "Link not found or inactive" });
+      return notFound(reply, "Link or inactive");
     }
     if (link.expiresAt && link.expiresAt < new Date()) {
-      return reply.status(410).send({ error: "This link has expired" });
+      return badRequest(reply, "GONE", "This link has expired");
     }
 
     const parsed = parseBody(CreateJobSchema, request.body);
-    if (!parsed.ok) return reply.status(400).send({ error: parsed.errors[0], errors: parsed.errors });
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
     const b = parsed.data;
 
     if (!b.stops?.length) {
-      return reply.status(400).send({ error: "At least one stop is required" });
+      return badRequest(reply, "BAD_REQUEST", "At least one stop is required");
     }
 
     // ── Find creator (a planner/owner in this company) ───────────────────────
@@ -287,7 +288,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     // ── IDOR guard: validate every savedLocationId against this company ───────
     const invalidLocId = await findInvalidStopLocationId(prisma, link.companyId, b.stops!);
     if (invalidLocId !== null) {
-      return reply.status(400).send({ error: "Invalid location reference in stops" });
+      return badRequest(reply, "BAD_REQUEST", "Invalid location reference in stops");
     }
 
     // ── Transaction: create Job + JobParts, update link stats ────────────────
@@ -344,7 +345,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id  = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const job = await prisma.job.findFirst({
         where:   { id, companyId: request.user!.companyId },
         include: {
@@ -352,7 +353,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           stops:    { orderBy: { sequenceNumber: "asc" as const } },
         },
       });
-      if (!job) return reply.status(404).send({ error: "Not found" });
+      if (!job) return notFound(reply, "Not found");
       return reply.send(job);
     },
   );
@@ -363,16 +364,16 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id   = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[] };
 
       const job = await prisma.job.findFirst({
         where:   { id, companyId: request.user!.companyId },
         include: { stops: { orderBy: { sequenceNumber: "asc" } } },
       });
-      if (!job) return reply.status(404).send({ error: "Job not found" });
+      if (!job) return notFound(reply, "Job");
       if (job.status !== "pending_review") {
-        return reply.status(409).send({ error: "Job is not pending review" });
+        return conflict(reply, "CONFLICT", "Job is not pending review");
       }
       // Derive plannedDate from the first collection stop if not explicitly supplied.
       // This mirrors the CJP/accept-drawer behaviour where the field was removed from the UI.
@@ -381,20 +382,14 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         job.stops[0]?.timeWindowStart?.toISOString().slice(0, 10) ||
         "";
       if (!resolvedPlannedDate) {
-        return reply.status(400).send({
-          error:   "DATE_REQUIRED",
-          message: "Cannot determine collection date — add a time window to a collection stop first.",
-        });
+        return badRequest(reply, "DATE_REQUIRED", "Cannot determine collection date — add a time window to a collection stop first.");
       }
 
       // Vehicle category must be known before a job can enter planning.
       // Accept body may supply it when the customer left it blank in the PRF.
       const vehicleCategory = body.vehicleCategory?.trim() || (job.vehicleCategory as string | null) || null;
       if (!vehicleCategory) {
-        return reply.status(400).send({
-          error:   "VEHICLE_REQUIRED",
-          message: "Vehicle type must be set before this job can be accepted into planning.",
-        });
+        return badRequest(reply, "VEHICLE_REQUIRED", "Vehicle type must be set before this job can be accepted into planning.");
       }
 
       // Full validation — same gates as CJP ready_to_plan save.
@@ -452,11 +447,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       });
 
       if (!validation.isValid) {
-        return reply.status(400).send({
-          error:    "Job cannot be accepted — required information is missing",
-          errors:   validation.errors,
-          warnings: validation.warnings,
-        });
+        return badRequest(reply, "VALIDATION_FAILED", "Job cannot be accepted — required information is missing", { errors: validation.errors, warnings: validation.warnings });
       }
 
       const note = body.plannerNotes?.trim() || "";
@@ -498,15 +489,15 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const id   = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const body = request.body as { reason?: string; notes?: string };
 
       const job = await prisma.job.findFirst({
         where: { id, companyId: request.user!.companyId },
       });
-      if (!job) return reply.status(404).send({ error: "Job not found" });
+      if (!job) return notFound(reply, "Job");
       if (job.status !== "pending_review") {
-        return reply.status(409).send({ error: "Job is not pending review" });
+        return conflict(reply, "CONFLICT", "Job is not pending review");
       }
 
       const note = body.reason

@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-28c (full deduplication pass — shared utils, STOP_TYPE_LABEL, bodyTypeLabel, cap, today, addDays)
+> Last updated: 2026-06-01 (API cleanup Phase 2 complete — applyJobEvent, cancelRun, shared helpers)
 
 ---
 
@@ -162,7 +162,8 @@
 | **LoadTrack** | Schema + model fully defined | No write path from mobile or API yet — custody chain not recorded |
 | **Job audit log** | `JobAudit` rows written on accept/reject | No viewer in web planner UI |
 | **Fleet ↔ Run linkage** | Schema has `assignedTruckId` / `assignedTrailerId` | Run creation UI does not yet offer truck/trailer picker |
-| **Job status guards** | PATCH /jobs/:id/status exists | Role-based edit restrictions post-assignment not enforced in code |
+| **Job status guards** | PATCH /jobs/:id/status exists; `applyJobEvent` shared state machine; `clientEventId` required; cancel blocked on normal path | Role-based edit restrictions post-assignment; planner override endpoint (TASK 3.8) |
+| **API code quality** | Phase 2 cleanup complete — event definitions single source, GPS/timestamp helpers, shared state machine, cancelRun service, parseIdParam/dayRangeUtc/TxClient | Phase 3 bug fixes; error envelope standardisation (TASK 3.7 in progress) |
 
 ---
 

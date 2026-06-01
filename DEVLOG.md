@@ -3,7 +3,26 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-30
+> Last updated: 2026-06-01
+
+---
+
+## Cleanup Phase 2 complete 2026-06-01
+
+Phase 2 (foundation refactors) finished. Five tasks, all merged to `cleanup/main-tracker`:
+
+| Task | PRs | What |
+|---|---|---|
+| 2.1 A.5/A.6/A.13 | #9 | `EVENT_DEFINITIONS` single source; `PlannedJob` stale refs fixed; 8 new tests |
+| 2.2 A.3/A.4 | #10 | `validateGpsPair` + `validateClientTimestamp`; E.4 (flag not reject) live; GPS range fix; 18 new tests |
+| 2.3 A.1/A.2/B.5 | #11 | `applyJobEvent` shared state machine; `clientEventId` required; cancel blocked via normal path; 4 new tests |
+| 2.4 A.7/B.4/B.15 | #12 | `cancelRun` service; LoadTrack preserved on cancel (user confirmed); planning.ts cancel now transactional |
+| 2.5 A.9/A.11/A.12 | #13 | `TxClient`, `dayRangeUtc`, `parseIdParam`; 52 parseInt call sites replaced; NaN id → 400 not 404 |
+
+New files created: `api/src/sync/applyJobEvent.ts`, `api/src/lib/gps.ts`, `api/src/lib/eventTimestamp.ts`, `api/src/services/runService.ts`, `api/src/lib/types.ts`
+
+Test count: 43 → 70 (+27 new tests across Phase 2)
+Knip baseline unchanged: 26 unused files, 118 unused exports (Phase 5 closes these)
 
 ---
 

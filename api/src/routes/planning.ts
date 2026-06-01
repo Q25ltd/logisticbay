@@ -21,6 +21,7 @@ import { haversineKm }               from "../lib/geo.js";
 import { cancelRun }                 from "../services/runService.js";
 import { parseIdParam }              from "../lib/validate.js";
 import { dayRangeUtc }               from "../lib/dateUtils.js";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -325,7 +326,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         dependsOnRunId?:    number;
       };
 
-      if (!b.date) return reply.status(400).send({ error: "date is required" });
+      if (!b.date) return badRequest(reply, "BAD_REQUEST", "date is required");
 
       const run = await prisma.$transaction(async tx => {
         const ref = await generateRunReference(companyId, new Date(b.date).getFullYear(), tx as unknown as PrismaClient);
@@ -357,7 +358,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId, userId } = request.user!;
       const id = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const b  = request.body as {
         runType?:            string | null;
         dependsOnRunId?:     number | null;
@@ -372,7 +373,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       };
 
       const run = await prisma.run.findFirst({ where: { id, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       // When cancelling a run, delegate to the shared cancelRun service.
       // This fixes A.7 (duplicate logic), B.4 (LoadTrack preserved), B.15 (now transactional).
@@ -410,26 +411,26 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId, userId } = request.user!;
       const runId = parseIdParam(request.params);
-      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
       const b     = request.body as { jobPartId: number; quantityAssigned?: number };
 
-      if (!b.jobPartId) return reply.status(400).send({ error: "jobPartId is required" });
+      if (!b.jobPartId) return badRequest(reply, "BAD_REQUEST", "jobPartId is required");
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       const part = await prisma.jobPart.findFirst({ where: { id: b.jobPartId, companyId } });
-      if (!part) return reply.status(404).send({ error: "Stop not found" });
+      if (!part) return notFound(reply, "Stop");
 
       // Check not already actively assigned to another run
       const existing = await prisma.runAssignment.findFirst({
         where: { jobPartId: b.jobPartId, companyId, removedAt: null },
       });
       if (existing && existing.runId !== runId) {
-        return reply.status(409).send({ error: "Stop is already assigned to another run" });
+        return conflict(reply, "CONFLICT", "Stop is already assigned to another run");
       }
       if (existing && existing.runId === runId) {
-        return reply.status(409).send({ error: "Stop is already on this run" });
+        return conflict(reply, "CONFLICT", "Stop is already on this run");
       }
 
       // Get next sequence number
@@ -472,14 +473,14 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId, userId } = request.user!;
       const runId = parseIdParam(request.params);
-      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
       const aId   = parseIdParam(request.params, "aId");
-      if (aId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "aId must be a valid integer" });
+      if (aId === null) return badRequest(reply, "BAD_REQUEST", "aId must be a valid integer");
 
       const a = await prisma.runAssignment.findFirst({
         where: { id: aId, runId, companyId, removedAt: null },
       });
-      if (!a) return reply.status(404).send({ error: "Assignment not found" });
+      if (!a) return notFound(reply, "Assignment");
 
       await prisma.runAssignment.update({
         where: { id: aId },
@@ -506,16 +507,16 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId } = request.user!;
       const runId = parseIdParam(request.params);
-      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
       const { assignmentIds } = request.body as { assignmentIds: number[] };
 
       if (!Array.isArray(assignmentIds) || assignmentIds.length === 0) {
-        return reply.status(400).send({ error: "assignmentIds must be a non-empty array" });
+        return badRequest(reply, "BAD_REQUEST", "assignmentIds must be a non-empty array");
       }
 
       // Verify run belongs to this company
       const run = await prisma.run.findFirst({ where: { id: runId, companyId }, select: { id: true } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       // Verify every supplied ID is an active assignment on this run
       const active = await prisma.runAssignment.findMany({
@@ -523,7 +524,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         select: { id: true },
       });
       if (active.length !== assignmentIds.length) {
-        return reply.status(400).send({ error: "One or more assignment IDs are invalid or already removed" });
+        return badRequest(reply, "BAD_REQUEST", "One or more assignment IDs are invalid or already removed");
       }
 
       // Space assignments at 1000, 2000, 3000 …
@@ -547,15 +548,15 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId } = request.user!;
       const id = parseIdParam(request.params);
-      if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
 
       const run = await prisma.run.findFirst({
         where:   { id, companyId },
         include: { assignments: { where: { removedAt: null } } },
       });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
       if (run.assignments.length === 0) {
-        return reply.status(400).send({ error: "NO_STOPS", message: "Add at least one stop before publishing." });
+        return badRequest(reply, "NO_STOPS", "Add at least one stop before publishing.");
       }
 
       const updated = await prisma.run.update({
@@ -579,10 +580,10 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId } = request.user!;
       const runId = parseIdParam(request.params);
-      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       const b = request.body as {
         waypointType?:  string;
@@ -698,17 +699,17 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId } = request.user!;
       const runId = parseIdParam(request.params);
-      if (runId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "runId must be a valid integer" });
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
       const wId   = parseIdParam(request.params, "wId");
-      if (wId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "wId must be a valid integer" });
+      if (wId === null) return badRequest(reply, "BAD_REQUEST", "wId must be a valid integer");
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       const waypoint = await prisma.runWaypoint.findFirst({
         where: { id: wId, runId, companyId },
       });
-      if (!waypoint) return reply.status(404).send({ error: "Waypoint not found" });
+      if (!waypoint) return notFound(reply, "Waypoint");
 
       await prisma.runWaypoint.delete({ where: { id: wId } });
       return reply.status(204).send();
@@ -765,7 +766,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const q = request.query as { dateFrom?: string; dateTo?: string };
 
       if (!q.dateFrom || !q.dateTo) {
-        return reply.status(400).send({ error: "dateFrom and dateTo are required (YYYY-MM-DD)" });
+        return badRequest(reply, "BAD_REQUEST", "dateFrom and dateTo are required (YYYY-MM-DD)");
       }
 
       const items = await getPlannerWorkItems(prisma, companyId, q.dateFrom, q.dateTo);
@@ -818,7 +819,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     async (request, reply) => {
       const { companyId, userId } = request.user!;
       const sourceRunId = parseIdParam(request.params);
-      if (sourceRunId === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "sourceRunId must be a valid integer" });
+      if (sourceRunId === null) return badRequest(reply, "BAD_REQUEST", "sourceRunId must be a valid integer");
 
       const b = request.body as {
         restLocationText?: string;
@@ -842,7 +843,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           },
         },
       });
-      if (!sourceRun) return reply.status(404).send({ error: "Run not found" });
+      if (!sourceRun) return notFound(reply, "Run");
 
       // ── Calculate delivery run date + start time ────────────────────────────
       const restHours  = (b.restHours === 9 || b.restHours === 11) ? b.restHours : 11;
