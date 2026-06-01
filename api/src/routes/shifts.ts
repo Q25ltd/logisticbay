@@ -436,43 +436,6 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
   );
 
-  // ── Auto-cleanup ────────────────────────────────────────────────────────────
-  async function autoCleanupOldShifts() {
-    try {
-      const now = Date.now();
-
-      // Soft-delete draft and failed shifts older than 14 days
-      const cutoff14 = new Date(now - 14 * 24 * 60 * 60 * 1000);
-      const result14 = await prisma.shift.updateMany({
-        where: {
-          createdAt: { lt: cutoff14 },
-          status: { in: ["draft", "failed"] },
-        },
-        data: { status: "deleted" },
-      });
-      if (result14.count > 0) {
-        app.log.info({ count: result14.count }, "Auto-soft-deleted draft/failed shifts older than 14 days");
-      }
-
-      // Soft-delete completed and submitted shifts older than 33 days
-      const cutoff33 = new Date(now - 33 * 24 * 60 * 60 * 1000);
-      const result33 = await prisma.shift.updateMany({
-        where: {
-          createdAt: { lt: cutoff33 },
-          status: { in: ["completed", "submitted"] },
-        },
-        data: { status: "deleted" },
-      });
-      if (result33.count > 0) {
-        app.log.info({ count: result33.count }, "Auto-soft-deleted completed/submitted shifts older than 33 days");
-      }
-    } catch (err) {
-      app.log.error(err, "Auto-cleanup failed");
-    }
-  }
-
-  autoCleanupOldShifts();
-  setInterval(autoCleanupOldShifts, 24 * 60 * 60 * 1000);
 
   // ── DEV: reset all shifts for testing ─────────────────────────────────────
   app.delete("/dev/reset-shifts", { preHandler: [authenticate, requireRole("company_owner")] }, async (request, reply) => {

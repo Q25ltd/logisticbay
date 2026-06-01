@@ -744,7 +744,7 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.2  | open | | | |
 | 3     | 3.3  | done | sonnet | cleanup/p3-3.3-companyid-where | 2026-06-01 |
 | 3     | 3.4  | open — awaits S1 confirmation (B.12 agency PIN) | | | |
-| 3     | 3.5  | open | | | |
+| 3     | 3.5  | done | sonnet | cleanup/p3-3.5-auto-cleanup-worker | 2026-06-01 |
 | 3     | 3.6  | open | | | |
 | 3     | 3.7  | done | sonnet | cleanup/p3-3.7-error-envelope | 2026-06-01 |
 | 4     | 4.1  | blocked-by-3.6 | | | |

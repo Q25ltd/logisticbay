@@ -3,6 +3,7 @@ import "./lib/env.js";
 import { PrismaClient } from "./generated/client.js";
 import { PrismaPg }     from "@prisma/adapter-pg";
 import { buildApp }     from "./app.js";
+import { startAutoCleanupWorker } from "./jobs/autoCleanupWorker.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma  = new PrismaClient({ adapter });
@@ -14,6 +15,7 @@ process.on("SIGTERM", async () => { await app.close(); await prisma.$disconnect(
 try {
   await app.listen({ port: 3000, host: "0.0.0.0" });
   app.log.info("✅  Server running on http://localhost:3000");
+  startAutoCleanupWorker(prisma, app.log);
 } catch (err) {
   app.log.error(err);
   process.exit(1);
