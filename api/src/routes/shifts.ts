@@ -233,7 +233,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         pdfBuffer = await generateShiftPDF(updatedShift as any);
       } catch (err) {
         app.log.error({ err, shiftId }, "PDF generation failed — shift marked failed");
-        await prisma.shift.update({ where: { id: shiftId }, data: { status: "failed" } }).catch(() => {});
+        await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "failed" } }).catch(() => {});
         return;
       }
 
@@ -248,7 +248,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         app.log.error({ err, shiftId }, "Shift email failed — shift still marked completed");
       }
 
-      await prisma.shift.update({ where: { id: shiftId }, data: { status: "completed" } });
+      await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "completed" } });
 
       try {
         const shiftData = await prisma.shift.findUnique({ where: { id: shiftId } });
@@ -299,7 +299,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!shift) return notFound(reply, "Shift or not in failed state");
 
-    await prisma.shift.update({ where: { id: shiftId }, data: { status: "submitted" } });
+    await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "submitted" } });
     reply.status(202).send({ status: "retrying", id: shiftId });
 
     setImmediate(async () => {
@@ -308,7 +308,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         pdfBuffer = await generateShiftPDF(shift as any);
       } catch (err) {
         app.log.error({ err, shiftId }, "Retry PDF generation failed");
-        await prisma.shift.update({ where: { id: shiftId }, data: { status: "failed" } }).catch(() => {});
+        await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "failed" } }).catch(() => {});
         return;
       }
 
@@ -322,7 +322,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         app.log.error({ err, shiftId }, "Retry email failed — shift still marked completed");
       }
 
-      await prisma.shift.update({ where: { id: shiftId }, data: { status: "completed" } });
+      await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "completed" } });
       app.log.info({ shiftId }, "Shift retry succeeded");
     });
   });
@@ -430,7 +430,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         if (!["draft", "failed"].includes(shift.status))   return forbidden(reply, "Only draft or failed shifts can be deleted");
       }
 
-      await prisma.shift.update({ where: { id }, data: { status: "deleted" } });
+      await prisma.shift.updateMany({ where: { id, companyId: user.companyId }, data: { status: "deleted" } });
       app.log.info({ id, deletedBy: user.role }, "Shift soft-deleted");
       return reply.send({ status: "deleted", id });
     }

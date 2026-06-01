@@ -214,6 +214,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
       if (!valid) return unauthorized(reply, "Current password is incorrect");
       const passwordHash = await bcrypt.hash(newPassword, 12);
+      // User has no companyId column — safe: id comes from the authenticated JWT userId
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
       return reply.send({ ok: true, message: "Password changed successfully" });
     } catch { return unauthorized(reply, "Token expired or invalid"); }

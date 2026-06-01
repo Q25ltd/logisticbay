@@ -532,7 +532,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       // range keeps everything in the right visual order.
       await prisma.$transaction(
         assignmentIds.map((id, idx) =>
-          prisma.runAssignment.update({ where: { id }, data: { sequenceNumber: (idx + 1) * 1000 } })
+          prisma.runAssignment.updateMany({ where: { id, companyId }, data: { sequenceNumber: (idx + 1) * 1000 } })
         )
       );
 
@@ -658,10 +658,10 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         // No room — multiply all existing sequence numbers by 1000 to create gaps, then insert
         await Promise.all([
           ...existingAssignments.map(a =>
-            prisma.runAssignment.update({ where: { id: a.id }, data: { sequenceNumber: a.sequenceNumber * 1000 } })
+            prisma.runAssignment.updateMany({ where: { id: a.id, companyId }, data: { sequenceNumber: a.sequenceNumber * 1000 } })
           ),
           ...existingWaypoints.map(w =>
-            prisma.runWaypoint.update({ where: { id: w.id }, data: { sequenceNumber: w.sequenceNumber * 1000 } })
+            prisma.runWaypoint.updateMany({ where: { id: w.id, companyId }, data: { sequenceNumber: w.sequenceNumber * 1000 } })
           ),
         ]);
         finalSeq = Math.round((prevSeq * 1000 + nextSeq * 1000) / 2);
@@ -711,7 +711,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       });
       if (!waypoint) return notFound(reply, "Waypoint");
 
-      await prisma.runWaypoint.delete({ where: { id: wId } });
+      await prisma.runWaypoint.deleteMany({ where: { id: wId, companyId } });
       return reply.status(204).send();
     },
   );
