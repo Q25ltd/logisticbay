@@ -5,11 +5,6 @@ import { authenticate, requireRole } from "../middleware.js";
 import { generateAccessToken, generateRefreshToken, storeRefreshToken, createEmailVerificationToken } from "../lib/tokens.js";
 import { env } from "../lib/env.js";
 import { sendEmailVerificationEmail } from "../email.js";
-import {
-  validateRegisterCompany,
-  validateCreateDriver,
-  validatePatchDriverStatus,
-} from "../validation.js";
 import type {
   RegisterCompanyBody,
   PatchCompanyBody,
@@ -52,8 +47,13 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body = zodParsed.data as RegisterCompanyBody;
 
-    const v = validateRegisterCompany(body);
-    if (!v.valid) return validationFailed(reply, v.errors);
+    // Ticker validation (business rule — not expressible as a static Zod enum)
+    const RESERVED_TICKERS = new Set(["ADMIN","API","APP","NULL","ROOT","SYSTEM","TEST","USER","JOB","DRAFT"]);
+    const tickerVal = typeof body.ticker === "string" ? body.ticker.trim().toUpperCase() : "";
+    if (!tickerVal) return badRequest(reply, "TICKER_REQUIRED", "ticker is required");
+    if (!/^[A-Z]{2,5}$/.test(tickerVal)) return badRequest(reply, "TICKER_INVALID", "Ticker must be 2–5 letters only, for example LGB.");
+    if (RESERVED_TICKERS.has(tickerVal)) return badRequest(reply, "TICKER_RESERVED", "This ticker is reserved. Please choose another one.");
+    if (body.password !== body.confirmPassword) return badRequest(reply, "PASSWORD_MISMATCH", "passwords do not match");
 
     const existing = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (existing) return conflict(reply, "CONFLICT", "Email already registered");
@@ -232,8 +232,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const body = zodParsed.data as CreateDriverBody;
     const { companyId, userId: actorId } = request.user!;
 
-    const v = validateCreateDriver(body);
-    if (!v.valid) return validationFailed(reply, v.errors);
+    // displayName.min(1) already enforced by CreateDriverSchema above
 
     let userId: number | null = null;
     let isNewUser = false;
@@ -424,8 +423,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
     const body = zodParsed.data as PatchDriverStatusBody;
     const { companyId, userId: actorId } = request.user!;
 
-    const v = validatePatchDriverStatus(body);
-    if (!v.valid) return validationFailed(reply, v.errors);
+    // status enum already enforced by PatchDriverStatusSchema above
 
     const driver = await prisma.driverProfile.findFirst({ where: { id, companyId } });
     if (!driver) return notFound(reply, "Driver");

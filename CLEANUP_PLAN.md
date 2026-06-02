@@ -756,7 +756,7 @@ Update after every task. This is the single source of truth between sessions.
 | 5     | 5.1  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 5     | 5.2  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 5     | 5.3  | blocked-by-soak| | | |
-| 5     | 5.4  | open | | | |
+| 5     | 5.4  | done | sonnet | cleanup/p5-5.4-validation-consolidate | 2026-06-02 |
 | 5     | 5.5  | blocked-by-2.5 | | | |
 
 ---
