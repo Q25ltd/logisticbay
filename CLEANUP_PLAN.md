@@ -757,7 +757,7 @@ Update after every task. This is the single source of truth between sessions.
 | 5     | 5.2  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 5     | 5.3  | blocked-by-soak| | | |
 | 5     | 5.4  | done | sonnet | cleanup/p5-5.4-validation-consolidate | 2026-06-02 |
-| 5     | 5.5  | blocked-by-2.5 | | | |
+| 5     | 5.5  | done — read-only audit: GET×2, POST, PATCH confirmed; no archive endpoint (see STOP above) | sonnet | cleanup/p5-5.5-customers-audit | 2026-06-02 |
 
 ---
 
