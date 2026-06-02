@@ -3,7 +3,7 @@ import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { ALL_TRUCK_KEYS, TRAILER_CHECK_KEYS } from "../constants.js";
 import { generateShiftPDF } from "../pdf.js";
-import { sendShiftReportEmail } from "../email.js";
+
 import { validateSegmentChecks, validateCreateSegment } from "../validation.js";
 import type {
   CreateShiftBody,
@@ -200,87 +200,31 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       });
     }
 
-    const updatedShift = await prisma.shift.update({
-      where: { id: shiftId },
-      data: {
-        nightOut:    body.nightOut    ?? false,
-        expenses:    body.expenses    ?? "",
-        delaysNote:  body.delaysNote  ?? "",
-        defectsNote: body.defectsNote ?? "",
-        endTime:     body.endTime     ?? "",
-        totalHours:  body.totalHours  ?? "",
-        breakMins:   body.breakMins   ? String(body.breakMins) : "",
-        poaMins:     body.poaMins     ? String(body.poaMins)   : "",
-        fuelDrawn:   body.fuelDrawn   ?? "",
-        adBlueDrawn: body.adBlueDrawn ?? "",
-        status:      "submitted",
-        submittedAt: new Date(),
-      },
-      include: {
-        segments: { include: { deliveries: true }, orderBy: { segmentNumber: "asc" } },
-        company:  { select: { name: true } },
-        driver:   { select: { name: true } },
-      },
+    // Write shift fields + outbox job atomically (B.1 fix).
+    // The worker drains the outbox idempotently with retries.
+    await prisma.$transaction(async (tx) => {
+      await tx.shift.updateMany({
+        where: { id: shiftId, companyId },
+        data: {
+          nightOut:    body.nightOut    ?? false,
+          expenses:    body.expenses    ?? "",
+          delaysNote:  body.delaysNote  ?? "",
+          defectsNote: body.defectsNote ?? "",
+          endTime:     body.endTime     ?? "",
+          totalHours:  body.totalHours  ?? "",
+          breakMins:   body.breakMins   ? String(body.breakMins) : "",
+          poaMins:     body.poaMins     ? String(body.poaMins)   : "",
+          fuelDrawn:   body.fuelDrawn   ?? "",
+          adBlueDrawn: body.adBlueDrawn ?? "",
+          status:      "submitted",
+          submittedAt: new Date(),
+        },
+      });
+      await tx.shiftSubmitJob.create({ data: { shiftId, companyId } });
     });
 
-    app.log.info({ shiftId }, "Shift submitted");
-    reply.status(200).send({ status: "submitted", id: shiftId });
-
-    // Background: PDF + email + working time update
-    setImmediate(async () => {
-      let pdfBuffer: Buffer;
-      try {
-        pdfBuffer = await generateShiftPDF(updatedShift as any);
-      } catch (err) {
-        app.log.error({ err, shiftId }, "PDF generation failed — shift marked failed");
-        await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "failed" } }).catch(() => {});
-        return;
-      }
-
-      // Email is best-effort — a failure here must NOT mark the shift as failed
-      try {
-        const company = await prisma.company.findUnique({ where: { id: updatedShift.companyId } });
-        if (company?.reportEmailEnabled !== false) {
-          const recipientEmail = company?.reportEmail || undefined;
-          await sendShiftReportEmail({ shift: updatedShift as any, pdfBuffer, recipientEmail });
-        }
-      } catch (err) {
-        app.log.error({ err, shiftId }, "Shift email failed — shift still marked completed");
-      }
-
-      await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "completed" } });
-
-      try {
-        const shiftData = await prisma.shift.findUnique({ where: { id: shiftId } });
-        if (shiftData?.startTime && shiftData?.endTime) {
-          const [sh, sm] = shiftData.startTime.split(":").map(Number);
-          const [eh, em] = shiftData.endTime.split(":").map(Number);
-          const breakMins  = parseInt(shiftData.breakMins || "0", 10);
-          const poaMins    = parseInt(shiftData.poaMins   || "0", 10);
-          const totalHours = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm) - breakMins - poaMins) / 60);
-
-          const weekStart = new Date(shiftData.shiftDate);
-          const day  = weekStart.getDay();
-          const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
-          weekStart.setDate(diff);
-          weekStart.setHours(0, 0, 0, 0);
-
-          const profile = await prisma.driverProfile.findFirst({
-            where: { companyId: shiftData.companyId, userId: shiftData.driverId },
-          });
-
-          if (profile) {
-            await prisma.driverWorkingTimeSummary.upsert({
-              where: { driverProfileId_weekStartDate: { driverProfileId: profile.id, weekStartDate: weekStart } },
-              update: { totalHours: { increment: totalHours }, shiftCount: { increment: 1 } },
-              create: { companyId: shiftData.companyId, driverProfileId: profile.id, weekStartDate: weekStart, totalHours, shiftCount: 1 },
-            });
-          }
-        }
-      } catch (e) { app.log.error({ err: e }, "Working time update failed"); }
-
-      app.log.info({ shiftId }, "Shift completed");
-    });
+    app.log.info({ shiftId }, "Shift queued for processing");
+    reply.status(200).send({ status: "queued", id: shiftId });
   });
 
   // ── POST /shifts/:id/retry — re-trigger PDF+email for failed shifts ─────────
@@ -299,32 +243,12 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!shift) return notFound(reply, "Shift or not in failed state");
 
-    await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "submitted" } });
-    reply.status(202).send({ status: "retrying", id: shiftId });
-
-    setImmediate(async () => {
-      let pdfBuffer: Buffer;
-      try {
-        pdfBuffer = await generateShiftPDF(shift as any);
-      } catch (err) {
-        app.log.error({ err, shiftId }, "Retry PDF generation failed");
-        await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "failed" } }).catch(() => {});
-        return;
-      }
-
-      try {
-        const company = await prisma.company.findUnique({ where: { id: shift.companyId } });
-        if (company?.reportEmailEnabled !== false) {
-          const recipientEmail = company?.reportEmail || undefined;
-          await sendShiftReportEmail({ shift: shift as any, pdfBuffer, recipientEmail });
-        }
-      } catch (err) {
-        app.log.error({ err, shiftId }, "Retry email failed — shift still marked completed");
-      }
-
-      await prisma.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "completed" } });
-      app.log.info({ shiftId }, "Shift retry succeeded");
+    // Re-enqueue via the same outbox so the worker processes it with retries
+    await prisma.$transaction(async (tx) => {
+      await tx.shift.updateMany({ where: { id: shiftId, companyId }, data: { status: "submitted" } });
+      await tx.shiftSubmitJob.create({ data: { shiftId, companyId } });
     });
+    reply.status(202).send({ status: "retrying", id: shiftId });
   });
 
   // ── GET /shifts ─────────────────────────────────────────────────────────────
