@@ -142,9 +142,10 @@ export async function applyJobEvent(
     data: {
       jobId,
       companyId,
-      // NOTE: driverId references User.id not DriverProfile.id.
-      // TODO(B.6/C.2): migrate to actorUserId + driverProfileId in a later task.
+      // TASK 4.1: driverId kept for backward compat until Migration B drops it.
+      // actorUserId is the canonical field going forward.
       driverId:        actorUserId,
+      actorUserId:     actorUserId,
       eventType,
       note:            note ?? '',
       clientEventId,
