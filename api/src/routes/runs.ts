@@ -6,6 +6,7 @@ import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
 import { cancelRun } from "../services/runService.js";
+import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
@@ -299,7 +300,12 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if ("endInstructionNote"          in body) updateData.endInstructionNote          = body.endInstructionNote ?? null;
     if ("returnToBase"                in body) updateData.returnToBase                = body.returnToBase;
     if ("returnToBaseNote"            in body) updateData.returnToBaseNote            = body.returnToBaseNote   ?? null;
-    if ("status"                      in body) updateData.status                      = body.status;
+    if ("status" in body) {
+      if (!RUN_STATUSES.includes(body.status as RunStatus)) {
+        return badRequest(reply, "INVALID_RUN_STATUS", `status must be one of: ${RUN_STATUSES.join(", ")}`);
+      }
+      updateData.status = body.status;
+    }
     if ("compatibilityOverridden"     in body) updateData.compatibilityOverridden     = body.compatibilityOverridden;
     if ("compatibilityOverrideReason" in body) updateData.compatibilityOverrideReason = body.compatibilityOverrideReason ?? null;
 

@@ -21,6 +21,7 @@ import { haversineKm }               from "../lib/geo.js";
 import { cancelRun }                 from "../services/runService.js";
 import { parseIdParam }              from "../lib/validate.js";
 import { dayRangeUtc }               from "../lib/dateUtils.js";
+import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
@@ -374,6 +375,11 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const run = await prisma.run.findFirst({ where: { id, companyId } });
       if (!run) return notFound(reply, "Run");
+
+      // Validate status if provided (C.7 fix — reject "banana" statuses)
+      if (b.status !== undefined && !RUN_STATUSES.includes(b.status as RunStatus)) {
+        return badRequest(reply, "INVALID_RUN_STATUS", `status must be one of: ${RUN_STATUSES.join(", ")}`);
+      }
 
       // When cancelling a run, delegate to the shared cancelRun service.
       // This fixes A.7 (duplicate logic), B.4 (LoadTrack preserved), B.15 (now transactional).
