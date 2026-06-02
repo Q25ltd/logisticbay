@@ -98,7 +98,8 @@ model User {
   driverProfile            DriverProfile?
   shifts                   Shift[]
   createdJobs              Job[]               @relation("JobCreatedBy")
-  jobEvents                JobExecutionEvent[]
+  jobEvents                JobExecutionEvent[] @relation("JobEventDriver")
+  jobEventsAsActor         JobExecutionEvent[] @relation("JobEventActor")
   jobAudits                JobAudit[]
   auditLogs                AuditLog[]
   refreshTokens            RefreshToken[]
@@ -221,6 +222,7 @@ model DriverProfile {
   shiftPreferences ShiftPreference[]
   holidayRequests  HolidayRequest[]
   workingSummaries DriverWorkingTimeSummary[]
+  jobEvents        JobExecutionEvent[]
 
   @@index([companyId, status])
   @@index([companyId, displayName])
@@ -571,9 +573,20 @@ model JobExecutionEvent {
   fromCustody       String?
   toCustody         String?
 
-  job        Job            @relation(fields: [jobId], references: [id])
-  company    Company        @relation(fields: [companyId], references: [id])
-  driver     User           @relation(fields: [driverId], references: [id])
+  // TASK 4.1 Migration A — rename driverId → actorUserId (additive step)
+  // actorUserId: the User.id of whoever triggered the event (driver or planner).
+  //   Nullable until backfill completes; will become NOT NULL after soak (Migration B).
+  // driverProfileId: the DriverProfile.id for the acting user in this company.
+  //   Nullable until backfill completes; will become NOT NULL after soak (Migration B).
+  // NOTE: driverId stays until Migration B drops it. All new writes set all three.
+  actorUserId      Int?
+  driverProfileId  Int?
+
+  job           Job            @relation(fields: [jobId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id])
+  driver        User           @relation("JobEventDriver",        fields: [driverId],       references: [id])
+  actor         User?          @relation("JobEventActor",         fields: [actorUserId],    references: [id])
+  driverProfile DriverProfile? @relation(fields: [driverProfileId], references: [id])
   run        Run?           @relation(fields: [runId], references: [id])
   loadTracks LoadTrack[]
 

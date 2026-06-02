@@ -748,7 +748,7 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.6  | done — 7 sites found; 2 direct writes (planner cancel/reject — acceptable for intake tier); reconciler deferred | sonnet | cleanup/p3-3.6-job-status-audit | 2026-06-01 |
 | 3     | 3.7  | done | sonnet | cleanup/p3-3.7-error-envelope | 2026-06-01 |
 | 3     | 3.8  | done | sonnet | cleanup/p3-3.8-planner-override | 2026-06-01 |
-| 4     | 4.1  | open | | | |
+| 4     | 4.1  | in-progress (Migration A done; backfill next — check S8) | sonnet | cleanup/p4-4.1a-actor-user-id-additive | 2026-06-02 |
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
 | 4     | 4.3  | open | | | |
 | 4     | 4.4  | blocked-by-4.3 | | | |
@@ -774,7 +774,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Task | Reason | Resolved by | Resolution |
 |------|------|--------|-------------|------------|
-|      |      |        |             |            |
+| 2026-06-01 | 3.2 | Mobile (JobDetailScreen.tsx:214) and web (api/jobs.ts:13) both call POST /jobs/:id/note without clientEventId. Cannot require it until both callers are updated. | Add clientEventId to both callers first, then this task unblocks. | open |
 
 ---
 

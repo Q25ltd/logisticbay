@@ -462,7 +462,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       data: {
         jobId:           id,
         companyId,
-        driverId:        userId,
+        driverId:        userId,    // kept until Migration B
+        actorUserId:     userId,    // TASK 4.1: canonical field
         eventType:       "note_added",
         note:            body.note.trim(),
         clientEventId:   `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -546,7 +547,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           data: {
             jobId:           id,
             companyId,
-            driverId:        userId,
+            driverId:        userId,    // kept until Migration B
+            actorUserId:     userId,    // TASK 4.1: canonical field
             eventType:       `status_override:${toStatus}`,
             note:            body.notes ?? `Override: ${body.reason}`,
             clientEventId,
