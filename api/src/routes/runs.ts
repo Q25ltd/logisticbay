@@ -353,13 +353,16 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     if (run.status === "cancelled") {
-      // Run already cancelled — hard-delete only the Run shell.
-      // RunAssignment rows: already soft-deleted (removedAt set) by cancelRun() — do NOT
-      //   hard-delete them; they are operational audit records (SAFETY §7).
-      // LoadTrack rows: PRESERVED per B.4 decision (2026-05-31); deletedAt added by TASK 4.3
-      //   for future archiving if needed.
-      // syncJobPlanningStatuses: assignments already removed — no live jobs to re-sync.
-      await prisma.run.deleteMany({ where: { id, companyId } });
+      // Run already cancelled — hard-delete the Run shell and its soft-deleted assignments.
+      // RunAssignment rows were already soft-deleted by cancelRun() — their audit info
+      //   (removedAt, removedBy, removalReason) is captured. We must hard-delete them here
+      //   because RunAssignment.runId is NOT NULL with no CASCADE, so deleting the Run
+      //   without removing child rows first causes a FK constraint error (bug fix).
+      // LoadTrack rows: PRESERVED — no deleteMany here; deletedAt available via TASK 4.3.
+      await prisma.$transaction(async (tx) => {
+        await tx.runAssignment.deleteMany({ where: { runId: id } });
+        await tx.run.deleteMany({ where: { id, companyId } });
+      });
       return reply.status(204).send();
     }
 
