@@ -755,7 +755,7 @@ Update after every task. This is the single source of truth between sessions.
 | 4     | 4.5  | done | sonnet | cleanup/p4-4.5-run-status-enum | 2026-06-02 |
 | 5     | 5.1  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 5     | 5.2  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
-| 5     | 5.3  | blocked-by-soak| | | |
+| 5     | 5.3  | done — column was already dropped before TASK 0.4; confirmed 0 refs in TASK 0.4 reconciliation | sonnet | TASK 0.4 (D.3 marked [x]) | 2026-05-30 |
 | 5     | 5.4  | done | sonnet | cleanup/p5-5.4-validation-consolidate | 2026-06-02 |
 | 5     | 5.5  | blocked-by-2.5 | | | |
 
