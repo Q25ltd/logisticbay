@@ -750,7 +750,7 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.8  | done | sonnet | cleanup/p3-3.8-planner-override | 2026-06-01 |
 | 4     | 4.1  | soak — Migrations A+B done; 14-day soak before Migration C (NOT NULL + drop driverId) | sonnet | cleanup/p4-4.1b-actor-backfill | 2026-06-02 |
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
-| 4     | 4.3  | open | | | |
+| 4     | 4.3  | done | sonnet | cleanup/p4-4.3-loadtrack-softdelete | 2026-06-02 |
 | 4     | 4.4  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 4     | 4.5  | done | sonnet | cleanup/p4-4.5-run-status-enum | 2026-06-02 |
 | 5     | 5.1  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
