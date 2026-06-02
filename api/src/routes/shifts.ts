@@ -4,7 +4,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { ALL_TRUCK_KEYS, TRAILER_CHECK_KEYS } from "../constants.js";
 import { generateShiftPDF } from "../pdf.js";
 
-import { validateSegmentChecks, validateCreateSegment } from "../validation.js";
+import { validateSegmentChecks } from "../services/shiftValidation.js";
 import type {
   CreateShiftBody,
   CreateSegmentBody,
@@ -60,10 +60,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body    = zodParsed.data as CreateSegmentBody;
     const { userId, companyId } = request.user!;
 
-    const segValidation = validateCreateSegment(body);
-    if (!segValidation.valid) {
-      return validationFailed(reply, segValidation.errors);
-    }
+    // validateCreateSegment: truckReg.min(1) is already enforced by CreateSegmentSchema above
 
     const shift = await prisma.shift.findFirst({
       where:   { id: shiftId, companyId, driverId: userId, status: "draft" },

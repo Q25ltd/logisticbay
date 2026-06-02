@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
-import { validateHolidayRequest, validatePatchHoliday } from "../validation.js";
 import type {
   SetAvailabilityBody,
   SetShiftPreferenceBody,
@@ -255,8 +254,11 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     if (!zodParsed.ok) return validationFailed(reply, zodParsed.errors);
     const body = zodParsed.data as HolidayRequestBody;
 
-    const v = validateHolidayRequest(body);
-    if (!v.valid) return validationFailed(reply, v.errors);
+    // Extra date validation not expressible in static Zod (format + ordering)
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    if (!DATE_RE.test(body.startDate)) return badRequest(reply, "INVALID_DATE", "startDate must be YYYY-MM-DD");
+    if (!DATE_RE.test(body.endDate))   return badRequest(reply, "INVALID_DATE", "endDate must be YYYY-MM-DD");
+    if (body.startDate > body.endDate) return badRequest(reply, "INVALID_DATE_RANGE", "startDate must be on or before endDate");
 
     const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
     if (!profile) return notFound(reply, "Driver profile");
@@ -357,8 +359,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     const body = zodParsed.data as PatchHolidayBody;
     const { companyId, userId } = request.user!;
 
-    const v = validatePatchHoliday(body);
-    if (!v.valid) return validationFailed(reply, v.errors);
+    // status enum already enforced by PatchHolidaySchema (z.enum(["approved","rejected"]))
 
     const req = await prisma.holidayRequest.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
     if (!req) return notFound(reply, "Holiday request");
