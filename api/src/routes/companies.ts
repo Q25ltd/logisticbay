@@ -464,7 +464,7 @@ export async function companyRoutes(app: FastifyInstance, prisma: PrismaClient) 
       where: { userId: driver.userId, status: "active" },
     });
     if (activeMembershipCount > 1) {
-      return conflict(reply, "MULTI_COMPANY_DRIVER", "This driver account is shared with another company. Ask the driver to change their PIN, or create a company-only driver login before resetting it.");
+      return conflict(reply, "MULTI_COMPANY_DRIVER", "This driver belongs to multiple companies. Ask the driver to change their PIN directly.");
     }
 
     const DEFAULT_PIN  = "123456";
