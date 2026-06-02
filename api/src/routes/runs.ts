@@ -353,19 +353,13 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     if (run.status === "cancelled") {
-      // Run already cancelled — hard-delete the empty shell (assignments and run row only).
-      // LoadTrack rows are PRESERVED per SAFETY §7 and the B.4 decision (2026-05-31):
-      // custody history must not be erased. TASK 4.3 will add soft-delete fields if needed.
-      const affectedJobIds = (await prisma.runAssignment.findMany({
-        where:  { runId: id },
-        select: { jobId: true },
-      })).map(a => a.jobId);
-
-      await prisma.$transaction(async (tx) => {
-        await tx.runAssignment.deleteMany({ where: { runId: id } });
-        await tx.run.delete({ where: { id } });
-        await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, tx);
-      });
+      // Run already cancelled — hard-delete only the Run shell.
+      // RunAssignment rows: already soft-deleted (removedAt set) by cancelRun() — do NOT
+      //   hard-delete them; they are operational audit records (SAFETY §7).
+      // LoadTrack rows: PRESERVED per B.4 decision (2026-05-31); deletedAt added by TASK 4.3
+      //   for future archiving if needed.
+      // syncJobPlanningStatuses: assignments already removed — no live jobs to re-sync.
+      await prisma.run.deleteMany({ where: { id, companyId } });
       return reply.status(204).send();
     }
 

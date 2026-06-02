@@ -266,7 +266,7 @@ export async function getPlannerWorkItems(
 
   // Get the most recent LoadTrack entry per jobId (to find current custody)
   const loadTracks = await prisma.loadTrack.findMany({
-    where:   { companyId, jobId: { in: jobIds } },
+    where:   { companyId, jobId: { in: jobIds }, deletedAt: null },
     orderBy: [{ jobId: "asc" }, { timestamp: "desc" }],
   });
 
