@@ -749,13 +749,13 @@ Update after every task. This is the single source of truth between sessions.
 | 3     | 3.7  | done | sonnet | cleanup/p3-3.7-error-envelope | 2026-06-01 |
 | 3     | 3.8  | done | sonnet | cleanup/p3-3.8-planner-override | 2026-06-01 |
 | 4     | 4.1  | soak — Migrations A+B done; 14-day soak before Migration C (NOT NULL + drop driverId) | sonnet | cleanup/p4-4.1b-actor-backfill | 2026-06-02 |
-| 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
+| 4     | 4.2  | done — Option A: one column, two regimes documented in ARCHITECTURE.md | sonnet | cleanup/p4-4.2-job-status-doc | 2026-06-02 |
 | 4     | 4.3  | done | sonnet | cleanup/p4-4.3-loadtrack-softdelete | 2026-06-02 |
 | 4     | 4.4  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 4     | 4.5  | done | sonnet | cleanup/p4-4.5-run-status-enum | 2026-06-02 |
 | 5     | 5.1  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
 | 5     | 5.2  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
-| 5     | 5.3  | blocked-by-soak| | | |
+| 5     | 5.3  | done — column was already dropped before TASK 0.4; confirmed 0 refs in TASK 0.4 reconciliation | sonnet | TASK 0.4 (D.3 marked [x]) | 2026-05-30 |
 | 5     | 5.4  | done | sonnet | cleanup/p5-5.4-validation-consolidate | 2026-06-02 |
 | 5     | 5.5  | done — read-only audit: GET×2, POST, PATCH confirmed; no archive endpoint (see STOP above) | sonnet | cleanup/p5-5.5-customers-audit | 2026-06-02 |
 

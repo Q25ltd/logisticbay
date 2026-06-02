@@ -549,7 +549,13 @@ Partial fix — commit `71d4716` feat(security): refresh token rotation, 15m acc
 
 These are places where the data model, field names, or state semantics will confuse anyone reading the code and lead them to write the wrong query.
 
-## [ ] C.1 🔴 Two "status" concepts on Job — derived vs planning — **high confidence**
+## [x] C.1 🔴 Two "status" concepts on Job — derived vs planning — **high confidence**
+
+Done: cleanup/p4-4.2-job-status-doc
+Files: ARCHITECTURE.md (new "Job status regimes" section)
+Verified: typecheck OK; tests pass; decision documented
+Notes: Option A chosen (keep one column). Two regimes documented with tables,
+  boundary rule, and regime-crossing prohibition. No migration needed.
 
 **Where:** `Job.status` field (`prisma/schema.prisma`) + `computePlanningStatus()` helper used in `routes/jobs.ts:122, 213, 183, 186`.
 
@@ -718,11 +724,13 @@ Confirm with `grep`. If unreferenced, delete.
 
 ---
 
-## [ ] D.6 🟡 `routes/customers.ts` is tiny — confirm coverage — **low confidence**
+## [~partial] D.6 🟡 `routes/customers.ts` is tiny — confirm coverage — **low confidence**
 
 `customers.ts` is 102 lines. Confirm it implements `list`, `create`, `patch`, `archive`, and not just two of those. Currently no `archive`/`status` change endpoint visible from earlier grep.
 
-Reconciliation note (TASK 0.4, 2026-05-30): confirmed endpoints present — `GET /customers`, `GET /customers/:id`, `POST /customers`, `PATCH /customers/:id`. Missing: no `DELETE` or archive/status-change endpoint. A customer can be created and edited but never deactivated. Still open.
+TASK 5.5 audit (2026-06-02): confirmed — `GET /customers`, `GET /customers/:id`, `POST /customers`, `PATCH /customers/:id` all present.
+Missing: no archive/deactivate endpoint. `Customer.status` field exists in schema but is never exposed via a route.
+User decision: B — note the gap, do not add the endpoint now. This is a future feature, not a cleanup blocker.
 
 ---
 
