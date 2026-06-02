@@ -142,8 +142,7 @@ export async function applyJobEvent(
     data: {
       jobId,
       companyId,
-      // TASK 4.1: driverId kept for backward compat until Migration B drops it.
-      // actorUserId is the canonical field going forward.
+      // driverId kept until Migration C (drop after 14-day soak). actorUserId = canonical.
       driverId:        actorUserId,
       actorUserId:     actorUserId,
       eventType,

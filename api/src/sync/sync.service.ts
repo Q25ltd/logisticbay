@@ -48,8 +48,8 @@ export async function processSyncEvents(
   prisma: PrismaClient,
   events: IncomingEvent[],
   companyId: number,
-  // NOTE: driverId here is User.id — JobExecutionEvent.driverId references User not DriverProfile.
-  // TODO(phase-2): migrate JobExecutionEvent.driverId to reference DriverProfile instead of User.
+  // NOTE: driverId here is User.id. TASK 4.1 backfill is complete:
+  // actorUserId = driverId (same value). driverId dropped after 14-day soak (Migration C).
   driverId: number,
 ): Promise<SyncResult[]> {
   const sorted = [...events].sort(
