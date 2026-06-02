@@ -752,7 +752,7 @@ Update after every task. This is the single source of truth between sessions.
 | 4     | 4.2  | open — E.2 answered (timeWindowStart); plannedDate drop logged in DISCOVERED | | | |
 | 4     | 4.3  | open | | | |
 | 4     | 4.4  | blocked-by-4.3 | | | |
-| 4     | 4.5  | open | | | |
+| 4     | 4.5  | done | sonnet | cleanup/p4-4.5-run-status-enum | 2026-06-02 |
 | 5     | 5.1  | blocked-by-2.5 | | | |
 | 5     | 5.2  | blocked-by-2.5 | | | |
 | 5     | 5.3  | blocked-by-soak| | | |
