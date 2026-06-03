@@ -148,7 +148,6 @@ const JobCreateBaseSchema = z.object({
 
 export const CreateJobSchema = JobCreateBaseSchema.extend({
   saveMode:       z.enum(["draft", "ready_to_plan"]).optional(),
-  plannedDate:    z.string().nullable().optional(),
   plannerNotes:   z.string().nullable().optional(),
   internalNotes:  z.string().nullable().optional(),
   saveAsTemplate: z.boolean().optional(),
@@ -159,7 +158,6 @@ export const CreateJobSchema = JobCreateBaseSchema.extend({
 
 export const PatchJobSchema = JobCreateBaseSchema.extend({
   saveMode:      z.enum(["draft", "ready_to_plan"]).optional(),
-  plannedDate:   z.string().nullable().optional(),
   plannerNotes:  z.string().nullable().optional(),
   internalNotes: z.string().nullable().optional(),
   status:        z.string().optional(),

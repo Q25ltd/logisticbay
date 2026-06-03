@@ -766,7 +766,7 @@ Update after every task. This is the single source of truth between sessions.
 | Date | Finder | Description | Suggested audit section | Status |
 |------|--------|-------------|-------------------------|--------|
 | 2026-05-31 | sonnet (TASK 2.5) | `schedule.ts:26-27` uses local-time date literals (`T00:00:00` / `T23:59:59` without Z). Different semantics from UTC patterns — not replaced. Review: works on UTC servers but silently shifts day boundaries if TZ changes. | A.11 follow-on | open |
-| 2026-05-31 | user (E.2 decision) | Drop `Job.plannedDate` column — field was removed from all planner UI in session 2026-05-28b; user confirmed it is no longer needed. Requires: (1) audit all `plannedDate` reads/writes in `api/src/`; (2) migration `DROP COLUMN plannedDate` from `Job`. S2 stop gate answered affirmatively by user in Phase 1 design decisions. | Phase 4 (schema drop) | open — needs its own task |
+| 2026-05-31 | user (E.2 decision) | Drop `Job.plannedDate` column | Phase 4 (schema drop) | done — cleanup/discovered-planned-date-drop 2026-06-02 |
 
 ---
 

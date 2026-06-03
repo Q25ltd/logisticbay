@@ -83,23 +83,14 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (q.status) where.status = q.status;
     if (q.dateFrom && q.dateTo) {
       const { gte, lte } = dayRangeUtc(q.dateFrom, q.dateTo);
-      // Primary: filter by collection stop's time window. Fallback: plannedDate for
-      // legacy jobs that have plannedDate set but no stop timeWindowStart.
+      // Date filter uses collection stop's timeWindowStart (E.2).
       where.OR = [
         { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
-        {
-          stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
-          plannedDate: { gte, lte },
-        },
       ];
     } else if (q.date) {
       const { gte, lte } = dayRangeUtc(q.date, q.date);
       where.OR = [
         { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
-        {
-          stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
-          plannedDate: { gte, lte },
-        },
       ];
     }
 
@@ -113,7 +104,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const jobs = await prisma.job.findMany({
       where,
       include: JOB_DETAIL_INCLUDE,
-      orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
+      orderBy: [{ id: "asc" }],
       take:   limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
@@ -154,13 +145,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       where: {
         companyId,
         id:     { in: jobIds },
-        // Filter by collection stop time window (primary) or plannedDate fallback
         OR: [
           { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte: today, lt: in7 } } } },
-          {
-            stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
-            plannedDate: { gte: today, lt: in7 },
-          },
         ],
         status: { not: "cancelled" },
       },
@@ -173,15 +159,15 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
           select: { id: true, jobPartId: true, status: true },
         },
       },
-      orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
+      orderBy: [{ id: "asc" }],
     });
 
-    // Segment by first collection stop's date (fallback: plannedDate)
+    // Segment by first collection stop's date (E.2)
     const todayStr = today.toISOString().split("T")[0];
     const getCollectDate = (job: (typeof jobs)[0]): string | null => {
       const coll = (job.stops ?? []).find(s => s.type === "collection" || s.type === "pickup");
       if (coll?.timeWindowStart) return (coll.timeWindowStart as Date).toISOString().split("T")[0];
-      return job.plannedDate?.toISOString().split("T")[0] ?? null;
+      return null; // timeWindowStart is the only date source (E.2)
     };
     const todayJobs = jobs
       .filter(j => getCollectDate(j) === todayStr)
@@ -621,13 +607,21 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return badRequest(reply, "BAD_REQUEST", "plannedDate is required");
     }
 
-    // Block duplicate repeats: one non-cancelled copy per source job per date
+    // Block duplicate repeats: one non-cancelled copy per source job per date.
+    // Date is now stored on the collection stop's timeWindowStart (E.2 — no Job.plannedDate).
+    const repeatDate = new Date(`${body.plannedDate}T00:00:00.000Z`);
+    const repeatDateEnd = new Date(`${body.plannedDate}T23:59:59.999Z`);
     const existing = await prisma.job.findFirst({
       where: {
         companyId,
         parentJobId: id,
-        plannedDate: new Date(body.plannedDate),
         status: { notIn: ["cancelled"] },
+        stops: {
+          some: {
+            type: { in: ["collection", "pickup"] },
+            timeWindowStart: { gte: repeatDate, lte: repeatDateEnd },
+          },
+        },
       },
       select: { id: true },
     });
@@ -653,7 +647,6 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         bookingContactPhone:  source.bookingContactPhone,
         bookingContactEmail:  source.bookingContactEmail,
         customerRef:          body.customerRef ?? source.customerRef,
-        plannedDate:          new Date(body.plannedDate),
         goodsType:            source.goodsType,
         goodsDescription:     source.goodsDescription,
         quantity:             body.quantity != null ? body.quantity : source.quantity,
@@ -684,7 +677,11 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
               postcode:         s.postcode,
               country:          s.country,
               savedLocationId:  s.savedLocationId,
-              timeWindowStart:  ov.timeWindowStart  ? new Date(ov.timeWindowStart)  : s.timeWindowStart,
+              // E.2: collection stop's timeWindowStart is the date anchor — use plannedDate if no override
+              timeWindowStart:  ov.timeWindowStart  ? new Date(ov.timeWindowStart)
+                : (s.type === "collection" || s.type === "pickup")
+                  ? new Date(`${body.plannedDate}T${s.timeWindowStart ? (s.timeWindowStart as Date).toISOString().slice(11, 19) : "00:00:00"}.000Z`)
+                  : s.timeWindowStart,
               timeWindowEnd:    ov.timeWindowEnd    ? new Date(ov.timeWindowEnd)    : s.timeWindowEnd,
               bookedTime:       ov.bookedTime       ? new Date(ov.bookedTime)       : s.bookedTime,
               referenceNumber:  ov.referenceNumber  ?? null,

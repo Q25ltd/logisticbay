@@ -46,7 +46,7 @@ interface StopForCluster {
   weight:         number | null;
   quantity:       number | null;
   quantityUnit:   string | null;
-  plannedDate?:   Date | null;
+  // plannedDate removed from Job — date comes from stop timeWindowStart (E.2)
 }
 
 interface Cluster {
@@ -188,9 +188,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const dateTo   = q.dateTo   ?? q.date;
 
       // Find all ready_to_plan / in_planning job stops not yet assigned to any active run.
-      //
-      // Date-placement strategy — the job's plannedDate is the primary anchor.
-      // See the single-day implementation for full rationale.
+      // Date-placement: timeWindowStart is the sole date source (E.2 — plannedDate removed).
 
       const jobPartInclude = {
         job: {
@@ -198,7 +196,6 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
             id: true, jobReference: true, customerName: true,
             goodsType: true, goodsDescription: true,
             quantity: true, quantityUnit: true, weight: true,
-            plannedDate: true,
           },
         },
       };
@@ -214,34 +211,16 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       if (dateFrom && dateTo) {
         const { gte, lte } = dayRangeUtc(dateFrom, dateTo);
 
-        const [withPlannedDate, withWindow, withBookedTime] = await Promise.all([
-          // Q1: jobs with plannedDate in range — show all their unassigned stops
+        const [withWindow, withBookedTime] = await Promise.all([
+          // Q1: timeWindowStart in range
           prisma.jobPart.findMany({
-            where: {
-              ...baseWhere,
-              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: { gte, lte } },
-            },
+            where: { ...baseWhere, timeWindowStart: { gte, lte } },
             include: jobPartInclude,
             orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
           }),
-          // Q2: no plannedDate + timeWindowStart in range
+          // Q2: no timeWindowStart but bookedTime in range
           prisma.jobPart.findMany({
-            where: {
-              ...baseWhere,
-              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null },
-              timeWindowStart: { gte, lte },
-            },
-            include: jobPartInclude,
-            orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
-          }),
-          // Q3: no plannedDate, no timeWindowStart, bookedTime in range
-          prisma.jobPart.findMany({
-            where: {
-              ...baseWhere,
-              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null },
-              timeWindowStart: null,
-              bookedTime:      { gte, lte },
-            },
+            where: { ...baseWhere, timeWindowStart: null, bookedTime: { gte, lte } },
             include: jobPartInclude,
             orderBy: [{ bookedTime: "asc" }, { id: "asc" }],
           }),
@@ -249,8 +228,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
         const seen = new Set<number>();
         parts = [];
-        for (const p of [...withPlannedDate, ...withWindow, ...withBookedTime]) {
-          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withPlannedDate).push(p); }
+        for (const p of [...withWindow, ...withBookedTime]) {
+          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withWindow).push(p); }
         }
       } else {
         parts = await prisma.jobPart.findMany({
@@ -280,7 +259,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         weight:         p.job.weight    ? Number(p.job.weight)    : null,
         quantity:       p.job.quantity  ? Number(p.job.quantity)  : null,
         quantityUnit:   (p.job as any).quantityUnit ?? null,
-        plannedDate:    (p.job as any).plannedDate  ?? null,
+        plannedDate:    null, // removed — timeWindowStart is the date source (E.2)
       }));
 
       const clusters = clusterStops(stops);
