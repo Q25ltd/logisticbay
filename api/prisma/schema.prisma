@@ -728,6 +728,9 @@ model LoadTrack {
   gpsLat           Float?
   gpsLng           Float?
   notes            String?
+  // TASK 4.3: soft-delete per one-soft-delete-convention rule.
+  // Hard delete only for GDPR right-to-erasure (not yet implemented).
+  deletedAt        DateTime?
 
   company       Company           @relation(fields: [companyId], references: [id])
   job           Job               @relation(fields: [jobId], references: [id])
