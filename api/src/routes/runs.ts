@@ -117,7 +117,6 @@ const RUN_DETAIL_INCLUDE = {
           id:          true,
           jobReference: true,
           customerName: true,
-          plannedDate:  true,
           status:           true,
           goodsDescription: true,
           plannerNotes:     true,

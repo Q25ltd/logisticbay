@@ -13,7 +13,7 @@
  *
  *   GET  /job-requests            — list pending_review jobs
  *   GET  /job-requests/:id        — single pending_review job
- *   POST /job-requests/:id/accept — set plannedDate + plannerNotes → ready_to_plan
+ *   POST /job-requests/:id/accept — set plannerNotes + vehicleCategory → ready_to_plan
  *   POST /job-requests/:id/reject — set status → cancelled
  */
 
@@ -365,7 +365,7 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     async (request, reply) => {
       const id   = parseIdParam(request.params);
       if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
-      const body = request.body as { plannedDate?: string; plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[] };
+      const body = request.body as { plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[] };
 
       const job = await prisma.job.findFirst({
         where:   { id, companyId: request.user!.companyId },
@@ -375,9 +375,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
       if (job.status !== "pending_review") {
         return conflict(reply, "CONFLICT", "Job is not pending review");
       }
-      // Derive plannedDate from the first collection stop if not explicitly supplied.
-      // This mirrors the CJP/accept-drawer behaviour where the field was removed from the UI.
-      const resolvedPlannedDate: string = body.plannedDate ||
+      // Derive the collection date from the first collection stop's timeWindowStart (E.2).
+      const resolvedPlannedDate: string =
         job.stops.find(s => s.type === "collection" || s.type === "pickup")?.timeWindowStart?.toISOString().slice(0, 10) ||
         job.stops[0]?.timeWindowStart?.toISOString().slice(0, 10) ||
         "";
@@ -423,7 +422,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
         saveMode:       "ready_to_plan",
         customerId:     job.customerId,
         customerName:   job.customerName,
-        plannedDate:    resolvedPlannedDate,
         vehicleCategory,
         minGvwClass:    job.minGvwClass ?? "",
         bodyType:       Array.isArray(job.bodyTypes)      ? (job.bodyTypes      as string[])[0] ?? "" : "",
@@ -457,7 +455,6 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           where: { id },
           data: {
             status:          "ready_to_plan",
-            plannedDate:     new Date(resolvedPlannedDate),
             plannerNotes:    note || job.plannerNotes,
             vehicleCategory,
             ...(Array.isArray(body.bodyTypes) && body.bodyTypes.length

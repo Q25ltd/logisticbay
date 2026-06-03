@@ -295,7 +295,7 @@ model JobTemplate {
 // ── Job — the single record for all transport jobs ───────────────────────────
 // Both PRF (customer request) and CJP (planner direct create) write here.
 // PRF creates with status=pending_review; CJP creates with status=draft or ready_to_plan.
-// Accept step: sets plannedDate + plannerNotes, flips status to ready_to_plan.
+// Accept step: sets plannerNotes, flips status to ready_to_plan. Date comes from first collection stop's timeWindowStart (E.2).
 //
 // Status flow:
 //   pending_review → ready_to_plan (PRF accepted)
@@ -317,7 +317,7 @@ model Job {
   jobTitle        String?
 
   // ── scheduling ────────────────────────────────────────────────────────────
-  plannedDate      DateTime?
+  // plannedDate removed — date is derived from first collection stop's timeWindowStart (E.2)
   serviceType      String?
   jobType          String?
   canSplitShipment String    @default("must_stay_together")
@@ -424,7 +424,6 @@ model Job {
   loadTracks     LoadTrack[]
 
   @@unique([companyId, jobReference])
-  @@index([companyId, plannedDate])
   @@index([companyId, status])
   @@index([companyId, customerId])
   @@index([companyId, updatedAt])

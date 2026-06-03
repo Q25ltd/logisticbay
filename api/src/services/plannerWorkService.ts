@@ -220,7 +220,7 @@ export async function getPlannerWorkItems(
   // ── 1. Fetch unplanned job parts ──────────────────────────────────────────
   //
   // We mirror the date-range logic from /planning/unplanned.
-  // Three sub-queries: plannedDate in range, timeWindowStart in range, bookedTime in range.
+  // Two sub-queries: timeWindowStart in range, bookedTime in range (E.2 — plannedDate removed).
 
   const baseWhere = {
     companyId,
@@ -233,32 +233,28 @@ export async function getPlannerWorkItems(
     goodsType: true, goodsDescription: true,
     quantity: true, quantityUnit: true, weight: true,
     vehicleCategory: true, tempControlled: true,
-    hazardClass: true, plannedDate: true,
+    hazardClass: true,
   } as const;
 
   const partInclude = {
     job: { select: jobSelect },
   } as const;
 
-  const [withPlannedDate, withWindow, withBookedTime] = await Promise.all([
+  const [withWindow, withBookedTime] = await Promise.all([
     prisma.jobPart.findMany({
-      where: { ...baseWhere, job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: { gte, lte } } },
+      where: { ...baseWhere, timeWindowStart: { gte, lte } },
       include: partInclude,
     }),
     prisma.jobPart.findMany({
-      where: { ...baseWhere, job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null }, timeWindowStart: { gte, lte } },
-      include: partInclude,
-    }),
-    prisma.jobPart.findMany({
-      where: { ...baseWhere, job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null }, timeWindowStart: null, bookedTime: { gte, lte } },
+      where: { ...baseWhere, timeWindowStart: null, bookedTime: { gte, lte } },
       include: partInclude,
     }),
   ]);
 
   // De-duplicate by id
   const seen = new Set<number>();
-  const allParts: typeof withPlannedDate = [];
-  for (const p of [...withPlannedDate, ...withWindow, ...withBookedTime]) {
+  const allParts: typeof withWindow = [];
+  for (const p of [...withWindow, ...withBookedTime]) {
     if (!seen.has(p.id)) { seen.add(p.id); allParts.push(p); }
   }
 
