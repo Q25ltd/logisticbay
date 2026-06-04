@@ -240,7 +240,7 @@ test("Tenant isolation — full suite", async (t) => {
       const res = await app.inject({
         method: "POST", url: `/jobs/${jobB.id}/note`,
         headers: { authorization: `Bearer ${tokenA}`, "content-type": "application/json" },
-        body: JSON.stringify({ note: "hacked" }),
+        body: JSON.stringify({ note: "hacked", clientEventId: "test-tenant-isolation-note" }),
       });
       assert.equal(res.statusCode, 404, `BREACH: got ${res.statusCode}`);
     });

@@ -258,7 +258,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         goodsType:      p.job.goodsType,
         weight:         p.job.weight    ? Number(p.job.weight)    : null,
         quantity:       p.job.quantity  ? Number(p.job.quantity)  : null,
-        quantityUnit:   (p.job as any).quantityUnit ?? null,
+        quantityUnit:   p.job.quantityUnit ?? null,
         plannedDate:    null, // removed — timeWindowStart is the date source (E.2)
       }));
 

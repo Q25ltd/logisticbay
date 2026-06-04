@@ -43,7 +43,7 @@ export async function writeAudit(
   try {
     const ip        = params.request?.ip ?? null;
     const userAgent = params.request?.headers["user-agent"] ?? null;
-    const requestId = (params.request as any)?.id ?? null;
+    const requestId = (params.request as { id?: string })?.id ?? null;
 
     await prisma.auditLog.create({
       data: {
@@ -53,8 +53,8 @@ export async function writeAudit(
         entityId:   params.entityId,
         action:     params.action,
         field:      params.field ?? "",
-        oldValue:   params.oldValue !== undefined ? (params.oldValue as any) : undefined,
-        newValue:   params.newValue !== undefined ? (params.newValue as any) : undefined,
+        oldValue:   params.oldValue !== undefined ? (params.oldValue as import('../generated/client.js').Prisma.InputJsonValue) : undefined,
+        newValue:   params.newValue !== undefined ? (params.newValue as import('../generated/client.js').Prisma.InputJsonValue) : undefined,
         ipAddress:  ip,
         userAgent:  userAgent,
         requestId:  requestId,

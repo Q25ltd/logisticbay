@@ -62,7 +62,7 @@ export async function buildApp(
   });
 
   app.setErrorHandler((error, request, reply) => {
-    const err = error as any;
+    const err = error as Error & { statusCode?: number; code?: string; message: string }; // Fastify error handler pattern
     const statusCode = err.statusCode ?? 500;
     if (statusCode >= 500) {
       app.log.error({
@@ -90,8 +90,8 @@ export async function buildApp(
     try {
       await prisma.$queryRaw`SELECT 1`;
       return reply.send({ ok: true, db: "up", timestamp: new Date().toISOString() });
-    } catch (err: any) {
-      return reply.status(503).send({ ok: false, db: "down", error: err?.message });
+    } catch (err: unknown) {
+      return reply.status(503).send({ ok: false, db: "down", error: (err as Error)?.message }); // Prisma error type
     }
   });
 

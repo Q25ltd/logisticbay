@@ -444,6 +444,12 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return notFound(reply, "Job");
 
+    // TASK 3.2: idempotency — same clientEventId from same caller is a duplicate.
+    const existing = await prisma.jobExecutionEvent.findFirst({
+      where: { clientEventId: body.clientEventId, jobId: id },
+    });
+    if (existing) return reply.status(200).send({ ok: true, duplicate: true });
+
     await prisma.jobExecutionEvent.create({
       data: {
         jobId:           id,
@@ -451,8 +457,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         driverId:        userId,    // kept until Migration B
         actorUserId:     userId,    // TASK 4.1: canonical field
         eventType:       "note_added",
-        note:            body.note.trim(),
-        clientEventId:   `server-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        note:            body.note,
+        clientEventId:   body.clientEventId,
         clientTimestamp: new Date(),
       },
     });

@@ -318,7 +318,7 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!shift) return notFound(reply, "Shift");
 
     try {
-      const pdfBuffer = await generateShiftPDF(shift as any);
+      const pdfBuffer = await generateShiftPDF(shift as Parameters<typeof generateShiftPDF>[0]) // Prisma include wider than PDF param;
       const filename  = `shift-report-${shift.id}-${new Date(shift.shiftDate).toISOString().split("T")[0]}.pdf`;
       return reply
         .header("Content-Type", "application/pdf")
