@@ -44,6 +44,23 @@ export async function storeRefreshToken(
   return familyId;
 }
 
+/**
+ * Verify a JWT access token and return the decoded payload.
+ * Throws if the token is invalid or expired.
+ * C21: all jwt.verify calls must live in this file or middleware.ts.
+ */
+export function verifyAccessToken(token: string): { userId: number; companyId: number; role: string } {
+  return jwt.verify(token, env.JWT_ACCESS_SECRET) as { userId: number; companyId: number; role: string };
+}
+
+/**
+ * Verify a JWT refresh token and return the decoded payload.
+ * Throws if the token is invalid or expired.
+ */
+export function verifyRefreshToken(token: string): { userId: number; companyId: number; role: string } {
+  return jwt.verify(token, env.JWT_REFRESH_SECRET) as { userId: number; companyId: number; role: string };
+}
+
 export async function revokeTokenFamily(prisma: PrismaClient, familyId: string): Promise<void> {
   await prisma.refreshToken.updateMany({
     where:  { familyId, revokedAt: null },

@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { env } from "../lib/env.js";
 import {
   generateAccessToken,
@@ -9,6 +8,8 @@ import {
   hashToken,
   storeRefreshToken,
   revokeTokenFamily,
+  verifyAccessToken,
+  verifyRefreshToken,
   createPasswordResetToken,
   createEmailVerificationToken,
 } from "../lib/tokens.js";
@@ -117,7 +118,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     let decoded: { userId: number; companyId: number; role: string };
     try {
-      decoded = jwt.verify(body.refreshToken, env.JWT_REFRESH_SECRET) as typeof decoded;
+      decoded = verifyRefreshToken(body.refreshToken);
     } catch {
       return unauthorized(reply, "Token expired or invalid");
     }
@@ -188,7 +189,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const auth = request.headers.authorization;
     if (!auth?.startsWith("Bearer ")) return unauthorized(reply, "Not authenticated");
     try {
-      const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as { userId: number; companyId: number; role: string };
+      const decoded = verifyAccessToken(auth.slice(7));
       const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { memberships: { where: { companyId: decoded.companyId, status: "active" }, include: { company: true }, take: 1 } } });
       if (!user || user.status !== "active") return unauthorized(reply, "User not found");
       const membership = user.memberships[0];
@@ -208,7 +209,7 @@ export async function authRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const { currentPassword, newPassword } = body;
     if (newPassword === "123456") return badRequest(reply, "BAD_REQUEST", "You cannot use the default PIN");
     try {
-      const decoded = jwt.verify(auth.slice(7), env.JWT_ACCESS_SECRET) as { userId: number };
+      const decoded = verifyAccessToken(auth.slice(7));
       const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
       if (!user) return notFound(reply, "User");
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
