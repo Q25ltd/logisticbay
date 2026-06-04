@@ -248,9 +248,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     return reply.send({
       companyName:  link.company.name,
       customerName: link.customer?.name ?? null,
-      contactName:  (link.customer as any)?.contactName ?? null,
-      contactEmail: (link.customer as any)?.contactEmail ?? null,
-      contactPhone: (link.customer as any)?.contactPhone ?? null,
+      contactName:  (link.customer as { contactName?: string | null } | null)?.contactName ?? null,
+      contactEmail: (link.customer as { contactEmail?: string | null } | null)?.contactEmail ?? null,
+      contactPhone: (link.customer as { contactPhone?: string | null } | null)?.contactPhone ?? null,
       templateData: link.templateData ?? null,
     });
   });
@@ -413,8 +413,8 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
           bookedTime:           s.bookedTime?.toISOString()       ?? null,
           contactName:          s.contactName  ?? undefined,
           contactPhone:         s.contactPhone ?? undefined,
-          bookingRequired:      (s as any).bookingRequired ?? undefined,
-          bookingRef:           (s as any).bookingRef      ?? undefined,
+          bookingRequired:      (s as { bookingRequired?: boolean }).bookingRequired ?? undefined,
+          bookingRef:           (s as { bookingRef?: string }).bookingRef      ?? undefined,
         };
       });
 

@@ -201,7 +201,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     if (start > end) return badRequest(reply, "BAD_REQUEST", "start must be before end");
 
     const company   = await prisma.company.findUnique({ where: { id: companyId } });
-    const maxPerDay = (company as any).maxHolidaysPerDay ?? 2;
+    const maxPerDay = company?.maxHolidaysPerDay ?? 2;
 
     const days: { date: string; count: number; available: boolean; overLimit: boolean; slotsLeft: number }[] = [];
     const cur = new Date(start);
@@ -243,7 +243,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
       holidayAllowance: profile.holidayAllowance,
       holidayUsed:      profile.holidayUsed,
       holidayRemaining: profile.holidayAllowance - profile.holidayUsed,
-      maxPerDay:        (company as any).maxHolidaysPerDay ?? 2,
+      maxPerDay:        company?.maxHolidaysPerDay ?? 2,
     });
   });
 
@@ -289,7 +289,7 @@ export async function availabilityRoutes(app: FastifyInstance, prisma: PrismaCli
     }
 
     const company   = await prisma.company.findUnique({ where: { id: companyId } });
-    const maxPerDay = (company as any).maxHolidaysPerDay ?? 2;
+    const maxPerDay = company?.maxHolidaysPerDay ?? 2;
 
     const conflicts: string[] = [];
     const checkDate = new Date(start);

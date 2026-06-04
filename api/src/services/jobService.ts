@@ -332,7 +332,7 @@ export async function patchJob(
   }
 
   const effectiveLoadData = (
-    body.loadData !== undefined ? body.loadData : (job as any).loadData
+    body.loadData !== undefined ? body.loadData : job.loadData
   ) as Record<string, unknown> | null | undefined;
 
   const structuredValidation = validateStructuredJob({
@@ -423,7 +423,7 @@ export async function patchJob(
         tempControlled:      p(body.tempControlled, job.tempControlled),
         tempRange:           body.tempRange  !== undefined ? (body.tempRange?.trim()  || null) : job.tempRange,
         hazardClass:         body.hazardClass !== undefined ? (body.hazardClass?.trim() || null) : job.hazardClass,
-        tunnelCode:          body.tunnelCode  !== undefined ? (body.tunnelCode?.trim()  || null) : (job as any).tunnelCode,
+        tunnelCode:          body.tunnelCode  !== undefined ? (body.tunnelCode?.trim()  || null) : job.tunnelCode,
         photosRequired:      p(body.photosRequired, job.photosRequired),
         weighbridgeRequired: p(body.weighbridgeRequired, job.weighbridgeRequired),
         driverNoteChips: body.driverNoteChips !== undefined
@@ -437,18 +437,18 @@ export async function patchJob(
         declaredGoodsValue:  body.declaredGoodsValue  !== undefined ? (body.declaredGoodsValue?.trim()  || null) : job.declaredGoodsValue,
         loadData: body.loadData !== undefined
           ? (body.loadData != null ? (body.loadData as Prisma.InputJsonValue) : Prisma.DbNull)
-          : ((job as any).loadData ?? Prisma.DbNull),
-        alternativeReturnSiteName:              body.alternativeReturnSiteName !== undefined ? (body.alternativeReturnSiteName?.trim() || null) : (job as any).alternativeReturnSiteName,
-        alternativeReturnAddressLine2:          body.alternativeReturnAddressLine2 !== undefined ? (body.alternativeReturnAddressLine2?.trim() || null) : (job as any).alternativeReturnAddressLine2,
-        alternativeReturnTown:                  body.alternativeReturnTown !== undefined ? (body.alternativeReturnTown?.trim() || null) : (job as any).alternativeReturnTown,
-        alternativeReturnCounty:                body.alternativeReturnCounty !== undefined ? (body.alternativeReturnCounty?.trim() || null) : (job as any).alternativeReturnCounty,
-        alternativeReturnCountry:               body.alternativeReturnCountry !== undefined ? (body.alternativeReturnCountry?.trim() || null) : (job as any).alternativeReturnCountry,
-        alternativeReturnLat:                   body.alternativeReturnLat !== undefined ? (body.alternativeReturnLat ?? null) : (job as any).alternativeReturnLat,
-        alternativeReturnLng:                   body.alternativeReturnLng !== undefined ? (body.alternativeReturnLng ?? null) : (job as any).alternativeReturnLng,
-        alternativeReturnNavigationInstructions: body.alternativeReturnNavigationInstructions !== undefined ? (body.alternativeReturnNavigationInstructions?.trim() || null) : (job as any).alternativeReturnNavigationInstructions,
-        photosRequiredOnRejection: body.photosRequiredOnRejection !== undefined ? (body.photosRequiredOnRejection ?? false) : (job as any).photosRequiredOnRejection ?? false,
-        rejectionSignatureRequired: body.rejectionSignatureRequired !== undefined ? (body.rejectionSignatureRequired ?? false) : (job as any).rejectionSignatureRequired ?? false,
-        rejectionNotes: body.rejectionNotes !== undefined ? (body.rejectionNotes?.trim() || null) : (job as any).rejectionNotes,
+          : (job.loadData ?? Prisma.DbNull),
+        alternativeReturnSiteName:              body.alternativeReturnSiteName !== undefined ? (body.alternativeReturnSiteName?.trim() || null) : job.alternativeReturnSiteName,
+        alternativeReturnAddressLine2:          body.alternativeReturnAddressLine2 !== undefined ? (body.alternativeReturnAddressLine2?.trim() || null) : job.alternativeReturnAddressLine2,
+        alternativeReturnTown:                  body.alternativeReturnTown !== undefined ? (body.alternativeReturnTown?.trim() || null) : job.alternativeReturnTown,
+        alternativeReturnCounty:                body.alternativeReturnCounty !== undefined ? (body.alternativeReturnCounty?.trim() || null) : job.alternativeReturnCounty,
+        alternativeReturnCountry:               body.alternativeReturnCountry !== undefined ? (body.alternativeReturnCountry?.trim() || null) : job.alternativeReturnCountry,
+        alternativeReturnLat:                   body.alternativeReturnLat !== undefined ? (body.alternativeReturnLat ?? null) : job.alternativeReturnLat,
+        alternativeReturnLng:                   body.alternativeReturnLng !== undefined ? (body.alternativeReturnLng ?? null) : job.alternativeReturnLng,
+        alternativeReturnNavigationInstructions: body.alternativeReturnNavigationInstructions !== undefined ? (body.alternativeReturnNavigationInstructions?.trim() || null) : job.alternativeReturnNavigationInstructions,
+        photosRequiredOnRejection: body.photosRequiredOnRejection !== undefined ? (body.photosRequiredOnRejection ?? false) : job.photosRequiredOnRejection ?? false,
+        rejectionSignatureRequired: body.rejectionSignatureRequired !== undefined ? (body.rejectionSignatureRequired ?? false) : job.rejectionSignatureRequired ?? false,
+        rejectionNotes: body.rejectionNotes !== undefined ? (body.rejectionNotes?.trim() || null) : job.rejectionNotes,
         securingRequirements: body.securingRequirements !== undefined
           ? jsonOrNull(Array.isArray(body.securingRequirements) ? body.securingRequirements : [])
           : jsonOrNull(Array.isArray(job.securingRequirements) ? (job.securingRequirements as string[]) : []),

@@ -180,7 +180,8 @@ export const UpdateJobStatusSchema = z.object({
 });
 
 export const AddJobNoteSchema = z.object({
-  note: z.string().max(4000).min(1, "Note cannot be empty"),
+  note:          z.string().min(1, "Note cannot be empty").max(4000).trim(),
+  clientEventId: z.string().min(1).max(64).trim(),
 });
 
 /**
