@@ -276,14 +276,13 @@ Notes: full cross-workspace shared package (shared/eventTypes.ts) is a separate 
 
 ---
 
-## [ ] A.14 🟡 Two bcrypt libraries — **high confidence**
+## [x] A.14 🟡 Two bcrypt libraries — **high confidence**
 
-**Where:** `api/package.json` imports both `bcrypt` (native) and `bcryptjs`. Active routes use `bcryptjs`. `api/src/auth.ts` uses native `bcrypt` but is NOT imported anywhere (dead).
-
-**Acceptance:**
-- Delete `api/src/auth.ts`.
-- Remove `bcrypt` and `@types/bcrypt` from `api/package.json` and lockfile.
-- Confirm `npm run typecheck` and `npm test` still pass.
+Fixed 2026-06-06:
+- `api/src/auth.ts` deleted (TASK 5.1, 2026-06-02).
+- `bcrypt` and `@types/bcrypt` removed from `api/package.json` and lockfile.
+- Zero `from "bcrypt"` import sites in `api/src` confirmed.
+- typecheck ✅ 77 tests pass ✅.
 
 ---
 
@@ -304,38 +303,19 @@ Notes: full cross-workspace shared package (shared/eventTypes.ts) is a separate 
 
 Concrete bugs and footguns, ordered by blast radius.
 
-## [ ] B.1 🔴 Background work after shift submit can lose data — **high confidence**
+## [x] B.1 🔴 Background work after shift submit can lose data — **high confidence**
 
-**Where:** `api/src/routes/shifts.ts:225` and `:299` (`setImmediate(async () => { … })`).
-
-**What happens:**
-- The route returns 200 immediately on PDF generation success, then schedules PDF rendering + email + working-time recalc in `setImmediate`.
-- If the worker crashes between the response and the `setImmediate` body running, the shift stays in `submitted` status forever, no PDF, no email, no working-time update.
-- On Railway redeploys (which happen on every push), in-flight `setImmediate` callbacks are killed mid-flight.
-- The `.catch(() => {})` on the failure-update path swallows everything silently (`shifts.ts:231, 305`).
-
-**Risk:** drivers see "shift submitted" but the planner never gets the email, and the working-time-compliance calculator under-counts hours. Tracking of hours is exactly what this app is for.
-
-**Acceptance:**
-- Replace `setImmediate` with an outbox row written in the same transaction as the submit, and a small worker (BullMQ, pg-boss, or even a polling loop) that drains the outbox idempotently with retries.
-- Until then, at minimum: log the error properly (`app.log.error({ err, shiftId }, …)`), do NOT swallow with empty arrow.
+Done: TASK 3.1 (cleanup/p3-3.1-shift-submit-outbox, 2026-06-01)
+Files: api/src/jobs/shiftSubmitWorker.ts (new), api/src/routes/shifts.ts
+Verified: `grep -n "setImmediate" api/src/routes/shifts.ts` → 0 hits. Outbox row written in same transaction as submit. Worker drains idempotently with retries. typecheck ✅ tests pass ✅.
 
 ---
 
-## [ ] B.2 🔴 `autoCleanupOldShifts` runs cross-tenant and silently — **high confidence**
+## [x] B.2 🔴 `autoCleanupOldShifts` runs cross-tenant and silently — **high confidence**
 
-**Where:** `api/src/routes/shifts.ts:437-460` and the `setInterval(..., 24h)` at `:466`.
-
-**Issues:**
-- `updateMany` has no `companyId` predicate. Today this is "OK" because the status change is global by design, but the pattern is dangerous to copy and a single typo (e.g. `status: { in: ["draft"] }`) could wipe shift drafts across all tenants.
-- `setInterval` runs in *every* Fastify worker process. On Railway you may scale to 2+ instances → cleanup runs N× per day, racing each other.
-- `autoCleanupOldShifts()` is invoked on boot at `:465` — every redeploy triggers it again.
-- If it throws, the `.catch` only logs; you have no alert.
-
-**Acceptance:**
-- Move to a single scheduled job (e.g. Railway Cron, or `pg-boss` with a singleton schedule).
-- Add a tenant loop: iterate companies and do per-company cleanup with explicit `where: { companyId, … }`.
-- Sentry on failure.
+Done: TASK 3.5 (cleanup/p3-3.5-auto-cleanup-worker, 2026-06-01)
+Files: api/src/jobs/autoCleanupWorker.ts (new), api/src/server.ts
+Verified: `autoCleanupOldShifts` removed from shifts.ts. New worker: per-tenant loop with explicit `where: { companyId }`, `pg_advisory_lock` prevents concurrent runs across instances, imported and started in server.ts. typecheck ✅ tests pass ✅.
 
 ---
 
@@ -387,15 +367,13 @@ Notes: S3 confirmed by user 2026-05-31 ("LoadTrack is operational custody histor
 
 ---
 
-## [~partial] B.5 🔴 Idempotency disabled when caller forgets `clientEventId` — **high confidence**
+## [x] B.5 🔴 Idempotency disabled when caller forgets `clientEventId` — **high confidence**
 
-Partial fix — cleanup/p2-2.3-apply-job-event:
-PATCH /jobs/:id/status now returns 400 BAD_REQUEST if clientEventId is missing. No server-generated fallback.
-Still open: POST /jobs/:id/note still generates server-${Date.now()}-... — fixed in TASK 3.2.
-
-**Where:** `api/src/routes/jobs.ts:380` — `clientEventId = body.clientEventId?.trim() || \`server-${Date.now()}-${Math.random()...}\``.
-
-**Risk:** retries from the planner UI or any future integration that doesn't send the header create duplicate events. The same problem exists at `jobs.ts:489` for `POST /jobs/:id/note`.
+Fixed — TASK 3.2 (2026-06-06):
+- `AddJobNoteSchema` requires `clientEventId` (no server-generated fallback, no `.optional()`).
+- `POST /jobs/:id/note` returns 400 if missing, 200 `{ duplicate: true }` if same id sent twice.
+- Mobile (`JobDetailScreen.tsx:215`) sends `uuidv4()`; web (`JobsPage.tsx:268`) sends `crypto.randomUUID()`.
+- Tests: `api/src/tests/job-note.test.ts` — 3 subtests, all pass (missing→400, valid→201, duplicate→200).
 
 **Acceptance:**
 - Require `clientEventId` for any write that creates a `JobExecutionEvent`. Reject with 400 if missing.
@@ -403,16 +381,12 @@ Still open: POST /jobs/:id/note still generates server-${Date.now()}-... — fix
 
 ---
 
-## [ ] B.6 🔴 `JobExecutionEvent.driverId` references `User`, not `DriverProfile` — **high confidence**
+## [~partial] B.6 🔴 `JobExecutionEvent.driverId` references `User`, not `DriverProfile` — **high confidence**
 
-**Where:** `api/src/sync/sync.service.ts:98-100` (`TODO(phase-2)`) and the schema. The same `userId` is passed in as `driverId` everywhere.
-
-**Risk:** an agency driver moving between companies will have the same `driverId` in `JobExecutionEvent` rows belonging to different tenants. Today tenant isolation holds because the row also has `companyId`. But the field name lies — when someone joins this codebase and queries `driverId`, they will assume `DriverProfile.id`.
-
-**Acceptance:**
-- Migration: add `driverProfileId Int?` to `JobExecutionEvent`, backfill from the user→profile mapping for each company, then make NOT NULL and drop `driverId` (or rename `driverId` → `actorUserId` to keep both).
-- Update writes in `sync.service.ts`, `routes/jobs.ts` (`:451`, `:486`, `:1527`).
-- Update audit/read paths.
+TASK 4.1 — Migrations A + B done (2026-06-02). Migration C time-locked until 2026-06-16.
+- Migration A: `actorUserId Int?` added to `JobExecutionEvent`, all writes now set both `driverId` and `actorUserId`.
+- Migration B: backfill complete — all historical rows have `actorUserId` populated.
+- Migration C (pending): make `actorUserId NOT NULL`, drop `driverId`. Branch `cleanup/p4-4.1c-drop-driverid` is ready; merge after 2026-06-16 soak.
 
 ---
 
@@ -450,26 +424,17 @@ Partial fix — commit `48f84d2` feat(security): fail fast on missing JWT secret
 
 ---
 
-## [ ] B.10 🟠 `prisma.shift.update({ where: { id: shiftId } })` without companyId after fetch — **high confidence**
+## [x] B.10 🟠 `prisma.shift.update({ where: { id: shiftId } })` without companyId after fetch — **high confidence**
 
-**Where:** `api/src/routes/shifts.ts:231, 246, 296, 305, 319, 424`. Each follows a `findFirst({ id, companyId })` earlier in the handler, so they're correct *today*. But:
-
-- They do not pass `companyId` in the `where`, so they rely on the prior fetch having happened in the same request.
-- In `setImmediate` callbacks at `:225` and `:299`, the prior fetch's `request` context is *gone* — if the handler ever changes to skip the upfront fetch, this becomes a real IDOR.
-
-**Acceptance:**
-- Adopt the rule: every `update`/`delete`/`upsert` includes `companyId` in `where`. Today only `findFirst({ where: { id, companyId } })` is consistently scoped. Add `companyId` to the update `where` as defence in depth.
-- Where Prisma doesn't allow composite `where` (single update), use `updateMany({ where: { id, companyId } })` which returns `{ count }`; if count is 0, throw 404.
+Done: TASK 3.3 (cleanup/p3-3.3-companyid-where, 2026-06-01)
+Files: api/src/routes/shifts.ts (and 9 other route files)
+Verified: all bare `update`/`delete` calls converted to `updateMany({ where: { id, companyId } })`. typecheck ✅ tenant-isolation tests pass ✅.
 
 ---
 
-## [ ] B.11 🟠 `setImmediate(...)` doesn't await Prisma client closure — **medium confidence**
+## [x] B.11 🟠 `setImmediate(...)` doesn't await Prisma client closure — **medium confidence**
 
-**Where:** `api/src/routes/shifts.ts:225, 299`. The setImmediate runs after the response is sent, but on SIGTERM (`server.ts:10-11`) the app closes Prisma before the setImmediate finishes.
-
-**Risk:** SIGTERM during a deploy → in-flight setImmediate hits "Engine is not yet connected" or similar. Shift status is stuck.
-
-**Acceptance:** depends on B.1 — once outbox is in place, this resolves itself. Until then, add a tracking Set of in-flight promises and `await Promise.all([...inFlight])` in the SIGTERM handler.
+Resolved by B.1 fix (TASK 3.1, 2026-06-01). `setImmediate` removed from `shifts.ts` entirely — `grep -n "setImmediate" api/src/routes/shifts.ts` → 0 hits. Work is now drained by `shiftSubmitWorker.ts` which has its own Prisma lifecycle.
 
 ---
 
@@ -575,11 +540,9 @@ So `Job.status` is **partly** derived from events (execution stage) and **partly
 
 ---
 
-## [ ] C.2 🔴 `JobExecutionEvent.driverId` actually means User.id — **high confidence**
+## [~partial] C.2 🔴 `JobExecutionEvent.driverId` actually means User.id — **high confidence**
 
-Already filed as **B.6** — listing here too because the *naming* is the confusion. Anyone reading `where: { driverId: X }` will assume `DriverProfile.id` and write a wrong query.
-
-**Acceptance:** see B.6. Rename in the schema, not just in comments.
+Same status as B.6 — see B.6 for full detail. Migration C (rename + drop) pending until 2026-06-16 soak. `actorUserId` is the canonical field; all new reads should use it.
 
 ---
 
@@ -617,34 +580,20 @@ Already filed as **B.6** — listing here too because the *naming* is the confus
 
 ---
 
-## [ ] C.6 🟠 `removedAt` vs `status='cancelled'` vs `deletedAt` — three soft-delete conventions — **medium confidence**
+## [~partial] C.6 🟠 `removedAt` vs `status='cancelled'` vs `deletedAt` — three soft-delete conventions — **medium confidence**
 
-**Where:**
-- `RunAssignment.removedAt` (run.ts uses it).
-- `Run.status='cancelled'` (no separate column).
-- `Job.status='cancelled'` (same).
-- `FleetUnit.status='deleted'`.
-- `HolidayRequest.status='deleted'`.
-- `Shift.status='deleted'`.
-- `User.status='active'` only — no deletion column.
-
-**Risk:** every read needs to remember which convention applies. A query that filters `where: { status: { not: "cancelled" } }` on RunAssignment returns soft-deleted rows because RunAssignment uses `removedAt`, not status.
-
-**Acceptance:**
-- Single convention: either every model has a `status` enum that includes `archived`/`deleted` AND a `deletedAt` timestamp, OR remove the variant. Document the choice in `DATA_DICTIONARY.md`.
+TASK 4.3 + 4.4 done (2026-06-02):
+- `LoadTrack.deletedAt DateTime?` added (canonical new-model convention).
+- Soft-delete convention documented in ARCHITECTURE.md: new models use `deletedAt`; `RunAssignment.removedAt` grandfathered; `status='deleted'` on Fleet/Holiday/Shift not migrated.
+- Still open: `FleetUnit.status='deleted'`, `HolidayRequest.status='deleted'`, `Shift.status='deleted'` not yet converted. Accepted as tech debt — migrate model-by-model when those routes are touched.
 
 ---
 
-## [ ] C.7 🟠 `Run.status` taxonomy is undocumented — **medium confidence**
+## [x] C.7 🟠 `Run.status` taxonomy is undocumented — **medium confidence**
 
-**Where:** `routes/runs.ts:92` filters `status: { notIn: ["cancelled"] }` — implies there's a `cancelled` status. `:301` allows arbitrary `body.status` (no enum check). `:344` checks `"completed"`. But no central list.
-
-**Risk:** a planner can PATCH `status="banana"` and the API accepts it.
-
-**Acceptance:**
-- Define `RUN_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'cancelled']` in `api/src/sync/runStatuses.ts` (matching what PROJECT_STATUS.md targets).
-- Validate `body.status` against the list in Zod.
-- Document allowed transitions same as `ALLOWED_JOB_TRANSITIONS`.
+Done: TASK 4.5 (cleanup/p4-4.5-run-status-enum, 2026-06-02)
+Files: api/src/sync/runStatuses.ts (new), api/src/routes/runs.ts, api/src/schemas/
+Verified: `RUN_STATUSES` and `RunStatus` type exported from `runStatuses.ts`. Zod validates `body.status` against the enum. `PATCH status="banana"` → 400. typecheck ✅ tests pass ✅.
 
 ---
 
@@ -680,19 +629,15 @@ Already filed as **B.6** — listing here too because the *naming* is the confus
 
 # SECTION D — DEAD AND HALF-FINISHED CODE
 
-## [ ] D.1 🟡 `api/src/auth.ts` — dead — **high confidence**
+## [x] D.1 🟡 `api/src/auth.ts` — dead — **high confidence**
 
-Already noted in A.14. No imports anywhere. Delete it.
+Done: TASK 5.1 (2026-06-02). File deleted. `grep -rn "api/src/auth" api/src` → 0 hits. See also A.14.
 
 ---
 
-## [ ] D.2 🟡 `mobile/src/apiWithQueue.ts` — self-declares deprecated — **high confidence**
+## [x] D.2 🟡 `mobile/src/apiWithQueue.ts` — self-declares deprecated — **high confidence**
 
-```
-// DEPRECATED — use enqueueJobEvent from offlineQueue.ts + useIsOnline hook in screens directly
-export {};
-```
-Delete.
+Done: TASK 5.2 (2026-06-02). File deleted. `grep -rn "apiWithQueue" mobile/src` → 0 hits.
 
 ---
 
@@ -707,20 +652,15 @@ Notes: column was removed in an earlier migration; soak window passed
 
 ---
 
-## [ ] D.4 🟡 `mobile/src/components.legacy.tsx` — name suggests legacy — **medium confidence**
+## [x] D.4 🟡 `mobile/src/components.legacy.tsx` — name suggests legacy — **medium confidence**
 
-Confirm with `grep`. If unreferenced, delete.
+Deleted 2026-06-06. `grep -rn "components\.legacy"` returned 0 import sites. Exports (`COLOURS`, `Button`, `Card`, `SectionHeader`, `LabelValue`, `Badge`, `AppFooter`) all superseded by `mobile/src/theme.ts` and inline component definitions. typecheck + tests pass.
 
 ---
 
-## [ ] D.5 🟡 `validation.ts` (legacy) and Zod schemas overlap — **medium confidence**
+## [x] D.5 🟡 `validation.ts` (legacy) and Zod schemas overlap — **medium confidence**
 
-**Where:** `api/src/validation.ts` exports `validateCreateLocation`, `validateCreateTemplate`, `validateCreateJob`, `validateUpdateJobStatus`, `validateAddJobNote`. Some of these are also covered by Zod in `api/src/schemas/`. Many routes call BOTH (`routes/jobs.ts:7-10` imports both).
-
-**Risk:** drift. A field added to Zod but not to `validation.ts` is silently dropped (or vice versa).
-
-**Acceptance:**
-- Decide one source. Zod is more typesafe. Migrate everything to Zod and delete `validation.ts`. If `validation.ts` contains business rules Zod cannot express, move them to `services/jobValidation.ts`.
+Done: TASK 5.4 (cleanup/p5-5.4-validation-consolidate, 2026-06-02). `api/src/validation.ts` deleted. All validation now in `api/src/schemas/` (Zod) and `api/src/services/jobValidation.ts`. `grep -rn "validation.ts" api/src` → 0 hits. typecheck ✅ tests pass ✅.
 
 ---
 

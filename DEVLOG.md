@@ -3,7 +3,46 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-06-01
+> Last updated: 2026-06-06
+
+---
+
+## Fix CJP Job.status bug 2026-06-06
+
+`createJob` always wrote `Job.status = "draft"` regardless of `saveMode`. `patchJob` had the same gap — it read `saveMode` and validated but never wrote `status`.
+
+**Fix:** `api/src/services/jobService.ts`
+- `createJob` line 179: `status: saveMode === "ready_to_plan" ? "ready_to_plan" : "draft"`
+- `patchJob` tx.job.update data block: spread `{ status }` only when `job.status` is in `["draft", "ready_to_plan"]` to avoid stomping on in-progress/completed/cancelled jobs.
+
+**Tests:** `api/src/tests/job-create-status.test.ts` — 5 new sub-tests covering POST draft, POST ready_to_plan, PATCH promote, PATCH demote, POST ready_to_plan with no stops → 400.
+
+Gates: typecheck ✅ vocab ✅ 80 tests ✅ knip: no new entries.
+
+---
+
+## A.14 + D.4 + TASK 3.2 closed 2026-06-06
+
+`bcrypt` (native) and `@types/bcrypt` removed from `api/package.json` and lockfile. Only `bcryptjs` remains. Zero `from "bcrypt"` import sites confirmed. typecheck ✅ 77 tests ✅.
+
+---
+
+## D.4 + TASK 3.2 closed 2026-06-06
+
+`mobile/src/components.legacy.tsx` deleted — 190 lines of dead code. Zero import sites confirmed via grep. All exports (`COLOURS`, `Button`, `Card`, etc.) superseded by `mobile/src/theme.ts` and inline components.
+
+---
+
+## TASK 3.2 closed 2026-06-06
+
+`POST /jobs/:id/note` clientEventId requirement now fully active.
+
+- `AddJobNoteSchema` already required `clientEventId` (done in earlier session); only the `todo` markers in `api/src/tests/job-note.test.ts` were blocking the clean signal.
+- Both callers confirmed sending it: mobile `JobDetailScreen.tsx:215` (`uuidv4()`) and web `JobsPage.tsx:268` (`crypto.randomUUID()`).
+- Removed `todo` from tests 1 (missing→400) and 3 (duplicate→200). All 3 subtests now pass as normal tests.
+- Gates: typecheck ✅ vocab ✅ 77 tests pass ✅ 0 todo.
+- CODE_AUDIT.md B.5 flipped from `[~partial]` to `[x]`. CLEANUP_PLAN.md checkpoint updated.
+- Remaining cleanup: 4.1-C (time-locked until 2026-06-16), D.4 components.legacy.tsx, A.14 bcrypt, CODE_AUDIT.md stale boxes.
 
 ---
 

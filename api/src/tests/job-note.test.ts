@@ -55,7 +55,7 @@ test("POST /jobs/:id/note — clientEventId required (TASK 3.2)", async (t) => {
   const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
 
   // ── Test 1: missing clientEventId → 400 ──────────────────────────────────
-  await t.test("missing clientEventId → 400", { todo: "TASK 3.2 blocked — mobile/web must send clientEventId first" }, async () => {
+  await t.test("missing clientEventId → 400", async () => {
     const res = await app.inject({
       method: "POST", url, headers,
       body: JSON.stringify({ note: "A valid note" }),
@@ -77,7 +77,7 @@ test("POST /jobs/:id/note — clientEventId required (TASK 3.2)", async (t) => {
   });
 
   // ── Test 3: same clientEventId → 200 { duplicate: true } ─────────────────
-  await t.test("duplicate clientEventId → 200 with duplicate:true", { todo: "TASK 3.2 blocked — dedup requires clientEventId to be required" }, async () => {
+  await t.test("duplicate clientEventId → 200 with duplicate:true", async () => {
     const res = await app.inject({
       method: "POST", url, headers,
       body: JSON.stringify({ note: "Same note again", clientEventId }),

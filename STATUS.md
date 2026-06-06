@@ -67,7 +67,7 @@
   - Section 6: billing (declared value, PO number, billing ref)
   - Edit mode (restore from existing Job), template apply mode
   - Required-field red highlighting on save attempt (all 6 sections + stops)
-  - `saveMode`: draft | ready_to_plan
+  - `saveMode`: draft | ready_to_plan — controls both validation strictness AND `Job.status` written on create/patch
 - **Public Request Form (PRF)** — `/request/:token`
   - Full identical field set to CJP — same Zod schema, same DB columns (PRF/CJP twin kept in sync)
   - LogisticBay "Powered by" branding badge (header, success, error screens)

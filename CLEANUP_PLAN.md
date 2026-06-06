@@ -741,7 +741,7 @@ Update after every task. This is the single source of truth between sessions.
 | 2     | 2.4  | done | sonnet | cleanup/p2-2.4-cancel-run | 2026-05-31 |
 | 2     | 2.5  | done | sonnet | cleanup/p2-2.5-shared-helpers | 2026-05-31 |
 | 3     | 3.1  | done | sonnet | cleanup/p3-3.1-shift-submit-outbox | 2026-06-01 |
-| 3     | 3.2  | open | | | |
+| 3     | 3.2  | done — todo markers removed; callers (mobile + web) already send clientEventId; all 3 subtests now pass | sonnet | cleanup/p3-3.2-note-clienteventid | 2026-06-06 |
 | 3     | 3.3  | done | sonnet | cleanup/p3-3.3-companyid-where | 2026-06-01 |
 | 3     | 3.4  | done | sonnet | cleanup/p3-3.4-agency-pin-safety | 2026-06-02 |
 | 3     | 3.5  | done | sonnet | cleanup/p3-3.5-auto-cleanup-worker | 2026-06-01 |
@@ -758,6 +758,7 @@ Update after every task. This is the single source of truth between sessions.
 | 5     | 5.3  | done — column was already dropped before TASK 0.4; confirmed 0 refs in TASK 0.4 reconciliation | sonnet | TASK 0.4 (D.3 marked [x]) | 2026-05-30 |
 | 5     | 5.4  | done | sonnet | cleanup/p5-5.4-validation-consolidate | 2026-06-02 |
 | 5     | 5.5  | done — read-only audit: GET×2, POST, PATCH confirmed; no archive endpoint (see STOP above) | sonnet | cleanup/p5-5.5-customers-audit | 2026-06-02 |
+| D     | D.4  | done — deleted mobile/src/components.legacy.tsx; 0 import sites confirmed | sonnet | 2026-06-06 | 2026-06-06 |
 
 ---
 
@@ -774,7 +775,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Task | Reason | Resolved by | Resolution |
 |------|------|--------|-------------|------------|
-| 2026-06-01 | 3.2 | Mobile (JobDetailScreen.tsx:214) and web (api/jobs.ts:13) both call POST /jobs/:id/note without clientEventId. Cannot require it until both callers are updated. | Add clientEventId to both callers first, then this task unblocks. | open |
+| 2026-06-01 | 3.2 | Mobile (JobDetailScreen.tsx:214) and web (api/jobs.ts:13) both call POST /jobs/:id/note without clientEventId. Cannot require it until both callers are updated. | Add clientEventId to both callers first, then this task unblocks. | resolved 2026-06-06 — both callers confirmed sending clientEventId; todo markers removed from tests |
 
 ---
 
