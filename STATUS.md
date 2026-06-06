@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-05-28c (full deduplication pass — shared utils, STOP_TYPE_LABEL, bodyTypeLabel, cap, today, addDays)
+> Last updated: 2026-06-01 (Phase 0 complete; Phase 3 in progress — error envelope, auth scope, companyId defence, cleanup worker)
 
 ---
 
@@ -67,7 +67,7 @@
   - Section 6: billing (declared value, PO number, billing ref)
   - Edit mode (restore from existing Job), template apply mode
   - Required-field red highlighting on save attempt (all 6 sections + stops)
-  - `saveMode`: draft | ready_to_plan
+  - `saveMode`: draft | ready_to_plan — controls both validation strictness AND `Job.status` written on create/patch
 - **Public Request Form (PRF)** — `/request/:token`
   - Full identical field set to CJP — same Zod schema, same DB columns (PRF/CJP twin kept in sync)
   - LogisticBay "Powered by" branding badge (header, success, error screens)
@@ -162,7 +162,8 @@
 | **LoadTrack** | Schema + model fully defined | No write path from mobile or API yet — custody chain not recorded |
 | **Job audit log** | `JobAudit` rows written on accept/reject | No viewer in web planner UI |
 | **Fleet ↔ Run linkage** | Schema has `assignedTruckId` / `assignedTrailerId` | Run creation UI does not yet offer truck/trailer picker |
-| **Job status guards** | PATCH /jobs/:id/status exists | Role-based edit restrictions post-assignment not enforced in code |
+| **Job status guards** | PATCH /jobs/:id/status exists; `applyJobEvent` shared state machine; `clientEventId` required; cancel blocked on normal path | Role-based edit restrictions post-assignment; planner override endpoint (TASK 3.8) |
+| **API code quality** | Phase 2 cleanup complete — event definitions single source, GPS/timestamp helpers, shared state machine, cancelRun service, parseIdParam/dayRangeUtc/TxClient | Phase 3 bug fixes; error envelope standardisation (TASK 3.7 in progress) |
 
 ---
 

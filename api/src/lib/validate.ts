@@ -40,3 +40,21 @@ function formatZodErrors(err: ZodError): string[] {
     return `${path}${issue.message}`;
   });
 }
+
+/**
+ * Parse an integer path parameter from request.params.
+ *
+ * A.12 fix: `parseInt((request.params as {...}).id, 10)` repeated 50+ times
+ * across route handlers, never validating the result. `parseInt("abc", 10)`
+ * returns `NaN` → Prisma silently returns nothing → caller gets a 404 instead
+ * of a 400. This helper returns null on failure so the caller can send 400.
+ *
+ * Usage:
+ *   const id = parseIdParam(request.params);
+ *   if (id === null) return reply.status(400).send({ error: "BAD_REQUEST", message: "id must be a valid integer" });
+ */
+export function parseIdParam(params: unknown, key = "id"): number | null {
+  const raw = (params as Record<string, string>)[key];
+  const n   = parseInt(raw, 10);
+  return Number.isNaN(n) ? null : n;
+}

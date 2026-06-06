@@ -1410,6 +1410,32 @@ Returned by `GET /planning/work-items`. One row per unplanned `JobPart`. Sorted 
 
 ---
 
+## Soft-Delete Conventions — per model
+
+> TASK 4.4 / C.6 — one authoritative table so queries never miss the filter.
+>
+> Rule: every list/get query that returns operational records **must** filter by
+> the appropriate deleted marker. Hard delete is only permitted for GDPR
+> right-to-erasure (not yet implemented).
+
+| Model | Delete mechanism | Field | Filter in queries |
+|---|---|---|---|
+| `Shift` | `status = 'deleted'` | `Shift.status` | `where: { status: { not: 'deleted' } }` |
+| `FleetUnit` | `status = 'deleted'` | `FleetUnit.status` | `where: { status: { not: 'deleted' } }` |
+| `HolidayRequest` | `status = 'deleted'` | `HolidayRequest.status` | `where: { status: { not: 'deleted' } }` |
+| `RunAssignment` | timestamp (grandfathered) | `RunAssignment.removedAt` | `where: { removedAt: null }` |
+| `LoadTrack` | timestamp (added TASK 4.3) | `LoadTrack.deletedAt` | `where: { deletedAt: null }` |
+| `Run` | `status = 'cancelled'` | `Run.status` | `where: { status: { notIn: ['cancelled'] } }` |
+| `Job` | `status = 'cancelled'` | `Job.status` | varies — see `Job.status` lifecycle |
+| `User` | no soft delete | — | only `status = 'active'` filter |
+| `DriverProfile` | `status = 'active'/'inactive'` | `DriverProfile.status` | `where: { status: 'active' }` |
+| `Customer` | `status = 'active'` | `Customer.status` | `where: { status: 'active' }` |
+| `ClientRequestLink` | `isActive = false` | `ClientRequestLink.isActive` | `where: { isActive: true }` |
+
+**Convention going forward (new models):** use `deletedAt DateTime?` as the preferred soft-delete mechanism. `status`-based and `removedAt`-based approaches are grandfathered for existing models but must not be copied to new ones.
+
+---
+
 ## Planning API — Endpoints
 
 Key planning-specific API endpoints (supplement to the standard CRUD routes).

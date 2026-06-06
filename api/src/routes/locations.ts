@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import { parseIdParam } from "../lib/validate.js";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
-import { validateCreateLocation } from "../validation.js";
 import type { CreateLocationBody, PatchLocationBody } from "../types/requests.js";
+import { badRequest, notFound, validationFailed } from "../lib/errors.js";
 
 export async function locationRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
@@ -21,8 +22,13 @@ export async function locationRoutes(app: FastifyInstance, prisma: PrismaClient)
     const body = request.body as CreateLocationBody;
     const { companyId } = request.user!;
 
-    const v = validateCreateLocation(body);
-    if (!v.valid) return reply.status(400).send({ error: v.errors.join(", ") });
+    // Name required (business rule from validation.ts)
+    if (!body.name?.trim()) return badRequest(reply, "NAME_REQUIRED", "name is required");
+    // At least one address field required
+    const hasAddress = (typeof body.locationTextSnapshot === "string" && body.locationTextSnapshot.trim()) ||
+                       (typeof body.addressText === "string" && body.addressText.trim()) ||
+                       (typeof body.street === "string" && body.street.trim());
+    if (!hasAddress) return badRequest(reply, "ADDRESS_REQUIRED", "locationTextSnapshot, addressText, or street is required");
 
     const lat = body.lat ?? null;
     const lng = body.lng ?? null;
@@ -53,12 +59,13 @@ export async function locationRoutes(app: FastifyInstance, prisma: PrismaClient)
 
   // ── PATCH /locations/:id ────────────────────────────────────────────────────
   app.patch("/locations/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const body = request.body as PatchLocationBody;
     const { companyId } = request.user!;
 
     const loc = await prisma.savedLocation.findFirst({ where: { id, companyId } });
-    if (!loc) return reply.status(404).send({ error: "Location not found" });
+    if (!loc) return notFound(reply, "Location");
 
     const updated = await prisma.savedLocation.update({
       where: { id },

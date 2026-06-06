@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { checkDayFeasibility, type ScheduleStop } from "../lib/driverSchedule.js";
+import { badRequest, notFound } from "../lib/errors.js";
 
 export async function scheduleRoutes(app: FastifyInstance, prisma: PrismaClient) {
   // ── GET /drivers/:driverId/schedule ─────────────────────────────────────────
@@ -14,14 +15,14 @@ export async function scheduleRoutes(app: FastifyInstance, prisma: PrismaClient)
       const date      = req.query.date;
 
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return reply.status(400).send({ error: "date query param required (YYYY-MM-DD)" });
+        return badRequest(reply, "BAD_REQUEST", "date query param required (YYYY-MM-DD)");
       }
 
       const driver = await prisma.driverProfile.findFirst({
         where:  { id: driverId, companyId },
         select: { id: true, preferredStartTime: true, earliestStartTime: true },
       });
-      if (!driver) return reply.status(404).send({ error: "Driver not found" });
+      if (!driver) return notFound(reply, "Driver");
 
       const dayStart = new Date(`${date}T00:00:00`);
       const dayEnd   = new Date(`${date}T23:59:59`);

@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import { parseIdParam } from "../lib/validate.js";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { gvwForCategory, isBodyCategory, isBodyType, isGvwClass, isOnboardEquipment } from "../constants/jobCreation.js";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 // ── Fleet Units ──────────────────────────────────────────────────────────────
 
@@ -141,17 +143,17 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = request.body as CreateUnitBody;
     const { companyId } = request.user!;
 
-    if (!body.registration?.trim()) return reply.status(400).send({ error: "Registration is required" });
+    if (!body.registration?.trim()) return badRequest(reply, "BAD_REQUEST", "Registration is required");
     const legacy = legacyUnitClass(body.vehicleClass);
     const bodyCategory = (body.bodyCategory ?? legacy.bodyCategory).trim();
     const gvwClass = (body.gvwClass ?? legacy.gvwClass).trim();
     const bodyType = (body.bodyType ?? legacy.bodyType).trim();
-    if (!bodyCategory) return reply.status(400).send({ error: "Body category is required" });
-    if (!isBodyCategory(bodyCategory)) return reply.status(400).send({ error: "Body category is invalid" });
-    if (!gvwClass && gvwForCategory(bodyCategory).length > 0) return reply.status(400).send({ error: "GVW class is required" });
-    if (gvwClass && !isGvwClass(gvwClass)) return reply.status(400).send({ error: "GVW class is invalid" });
-    if (bodyType && !isBodyType(bodyType)) return reply.status(400).send({ error: "Body type is invalid" });
-    if (hasInvalidEquipment(body.onboardEquipment)) return reply.status(400).send({ error: "Onboard equipment contains invalid value" });
+    if (!bodyCategory) return badRequest(reply, "BAD_REQUEST", "Body category is required");
+    if (!isBodyCategory(bodyCategory)) return badRequest(reply, "BAD_REQUEST", "Body category is invalid");
+    if (!gvwClass && gvwForCategory(bodyCategory).length > 0) return badRequest(reply, "BAD_REQUEST", "GVW class is required");
+    if (gvwClass && !isGvwClass(gvwClass)) return badRequest(reply, "BAD_REQUEST", "GVW class is invalid");
+    if (bodyType && !isBodyType(bodyType)) return badRequest(reply, "BAD_REQUEST", "Body type is invalid");
+    if (hasInvalidEquipment(body.onboardEquipment)) return badRequest(reply, "BAD_REQUEST", "Onboard equipment contains invalid value");
 
     const unit = await prisma.fleetUnit.create({
       data: {
@@ -178,19 +180,20 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /fleet/units/:id ───────────────────────────────────────────────
   app.patch("/fleet/units/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const body = request.body as PatchUnitBody;
     const { companyId } = request.user!;
 
     const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
-    if (!unit) return reply.status(404).send({ error: "Fleet unit not found" });
+    if (!unit) return notFound(reply, "Fleet unit");
     const bodyCategory = (body.bodyCategory?.trim() || undefined) ?? unit.bodyCategory;
     const gvwClass = (body.gvwClass?.trim() || undefined) ?? unit.gvwClass;
     const bodyType = (body.bodyType?.trim() || undefined) ?? unit.bodyType ?? "";
-    if (body.bodyCategory?.trim() && !isBodyCategory(bodyCategory)) return reply.status(400).send({ error: "Body category is invalid" });
-    if (body.gvwClass?.trim() && gvwClass && !isGvwClass(gvwClass)) return reply.status(400).send({ error: "GVW class is invalid" });
-    if (body.bodyType?.trim() && bodyType && !isBodyType(bodyType)) return reply.status(400).send({ error: "Body type is invalid" });
-    if (hasInvalidEquipment(body.onboardEquipment)) return reply.status(400).send({ error: "Onboard equipment contains invalid value" });
+    if (body.bodyCategory?.trim() && !isBodyCategory(bodyCategory)) return badRequest(reply, "BAD_REQUEST", "Body category is invalid");
+    if (body.gvwClass?.trim() && gvwClass && !isGvwClass(gvwClass)) return badRequest(reply, "BAD_REQUEST", "GVW class is invalid");
+    if (body.bodyType?.trim() && bodyType && !isBodyType(bodyType)) return badRequest(reply, "BAD_REQUEST", "Body type is invalid");
+    if (hasInvalidEquipment(body.onboardEquipment)) return badRequest(reply, "BAD_REQUEST", "Onboard equipment contains invalid value");
 
     const updated = await prisma.fleetUnit.update({
       where: { id },
@@ -217,11 +220,12 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /fleet/units/:id ──────────────────────────────────────────────
   app.delete("/fleet/units/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId } });
-    if (!unit) return reply.status(404).send({ error: "Fleet unit not found" });
+    if (!unit) return notFound(reply, "Fleet unit");
     if (unit.status === "deleted") return reply.status(204).send();
 
     await prisma.fleetUnit.update({
@@ -258,11 +262,11 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const body = request.body as CreateTrailerBody;
     const { companyId } = request.user!;
 
-    if (!body.registration?.trim()) return reply.status(400).send({ error: "Registration is required" });
+    if (!body.registration?.trim()) return badRequest(reply, "BAD_REQUEST", "Registration is required");
     const bodyType = (body.bodyType ?? legacyTrailerType(body.trailerType)).trim();
-    if (!bodyType) return reply.status(400).send({ error: "Trailer body type is required" });
-    if (!isBodyType(bodyType)) return reply.status(400).send({ error: "Trailer body type is invalid" });
-    if (hasInvalidEquipment(body.onboardEquipment)) return reply.status(400).send({ error: "Onboard equipment contains invalid value" });
+    if (!bodyType) return badRequest(reply, "BAD_REQUEST", "Trailer body type is required");
+    if (!isBodyType(bodyType)) return badRequest(reply, "BAD_REQUEST", "Trailer body type is invalid");
+    if (hasInvalidEquipment(body.onboardEquipment)) return badRequest(reply, "BAD_REQUEST", "Onboard equipment contains invalid value");
 
     const trailer = await prisma.fleetTrailer.create({
       data: {
@@ -289,15 +293,16 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /fleet/trailers/:id ────────────────────────────────────────────
   app.patch("/fleet/trailers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const body = request.body as PatchTrailerBody;
     const { companyId } = request.user!;
 
     const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
-    if (!trailer) return reply.status(404).send({ error: "Fleet trailer not found" });
+    if (!trailer) return notFound(reply, "Fleet trailer");
     const bodyType = body.bodyType?.trim() ?? trailer.bodyType;
-    if (body.bodyType !== undefined && bodyType && !isBodyType(bodyType)) return reply.status(400).send({ error: "Trailer body type is invalid" });
-    if (hasInvalidEquipment(body.onboardEquipment)) return reply.status(400).send({ error: "Onboard equipment contains invalid value" });
+    if (body.bodyType !== undefined && bodyType && !isBodyType(bodyType)) return badRequest(reply, "BAD_REQUEST", "Trailer body type is invalid");
+    if (hasInvalidEquipment(body.onboardEquipment)) return badRequest(reply, "BAD_REQUEST", "Onboard equipment contains invalid value");
 
     const updated = await prisma.fleetTrailer.update({
       where: { id },
@@ -324,17 +329,15 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /fleet/trailers/:id ───────────────────────────────────────────
   app.delete("/fleet/trailers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId } });
-    if (!trailer) return reply.status(404).send({ error: "Fleet trailer not found" });
+    if (!trailer) return notFound(reply, "Fleet trailer");
     if (trailer.status === "deleted") return reply.status(204).send();
     if (trailer.status === "loaded" && trailer.linkedJobId) {
-      return reply.status(409).send({
-        error: "Cannot delete a loaded trailer",
-        message: `Trailer ${trailer.registration} is loaded and linked to job #${trailer.linkedJobId}. Replan or unload it before deleting.`,
-      });
+      return conflict(reply, "TRAILER_LOADED", `Trailer ${trailer.registration} is loaded and linked to job #${trailer.linkedJobId}. Replan or unload it before deleting.`);
     }
 
     await prisma.fleetTrailer.update({

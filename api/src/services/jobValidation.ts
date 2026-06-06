@@ -97,7 +97,7 @@ export interface StructuredJobValidationInput {
   saveMode?: "draft" | "ready_to_plan";
   customerId?: number | null;
   customerName?: unknown;
-  plannedDate?: unknown;
+  // plannedDate removed — date is derived from first collection stop's timeWindowStart (E.2)
   vehicleCategory?: unknown;
   minGvwClass?: unknown;
   bodyType?: unknown;
@@ -157,7 +157,7 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
 
   if (saveMode === "ready_to_plan") {
     if (!input.customerId && !hasText(input.customerName)) errors.push("Customer is required");
-    if (!input.plannedDate) errors.push("Job date is required");
+    // Job date is now required as a collection stop timeWindowStart — validated via stops check below
     if (!hasText(vehicleCategory)) errors.push("Vehicle type is required");
 
     if (stops.length === 0) errors.push("At least one stop is required");

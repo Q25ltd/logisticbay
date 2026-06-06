@@ -3,7 +3,112 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-05-30
+> Last updated: 2026-06-06
+
+---
+
+## Fix CJP Job.status bug 2026-06-06
+
+`createJob` always wrote `Job.status = "draft"` regardless of `saveMode`. `patchJob` had the same gap — it read `saveMode` and validated but never wrote `status`.
+
+**Fix:** `api/src/services/jobService.ts`
+- `createJob` line 179: `status: saveMode === "ready_to_plan" ? "ready_to_plan" : "draft"`
+- `patchJob` tx.job.update data block: spread `{ status }` only when `job.status` is in `["draft", "ready_to_plan"]` to avoid stomping on in-progress/completed/cancelled jobs.
+
+**Tests:** `api/src/tests/job-create-status.test.ts` — 5 new sub-tests covering POST draft, POST ready_to_plan, PATCH promote, PATCH demote, POST ready_to_plan with no stops → 400.
+
+Gates: typecheck ✅ vocab ✅ 80 tests ✅ knip: no new entries.
+
+---
+
+## A.14 + D.4 + TASK 3.2 closed 2026-06-06
+
+`bcrypt` (native) and `@types/bcrypt` removed from `api/package.json` and lockfile. Only `bcryptjs` remains. Zero `from "bcrypt"` import sites confirmed. typecheck ✅ 77 tests ✅.
+
+---
+
+## D.4 + TASK 3.2 closed 2026-06-06
+
+`mobile/src/components.legacy.tsx` deleted — 190 lines of dead code. Zero import sites confirmed via grep. All exports (`COLOURS`, `Button`, `Card`, etc.) superseded by `mobile/src/theme.ts` and inline components.
+
+---
+
+## TASK 3.2 closed 2026-06-06
+
+`POST /jobs/:id/note` clientEventId requirement now fully active.
+
+- `AddJobNoteSchema` already required `clientEventId` (done in earlier session); only the `todo` markers in `api/src/tests/job-note.test.ts` were blocking the clean signal.
+- Both callers confirmed sending it: mobile `JobDetailScreen.tsx:215` (`uuidv4()`) and web `JobsPage.tsx:268` (`crypto.randomUUID()`).
+- Removed `todo` from tests 1 (missing→400) and 3 (duplicate→200). All 3 subtests now pass as normal tests.
+- Gates: typecheck ✅ vocab ✅ 77 tests pass ✅ 0 todo.
+- CODE_AUDIT.md B.5 flipped from `[~partial]` to `[x]`. CLEANUP_PLAN.md checkpoint updated.
+- Remaining cleanup: 4.1-C (time-locked until 2026-06-16), D.4 components.legacy.tsx, A.14 bcrypt, CODE_AUDIT.md stale boxes.
+
+---
+
+## Cleanup Phase 3 in progress 2026-06-01
+
+Phase 3 (bug fixes) partial completion — PRs #14–18 merged to `cleanup/main-tracker`:
+
+| Task | PR | What |
+|---|---|---|
+| 3.7 | #14 | `api/src/lib/errors.ts` — 6 helpers, 266 inline `reply.status(4xx)` replaced, CI gate at 0 hits |
+| 0.6 | #16 | `AuthCtx.Provider` scoped to `/app/*` — public pages no longer fire `/auth/me` or refresh poll |
+| 0.7 | #15 | Read-only audit: `jobRequestsPublicApi` confirmed NO Bearer leak |
+| 3.3 | #17 | B.10 — `companyId` added to 10 bare-id `update`/`delete` calls (defence-in-depth) |
+| 3.5 | #18 | B.2 — `autoCleanupOldShifts` extracted to `api/src/jobs/autoCleanupWorker.ts`; per-tenant loop, `pg_advisory_lock`, no longer in route file |
+
+Phase 0 is now fully complete (all 7 tasks done).
+
+Open Phase 3 tasks: 3.1 (S3), 3.2 (S3), 3.6 (read-only → S3 on findings), 3.8 (planner override, approved)
+
+---
+
+## Cleanup Phase 2 complete 2026-06-01
+
+Phase 2 (foundation refactors) finished. Five tasks, all merged to `cleanup/main-tracker`:
+
+| Task | PRs | What |
+|---|---|---|
+| 2.1 A.5/A.6/A.13 | #9 | `EVENT_DEFINITIONS` single source; `PlannedJob` stale refs fixed; 8 new tests |
+| 2.2 A.3/A.4 | #10 | `validateGpsPair` + `validateClientTimestamp`; E.4 (flag not reject) live; GPS range fix; 18 new tests |
+| 2.3 A.1/A.2/B.5 | #11 | `applyJobEvent` shared state machine; `clientEventId` required; cancel blocked via normal path; 4 new tests |
+| 2.4 A.7/B.4/B.15 | #12 | `cancelRun` service; LoadTrack preserved on cancel (user confirmed); planning.ts cancel now transactional |
+| 2.5 A.9/A.11/A.12 | #13 | `TxClient`, `dayRangeUtc`, `parseIdParam`; 52 parseInt call sites replaced; NaN id → 400 not 404 |
+
+New files created: `api/src/sync/applyJobEvent.ts`, `api/src/lib/gps.ts`, `api/src/lib/eventTimestamp.ts`, `api/src/services/runService.ts`, `api/src/lib/types.ts`
+
+Test count: 43 → 70 (+27 new tests across Phase 2)
+Knip baseline unchanged: 26 unused files, 118 unused exports (Phase 5 closes these)
+
+---
+
+## Cleanup knip baseline 2026-05-30 — TASK 0.5
+
+**knip version:** latest (installed at repo root as devDependency)
+
+**Baseline counts (non-blocking — Phase 5 will close these):**
+
+| Category | Count |
+|---|---|
+| Unused files | 26 |
+| Unused dependencies | 9 |
+| Unused devDependencies | 3 |
+| Unlisted dependencies | 17 |
+| Unlisted binaries | 4 |
+| Unused exports | 118 |
+| Duplicate exports | 2 |
+
+**Known false positives / noise:**
+- `api/prisma.config.ts` — env var `DATABASE_URL` not resolvable at static analysis time (knip known issue with Prisma config files); does not affect output correctness
+- Several `@fastify/*` and `@prisma/client` entries flagged as "unused dependencies" — these are loaded via Fastify plugin system and Prisma generated client; knip cannot trace dynamic registration
+- `shared/vehicleTaxonomy.ts` flagged as unused file — imported by api, web, mobile copies; knip cannot trace across workspace boundaries without explicit cross-workspace config
+
+**Confirmed real findings (match existing audit items):**
+- `api/src/auth.ts` — unused file → D.1
+- `mobile/src/apiWithQueue.ts` — unused file → D.2
+- `mobile/src/components.legacy.tsx` — unused file → D.4
+- `bcrypt` in api/package.json — unused dependency → A.14
 
 ---
 

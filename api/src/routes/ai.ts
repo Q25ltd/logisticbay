@@ -19,6 +19,7 @@ import { suggestVehicle, suggestTrailerForRun, type VehicleSuggestionInput } fro
 import { lookupAreaTypes } from "../services/areaLookupService.js";
 import { checkLoadVehicle, type LoadVehicleCheckInput } from "../services/checkLoadVehicleService.js";
 import { checkRun, type RunStop } from "../services/checkRunService.js";
+import { badRequest } from "../lib/errors.js";
 
 export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
 
@@ -40,10 +41,10 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
       const body = request.body as { text?: unknown };
       const text = typeof body.text === "string" ? body.text.trim() : "";
       if (!text) {
-        return reply.status(400).send({ error: "text is required" });
+        return badRequest(reply, "BAD_REQUEST", "text is required");
       }
       if (text.length > 8000) {
-        return reply.status(400).send({ error: "Message is too long (max 8 000 characters)" });
+        return badRequest(reply, "BAD_REQUEST", "Message is too long (max 8 000 characters)");
       }
 
       const { companyId } = request.user!;
@@ -131,7 +132,7 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
       const body = request.body as LoadVehicleCheckInput;
 
       if (typeof body.vehicleCategory !== "string" || !body.vehicleCategory) {
-        return reply.status(400).send({ error: "vehicleCategory is required" });
+        return badRequest(reply, "BAD_REQUEST", "vehicleCategory is required");
       }
 
       const result = checkLoadVehicle({
@@ -163,7 +164,7 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
     async (request, reply) => {
       const body = request.body as { postcodes?: unknown };
       if (!Array.isArray(body.postcodes)) {
-        return reply.status(400).send({ error: "postcodes must be an array of strings" });
+        return badRequest(reply, "BAD_REQUEST", "postcodes must be an array of strings");
       }
       const postcodes = body.postcodes
         .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
@@ -202,7 +203,7 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
       };
 
       if (!Array.isArray(body.stops) || body.stops.length === 0) {
-        return reply.status(400).send({ error: "stops is required (non-empty array)" });
+        return badRequest(reply, "BAD_REQUEST", "stops is required (non-empty array)");
       }
 
       try {

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import { parseIdParam } from "../lib/validate.js";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
+import { badRequest, notFound, validationFailed } from "../lib/errors.js";
 
 interface CreateCustomerBody {
   name:          string;
@@ -46,11 +48,12 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
 
   // ── GET /customers/:id ───────────────────────────────────────────────────
   app.get("/customers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const customer = await prisma.customer.findFirst({ where: { id, companyId } });
-    if (!customer) return reply.status(404).send({ error: "Customer not found" });
+    if (!customer) return notFound(reply, "Customer");
 
     return reply.send(customer);
   });
@@ -61,7 +64,7 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
     const { companyId } = request.user!;
 
     const errors = validateCreate(body);
-    if (errors.length) return reply.status(400).send({ error: errors.join(", ") });
+    if (errors.length) return validationFailed(reply, errors);
 
     const customer = await prisma.customer.create({
       data: {
@@ -79,12 +82,13 @@ export async function customerRoutes(app: FastifyInstance, prisma: PrismaClient)
 
   // ── PATCH /customers/:id ──────────────────────────────────────────────────
   app.patch("/customers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const body = request.body as PatchCustomerBody;
     const { companyId } = request.user!;
 
     const customer = await prisma.customer.findFirst({ where: { id, companyId } });
-    if (!customer) return reply.status(404).send({ error: "Customer not found" });
+    if (!customer) return notFound(reply, "Customer");
 
     const updated = await prisma.customer.update({
       where: { id },

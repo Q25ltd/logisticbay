@@ -62,7 +62,7 @@ export async function buildApp(
   });
 
   app.setErrorHandler((error, request, reply) => {
-    const err = error as any;
+    const err = error as Error & { statusCode?: number; code?: string; message: string }; // Fastify error handler pattern
     const statusCode = err.statusCode ?? 500;
     if (statusCode >= 500) {
       app.log.error({
@@ -74,13 +74,15 @@ export async function buildApp(
         url:       request.url,
       }, "Internal server error");
       return reply.status(500).send({
-        error: "Internal Server Error",
-        message: "Something went wrong. Please try again.",
+        error:   "Internal Server Error",
+        code:    "INTERNAL_ERROR",
+        details: "Something went wrong. Please try again.",
       });
     }
+    // Unified envelope for all 4xx errors surfaced through Fastify
     return reply.status(statusCode).send({
-      error: err.code ?? "ERROR",
-      message: err.message,
+      error: err.message ?? "Error",
+      code:  err.code    ?? "ERROR",
     });
   });
 
@@ -88,8 +90,8 @@ export async function buildApp(
     try {
       await prisma.$queryRaw`SELECT 1`;
       return reply.send({ ok: true, db: "up", timestamp: new Date().toISOString() });
-    } catch (err: any) {
-      return reply.status(503).send({ ok: false, db: "down", error: err?.message });
+    } catch (err: unknown) {
+      return reply.status(503).send({ ok: false, db: "down", error: (err as Error)?.message }); // Prisma error type
     }
   });
 

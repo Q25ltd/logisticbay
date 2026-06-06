@@ -84,25 +84,63 @@ Holds the full requirement. Never split — only its JobParts are split.
 | createdAt | DateTime | |
 | updatedAt | DateTime | |
 
-### Job status flow
+### Job status regimes
+
+**Decision (TASK 4.2, 2026-06-02):** one column, two documented regimes. No split into separate columns.
+
+`Job.status` carries values from two distinct regimes that share the same column. Understanding which regime sets each value is mandatory before writing any query or transition check.
+
+#### Planning regime
+Set by `syncJobPlanningStatuses()` based on whether stops are assigned to active runs.
+Never set by driver events.
+
+| Status | Meaning | Set by |
+|---|---|---|
+| `pending_review` | Submitted via public request form; awaiting planner decision | Route handler on PRF submit |
+| `ready_to_plan` | Accepted/created; no stop currently in an active run | `syncJobPlanningStatuses()` or planner accept |
+| `in_planning` | At least one stop assigned to a draft/assigned run | `syncJobPlanningStatuses()` |
+
+#### Execution regime
+Set by `applyJobEvent()` from driver events (online or offline sync).
+Never set by planning operations.
+
+| Status | Meaning | Set by |
+|---|---|---|
+| `in_progress` | Driver started the job (first event fired) | `applyJobEvent` via event `started` |
+| `arrived_pickup` | Driver at collection point | `applyJobEvent` via event `arrived_pickup` |
+| `collected` | Cargo collected | `applyJobEvent` via event `collected` |
+| `arrived_dropoff` | Driver at delivery point | `applyJobEvent` via event `arrived_dropoff` |
+| `completed` | All work confirmed | `applyJobEvent` via event `completed` |
+| `cancelled` | Rejected or cancelled | Planner override endpoint only |
+
+#### Terminal / intake statuses
+
+| Status | Meaning | Set by |
+|---|---|---|
+| `draft` | Created but not yet in review or planning | `jobService.createJob` |
+| `cancelled` | Also covers planner reject from `pending_review` | Planner override or direct write |
+
+#### Regime boundary rule
+A job never goes backwards across the boundary. Once in the execution regime (`in_progress` or beyond), `syncJobPlanningStatuses()` ignores it — it only touches jobs still in the planning tier (`ready_to_plan`, `in_planning`).
 
 ```
-draft           ✅  created, not yet submitted for planning
-pending_review  ✅  submitted via PRF, awaiting planner accept/reject
-ready_to_plan   ✅  accepted/created directly — waiting for run assignment
-in_progress     ✅  at least one run has started
-completed       ✅  all required work confirmed
-cancelled       ✅  rejected or cancelled
-────────────────────────────────────────────────────────────────
-planned             🔲 runs assigned, none started yet (not yet derived)
-partially_collected 🔲 some qty collected, not all (not yet derived)
-partially_delivered 🔲 some qty delivered, not all (not yet derived)
-attention_needed    🔲 problem state — stuck driver, failed delivery (not yet derived)
+PLANNING TIER           EXECUTION TIER
+draft
+pending_review
+ready_to_plan ──────► in_progress ──► arrived_pickup ──► collected ──► arrived_dropoff ──► completed
+in_planning                                                                                 cancelled
 ```
 
-Status must come from real work — never from a manual button.
-The ✅ statuses are currently set via explicit PATCH calls.
-The 🔲 ones will be derived from events and load positions once the execution engine is complete.
+#### Future statuses (not yet implemented)
+
+```
+planned             🔲 runs assigned, none started yet
+partially_collected 🔲 some qty collected, not all
+partially_delivered 🔲 some qty delivered, not all
+attention_needed    🔲 problem state — stuck driver, failed delivery
+```
+
+These will be derived from events and load positions once the execution engine is complete.
 
 ---
 

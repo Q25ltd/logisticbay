@@ -60,6 +60,7 @@ model Company {
   runs             Run[]
   runAssignments   RunAssignment[]
   loadTracks       LoadTrack[]
+  shiftSubmitJobs  ShiftSubmitJob[]
 }
 
 model Customer {
@@ -97,7 +98,8 @@ model User {
   driverProfile            DriverProfile?
   shifts                   Shift[]
   createdJobs              Job[]               @relation("JobCreatedBy")
-  jobEvents                JobExecutionEvent[]
+  jobEvents                JobExecutionEvent[] @relation("JobEventDriver")
+  jobEventsAsActor         JobExecutionEvent[] @relation("JobEventActor")
   jobAudits                JobAudit[]
   auditLogs                AuditLog[]
   refreshTokens            RefreshToken[]
@@ -220,6 +222,7 @@ model DriverProfile {
   shiftPreferences ShiftPreference[]
   holidayRequests  HolidayRequest[]
   workingSummaries DriverWorkingTimeSummary[]
+  jobEvents        JobExecutionEvent[]
 
   @@index([companyId, status])
   @@index([companyId, displayName])
@@ -292,7 +295,7 @@ model JobTemplate {
 // ── Job — the single record for all transport jobs ───────────────────────────
 // Both PRF (customer request) and CJP (planner direct create) write here.
 // PRF creates with status=pending_review; CJP creates with status=draft or ready_to_plan.
-// Accept step: sets plannedDate + plannerNotes, flips status to ready_to_plan.
+// Accept step: sets plannerNotes, flips status to ready_to_plan. Date comes from first collection stop's timeWindowStart (E.2).
 //
 // Status flow:
 //   pending_review → ready_to_plan (PRF accepted)
@@ -314,7 +317,7 @@ model Job {
   jobTitle        String?
 
   // ── scheduling ────────────────────────────────────────────────────────────
-  plannedDate      DateTime?
+  // plannedDate removed — date is derived from first collection stop's timeWindowStart (E.2)
   serviceType      String?
   jobType          String?
   canSplitShipment String    @default("must_stay_together")
@@ -421,7 +424,6 @@ model Job {
   loadTracks     LoadTrack[]
 
   @@unique([companyId, jobReference])
-  @@index([companyId, plannedDate])
   @@index([companyId, status])
   @@index([companyId, customerId])
   @@index([companyId, updatedAt])
@@ -570,9 +572,20 @@ model JobExecutionEvent {
   fromCustody       String?
   toCustody         String?
 
-  job        Job            @relation(fields: [jobId], references: [id])
-  company    Company        @relation(fields: [companyId], references: [id])
-  driver     User           @relation(fields: [driverId], references: [id])
+  // TASK 4.1 Migration A — rename driverId → actorUserId (additive step)
+  // actorUserId: the User.id of whoever triggered the event (driver or planner).
+  //   Nullable until backfill completes; will become NOT NULL after soak (Migration B).
+  // driverProfileId: the DriverProfile.id for the acting user in this company.
+  //   Nullable until backfill completes; will become NOT NULL after soak (Migration B).
+  // NOTE: driverId stays until Migration B drops it. All new writes set all three.
+  actorUserId      Int?
+  driverProfileId  Int?
+
+  job           Job            @relation(fields: [jobId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id])
+  driver        User           @relation("JobEventDriver",        fields: [driverId],       references: [id])
+  actor         User?          @relation("JobEventActor",         fields: [actorUserId],    references: [id])
+  driverProfile DriverProfile? @relation(fields: [driverProfileId], references: [id])
   run        Run?           @relation(fields: [runId], references: [id])
   loadTracks LoadTrack[]
 
@@ -715,6 +728,9 @@ model LoadTrack {
   gpsLat           Float?
   gpsLng           Float?
   notes            String?
+  // TASK 4.3: soft-delete per one-soft-delete-convention rule.
+  // Hard delete only for GDPR right-to-erasure (not yet implemented).
+  deletedAt        DateTime?
 
   company       Company           @relation(fields: [companyId], references: [id])
   job           Job               @relation(fields: [jobId], references: [id])
@@ -768,9 +784,10 @@ model Shift {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  company  Company        @relation(fields: [companyId], references: [id])
-  driver   User           @relation(fields: [driverId], references: [id])
-  segments ShiftSegment[]
+  company    Company          @relation(fields: [companyId], references: [id])
+  driver     User             @relation(fields: [driverId], references: [id])
+  segments   ShiftSegment[]
+  submitJobs ShiftSubmitJob[]
 
   @@index([companyId, driverId, shiftDate])
   @@index([companyId, status])
@@ -829,6 +846,26 @@ model DeliveryTask {
   segment ShiftSegment @relation(fields: [segmentId], references: [id])
 
   @@index([companyId, segmentId])
+  @@index([companyId, shiftId])
+}
+
+// ── ShiftSubmitJob — outbox for async PDF/email/working-time processing ───────
+// Written in the same transaction as the shift submit; drained by shiftSubmitWorker.
+// Fixes B.1: previously setImmediate was used, which loses work on Railway redeploy.
+model ShiftSubmitJob {
+  id             Int       @id @default(autoincrement())
+  shiftId        Int
+  companyId      Int
+  status         String    @default("pending")   // pending | processing | completed | failed
+  attempts       Int       @default(0)
+  lastError      String?
+  nextAttemptAt  DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+
+  shift   Shift   @relation(fields: [shiftId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([status, nextAttemptAt])
   @@index([companyId, shiftId])
 }
 

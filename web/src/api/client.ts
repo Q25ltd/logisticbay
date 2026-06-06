@@ -85,8 +85,15 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
     clearToken();
     if (!window.location.pathname.includes("/login")) {
       window.location.href = "/login";
+      throw new Error("Session expired. Please sign in again.");
     }
-    throw new Error("Session expired. Please sign in again.");
+    // Already on the login page — surface the API's own error message.
+    const errData = await res.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>;
+    throw new Error(
+      (typeof errData.error === "string" && errData.error) ||
+      (typeof errData.message === "string" && errData.message) ||
+      "Invalid email or password."
+    );
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

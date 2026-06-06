@@ -115,7 +115,6 @@ export async function createJob(
     saveMode,
     customerId,
     customerName,
-    plannedDate:     body.plannedDate,
     vehicleCategory,
     minGvwClass,
     bodyType:        bodyTypes[0] ?? "",
@@ -146,7 +145,6 @@ export async function createJob(
         jobReference,
         templateId:          body.templateId ?? null,
         createdByUserId:     userId,
-        plannedDate:         body.plannedDate ? new Date(body.plannedDate) : null,
         plannerNotes:        body.plannerNotes?.trim() || null,
         vehicleCategory:     vehicleCategory || null,
         minGvwClass:         minGvwClass || null,
@@ -178,7 +176,7 @@ export async function createJob(
         qualityScore:        quality.score,
         requirePOD:          body.requirePOD ?? false,
         canSplitShipment:    body.canSplitShipment ?? "must_stay_together",
-        status:              "draft",
+        status:              saveMode === "ready_to_plan" ? "ready_to_plan" : "draft",
         goodsDescription:    body.goodsDescription?.trim() || null,
         goodsType:           body.goodsType?.trim() || null,
         quantity:            toNullableNumber(body.quantity),
@@ -334,14 +332,13 @@ export async function patchJob(
   }
 
   const effectiveLoadData = (
-    body.loadData !== undefined ? body.loadData : (job as any).loadData
+    body.loadData !== undefined ? body.loadData : job.loadData
   ) as Record<string, unknown> | null | undefined;
 
   const structuredValidation = validateStructuredJob({
     saveMode,
     customerId:  effectiveCustomerId,
     customerName: patchCustomerName,
-    plannedDate:  body.plannedDate ?? job.plannedDate ?? undefined,
     vehicleCategory,
     minGvwClass,
     bodyType:     bodyTypes[0] ?? "",
@@ -414,7 +411,6 @@ export async function patchJob(
         qualityScore:        quality.score,
         requirePOD:          p(body.requirePOD, job.requirePOD),
         canSplitShipment:    p(body.canSplitShipment, job.canSplitShipment),
-        plannedDate:         body.plannedDate !== undefined ? (body.plannedDate ? new Date(body.plannedDate) : null) : job.plannedDate,
         goodsDescription:    body.goodsDescription !== undefined ? (body.goodsDescription?.trim() || null) : job.goodsDescription,
         goodsType:           body.goodsType !== undefined ? (body.goodsType?.trim() || null) : job.goodsType,
         quantity:            body.quantity !== undefined ? toNullableNumber(body.quantity) : job.quantity,
@@ -427,7 +423,7 @@ export async function patchJob(
         tempControlled:      p(body.tempControlled, job.tempControlled),
         tempRange:           body.tempRange  !== undefined ? (body.tempRange?.trim()  || null) : job.tempRange,
         hazardClass:         body.hazardClass !== undefined ? (body.hazardClass?.trim() || null) : job.hazardClass,
-        tunnelCode:          body.tunnelCode  !== undefined ? (body.tunnelCode?.trim()  || null) : (job as any).tunnelCode,
+        tunnelCode:          body.tunnelCode  !== undefined ? (body.tunnelCode?.trim()  || null) : job.tunnelCode,
         photosRequired:      p(body.photosRequired, job.photosRequired),
         weighbridgeRequired: p(body.weighbridgeRequired, job.weighbridgeRequired),
         driverNoteChips: body.driverNoteChips !== undefined
@@ -441,24 +437,27 @@ export async function patchJob(
         declaredGoodsValue:  body.declaredGoodsValue  !== undefined ? (body.declaredGoodsValue?.trim()  || null) : job.declaredGoodsValue,
         loadData: body.loadData !== undefined
           ? (body.loadData != null ? (body.loadData as Prisma.InputJsonValue) : Prisma.DbNull)
-          : ((job as any).loadData ?? Prisma.DbNull),
-        alternativeReturnSiteName:              body.alternativeReturnSiteName !== undefined ? (body.alternativeReturnSiteName?.trim() || null) : (job as any).alternativeReturnSiteName,
-        alternativeReturnAddressLine2:          body.alternativeReturnAddressLine2 !== undefined ? (body.alternativeReturnAddressLine2?.trim() || null) : (job as any).alternativeReturnAddressLine2,
-        alternativeReturnTown:                  body.alternativeReturnTown !== undefined ? (body.alternativeReturnTown?.trim() || null) : (job as any).alternativeReturnTown,
-        alternativeReturnCounty:                body.alternativeReturnCounty !== undefined ? (body.alternativeReturnCounty?.trim() || null) : (job as any).alternativeReturnCounty,
-        alternativeReturnCountry:               body.alternativeReturnCountry !== undefined ? (body.alternativeReturnCountry?.trim() || null) : (job as any).alternativeReturnCountry,
-        alternativeReturnLat:                   body.alternativeReturnLat !== undefined ? (body.alternativeReturnLat ?? null) : (job as any).alternativeReturnLat,
-        alternativeReturnLng:                   body.alternativeReturnLng !== undefined ? (body.alternativeReturnLng ?? null) : (job as any).alternativeReturnLng,
-        alternativeReturnNavigationInstructions: body.alternativeReturnNavigationInstructions !== undefined ? (body.alternativeReturnNavigationInstructions?.trim() || null) : (job as any).alternativeReturnNavigationInstructions,
-        photosRequiredOnRejection: body.photosRequiredOnRejection !== undefined ? (body.photosRequiredOnRejection ?? false) : (job as any).photosRequiredOnRejection ?? false,
-        rejectionSignatureRequired: body.rejectionSignatureRequired !== undefined ? (body.rejectionSignatureRequired ?? false) : (job as any).rejectionSignatureRequired ?? false,
-        rejectionNotes: body.rejectionNotes !== undefined ? (body.rejectionNotes?.trim() || null) : (job as any).rejectionNotes,
+          : (job.loadData ?? Prisma.DbNull),
+        alternativeReturnSiteName:              body.alternativeReturnSiteName !== undefined ? (body.alternativeReturnSiteName?.trim() || null) : job.alternativeReturnSiteName,
+        alternativeReturnAddressLine2:          body.alternativeReturnAddressLine2 !== undefined ? (body.alternativeReturnAddressLine2?.trim() || null) : job.alternativeReturnAddressLine2,
+        alternativeReturnTown:                  body.alternativeReturnTown !== undefined ? (body.alternativeReturnTown?.trim() || null) : job.alternativeReturnTown,
+        alternativeReturnCounty:                body.alternativeReturnCounty !== undefined ? (body.alternativeReturnCounty?.trim() || null) : job.alternativeReturnCounty,
+        alternativeReturnCountry:               body.alternativeReturnCountry !== undefined ? (body.alternativeReturnCountry?.trim() || null) : job.alternativeReturnCountry,
+        alternativeReturnLat:                   body.alternativeReturnLat !== undefined ? (body.alternativeReturnLat ?? null) : job.alternativeReturnLat,
+        alternativeReturnLng:                   body.alternativeReturnLng !== undefined ? (body.alternativeReturnLng ?? null) : job.alternativeReturnLng,
+        alternativeReturnNavigationInstructions: body.alternativeReturnNavigationInstructions !== undefined ? (body.alternativeReturnNavigationInstructions?.trim() || null) : job.alternativeReturnNavigationInstructions,
+        photosRequiredOnRejection: body.photosRequiredOnRejection !== undefined ? (body.photosRequiredOnRejection ?? false) : job.photosRequiredOnRejection ?? false,
+        rejectionSignatureRequired: body.rejectionSignatureRequired !== undefined ? (body.rejectionSignatureRequired ?? false) : job.rejectionSignatureRequired ?? false,
+        rejectionNotes: body.rejectionNotes !== undefined ? (body.rejectionNotes?.trim() || null) : job.rejectionNotes,
         securingRequirements: body.securingRequirements !== undefined
           ? jsonOrNull(Array.isArray(body.securingRequirements) ? body.securingRequirements : [])
           : jsonOrNull(Array.isArray(job.securingRequirements) ? (job.securingRequirements as string[]) : []),
         specialRequirements: body.specialRequirements !== undefined
           ? jsonOrNull(Array.isArray(body.specialRequirements) ? body.specialRequirements : [])
           : jsonOrNull(Array.isArray(job.specialRequirements) ? (job.specialRequirements as string[]) : []),
+        ...(["draft", "ready_to_plan"].includes(job.status)
+          ? { status: saveMode === "ready_to_plan" ? "ready_to_plan" : "draft" }
+          : {}),
       },
       include: {
         stops:  { orderBy: { sequenceNumber: "asc" } },

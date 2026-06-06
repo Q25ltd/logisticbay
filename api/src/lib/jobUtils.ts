@@ -1,6 +1,7 @@
 import type { StructuredJobPartInput, StructuredLoadDetailsInput } from "../services/jobValidation.js";
 import { toNullableDate } from "./coerce.js";
 import { Prisma, PrismaClient } from "../generated/client.js";
+import type { TxClient } from "./types.js";
 
 // ── Job planning status auto-sync ─────────────────────────────────────────────
 //
@@ -17,7 +18,7 @@ import { Prisma, PrismaClient } from "../generated/client.js";
 export async function syncJobPlanningStatuses(
   jobIds: number[],
   companyId: number,
-  tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
+  tx: TxClient,
 ): Promise<void> {
   if (jobIds.length === 0) return;
 

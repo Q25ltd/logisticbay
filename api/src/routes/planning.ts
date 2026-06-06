@@ -18,6 +18,11 @@ import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 import { haversineKm }               from "../lib/geo.js";
+import { cancelRun }                 from "../services/runService.js";
+import { parseIdParam }              from "../lib/validate.js";
+import { dayRangeUtc }               from "../lib/dateUtils.js";
+import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -41,7 +46,7 @@ interface StopForCluster {
   weight:         number | null;
   quantity:       number | null;
   quantityUnit:   string | null;
-  plannedDate?:   Date | null;
+  // plannedDate removed from Job — date comes from stop timeWindowStart (E.2)
 }
 
 interface Cluster {
@@ -183,9 +188,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const dateTo   = q.dateTo   ?? q.date;
 
       // Find all ready_to_plan / in_planning job stops not yet assigned to any active run.
-      //
-      // Date-placement strategy — the job's plannedDate is the primary anchor.
-      // See the single-day implementation for full rationale.
+      // Date-placement: timeWindowStart is the sole date source (E.2 — plannedDate removed).
 
       const jobPartInclude = {
         job: {
@@ -193,7 +196,6 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
             id: true, jobReference: true, customerName: true,
             goodsType: true, goodsDescription: true,
             quantity: true, quantityUnit: true, weight: true,
-            plannedDate: true,
           },
         },
       };
@@ -207,37 +209,18 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       let parts: Awaited<ReturnType<typeof prisma.jobPart.findMany<{ include: typeof jobPartInclude }>>>;
 
       if (dateFrom && dateTo) {
-        const gte = new Date(`${dateFrom}T00:00:00.000Z`);
-        const lte = new Date(`${dateTo}T23:59:59.999Z`);
+        const { gte, lte } = dayRangeUtc(dateFrom, dateTo);
 
-        const [withPlannedDate, withWindow, withBookedTime] = await Promise.all([
-          // Q1: jobs with plannedDate in range — show all their unassigned stops
+        const [withWindow, withBookedTime] = await Promise.all([
+          // Q1: timeWindowStart in range
           prisma.jobPart.findMany({
-            where: {
-              ...baseWhere,
-              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: { gte, lte } },
-            },
+            where: { ...baseWhere, timeWindowStart: { gte, lte } },
             include: jobPartInclude,
             orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
           }),
-          // Q2: no plannedDate + timeWindowStart in range
+          // Q2: no timeWindowStart but bookedTime in range
           prisma.jobPart.findMany({
-            where: {
-              ...baseWhere,
-              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null },
-              timeWindowStart: { gte, lte },
-            },
-            include: jobPartInclude,
-            orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
-          }),
-          // Q3: no plannedDate, no timeWindowStart, bookedTime in range
-          prisma.jobPart.findMany({
-            where: {
-              ...baseWhere,
-              job: { status: { in: ["ready_to_plan", "in_planning"] as string[] }, plannedDate: null },
-              timeWindowStart: null,
-              bookedTime:      { gte, lte },
-            },
+            where: { ...baseWhere, timeWindowStart: null, bookedTime: { gte, lte } },
             include: jobPartInclude,
             orderBy: [{ bookedTime: "asc" }, { id: "asc" }],
           }),
@@ -245,8 +228,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
         const seen = new Set<number>();
         parts = [];
-        for (const p of [...withPlannedDate, ...withWindow, ...withBookedTime]) {
-          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withPlannedDate).push(p); }
+        for (const p of [...withWindow, ...withBookedTime]) {
+          if (!seen.has(p.id)) { seen.add(p.id); (parts as typeof withWindow).push(p); }
         }
       } else {
         parts = await prisma.jobPart.findMany({
@@ -275,8 +258,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         goodsType:      p.job.goodsType,
         weight:         p.job.weight    ? Number(p.job.weight)    : null,
         quantity:       p.job.quantity  ? Number(p.job.quantity)  : null,
-        quantityUnit:   (p.job as any).quantityUnit ?? null,
-        plannedDate:    (p.job as any).plannedDate  ?? null,
+        quantityUnit:   p.job.quantityUnit ?? null,
+        plannedDate:    null, // removed — timeWindowStart is the date source (E.2)
       }));
 
       const clusters = clusterStops(stops);
@@ -294,12 +277,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const where = {
         companyId,
-        ...(q.date ? {
-          plannedDate: {
-            gte: new Date(`${q.date}T00:00:00.000Z`),
-            lte: new Date(`${q.date}T23:59:59.999Z`),
-          },
-        } : {}),
+        ...(q.date ? { plannedDate: dayRangeUtc(q.date, q.date) } : {}),
         status: { notIn: ["cancelled"] as string[] },
       };
 
@@ -328,7 +306,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         dependsOnRunId?:    number;
       };
 
-      if (!b.date) return reply.status(400).send({ error: "date is required" });
+      if (!b.date) return badRequest(reply, "BAD_REQUEST", "date is required");
 
       const run = await prisma.$transaction(async tx => {
         const ref = await generateRunReference(companyId, new Date(b.date).getFullYear(), tx as unknown as PrismaClient);
@@ -358,8 +336,9 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     "/planning/runs/:id",
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
-      const { companyId } = request.user!;
-      const id = parseInt((request.params as { id: string }).id, 10);
+      const { companyId, userId } = request.user!;
+      const id = parseIdParam(request.params);
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
       const b  = request.body as {
         runType?:            string | null;
         dependsOnRunId?:     number | null;
@@ -374,21 +353,19 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       };
 
       const run = await prisma.run.findFirst({ where: { id, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
-      // When cancelling a run, release all active assignments so the job parts
-      // return to the unplanned pool immediately, then revert job statuses.
+      // Validate status if provided (C.7 fix — reject "banana" statuses)
+      if (b.status !== undefined && !RUN_STATUSES.includes(b.status as RunStatus)) {
+        return badRequest(reply, "INVALID_RUN_STATUS", `status must be one of: ${RUN_STATUSES.join(", ")}`);
+      }
+
+      // When cancelling a run, delegate to the shared cancelRun service.
+      // This fixes A.7 (duplicate logic), B.4 (LoadTrack preserved), B.15 (now transactional).
       if (b.status === "cancelled") {
-        const affectedJobIds = (await prisma.runAssignment.findMany({
-          where:  { runId: id, companyId, removedAt: null },
-          select: { jobId: true },
-        })).map(a => a.jobId);
-
-        await prisma.runAssignment.updateMany({
-          where: { runId: id, companyId, removedAt: null },
-          data:  { removedAt: new Date() },
+        await prisma.$transaction(async (tx) => {
+          await cancelRun(tx, { runId: id, companyId, actorUserId: userId, reason: "run_cancelled_by_planner" });
         });
-        await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, prisma);
       }
 
       const updated = await prisma.run.update({
@@ -418,26 +395,27 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const runId = parseInt((request.params as { id: string }).id, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
       const b     = request.body as { jobPartId: number; quantityAssigned?: number };
 
-      if (!b.jobPartId) return reply.status(400).send({ error: "jobPartId is required" });
+      if (!b.jobPartId) return badRequest(reply, "BAD_REQUEST", "jobPartId is required");
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       const part = await prisma.jobPart.findFirst({ where: { id: b.jobPartId, companyId } });
-      if (!part) return reply.status(404).send({ error: "Stop not found" });
+      if (!part) return notFound(reply, "Stop");
 
       // Check not already actively assigned to another run
       const existing = await prisma.runAssignment.findFirst({
         where: { jobPartId: b.jobPartId, companyId, removedAt: null },
       });
       if (existing && existing.runId !== runId) {
-        return reply.status(409).send({ error: "Stop is already assigned to another run" });
+        return conflict(reply, "CONFLICT", "Stop is already assigned to another run");
       }
       if (existing && existing.runId === runId) {
-        return reply.status(409).send({ error: "Stop is already on this run" });
+        return conflict(reply, "CONFLICT", "Stop is already on this run");
       }
 
       // Get next sequence number
@@ -479,13 +457,15 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const runId = parseInt((request.params as { id: string; aId: string }).id,  10);
-      const aId   = parseInt((request.params as { id: string; aId: string }).aId, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
+      const aId   = parseIdParam(request.params, "aId");
+      if (aId === null) return badRequest(reply, "BAD_REQUEST", "aId must be a valid integer");
 
       const a = await prisma.runAssignment.findFirst({
         where: { id: aId, runId, companyId, removedAt: null },
       });
-      if (!a) return reply.status(404).send({ error: "Assignment not found" });
+      if (!a) return notFound(reply, "Assignment");
 
       await prisma.runAssignment.update({
         where: { id: aId },
@@ -511,16 +491,17 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const runId = parseInt((request.params as { id: string }).id, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
       const { assignmentIds } = request.body as { assignmentIds: number[] };
 
       if (!Array.isArray(assignmentIds) || assignmentIds.length === 0) {
-        return reply.status(400).send({ error: "assignmentIds must be a non-empty array" });
+        return badRequest(reply, "BAD_REQUEST", "assignmentIds must be a non-empty array");
       }
 
       // Verify run belongs to this company
       const run = await prisma.run.findFirst({ where: { id: runId, companyId }, select: { id: true } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       // Verify every supplied ID is an active assignment on this run
       const active = await prisma.runAssignment.findMany({
@@ -528,7 +509,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         select: { id: true },
       });
       if (active.length !== assignmentIds.length) {
-        return reply.status(400).send({ error: "One or more assignment IDs are invalid or already removed" });
+        return badRequest(reply, "BAD_REQUEST", "One or more assignment IDs are invalid or already removed");
       }
 
       // Space assignments at 1000, 2000, 3000 …
@@ -536,7 +517,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       // range keeps everything in the right visual order.
       await prisma.$transaction(
         assignmentIds.map((id, idx) =>
-          prisma.runAssignment.update({ where: { id }, data: { sequenceNumber: (idx + 1) * 1000 } })
+          prisma.runAssignment.updateMany({ where: { id, companyId }, data: { sequenceNumber: (idx + 1) * 1000 } })
         )
       );
 
@@ -551,15 +532,16 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const id = parseInt((request.params as { id: string }).id, 10);
+      const id = parseIdParam(request.params);
+      if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
 
       const run = await prisma.run.findFirst({
         where:   { id, companyId },
         include: { assignments: { where: { removedAt: null } } },
       });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
       if (run.assignments.length === 0) {
-        return reply.status(400).send({ error: "NO_STOPS", message: "Add at least one stop before publishing." });
+        return badRequest(reply, "NO_STOPS", "Add at least one stop before publishing.");
       }
 
       const updated = await prisma.run.update({
@@ -582,10 +564,11 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const runId = parseInt((request.params as { id: string }).id, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       const b = request.body as {
         waypointType?:  string;
@@ -660,10 +643,10 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         // No room — multiply all existing sequence numbers by 1000 to create gaps, then insert
         await Promise.all([
           ...existingAssignments.map(a =>
-            prisma.runAssignment.update({ where: { id: a.id }, data: { sequenceNumber: a.sequenceNumber * 1000 } })
+            prisma.runAssignment.updateMany({ where: { id: a.id, companyId }, data: { sequenceNumber: a.sequenceNumber * 1000 } })
           ),
           ...existingWaypoints.map(w =>
-            prisma.runWaypoint.update({ where: { id: w.id }, data: { sequenceNumber: w.sequenceNumber * 1000 } })
+            prisma.runWaypoint.updateMany({ where: { id: w.id, companyId }, data: { sequenceNumber: w.sequenceNumber * 1000 } })
           ),
         ]);
         finalSeq = Math.round((prevSeq * 1000 + nextSeq * 1000) / 2);
@@ -700,18 +683,20 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId } = request.user!;
-      const runId = parseInt((request.params as { id: string; wId: string }).id,  10);
-      const wId   = parseInt((request.params as { id: string; wId: string }).wId, 10);
+      const runId = parseIdParam(request.params);
+      if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
+      const wId   = parseIdParam(request.params, "wId");
+      if (wId === null) return badRequest(reply, "BAD_REQUEST", "wId must be a valid integer");
 
       const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-      if (!run) return reply.status(404).send({ error: "Run not found" });
+      if (!run) return notFound(reply, "Run");
 
       const waypoint = await prisma.runWaypoint.findFirst({
         where: { id: wId, runId, companyId },
       });
-      if (!waypoint) return reply.status(404).send({ error: "Waypoint not found" });
+      if (!waypoint) return notFound(reply, "Waypoint");
 
-      await prisma.runWaypoint.delete({ where: { id: wId } });
+      await prisma.runWaypoint.deleteMany({ where: { id: wId, companyId } });
       return reply.status(204).send();
     },
   );
@@ -766,7 +751,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const q = request.query as { dateFrom?: string; dateTo?: string };
 
       if (!q.dateFrom || !q.dateTo) {
-        return reply.status(400).send({ error: "dateFrom and dateTo are required (YYYY-MM-DD)" });
+        return badRequest(reply, "BAD_REQUEST", "dateFrom and dateTo are required (YYYY-MM-DD)");
       }
 
       const items = await getPlannerWorkItems(prisma, companyId, q.dateFrom, q.dateTo);
@@ -818,7 +803,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
     { preHandler: [authenticate, requireRole("company_owner", "planner")] },
     async (request, reply) => {
       const { companyId, userId } = request.user!;
-      const sourceRunId = parseInt((request.params as { id: string }).id, 10);
+      const sourceRunId = parseIdParam(request.params);
+      if (sourceRunId === null) return badRequest(reply, "BAD_REQUEST", "sourceRunId must be a valid integer");
 
       const b = request.body as {
         restLocationText?: string;
@@ -842,7 +828,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           },
         },
       });
-      if (!sourceRun) return reply.status(404).send({ error: "Run not found" });
+      if (!sourceRun) return notFound(reply, "Run");
 
       // ── Calculate delivery run date + start time ────────────────────────────
       const restHours  = (b.restHours === 9 || b.restHours === 11) ? b.restHours : 11;

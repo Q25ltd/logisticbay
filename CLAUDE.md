@@ -148,6 +148,25 @@ Plus the grep gates from `CLEANUP_PLAN.md` Verification Protocol when you touche
 ### When in doubt, stop and ask
 If you cannot answer "what is the user-visible change of what I just did?" in one sentence, stop. If you are about to drop a column, rename a status string, change a default, or invalidate sessions — stop. Ask the user before proceeding. Silent behavioural changes are how customer trust dies.
 
+### Public-route hygiene (web)
+The root of `web/src/App.tsx` defines the route boundary: everything declared OUTSIDE `<Route path="/app">` is public (`/`, `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`, `/request/:token`). Everything declared INSIDE `<Route path="/app">` is staff-only and gated by `auth.user`. Three rules:
+- Never add a public path under `/app/*`. Never add a staff path outside `/app/*`.
+- No provider, hook, or fetch that calls `/auth/*` may mount outside `/app/*`. `AuthCtx.Provider` and `useAuthProvider()` belong inside the `/app` route's layout, not at the root (TASK 0.6 in `CLEANUP_PLAN.md` enforces this).
+- Public pages (`/`, `/request/:token`) may only call public endpoints (e.g. the request-link info endpoint). They must not import `web/src/api/client.ts` if it auto-attaches a Bearer token — use a separate fetch instance.
+
+### Browser-clean completion rule
+A task that touches the web app is not done if Chrome Console or Network shows repeated 4xx/5xx caused by the change. Open the page in both a normal window and an incognito window. Check Console (no React errors, no failed fetches), check Network (no looping retries, no calls to endpoints the page doesn't need). Paste a one-line summary in the PR.
+
+### Incognito smoke test — run before merging any web change
+1. Open `/` in incognito → Console clean, no `/auth/*` calls in Network.
+2. Open `/login` in incognito → page renders, no `/auth/*` calls until the user submits.
+3. Open `/request/:token` (any valid token) in incognito → form renders, only public endpoints called.
+4. Open `/app/dashboard` in incognito → redirects to `/login`.
+5. Log in, navigate around for 30 seconds → expected polling visible (dashboard 30s, jobs 30s, auth-refresh check 5min) and nothing else.
+6. Log out → polling stops, no `/auth/*` calls afterwards.
+
+Failing any of 1–6 means the task is not done.
+
 ---
 
 ## Known gaps — planned but not yet implemented

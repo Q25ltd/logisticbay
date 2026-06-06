@@ -10,7 +10,7 @@ export const jobsApi = {
   remove:       (id: number) => api.delete<{ cancelled?: true; warnings?: string[]; affectedRunIds?: number[] } | Record<string, never>>(`/jobs/${id}`),
   allocate:     (id: number, b: unknown) => api.patch<PlannedJob>(`/jobs/${id}/allocate`, b),
   updateStatus: (id: number, status: string, note?: string) => api.patch(`/jobs/${id}/status`, { status, note }),
-  addNote:      (id: number, note: string) => api.post(`/jobs/${id}/note`, { note }),
+  addNote:      (id: number, note: string, clientEventId: string) => api.post(`/jobs/${id}/note`, { note, clientEventId }),
   repeat:       (id: number, body: unknown) => api.post<PlannedJob>(`/jobs/${id}/repeat`, body),
   locations:    () => api.get<{ data: SavedLocation[] }>("/locations"),
 };

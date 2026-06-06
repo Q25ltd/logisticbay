@@ -28,7 +28,12 @@
 
 These are the highest-risk findings. Every duplicate is a place where one copy will get fixed and the other won't, producing inconsistent behaviour between the online and offline paths (which is exactly how customers lose loads).
 
-## [ ] A.1 🔴 Status state machine implemented twice (online vs sync) — **high confidence**
+## [x] A.1 🔴 Status state machine implemented twice (online vs sync) — **high confidence**
+
+Done: cleanup/p2-2.3-apply-job-event
+Files: api/src/sync/applyJobEvent.ts (new), api/src/routes/jobs.ts, api/src/sync/sync.service.ts
+Verified: typecheck OK; check:vocab OK; 67 tests pass (4 new in applyJobEvent.test.ts); grep for server-generated clientEventId in PATCH handler → 0 hits; both paths delegate to applyJobEvent
+Notes: cancel not handled by applyJobEvent (planner override path in TASK 3.8). clientTimestamp now required by both paths.
 
 **Where (both implement the same flow with different code):**
 - `api/src/routes/jobs.ts:360-469` — `PATCH /jobs/:id/status` (online)
@@ -53,7 +58,10 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.2 🔴 Cancel-cascade warning only fires for planners online — **high confidence**
+## [~partial] A.2 🔴 Cancel-cascade warning only fires for planners online — **high confidence**
+
+Partial fix — cleanup/p2-2.3-apply-job-event:
+Cancel via the normal PATCH /jobs/:id/status now returns 400 TRANSITION_FAILED for all roles (cancel is not in SUPPORTED_EVENT_TYPES). The old planner-only cancel + cascade block is removed from the route. Full cascade (RunAssignment.removedAt, syncJobPlanningStatuses) will be implemented in TASK 3.8 (planner override endpoint) where cancel is intentionally handled.
 
 **Where:** `api/src/routes/jobs.ts:429-443`. The block is wrapped in `if (body.status === "cancelled" && role !== "driver")`.
 
@@ -67,7 +75,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.3 🔴 `clientTimestamp` validation logic exists in 2 places — **high confidence**
+## [x] A.3 🔴 `clientTimestamp` validation logic exists in 2 places — **high confidence**
+
+Done: cleanup/p2-2.2-gps-timestamp-helpers
+Files: api/src/lib/eventTimestamp.ts (new), api/src/routes/jobs.ts, api/src/routes/sync.ts, api/src/sync/sync.service.ts
+Verified: typecheck OK; 61 tests pass (18 new in src/lib/); checkNeedsReview private fn deleted; both paths use validateClientTimestamp
+Notes: E.4 decision implemented — online path no longer rejects stale timestamps with 400; both paths flag with needsReview=true. needsReview now persisted in online path too.
 
 **Where:**
 - `api/src/sync/sync.service.ts:32-45` (`checkNeedsReview`) — flags but **does not reject**.
@@ -82,7 +95,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.4 🔴 GPS validation duplicated 3 ways — **high confidence**
+## [x] A.4 🔴 GPS validation duplicated 3 ways — **high confidence**
+
+Done: cleanup/p2-2.2-gps-timestamp-helpers
+Files: api/src/lib/gps.ts (new), api/src/routes/jobs.ts, api/src/routes/sync.ts
+Verified: typecheck OK; 61 tests pass (12 new in src/lib/gps.test.ts); inline GPS range checks removed from both routes; both use validateGpsPair
+Notes: A.4 bug fixed — online path now enforces lat/lng range (-90/90, -180/180) which it previously skipped
 
 **Where:**
 - `api/src/routes/sync.ts:64-102` — pairing + range check.
@@ -97,7 +115,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.5 🟠 `STATUS_BY_EVENT_TYPE` and `EVENT_TYPE_MAP` are inverses, maintained separately — **high confidence**
+## [x] A.5 🟠 `STATUS_BY_EVENT_TYPE` and `EVENT_TYPE_MAP` are inverses, maintained separately — **high confidence**
+
+Done: cleanup/p2-2.1-event-definitions
+Files: api/src/sync/sync.constants.ts, api/src/tests/sync.constants.test.ts
+Verified: typecheck OK; 43 tests pass (8 new in sync.constants.test.ts); both constants derived from EVENT_DEFINITIONS — no hand-editing possible
+Notes: ALLOWED_JOB_TRANSITIONS output is byte-identical to the previous hand-maintained version; test asserts this
 
 **Where:** `api/src/sync/sync.constants.ts:32-49`.
 
@@ -114,7 +137,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.6 🟠 Stale schema comment refers to `PlannedJob` — **high confidence**
+## [x] A.6 🟠 Stale schema comment refers to `PlannedJob` — **high confidence**
+
+Done: cleanup/p2-2.1-event-definitions
+Files: api/src/sync/sync.constants.ts (comments rewritten), api/src/sync/sync.service.ts:53 (comment fixed)
+Verified: `grep -rn "PlannedJob|plannedJob" api/src --include="*.ts" | grep -v generated` → 0 hits
+Notes: all stale PlannedJob references in api/src replaced with correct model name (Job)
 
 **Where:** `api/src/sync/sync.constants.ts:40-41`. Comment says "Maps PlannedJob.status values to the eventType string". Model is `Job` now, not `PlannedJob`. **The PROJECT_STATUS.md and CLAUDE.md also still mention PlannedJob in places.**
 
@@ -124,7 +152,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.7 🟠 Run-cancellation logic duplicated across routes — **high confidence**
+## [x] A.7 🟠 Run-cancellation logic duplicated across routes — **high confidence**
+
+Done: cleanup/p2-2.4-cancel-run
+Files: api/src/services/runService.ts (new), api/src/routes/runs.ts, api/src/routes/planning.ts
+Verified: typecheck OK; check:vocab OK; 70 tests pass; knip baseline unchanged; cancelRun imported in 2 prod files
+Notes: planning.ts cancel block was not transactional and didn't set removalReason — both fixed. LoadTrack hard-delete disabled per B.4 decision.
 
 **Where:**
 - `api/src/routes/runs.ts:336-388` — `DELETE /runs/:id` (cancel branch).
@@ -156,7 +189,11 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.9 🟠 Same `Omit<PrismaClient, "$connect" | …>` tx type signature copy-pasted — **high confidence**
+## [x] A.9 🟠 Same `Omit<PrismaClient, "$connect" | …>` tx type signature copy-pasted — **high confidence**
+
+Done: cleanup/p2-2.5-shared-helpers
+Files: api/src/lib/types.ts (new — exports TxClient), api/src/lib/jobUtils.ts, api/src/routes/runs.ts
+Verified: `grep -rn 'Omit<PrismaClient' api/src --include="*.ts" | grep -v generated | grep -v types.ts` → 0 hits
 
 **Where:**
 - `api/src/lib/jobUtils.ts:20`
@@ -182,7 +219,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.11 🟠 Date-range parsing identical across list endpoints — **high confidence**
+## [x] A.11 🟠 Date-range parsing identical across list endpoints — **high confidence**
+
+Done: cleanup/p2-2.5-shared-helpers
+Files: api/src/lib/dateUtils.ts (added dayRangeUtc), api/src/routes/jobs.ts, runs.ts, dashboard.ts, planning.ts
+Verified: `grep -rn "T00:00:00.000Z" api/src/routes` → 0 hits
+Notes: schedule.ts has `T00:00:00` (no Z, local time) — different semantics, not replaced. Logged in DISCOVERED.
 
 **Where:** at least three places do the same `new Date(\`${dateFrom}T00:00:00.000Z\`) … T23:59:59.999Z` construction:
 - `api/src/routes/jobs.ts` GET /jobs
@@ -198,7 +240,11 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.12 🟠 `parseInt((request.params as { id: string }).id, 10)` repeated everywhere — **high confidence**
+## [x] A.12 🟠 `parseInt((request.params as { id: string }).id, 10)` repeated everywhere — **high confidence**
+
+Done: cleanup/p2-2.5-shared-helpers
+Files: api/src/lib/validate.ts (added parseIdParam), all 11 route files
+Verified: `grep -rn "parseInt((request.params" api/src/routes` → 0 hits; 52 call sites replaced; null guards added at all call sites — NaN id now returns 400 not silent 404
 
 **Where:** every single route handler. Search: `grep -rn "parseInt((request.params" api/src/routes`. Easily 50+ sites.
 
@@ -210,7 +256,12 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.13 🟡 Mobile event type strings duplicated across 3 files — **high confidence**
+## [x] A.13 🟡 Mobile event type strings duplicated across 3 files — **high confidence**
+
+Done: cleanup/p2-2.1-event-definitions
+Files: api/src/sync/sync.constants.ts
+Verified: EventType and SUPPORTED_EVENT_TYPES exported from sync.constants.ts; comment updated to say this file is the source of truth; mobile should import from here (or a shared package) rather than maintaining its own copy
+Notes: full cross-workspace shared package (shared/eventTypes.ts) is a separate follow-on; this task establishes the API as the authority
 
 **Where:**
 - `api/src/sync/sync.constants.ts` (SUPPORTED_EVENT_TYPES)
@@ -225,14 +276,13 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 ---
 
-## [ ] A.14 🟡 Two bcrypt libraries — **high confidence**
+## [x] A.14 🟡 Two bcrypt libraries — **high confidence**
 
-**Where:** `api/package.json` imports both `bcrypt` (native) and `bcryptjs`. Active routes use `bcryptjs`. `api/src/auth.ts` uses native `bcrypt` but is NOT imported anywhere (dead).
-
-**Acceptance:**
-- Delete `api/src/auth.ts`.
-- Remove `bcrypt` and `@types/bcrypt` from `api/package.json` and lockfile.
-- Confirm `npm run typecheck` and `npm test` still pass.
+Fixed 2026-06-06:
+- `api/src/auth.ts` deleted (TASK 5.1, 2026-06-02).
+- `bcrypt` and `@types/bcrypt` removed from `api/package.json` and lockfile.
+- Zero `from "bcrypt"` import sites in `api/src` confirmed.
+- typecheck ✅ 77 tests pass ✅.
 
 ---
 
@@ -253,42 +303,41 @@ These are the highest-risk findings. Every duplicate is a place where one copy w
 
 Concrete bugs and footguns, ordered by blast radius.
 
-## [ ] B.1 🔴 Background work after shift submit can lose data — **high confidence**
+## [x] B.1 🔴 Background work after shift submit can lose data — **high confidence**
 
-**Where:** `api/src/routes/shifts.ts:225` and `:299` (`setImmediate(async () => { … })`).
-
-**What happens:**
-- The route returns 200 immediately on PDF generation success, then schedules PDF rendering + email + working-time recalc in `setImmediate`.
-- If the worker crashes between the response and the `setImmediate` body running, the shift stays in `submitted` status forever, no PDF, no email, no working-time update.
-- On Railway redeploys (which happen on every push), in-flight `setImmediate` callbacks are killed mid-flight.
-- The `.catch(() => {})` on the failure-update path swallows everything silently (`shifts.ts:231, 305`).
-
-**Risk:** drivers see "shift submitted" but the planner never gets the email, and the working-time-compliance calculator under-counts hours. Tracking of hours is exactly what this app is for.
-
-**Acceptance:**
-- Replace `setImmediate` with an outbox row written in the same transaction as the submit, and a small worker (BullMQ, pg-boss, or even a polling loop) that drains the outbox idempotently with retries.
-- Until then, at minimum: log the error properly (`app.log.error({ err, shiftId }, …)`), do NOT swallow with empty arrow.
+Done: TASK 3.1 (cleanup/p3-3.1-shift-submit-outbox, 2026-06-01)
+Files: api/src/jobs/shiftSubmitWorker.ts (new), api/src/routes/shifts.ts
+Verified: `grep -n "setImmediate" api/src/routes/shifts.ts` → 0 hits. Outbox row written in same transaction as submit. Worker drains idempotently with retries. typecheck ✅ tests pass ✅.
 
 ---
 
-## [ ] B.2 🔴 `autoCleanupOldShifts` runs cross-tenant and silently — **high confidence**
+## [x] B.2 🔴 `autoCleanupOldShifts` runs cross-tenant and silently — **high confidence**
 
-**Where:** `api/src/routes/shifts.ts:437-460` and the `setInterval(..., 24h)` at `:466`.
-
-**Issues:**
-- `updateMany` has no `companyId` predicate. Today this is "OK" because the status change is global by design, but the pattern is dangerous to copy and a single typo (e.g. `status: { in: ["draft"] }`) could wipe shift drafts across all tenants.
-- `setInterval` runs in *every* Fastify worker process. On Railway you may scale to 2+ instances → cleanup runs N× per day, racing each other.
-- `autoCleanupOldShifts()` is invoked on boot at `:465` — every redeploy triggers it again.
-- If it throws, the `.catch` only logs; you have no alert.
-
-**Acceptance:**
-- Move to a single scheduled job (e.g. Railway Cron, or `pg-boss` with a singleton schedule).
-- Add a tenant loop: iterate companies and do per-company cleanup with explicit `where: { companyId, … }`.
-- Sentry on failure.
+Done: TASK 3.5 (cleanup/p3-3.5-auto-cleanup-worker, 2026-06-01)
+Files: api/src/jobs/autoCleanupWorker.ts (new), api/src/server.ts
+Verified: `autoCleanupOldShifts` removed from shifts.ts. New worker: per-tenant loop with explicit `where: { companyId }`, `pg_advisory_lock` prevents concurrent runs across instances, imported and started in server.ts. typecheck ✅ tests pass ✅.
 
 ---
 
-## [ ] B.3 🔴 Direct `Job.status` writes bypass event reconstruction — **high confidence**
+## [~partial] B.3 🔴 Direct `Job.status` writes bypass event reconstruction — **high confidence**
+
+TASK 3.6 reconciliation (2026-06-01) — full discovery of all Job.status write sites:
+
+**Classified — 7 sites total:**
+
+| Site | Status | Classification |
+|---|---|---|
+| `sync/applyJobEvent.ts:136` | `def.resultingStatus` (event-driven) | ✅ **Executes through applyJobEvent** — the canonical path |
+| `lib/jobUtils.ts:47` | `in_planning` | ✅ **Planning transition** — `syncJobPlanningStatuses()` reconciles planning tier only; never touches execution statuses |
+| `lib/jobUtils.ts:49` | `ready_to_plan` | ✅ **Planning transition** — same as above |
+| `routes/jobRequests.ts:456` | `ready_to_plan` | ✅ **Planning transition** — planner accepts a pending-review job into planning |
+| `routes/jobRequests.ts:508` | `cancelled` | ⚠️ **Direct write** — planner rejects a job-request. No event log written. No `JobExecutionEvent` row. Acceptable for the intake pipeline (job never entered execution) but inconsistent. |
+| `routes/jobs.ts:278` | `cancelled` | ⚠️ **Direct write** — planner deletes a job. `plannerNotes` appended but no `JobExecutionEvent`. Same caveat. |
+| `services/jobService.ts:181` | `draft` | ✅ **Initial creation** — only on create, not a status transition |
+
+**Verdict:** 2 direct writes remain (both `cancelled` for planner operations). These are in the intake/planning tier — the job was never in execution, so there's no event log to be inconsistent with. Both should eventually route through the planner override path (TASK 3.8) for audit completeness.
+
+**Remaining concern:** `recalculateJobStatus` reconciler (the full B.3 fix) is still not implemented. If the event log and `Job.status` drift, there's no recovery mechanism. TASK 3.8 (planner override) and a future reconciler task should address this.
 
 **Where:** `api/src/routes/jobs.ts:446` writes `Job.status` directly. SAFETY §4 says `Job.status` must always be consistent with the event log; the file admits "Recalculation of job status from events on conflict" is not implemented.
 
@@ -301,7 +350,12 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.4 🔴 `LoadTrack` rows hard-deleted on cancelled-run delete — **high confidence**
+## [x] B.4 🔴 `LoadTrack` rows hard-deleted on cancelled-run delete — **high confidence**
+
+Done: cleanup/p2-2.4-cancel-run
+Files: api/src/routes/runs.ts (hard-delete branch), api/src/services/runService.ts
+Verified: tx.loadTrack.deleteMany removed from both cancel paths; grep → 0 hits
+Notes: S3 confirmed by user 2026-05-31 ("LoadTrack is operational custody history"). Soft-delete schema fields deferred to TASK 4.3.
 
 **Where:** `api/src/routes/runs.ts:356` — `tx.loadTrack.deleteMany({ where: { runId: id } })` runs when a planner hard-deletes a cancelled run.
 
@@ -313,11 +367,13 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.5 🔴 Idempotency disabled when caller forgets `clientEventId` — **high confidence**
+## [x] B.5 🔴 Idempotency disabled when caller forgets `clientEventId` — **high confidence**
 
-**Where:** `api/src/routes/jobs.ts:380` — `clientEventId = body.clientEventId?.trim() || \`server-${Date.now()}-${Math.random()...}\``.
-
-**Risk:** retries from the planner UI or any future integration that doesn't send the header create duplicate events. The same problem exists at `jobs.ts:489` for `POST /jobs/:id/note`.
+Fixed — TASK 3.2 (2026-06-06):
+- `AddJobNoteSchema` requires `clientEventId` (no server-generated fallback, no `.optional()`).
+- `POST /jobs/:id/note` returns 400 if missing, 200 `{ duplicate: true }` if same id sent twice.
+- Mobile (`JobDetailScreen.tsx:215`) sends `uuidv4()`; web (`JobsPage.tsx:268`) sends `crypto.randomUUID()`.
+- Tests: `api/src/tests/job-note.test.ts` — 3 subtests, all pass (missing→400, valid→201, duplicate→200).
 
 **Acceptance:**
 - Require `clientEventId` for any write that creates a `JobExecutionEvent`. Reject with 400 if missing.
@@ -325,26 +381,26 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.6 🔴 `JobExecutionEvent.driverId` references `User`, not `DriverProfile` — **high confidence**
+## [~partial] B.6 🔴 `JobExecutionEvent.driverId` references `User`, not `DriverProfile` — **high confidence**
 
-**Where:** `api/src/sync/sync.service.ts:98-100` (`TODO(phase-2)`) and the schema. The same `userId` is passed in as `driverId` everywhere.
-
-**Risk:** an agency driver moving between companies will have the same `driverId` in `JobExecutionEvent` rows belonging to different tenants. Today tenant isolation holds because the row also has `companyId`. But the field name lies — when someone joins this codebase and queries `driverId`, they will assume `DriverProfile.id`.
-
-**Acceptance:**
-- Migration: add `driverProfileId Int?` to `JobExecutionEvent`, backfill from the user→profile mapping for each company, then make NOT NULL and drop `driverId` (or rename `driverId` → `actorUserId` to keep both).
-- Update writes in `sync.service.ts`, `routes/jobs.ts` (`:451`, `:486`, `:1527`).
-- Update audit/read paths.
+TASK 4.1 — Migrations A + B done (2026-06-02). Migration C time-locked until 2026-06-16.
+- Migration A: `actorUserId Int?` added to `JobExecutionEvent`, all writes now set both `driverId` and `actorUserId`.
+- Migration B: backfill complete — all historical rows have `actorUserId` populated.
+- Migration C (pending): make `actorUserId NOT NULL`, drop `driverId`. Branch `cleanup/p4-4.1c-drop-driverid` is ready; merge after 2026-06-16 soak.
 
 ---
 
-## [ ] B.7 🟠 Auth.ts `/auth/me` and `/auth/change-password` re-verify JWT inline — **high confidence**
+## [~partial] B.7 🟠 Auth.ts `/auth/me` and `/auth/change-password` re-verify JWT inline — **high confidence**
 
 **Where:** `api/src/routes/auth.ts:78-89` and `:91-111` (before the most recent rewrite — please confirm in current file). Inline `jwt.verify(...)` instead of using the `authenticate` middleware. If middleware logic changes, these paths get out of sync.
 
 **Acceptance:**
 - All routes use `{ preHandler: authenticate }`. Inline `jwt.verify` only allowed inside `middleware.ts` and `lib/env.ts`.
 - The `JWT_SECRET` fallback (`?? process.env.JWT_SECRET`) must be removed everywhere at the same time — see RELEASE_READINESS.md P0.4.
+
+Partial fix — commit `48f84d2` feat(security): fail fast on missing JWT secrets:
+- `api/src/lib/env.ts` now throws on startup if `JWT_ACCESS_SECRET` or `JWT_REFRESH_SECRET` are missing or equal. The `?? process.env.JWT_SECRET` fallback is gone.
+- **Still open:** inline `jwt.verify` remains at `auth.ts:119` (refresh endpoint), `auth.ts:190`, `auth.ts:210`. These are outside `middleware.ts` and `lib/tokens.ts`. Commandment 21 grep gate will catch these.
 
 ---
 
@@ -368,26 +424,17 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.10 🟠 `prisma.shift.update({ where: { id: shiftId } })` without companyId after fetch — **high confidence**
+## [x] B.10 🟠 `prisma.shift.update({ where: { id: shiftId } })` without companyId after fetch — **high confidence**
 
-**Where:** `api/src/routes/shifts.ts:231, 246, 296, 305, 319, 424`. Each follows a `findFirst({ id, companyId })` earlier in the handler, so they're correct *today*. But:
-
-- They do not pass `companyId` in the `where`, so they rely on the prior fetch having happened in the same request.
-- In `setImmediate` callbacks at `:225` and `:299`, the prior fetch's `request` context is *gone* — if the handler ever changes to skip the upfront fetch, this becomes a real IDOR.
-
-**Acceptance:**
-- Adopt the rule: every `update`/`delete`/`upsert` includes `companyId` in `where`. Today only `findFirst({ where: { id, companyId } })` is consistently scoped. Add `companyId` to the update `where` as defence in depth.
-- Where Prisma doesn't allow composite `where` (single update), use `updateMany({ where: { id, companyId } })` which returns `{ count }`; if count is 0, throw 404.
+Done: TASK 3.3 (cleanup/p3-3.3-companyid-where, 2026-06-01)
+Files: api/src/routes/shifts.ts (and 9 other route files)
+Verified: all bare `update`/`delete` calls converted to `updateMany({ where: { id, companyId } })`. typecheck ✅ tenant-isolation tests pass ✅.
 
 ---
 
-## [ ] B.11 🟠 `setImmediate(...)` doesn't await Prisma client closure — **medium confidence**
+## [x] B.11 🟠 `setImmediate(...)` doesn't await Prisma client closure — **medium confidence**
 
-**Where:** `api/src/routes/shifts.ts:225, 299`. The setImmediate runs after the response is sent, but on SIGTERM (`server.ts:10-11`) the app closes Prisma before the setImmediate finishes.
-
-**Risk:** SIGTERM during a deploy → in-flight setImmediate hits "Engine is not yet connected" or similar. Shift status is stuck.
-
-**Acceptance:** depends on B.1 — once outbox is in place, this resolves itself. Until then, add a tracking Set of in-flight promises and `await Promise.all([...inFlight])` in the SIGTERM handler.
+Resolved by B.1 fix (TASK 3.1, 2026-06-01). `setImmediate` removed from `shifts.ts` entirely — `grep -n "setImmediate" api/src/routes/shifts.ts` → 0 hits. Work is now drained by `shiftSubmitWorker.ts` which has its own Prisma lifecycle.
 
 ---
 
@@ -424,7 +471,12 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.15 🟠 Background `syncJobPlanningStatuses` called from non-tx contexts — **medium confidence**
+## [x] B.15 🟠 Background `syncJobPlanningStatuses` called from non-tx contexts — **medium confidence**
+
+Done: cleanup/p2-2.4-cancel-run
+Files: api/src/routes/planning.ts (cancel path now uses cancelRun inside $transaction)
+Verified: planning.ts cancel path was the only non-tx call site; cancelRun always calls syncJobPlanningStatuses inside the caller's tx
+Notes: the other syncJobPlanningStatuses call sites in planning.ts (add/remove assignment) were already inside transactions — not touched.
 
 **Where:** `api/src/routes/planning.ts:396` calls `syncJobPlanningStatuses(..., prisma)` outside of a transaction. The helper itself does `tx.job.findMany` followed by per-row `tx.job.update`. If a competing request modifies one of these jobs between the read and the update, the planning status flips back.
 
@@ -446,11 +498,15 @@ Concrete bugs and footguns, ordered by blast radius.
 
 ---
 
-## [ ] B.17 🟡 Refresh-token rotation `updateMany` revokes without companyId — **medium confidence**
+## [~partial] B.17 🟡 Refresh-token rotation `updateMany` revokes without companyId — **medium confidence**
 
 **Where:** `api/src/routes/auth.ts:178, 278` (RefreshToken table). RefreshToken is per-user not per-company, but check the rotation logic does not orphan tokens for the *other* membership when an agency driver is impersonated by Company A's planner reset.
 
 **Acceptance:** read `RefreshToken` rotation code carefully; ensure rotating a token issued for `(userId=5, companyId=10)` does not affect tokens for `(userId=5, companyId=20)`.
+
+Partial fix — commit `71d4716` feat(security): refresh token rotation, 15m access TTL, /auth/logout:
+- `revokeTokenFamily(prisma, familyId)` in `lib/tokens.ts:47` revokes `where: { familyId, revokedAt: null }` — **safe**: familyId is per-login-session, revoking a family does not affect tokens from other companies.
+- **Still open:** `auth.ts:279` — logout/PIN-reset revokes `where: { userId: tokenRow.userId, revokedAt: null }` with no companyId filter. An agency driver whose Company A planner triggers this loses their Company B session too.
 
 ---
 
@@ -458,7 +514,13 @@ Concrete bugs and footguns, ordered by blast radius.
 
 These are places where the data model, field names, or state semantics will confuse anyone reading the code and lead them to write the wrong query.
 
-## [ ] C.1 🔴 Two "status" concepts on Job — derived vs planning — **high confidence**
+## [x] C.1 🔴 Two "status" concepts on Job — derived vs planning — **high confidence**
+
+Done: cleanup/p4-4.2-job-status-doc
+Files: ARCHITECTURE.md (new "Job status regimes" section)
+Verified: typecheck OK; tests pass; decision documented
+Notes: Option A chosen (keep one column). Two regimes documented with tables,
+  boundary rule, and regime-crossing prohibition. No migration needed.
 
 **Where:** `Job.status` field (`prisma/schema.prisma`) + `computePlanningStatus()` helper used in `routes/jobs.ts:122, 213, 183, 186`.
 
@@ -478,11 +540,9 @@ So `Job.status` is **partly** derived from events (execution stage) and **partly
 
 ---
 
-## [ ] C.2 🔴 `JobExecutionEvent.driverId` actually means User.id — **high confidence**
+## [~partial] C.2 🔴 `JobExecutionEvent.driverId` actually means User.id — **high confidence**
 
-Already filed as **B.6** — listing here too because the *naming* is the confusion. Anyone reading `where: { driverId: X }` will assume `DriverProfile.id` and write a wrong query.
-
-**Acceptance:** see B.6. Rename in the schema, not just in comments.
+Same status as B.6 — see B.6 for full detail. Migration C (rename + drop) pending until 2026-06-16 soak. `actorUserId` is the canonical field; all new reads should use it.
 
 ---
 
@@ -520,34 +580,20 @@ Already filed as **B.6** — listing here too because the *naming* is the confus
 
 ---
 
-## [ ] C.6 🟠 `removedAt` vs `status='cancelled'` vs `deletedAt` — three soft-delete conventions — **medium confidence**
+## [~partial] C.6 🟠 `removedAt` vs `status='cancelled'` vs `deletedAt` — three soft-delete conventions — **medium confidence**
 
-**Where:**
-- `RunAssignment.removedAt` (run.ts uses it).
-- `Run.status='cancelled'` (no separate column).
-- `Job.status='cancelled'` (same).
-- `FleetUnit.status='deleted'`.
-- `HolidayRequest.status='deleted'`.
-- `Shift.status='deleted'`.
-- `User.status='active'` only — no deletion column.
-
-**Risk:** every read needs to remember which convention applies. A query that filters `where: { status: { not: "cancelled" } }` on RunAssignment returns soft-deleted rows because RunAssignment uses `removedAt`, not status.
-
-**Acceptance:**
-- Single convention: either every model has a `status` enum that includes `archived`/`deleted` AND a `deletedAt` timestamp, OR remove the variant. Document the choice in `DATA_DICTIONARY.md`.
+TASK 4.3 + 4.4 done (2026-06-02):
+- `LoadTrack.deletedAt DateTime?` added (canonical new-model convention).
+- Soft-delete convention documented in ARCHITECTURE.md: new models use `deletedAt`; `RunAssignment.removedAt` grandfathered; `status='deleted'` on Fleet/Holiday/Shift not migrated.
+- Still open: `FleetUnit.status='deleted'`, `HolidayRequest.status='deleted'`, `Shift.status='deleted'` not yet converted. Accepted as tech debt — migrate model-by-model when those routes are touched.
 
 ---
 
-## [ ] C.7 🟠 `Run.status` taxonomy is undocumented — **medium confidence**
+## [x] C.7 🟠 `Run.status` taxonomy is undocumented — **medium confidence**
 
-**Where:** `routes/runs.ts:92` filters `status: { notIn: ["cancelled"] }` — implies there's a `cancelled` status. `:301` allows arbitrary `body.status` (no enum check). `:344` checks `"completed"`. But no central list.
-
-**Risk:** a planner can PATCH `status="banana"` and the API accepts it.
-
-**Acceptance:**
-- Define `RUN_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'cancelled']` in `api/src/sync/runStatuses.ts` (matching what PROJECT_STATUS.md targets).
-- Validate `body.status` against the list in Zod.
-- Document allowed transitions same as `ALLOWED_JOB_TRANSITIONS`.
+Done: TASK 4.5 (cleanup/p4-4.5-run-status-enum, 2026-06-02)
+Files: api/src/sync/runStatuses.ts (new), api/src/routes/runs.ts, api/src/schemas/
+Verified: `RUN_STATUSES` and `RunStatus` type exported from `runStatuses.ts`. Zod validates `body.status` against the enum. `PATCH status="banana"` → 400. typecheck ✅ tests pass ✅.
 
 ---
 
@@ -583,48 +629,48 @@ Already filed as **B.6** — listing here too because the *naming* is the confus
 
 # SECTION D — DEAD AND HALF-FINISHED CODE
 
-## [ ] D.1 🟡 `api/src/auth.ts` — dead — **high confidence**
+## [x] D.1 🟡 `api/src/auth.ts` — dead — **high confidence**
 
-Already noted in A.14. No imports anywhere. Delete it.
-
----
-
-## [ ] D.2 🟡 `mobile/src/apiWithQueue.ts` — self-declares deprecated — **high confidence**
-
-```
-// DEPRECATED — use enqueueJobEvent from offlineQueue.ts + useIsOnline hook in screens directly
-export {};
-```
-Delete.
+Done: TASK 5.1 (2026-06-02). File deleted. `grep -rn "api/src/auth" api/src` → 0 hits. See also A.14.
 
 ---
 
-## [ ] D.3 🟡 `trailerTypesForbidden` column — slated for drop — **high confidence**
+## [x] D.2 🟡 `mobile/src/apiWithQueue.ts` — self-declares deprecated — **high confidence**
+
+Done: TASK 5.2 (2026-06-02). File deleted. `grep -rn "apiWithQueue" mobile/src` → 0 hits.
+
+---
+
+## [x] D.3 🟡 `trailerTypesForbidden` column — slated for drop — **high confidence**
 
 DEVLOG 2026-05-10 says: "Column left in DB (null on new records) — can be dropped in Phase 0.8 soak." Check soak window has passed, drop in a migration.
 
----
-
-## [ ] D.4 🟡 `mobile/src/components.legacy.tsx` — name suggests legacy — **medium confidence**
-
-Confirm with `grep`. If unreferenced, delete.
-
----
-
-## [ ] D.5 🟡 `validation.ts` (legacy) and Zod schemas overlap — **medium confidence**
-
-**Where:** `api/src/validation.ts` exports `validateCreateLocation`, `validateCreateTemplate`, `validateCreateJob`, `validateUpdateJobStatus`, `validateAddJobNote`. Some of these are also covered by Zod in `api/src/schemas/`. Many routes call BOTH (`routes/jobs.ts:7-10` imports both).
-
-**Risk:** drift. A field added to Zod but not to `validation.ts` is silently dropped (or vice versa).
-
-**Acceptance:**
-- Decide one source. Zod is more typesafe. Migrate everything to Zod and delete `validation.ts`. If `validation.ts` contains business rules Zod cannot express, move them to `services/jobValidation.ts`.
+Done: already dropped — confirmed 2026-05-30 during TASK 0.4 reconciliation
+Files: api/prisma/schema.prisma (column absent), api/src/ (zero references)
+Verified: `grep -rn "trailerTypesForbidden" api/src api/prisma/schema.prisma` → 0 hits
+Notes: column was removed in an earlier migration; soak window passed
 
 ---
 
-## [ ] D.6 🟡 `routes/customers.ts` is tiny — confirm coverage — **low confidence**
+## [x] D.4 🟡 `mobile/src/components.legacy.tsx` — name suggests legacy — **medium confidence**
+
+Deleted 2026-06-06. `grep -rn "components\.legacy"` returned 0 import sites. Exports (`COLOURS`, `Button`, `Card`, `SectionHeader`, `LabelValue`, `Badge`, `AppFooter`) all superseded by `mobile/src/theme.ts` and inline component definitions. typecheck + tests pass.
+
+---
+
+## [x] D.5 🟡 `validation.ts` (legacy) and Zod schemas overlap — **medium confidence**
+
+Done: TASK 5.4 (cleanup/p5-5.4-validation-consolidate, 2026-06-02). `api/src/validation.ts` deleted. All validation now in `api/src/schemas/` (Zod) and `api/src/services/jobValidation.ts`. `grep -rn "validation.ts" api/src` → 0 hits. typecheck ✅ tests pass ✅.
+
+---
+
+## [~partial] D.6 🟡 `routes/customers.ts` is tiny — confirm coverage — **low confidence**
 
 `customers.ts` is 102 lines. Confirm it implements `list`, `create`, `patch`, `archive`, and not just two of those. Currently no `archive`/`status` change endpoint visible from earlier grep.
+
+TASK 5.5 audit (2026-06-02): confirmed — `GET /customers`, `GET /customers/:id`, `POST /customers`, `PATCH /customers/:id` all present.
+Missing: no archive/deactivate endpoint. `Customer.status` field exists in schema but is never exposed via a route.
+User decision: B — note the gap, do not add the endpoint now. This is a future feature, not a cleanup blocker.
 
 ---
 
@@ -672,6 +718,74 @@ Notes: <gotchas for the next agent>
 ```
 
 Refuse to mark an item complete without all four lines. The reviewer must be able to reproduce the verification.
+
+---
+
+---
+
+# DESIGN DECISIONS (from user, 2026-05-31)
+
+Recorded verbatim from user answers to Section E questions. These are binding — no Phase 2+ task may contradict them without a new explicit decision.
+
+---
+
+## E.1 — Driver cancellation: **Option B — NO, drivers cannot cancel**
+
+Drivers may NOT transition a job to `cancelled`. Remove `"cancelled"` from `ALLOWED_JOB_TRANSITIONS` entries for all driver-reachable statuses (`pending`, `accepted`, `in_progress`, `arrived_pickup`, `collected`). Only planners/owners may cancel via a separate `plannerOverrideStatus` endpoint or directly via the planner UI.
+
+**Affects:** TASK 2.1 (narrow ALLOWED_JOB_TRANSITIONS), TASK 2.3 (applyJobEvent must reject cancel events from driver role).
+
+---
+
+## E.2 — "Is this job today": **Option A — `timeWindowStart` everywhere**
+
+`timeWindowStart` on the first collection stop is the single source of truth for job date. `plannedDate` is no longer needed and **must be deleted from the schema** — it was already removed from all planner-facing forms (session 2026-05-28b). No code should read or write `plannedDate` going forward.
+
+Migration plan: verify all `plannedDate` reads/writes in `api/src/` are gone or migrated, then `DROP COLUMN plannedDate` from `Job`. This is a new task — log in CLEANUP_PLAN.md DISCOVERED.
+
+**Affects:** TASK 2.3 (applyJobEvent timestamp context), TASK 3.6 (Job.status direct writes — no plannedDate in those writes).
+
+---
+
+## E.3 — LoadTrack granularity: **Option A — per-(run, jobPart)**
+
+Every `LoadTrack` row must record both `runId` AND `jobPartId`. A single run picking up multiple loads produces one row per load, not one row per run leg. This is required for trailer tracking — knowing where each individual load is, not just which truck it was on.
+
+**Affects:** TASK 2.4 (cancelRun soft-archive must scope to jobPart), TASK 4.3 (LoadTrack schema — add `jobPartId` NOT NULL if not already present).
+
+---
+
+## E.4 — Stale offline events: **Option A — flag everywhere, never reject**
+
+Both the sync path and the online path should **flag** events older than 7 days as `needsReview = true` and save them. Neither path should reject. A driver who was offline for more than 7 days must not silently lose their work records.
+
+Document this explicitly in `sync.constants.ts` next to `SYNC_REVIEW_RULES`.
+
+**Affects:** TASK 2.2 (validateClientTimestamp returns `{ valid: true, needsReview: true }` for stale events — never `{ valid: false }`), TASK 2.3 (applyJobEvent must honour this for both paths).
+
+---
+
+## E.5 — Cascade-cancel run when last job cancelled: **Option B — NO auto-cancel**
+
+Do not auto-cancel a run when all its assignments are cancelled. Leave the empty run for the planner to clean up manually. A warning banner in the planning board UI when a run has 0 stops is the correct UX response.
+
+**Affects:** TASK 2.3 (no cascade run-cancel from applyJobEvent), TASK 2.4 (cancelRun does not trigger run auto-cancel).
+
+---
+
+## E.6 — JobPart without stops: **Option A — valid only during creation**
+
+A `JobPart` may exist with zero stops transiently during job creation. The `ready_to_plan` gate must enforce ≥1 stop per part. Document this in ARCHITECTURE.md. No DB constraint needed — the validation gate is the enforcement point.
+
+**Affects:** TASK 2.1 (event definitions — events on a zero-stop part are invalid), TASK 2.3 (applyJobEvent — guard: reject events on parts with no stops).
+
+---
+
+## E.7 — Customer required for `ready_to_plan`: **Option B — NO, customer is optional**
+
+Internal moves (depot-to-depot yard shuffles, own-fleet repositioning) are valid jobs with no external customer. `ready_to_plan` does not require `customerId`. If a distinction is needed in future, add an `isInternalJob` boolean flag as a separate task.
+
+**Affects:** TASK 2.3 (applyJobEvent — no customer check in transition guard), TASK 3.6 (Job.status writes — no customer constraint to add).
 
 ---
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate } from "../middleware.js";
+import { dayRangeUtc } from "../lib/dateUtils.js";
 
 const CLOSED_STATUSES = new Set(["completed", "cancelled"]);
 
@@ -33,41 +34,34 @@ export async function dashboardRoutes(app: FastifyInstance, prisma: PrismaClient
     const dateFrom = q.dateFrom ?? new Date().toISOString().slice(0, 10);
     const dateTo   = q.dateTo   ?? dateFrom;
 
-    const gte = new Date(`${dateFrom}T00:00:00.000Z`);
-    const lte = new Date(`${dateTo}T23:59:59.999Z`);
+    const { gte, lte } = dayRangeUtc(dateFrom, dateTo);
 
-    // Jobs whose collection stop falls in the requested date range.
-    // Fallback: plannedDate for legacy jobs without stop time windows.
+    // Jobs whose collection stop timeWindowStart falls in the requested date range (E.2).
     const rangeJobs = await prisma.job.findMany({
       where: {
         companyId,
-        OR: [
-          { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } } },
-          {
-            stops:       { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } },
-            plannedDate: { gte, lte },
-          },
-        ],
+        stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { gte, lte } } },
       },
       include: JOB_INCLUDE,
-      orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
+      orderBy: [{ id: "asc" }],
       take: 500,
     });
 
-    // Open carry-over jobs — non-closed jobs with no collection date or before the range
+    // Open carry-over jobs — non-closed jobs with no collection timeWindowStart or before the range (E.2)
     const rangeJobIds = new Set(rangeJobs.map(j => j.id));
     const carryOverJobs = await prisma.job.findMany({
       where: {
         companyId,
         status: { notIn: [...CLOSED_STATUSES] },
         OR: [
-          { stops: { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } }, plannedDate: null },
+          // No collection stop with a timeWindowStart
+          { stops: { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } } },
+          // Collection stop before the range
           { stops: { some: { type: { in: ["collection", "pickup"] }, timeWindowStart: { lt: gte } } } },
-          { stops: { none: { type: { in: ["collection", "pickup"] }, timeWindowStart: { not: null } } }, plannedDate: { lt: gte } },
         ],
       },
       include: JOB_INCLUDE,
-      orderBy: [{ plannedDate: "asc" }, { id: "asc" }],
+      orderBy: [{ id: "asc" }],
       take: 200,
     });
 

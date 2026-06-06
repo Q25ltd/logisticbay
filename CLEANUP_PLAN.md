@@ -307,6 +307,61 @@ Goal: leave a known-good starting point and a way to detect drift.
 
 ---
 
+### TASK 0.6 — Scope `AuthCtx.Provider` and `useAuthProvider()` to `/app/*`
+
+- **STATUS:** open
+- **Audit refs:** new (web — was out of original audit scope, surfaced during public/private review).
+- **Why:** today `web/src/App.tsx:42` wraps the entire `<BrowserRouter>` in `AuthCtx.Provider`, and `useAuthProvider()` (`web/src/hooks/useAuth.ts:30-71`) starts a 5-minute `setInterval` that hits `/auth/refresh`. This runs on every page, including:
+  - `/` LandingPage
+  - `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`
+  - `/request/:token` PublicRequestForm (the customer-facing intake form a planner shares with end customers)
+
+  Effects: (1) a logged-in planner who opens `/request/:token` to test/share leaks `/auth/me` and `/auth/refresh` traffic from that public URL; (2) public visitors trigger `setInterval` and unnecessary fetches on the landing page; (3) any future provider added at the root will inherit the same leak.
+- **Scope:** restructure `web/src/App.tsx` so the auth-bearing context only mounts under `/app/*`. Public routes get either no auth context or a frozen stub.
+- **Files (modify):**
+  - `web/src/App.tsx` (the structural rewrite — single file)
+  - `web/src/modules/planner/AppShell.tsx` (likely lifts `useAuthProvider()` invocation into here, or into a new `AuthLayout` route element wrapping `/app`)
+  - **Read-only:** `web/src/hooks/useAuth.ts` — leave the hook untouched, only change *where* it is invoked.
+- **Implementation sketch (do not deviate without asking):**
+  1. Pull `useAuthProvider()` out of `App()` body.
+  2. Replace the root `<AuthCtx.Provider>` wrapping `<BrowserRouter>` with a plain `<BrowserRouter>`.
+  3. Create an `<AuthLayout>` route element that calls `useAuthProvider()`, renders the loading state, then renders `<AuthCtx.Provider><Outlet /></AuthCtx.Provider>`.
+  4. Wrap only the `/app` route in `<AuthLayout>`. Public routes render directly without the provider.
+  5. The `/login`, `/register`, `/verify-email` routes still need to call `auth.refresh` after submit — they can either import the context conditionally (it won't be present) or use a smaller dedicated `useLoginRedirect()` hook that reads `getToken()` and decides without subscribing to the full provider.
+- **STOP gate:** **S3** — user-visible behaviour change. Public pages will no longer fire `/auth/me` or poll `/auth/refresh`. Logged-in users visiting `/` will no longer auto-redirect (they already had to click "go to app"); confirm with the user this is desired before merging.
+- **Acceptance:**
+  1. Incognito visit to `/` shows **zero** network calls to `/auth/*` in the Network tab.
+  2. Incognito visit to `/login` shows zero `/auth/*` calls until the user submits the form.
+  3. Incognito visit to `/request/:token` shows the form and the public link-info endpoint only — no `/auth/*`.
+  4. `/app/dashboard` in incognito redirects to `/login` (existing behaviour preserved).
+  5. Logged-in `/app/dashboard` still receives the 5-minute refresh poll (existing behaviour preserved).
+  6. Console clean on all of the above (no React errors about missing context, no failed fetches).
+- **Verification:**
+  - `npm run typecheck` (web): exit 0.
+  - Manual Chrome Network tab capture pasted in the PR for steps 1–5.
+  - `grep -rn "useAuthProvider\|AuthCtx.Provider" web/src` returns exactly one invocation site (the new `AuthLayout`).
+
+---
+
+### TASK 0.7 — Audit `jobRequestsPublicApi` for Bearer-token leakage (read-only)
+
+- **STATUS:** open
+- **Audit refs:** new.
+- **Why:** the public request form (`/request/:token`) is meant to be opened by end customers — people who are not logged in to LogisticBay. If `web/src/api/jobRequests.ts` shares the same axios/fetch instance as `web/src/api/client.ts` (the authed client), then any logged-in planner testing the link from their own browser will accidentally send their Bearer token to the public endpoint. Worse, if the public endpoint then stores or echoes anything from the request headers, the token leaks downstream.
+- **Scope:** read-only audit of three files. No code change unless a leak is found — if found, raise as TASK 0.7.b under DISCOVERED.
+- **Files (read):**
+  - `web/src/api/jobRequests.ts`
+  - `web/src/api/client.ts`
+  - `web/src/modules/requests/PublicRequestForm.tsx` (imports)
+- **Acceptance:** post a one-paragraph finding to the PR:
+  - "`jobRequestsPublicApi` uses the same client as `client.ts` — Bearer token IS attached to public endpoints. **Leak confirmed.**" → opens follow-up task to use a separate fetch instance.
+  - **or** "`jobRequestsPublicApi` uses a separate fetch instance with no Authorization header. **No leak.**" → done.
+- **STOP gate:** none (read-only).
+- **Verification:**
+  - `grep -nE "Authorization|Bearer|getToken" web/src/api/jobRequests.ts web/src/api/client.ts` output pasted into the PR.
+
+---
+
 ## PHASE 1 — Design decisions (HUMAN ONLY)
 
 You will NOT execute any code in this phase. You will hand the user a numbered list of decisions from Section E of `CODE_AUDIT.md`, plus any new design questions you discover during Phase 0, and wait.
@@ -674,32 +729,36 @@ Update after every task. This is the single source of truth between sessions.
 |-------|------|--------|-------|--------|------|
 | 0     | 0.1  | done   | sonnet | cleanup/p0-0.1-baseline | 2026-05-30 |
 | 0     | 0.2  | done   | sonnet | cleanup/p0-0.2-branch-hygiene | 2026-05-30 |
-| 0     | 0.3  | open — fix vocab drift             |       |        |      |
-| 0     | 0.4  | open — reconcile audit vs main     |       |        |      |
-| 0     | 0.5  | open — install knip baseline       |       |        |      |
-| 1     | 1.1  | blocked-by-0.4 |       |        |      |
-| 2     | 2.1  | blocked-by-1.1 | | | |
-| 2     | 2.2  | blocked-by-2.1 | | | |
-| 2     | 2.3  | blocked-by-2.2 | | | |
-| 2     | 2.4  | blocked-by-2.3 | | | |
-| 2     | 2.5  | blocked-by-2.4 | | | |
-| 3     | 3.1  | blocked-by-2.5 | | | |
-| 3     | 3.2  | blocked-by-2.3 | | | |
-| 3     | 3.3  | blocked-by-2.5 | | | |
-| 3     | 3.4  | blocked-by-1.1 | | | |
-| 3     | 3.5  | blocked-by-0.1 | | | |
-| 3     | 3.6  | blocked-by-2.3 | | | |
-| 3     | 3.7  | blocked-by-2.5 — error envelope | | | |
-| 4     | 4.1  | blocked-by-3.6 | | | |
-| 4     | 4.2  | blocked-by-1.1 | | | |
-| 4     | 4.3  | blocked-by-2.4 | | | |
-| 4     | 4.4  | blocked-by-4.3 | | | |
-| 4     | 4.5  | blocked-by-2.1 | | | |
-| 5     | 5.1  | blocked-by-2.5 | | | |
-| 5     | 5.2  | blocked-by-2.5 | | | |
-| 5     | 5.3  | blocked-by-soak| | | |
-| 5     | 5.4  | blocked-by-2.5 | | | |
-| 5     | 5.5  | blocked-by-2.5 | | | |
+| 0     | 0.3  | done — Path A: bodyTypeLabel added to shared/ + api/ | sonnet | e10ccdd (PR #2) | 2026-05-30 |
+| 0     | 0.4  | done | sonnet | cleanup/p0-0.4-reconcile-audit | 2026-05-30 |
+| 0     | 0.5  | done | sonnet | cleanup/p0-0.5-knip-baseline | 2026-05-30 |
+| 0     | 0.6  | done | sonnet | cleanup/p0-0.6-auth-scope | 2026-06-01 |
+| 0     | 0.7  | done — NO LEAK confirmed | sonnet | cleanup/p0-0.7-bearer-audit | 2026-06-01 |
+| 1     | 1.1  | done | sonnet + user | cleanup/p1-1.1-design-decisions | 2026-05-31 |
+| 2     | 2.1  | done | sonnet | cleanup/p2-2.1-event-definitions | 2026-05-31 |
+| 2     | 2.2  | done | sonnet | cleanup/p2-2.2-gps-timestamp-helpers | 2026-05-31 |
+| 2     | 2.3  | done | sonnet | cleanup/p2-2.3-apply-job-event | 2026-05-31 |
+| 2     | 2.4  | done | sonnet | cleanup/p2-2.4-cancel-run | 2026-05-31 |
+| 2     | 2.5  | done | sonnet | cleanup/p2-2.5-shared-helpers | 2026-05-31 |
+| 3     | 3.1  | done | sonnet | cleanup/p3-3.1-shift-submit-outbox | 2026-06-01 |
+| 3     | 3.2  | done — todo markers removed; callers (mobile + web) already send clientEventId; all 3 subtests now pass | sonnet | cleanup/p3-3.2-note-clienteventid | 2026-06-06 |
+| 3     | 3.3  | done | sonnet | cleanup/p3-3.3-companyid-where | 2026-06-01 |
+| 3     | 3.4  | done | sonnet | cleanup/p3-3.4-agency-pin-safety | 2026-06-02 |
+| 3     | 3.5  | done | sonnet | cleanup/p3-3.5-auto-cleanup-worker | 2026-06-01 |
+| 3     | 3.6  | done — 7 sites found; 2 direct writes (planner cancel/reject — acceptable for intake tier); reconciler deferred | sonnet | cleanup/p3-3.6-job-status-audit | 2026-06-01 |
+| 3     | 3.7  | done | sonnet | cleanup/p3-3.7-error-envelope | 2026-06-01 |
+| 3     | 3.8  | done | sonnet | cleanup/p3-3.8-planner-override | 2026-06-01 |
+| 4     | 4.1  | soak — Migrations A+B done; 14-day soak before Migration C (NOT NULL + drop driverId) | sonnet | cleanup/p4-4.1b-actor-backfill | 2026-06-02 |
+| 4     | 4.2  | done — Option A: one column, two regimes documented in ARCHITECTURE.md | sonnet | cleanup/p4-4.2-job-status-doc | 2026-06-02 |
+| 4     | 4.3  | done | sonnet | cleanup/p4-4.3-loadtrack-softdelete | 2026-06-02 |
+| 4     | 4.4  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
+| 4     | 4.5  | done | sonnet | cleanup/p4-4.5-run-status-enum | 2026-06-02 |
+| 5     | 5.1  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
+| 5     | 5.2  | done | sonnet | cleanup/p4-4.4-softdelete-doc | 2026-06-02 |
+| 5     | 5.3  | done — column was already dropped before TASK 0.4; confirmed 0 refs in TASK 0.4 reconciliation | sonnet | TASK 0.4 (D.3 marked [x]) | 2026-05-30 |
+| 5     | 5.4  | done | sonnet | cleanup/p5-5.4-validation-consolidate | 2026-06-02 |
+| 5     | 5.5  | done — read-only audit: GET×2, POST, PATCH confirmed; no archive endpoint (see STOP above) | sonnet | cleanup/p5-5.5-customers-audit | 2026-06-02 |
+| D     | D.4  | done — deleted mobile/src/components.legacy.tsx; 0 import sites confirmed | sonnet | 2026-06-06 | 2026-06-06 |
 
 ---
 
@@ -707,7 +766,8 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Finder | Description | Suggested audit section | Status |
 |------|--------|-------------|-------------------------|--------|
-|      |        |             |                         |        |
+| 2026-05-31 | sonnet (TASK 2.5) | `schedule.ts:26-27` uses local-time date literals (`T00:00:00` / `T23:59:59` without Z). Different semantics from UTC patterns — not replaced. Review: works on UTC servers but silently shifts day boundaries if TZ changes. | A.11 follow-on | open |
+| 2026-05-31 | user (E.2 decision) | Drop `Job.plannedDate` column | Phase 4 (schema drop) | done — cleanup/discovered-planned-date-drop 2026-06-02 |
 
 ---
 
@@ -715,7 +775,7 @@ Update after every task. This is the single source of truth between sessions.
 
 | Date | Task | Reason | Resolved by | Resolution |
 |------|------|--------|-------------|------------|
-|      |      |        |             |            |
+| 2026-06-01 | 3.2 | Mobile (JobDetailScreen.tsx:214) and web (api/jobs.ts:13) both call POST /jobs/:id/note without clientEventId. Cannot require it until both callers are updated. | Add clientEventId to both callers first, then this task unblocks. | resolved 2026-06-06 — both callers confirmed sending clientEventId; todo markers removed from tests |
 
 ---
 

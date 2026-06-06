@@ -265,7 +265,7 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
   async function submit() {
     if (!note.trim()) return;
     setLoading(true);
-    try { await jobsApi.addNote(jobId, note.trim()); onClose(); }
+    try { await jobsApi.addNote(jobId, note.trim(), crypto.randomUUID()); onClose(); }
     catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
   }

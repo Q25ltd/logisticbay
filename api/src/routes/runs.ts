@@ -1,13 +1,19 @@
 import type { FastifyInstance } from "fastify";
+import { parseIdParam } from "../lib/validate.js";
+import type { TxClient } from "../lib/types.js";
+import { dayRangeUtc } from "../lib/dateUtils.js";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
+import { cancelRun } from "../services/runService.js";
+import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
 async function generateRunReference(
   companyId: number,
   year: number,
-  tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
+  tx: TxClient,
 ): Promise<string> {
   const company = await tx.company.update({
     where:  { id: companyId },
@@ -22,7 +28,7 @@ async function generateRunReference(
 async function recalculateDerivedRequirements(
   runId: number,
   companyId: number,
-  tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
+  tx: TxClient,
 ): Promise<void> {
   // Fetch all active (non-removed) assignments with their JobPart
   const activeAssignments = await tx.runAssignment.findMany({
@@ -78,7 +84,7 @@ async function recalculateDerivedRequirements(
 // Returns the conflicting run if the driver is already assigned to a non-cancelled
 // run on the same planned date (excluding the run being updated, if any).
 async function findDriverConflict(
-  tx: Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
+  tx: TxClient,
   companyId:    number,
   driverId:     number,
   plannedDate:  Date,
@@ -111,7 +117,6 @@ const RUN_DETAIL_INCLUDE = {
           id:          true,
           jobReference: true,
           customerName: true,
-          plannedDate:  true,
           status:           true,
           goodsDescription: true,
           plannerNotes:     true,
@@ -211,15 +216,9 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (q.driverId) where.assignedDriverId = parseInt(q.driverId, 10);
 
     if (q.dateFrom && q.dateTo) {
-      where.plannedDate = {
-        gte: new Date(`${q.dateFrom}T00:00:00.000Z`),
-        lte: new Date(`${q.dateTo}T23:59:59.999Z`),
-      };
+      where.plannedDate = dayRangeUtc(q.dateFrom, q.dateTo);
     } else if (q.date) {
-      where.plannedDate = {
-        gte: new Date(`${q.date}T00:00:00.000Z`),
-        lt:  new Date(`${q.date}T23:59:59.999Z`),
-      };
+      where.plannedDate = dayRangeUtc(q.date, q.date);
     }
 
     const limit  = Math.min(parseInt(q.limit ?? "100", 10) || 100, 200);
@@ -242,21 +241,23 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── GET /runs/:id ─────────────────────────────────────────────────────────
   app.get("/runs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const run = await prisma.run.findFirst({
       where:   { id, companyId },
       include: RUN_DETAIL_INCLUDE,
     });
-    if (!run) return reply.status(404).send({ error: "Run not found" });
+    if (!run) return notFound(reply, "Run");
 
     return reply.send(run);
   });
 
   // ── PATCH /runs/:id — update run metadata / assignment ───────────────────
   app.patch("/runs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id   = parseInt((request.params as { id: string }).id, 10);
+    const id   = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const body = request.body as {
       assignedDriverId?:            number | null;
       assignedTruckId?:             number | null;
@@ -276,7 +277,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const { companyId } = request.user!;
 
     const run = await prisma.run.findFirst({ where: { id, companyId } });
-    if (!run) return reply.status(404).send({ error: "Run not found" });
+    if (!run) return notFound(reply, "Run");
 
     // Determine the effective driver + date after this patch (may not be changing)
     const newDriverId  = "assignedDriverId" in body ? (body.assignedDriverId ?? null) : run.assignedDriverId;
@@ -298,7 +299,12 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if ("endInstructionNote"          in body) updateData.endInstructionNote          = body.endInstructionNote ?? null;
     if ("returnToBase"                in body) updateData.returnToBase                = body.returnToBase;
     if ("returnToBaseNote"            in body) updateData.returnToBaseNote            = body.returnToBaseNote   ?? null;
-    if ("status"                      in body) updateData.status                      = body.status;
+    if ("status" in body) {
+      if (!RUN_STATUSES.includes(body.status as RunStatus)) {
+        return badRequest(reply, "INVALID_RUN_STATUS", `status must be one of: ${RUN_STATUSES.join(", ")}`);
+      }
+      updateData.status = body.status;
+    }
     if ("compatibilityOverridden"     in body) updateData.compatibilityOverridden     = body.compatibilityOverridden;
     if ("compatibilityOverrideReason" in body) updateData.compatibilityOverrideReason = body.compatibilityOverrideReason ?? null;
 
@@ -335,50 +341,34 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /runs/:id — cancel (non-cancelled) or hard-delete (cancelled) ──
   app.delete("/runs/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId, userId } = request.user!;
 
     const run = await prisma.run.findFirst({ where: { id, companyId } });
-    if (!run) return reply.status(404).send({ error: "Run not found" });
+    if (!run) return notFound(reply, "Run");
 
     if (run.status === "completed") {
-      return reply.status(409).send({ error: "Cannot delete a completed run" });
+      return conflict(reply, "CONFLICT", "Cannot delete a completed run");
     }
 
     if (run.status === "cancelled") {
-      // Hard delete — collect job IDs before deleting so we can sync their statuses
-      const affectedJobIds = (await prisma.runAssignment.findMany({
-        where:  { runId: id },
-        select: { jobId: true },
-      })).map(a => a.jobId);
-
+      // Run already cancelled — hard-delete the Run shell and its soft-deleted assignments.
+      // RunAssignment rows were already soft-deleted by cancelRun() — their audit info
+      //   (removedAt, removedBy, removalReason) is captured. We must hard-delete them here
+      //   because RunAssignment.runId is NOT NULL with no CASCADE, so deleting the Run
+      //   without removing child rows first causes a FK constraint error (bug fix).
+      // LoadTrack rows: PRESERVED — no deleteMany here; deletedAt available via TASK 4.3.
       await prisma.$transaction(async (tx) => {
-        await tx.loadTrack.deleteMany({ where: { runId: id } });
         await tx.runAssignment.deleteMany({ where: { runId: id } });
-        await tx.run.delete({ where: { id } });
-        // After hard-delete all assignments are gone — sync affected jobs
-        await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, tx);
+        await tx.run.deleteMany({ where: { id, companyId } });
       });
       return reply.status(204).send();
     }
 
-    // Not yet cancelled — soft cancel first
-    const affectedJobIds = (await prisma.runAssignment.findMany({
-      where:  { runId: id, companyId, removedAt: null },
-      select: { jobId: true },
-    })).map(a => a.jobId);
-
+    // Not yet cancelled — delegate to shared cancelRun service
     await prisma.$transaction(async (tx) => {
-      await tx.runAssignment.updateMany({
-        where: { runId: id, companyId, removedAt: null },
-        data:  { removedAt: new Date(), removedBy: userId, removalReason: "run_cancelled" },
-      });
-      await tx.run.update({
-        where: { id },
-        data:  { status: "cancelled" },
-      });
-      // Revert any in_planning/planned jobs whose last stop just got released
-      await syncJobPlanningStatuses([...new Set(affectedJobIds)], companyId, tx);
+      await cancelRun(tx, { runId: id, companyId, actorUserId: userId, reason: "run_cancelled" });
     });
 
     return reply.status(204).send();
@@ -386,28 +376,24 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /runs/:id/publish — publish run to driver ───────────────────────
   app.post("/runs/:id/publish", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const id = parseInt((request.params as { id: string }).id, 10);
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
     const run = await prisma.run.findFirst({
       where:   { id, companyId },
       include: { assignments: { where: { removedAt: null } } },
     });
-    if (!run) return reply.status(404).send({ error: "Run not found" });
+    if (!run) return notFound(reply, "Run");
 
     if (!run.assignedDriverId) {
-      return reply.status(400).send({ error: "Cannot publish: no driver assigned" });
+      return badRequest(reply, "BAD_REQUEST", "Cannot publish: no driver assigned");
     }
     if (run.assignments.length === 0) {
-      return reply.status(400).send({ error: "Cannot publish: run has no job assignments" });
+      return badRequest(reply, "BAD_REQUEST", "Cannot publish: run has no job assignments");
     }
     if (!run.compatibilityOverridden && (!run.trailerCompatible || !run.vehicleCompatible)) {
-      return reply.status(400).send({
-        error:               "Cannot publish: compatibility check failed",
-        trailerCompatible:   run.trailerCompatible,
-        vehicleCompatible:   run.vehicleCompatible,
-        overrideAllowed:     true,
-      });
+      return badRequest(reply, "COMPATIBILITY_FAILED", "Cannot publish: compatibility check failed", { trailerCompatible: run.trailerCompatible, vehicleCompatible: run.vehicleCompatible, overrideAllowed: true });
     }
 
     const updated = await prisma.run.update({
@@ -421,7 +407,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /runs/:id/assignments — add a JobPart to the run ────────────────
   app.post("/runs/:id/assignments", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const runId = parseInt((request.params as { id: string }).id, 10);
+    const runId = parseIdParam(request.params);
+    if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
     const body = request.body as {
       jobPartId:         number;
       jobId:             number;
@@ -433,14 +420,14 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const { companyId, userId } = request.user!;
 
     if (!body.jobPartId || !body.jobId) {
-      return reply.status(400).send({ error: "jobPartId and jobId are required" });
+      return badRequest(reply, "BAD_REQUEST", "jobPartId and jobId are required");
     }
 
     const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-    if (!run) return reply.status(404).send({ error: "Run not found" });
+    if (!run) return notFound(reply, "Run");
 
     if (run.status === "completed" || run.status === "cancelled") {
-      return reply.status(400).send({ error: `Cannot add assignments to a ${run.status} run` });
+      return badRequest(reply, "INVALID_RUN_STATUS", `Cannot add assignments to a ${run.status} run`);
     }
 
     // Verify JobPart and Job belong to this company
@@ -448,20 +435,16 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       prisma.jobPart.findFirst({ where: { id: body.jobPartId, companyId } }),
       prisma.job.findFirst({ where: { id: body.jobId, companyId } }),
     ]);
-    if (!jobPart) return reply.status(400).send({ error: "JobPart not found" });
-    if (!job)    return reply.status(400).send({ error: "Job not found" });
-    if (jobPart.jobId !== body.jobId) return reply.status(400).send({ error: "JobPart does not belong to this Job" });
+    if (!jobPart) return badRequest(reply, "BAD_REQUEST", "JobPart not found");
+    if (!job)    return badRequest(reply, "BAD_REQUEST", "Job not found");
+    if (jobPart.jobId !== body.jobId) return badRequest(reply, "BAD_REQUEST", "JobPart does not belong to this Job");
 
     // Check for existing active assignment of this JobPart on any run
     const existingAssignment = await prisma.runAssignment.findFirst({
       where: { jobPartId: body.jobPartId, companyId, removedAt: null },
     });
     if (existingAssignment) {
-      return reply.status(409).send({
-        error:              "This job part is already assigned to a run",
-        existingRunId:      existingAssignment.runId,
-        existingAssignmentId: existingAssignment.id,
-      });
+      return conflict(reply, "ALREADY_ASSIGNED", "This job part is already assigned to a run");
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -503,8 +486,10 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── PATCH /runs/:id/assignments/:assignmentId — update an assignment ──────
   app.patch("/runs/:id/assignments/:assignmentId", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const runId        = parseInt((request.params as { id: string; assignmentId: string }).id, 10);
-    const assignmentId = parseInt((request.params as { id: string; assignmentId: string }).assignmentId, 10);
+    const runId        = parseIdParam(request.params);
+    if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
+    const assignmentId = parseIdParam(request.params, "assignmentId");
+    if (assignmentId === null) return badRequest(reply, "BAD_REQUEST", "assignmentId must be a valid integer");
     const body = request.body as {
       sequenceNumber?:   number;
       quantityAssigned?: number;
@@ -517,7 +502,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const assignment = await prisma.runAssignment.findFirst({
       where: { id: assignmentId, runId, companyId, removedAt: null },
     });
-    if (!assignment) return reply.status(404).send({ error: "Assignment not found" });
+    if (!assignment) return notFound(reply, "Assignment");
 
     // Sequence number change: swap with whoever currently holds the target number
     if (body.sequenceNumber != null && body.sequenceNumber !== assignment.sequenceNumber) {
@@ -555,15 +540,17 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── DELETE /runs/:id/assignments/:assignmentId — remove assignment ─────────
   app.delete("/runs/:id/assignments/:assignmentId", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const runId        = parseInt((request.params as { id: string; assignmentId: string }).id, 10);
-    const assignmentId = parseInt((request.params as { id: string; assignmentId: string }).assignmentId, 10);
+    const runId        = parseIdParam(request.params);
+    if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
+    const assignmentId = parseIdParam(request.params, "assignmentId");
+    if (assignmentId === null) return badRequest(reply, "BAD_REQUEST", "assignmentId must be a valid integer");
     const body = request.body as { reason?: string } | undefined;
     const { companyId, userId } = request.user!;
 
     const assignment = await prisma.runAssignment.findFirst({
       where: { id: assignmentId, runId, companyId, removedAt: null },
     });
-    if (!assignment) return reply.status(404).send({ error: "Assignment not found" });
+    if (!assignment) return notFound(reply, "Assignment");
 
     await prisma.$transaction(async (tx) => {
       await tx.runAssignment.update({
@@ -584,15 +571,16 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /runs/:id/assignments/resequence — reorder all at once ───────────
   app.post("/runs/:id/assignments/resequence", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const runId = parseInt((request.params as { id: string }).id, 10);
+    const runId = parseIdParam(request.params);
+    if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
     const body = request.body as { order: number[] }; // array of assignmentIds in desired order
     const { companyId } = request.user!;
 
     const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
-    if (!run) return reply.status(404).send({ error: "Run not found" });
+    if (!run) return notFound(reply, "Run");
 
     if (!Array.isArray(body.order) || body.order.length === 0) {
-      return reply.status(400).send({ error: "order must be a non-empty array of assignment ids" });
+      return badRequest(reply, "BAD_REQUEST", "order must be a non-empty array of assignment ids");
     }
 
     // Verify all ids belong to this run
@@ -602,7 +590,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     const activeIds = new Set(activeAssignments.map(a => a.id));
     if (!body.order.every(id => activeIds.has(id))) {
-      return reply.status(400).send({ error: "order contains invalid or inactive assignment ids" });
+      return badRequest(reply, "BAD_REQUEST", "order contains invalid or inactive assignment ids");
     }
 
     // Apply new sequence in a transaction using temp negative values to avoid unique conflicts
