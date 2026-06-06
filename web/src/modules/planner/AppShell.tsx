@@ -152,7 +152,7 @@ export default function AppShell() {
               Live
             </span>
             <span className="text-sm font-semibold text-primary">{user?.companyName}</span>
-            <span className="text-slate-200">|</span>
+            <span className="text-slate-300">|</span>
             <span className="text-sm text-muted">{user?.name}</span>
             <button
               onClick={() => { logout(); navigate("/"); }}

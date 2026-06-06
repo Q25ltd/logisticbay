@@ -72,6 +72,13 @@ function SummaryCard({
   );
 }
 
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", {
+    weekday: "short", day: "numeric", month: "short", year: "numeric",
+  });
+}
+
 export default function DashboardPage() {
   const navigate  = useNavigate();
   const [date,    setDate]    = useState(today());
@@ -142,30 +149,30 @@ export default function DashboardPage() {
   return (
     <div className="p-4 sm:p-6">
       {/* Header */}
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-5 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-black text-primary">Dashboard</h1>
-          <p className="text-xs text-muted">Runs for {date}</p>
+          <p className="text-xs text-muted">Runs for {formatDate(date)}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 flex-nowrap">
           <button
             type="button"
             onClick={() => setDate(d => addDays(d, -1))}
-            className="btn btn-outline text-sm"
+            className="btn btn-outline text-sm whitespace-nowrap"
           >
             ← Prev
           </button>
           <button
             type="button"
             onClick={() => setDate(today())}
-            className={`btn text-sm ${date === today() ? "btn-primary" : "btn-outline"}`}
+            className={`btn text-sm whitespace-nowrap ${date === today() ? "btn-primary" : "btn-outline"}`}
           >
             Today
           </button>
           <button
             type="button"
             onClick={() => setDate(d => addDays(d, 1))}
-            className="btn btn-outline text-sm"
+            className="btn btn-outline text-sm whitespace-nowrap"
           >
             Next →
           </button>
@@ -173,10 +180,10 @@ export default function DashboardPage() {
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            className="input py-1 text-xs w-36"
+            className="input !py-2 text-sm w-36"
           />
-          <button type="button" onClick={load} className="btn btn-outline text-sm">Refresh</button>
-          <button type="button" onClick={() => navigate("/app/jobs/create")} className="btn btn-primary text-sm">New Job</button>
+          <button type="button" onClick={load} className="btn btn-outline text-sm whitespace-nowrap">Refresh</button>
+          <button type="button" onClick={() => navigate("/app/jobs/create")} className="btn btn-primary text-sm whitespace-nowrap">New Job</button>
         </div>
       </div>
 
@@ -195,7 +202,7 @@ export default function DashboardPage() {
         {/* Runs list */}
         <main>
           <h2 className="mb-3 text-sm font-black uppercase tracking-wide text-primary">
-            Runs — {date}
+            Runs — {formatDate(date)}
           </h2>
 
           {sortedRuns.length === 0 ? (
