@@ -176,7 +176,7 @@ export async function createJob(
         qualityScore:        quality.score,
         requirePOD:          body.requirePOD ?? false,
         canSplitShipment:    body.canSplitShipment ?? "must_stay_together",
-        status:              "draft",
+        status:              saveMode === "ready_to_plan" ? "ready_to_plan" : "draft",
         goodsDescription:    body.goodsDescription?.trim() || null,
         goodsType:           body.goodsType?.trim() || null,
         quantity:            toNullableNumber(body.quantity),
@@ -455,6 +455,9 @@ export async function patchJob(
         specialRequirements: body.specialRequirements !== undefined
           ? jsonOrNull(Array.isArray(body.specialRequirements) ? body.specialRequirements : [])
           : jsonOrNull(Array.isArray(job.specialRequirements) ? (job.specialRequirements as string[]) : []),
+        ...(["draft", "ready_to_plan"].includes(job.status)
+          ? { status: saveMode === "ready_to_plan" ? "ready_to_plan" : "draft" }
+          : {}),
       },
       include: {
         stops:  { orderBy: { sequenceNumber: "asc" } },
