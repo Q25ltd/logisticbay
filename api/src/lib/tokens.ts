@@ -10,7 +10,7 @@ export function generateSecureToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-const ACCESS_TTL  = "15m";
+const ACCESS_TTL  = "8h";
 const REFRESH_TTL = "30d";
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
