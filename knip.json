@@ -2,11 +2,11 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
     "api": {
-      "entry": ["src/app.ts", "src/scripts/**/*.ts", "scripts/**/*.ts"],
+      "entry": ["src/app.ts", "scripts/**/*.ts"],
       "project": ["src/**/*.ts", "scripts/**/*.ts"]
     },
     "web": {
-      "entry": ["src/App.tsx", "src/main.tsx"],
+      "entry": ["src/App.tsx"],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "mobile": {

@@ -58,5 +58,7 @@ jobs:
       - name: Dead code check (knip) — advisory, non-blocking
         continue-on-error: true
         run: |
-          npm install --ignore-scripts 2>/dev/null || true
-          npx knip
+          npm ci --ignore-scripts
+          npm ci --prefix web --ignore-scripts
+          npm install --prefix mobile --ignore-scripts
+          DATABASE_URL=postgresql://knip:knip@localhost/knip npx knip
