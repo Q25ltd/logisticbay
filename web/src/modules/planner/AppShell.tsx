@@ -1,63 +1,46 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 
-const NAV = [
-  { to:"/app/dashboard",     icon:"🏠", label:"Dashboard",    active:true  },
-  { to:"/app/jobs",          icon:"📋", label:"Jobs",         active:true  },
-  { to:"/app/job-requests",  icon:"📥", label:"Requests",     active:true  },
-  { to:"/app/runs",          icon:"🚛", label:"Runs",          active:true  },
-  { to:"/app/planning",     icon:"📅", label:"Planning",      active:true  },
-  { to:"/app/fleet",         icon:"🚛", label:"Fleet",        active:true  },
-  { to:"/app/drivers",       icon:"👥", label:"Drivers",      active:true  },
-  { to:"/app/shifts",        icon:"⏱",  label:"Shifts",       active:true  },
-  { to:"/app/holidays",      icon:"🌴", label:"Holidays",     active:true  },
-  { to:"/app/marketplace",   icon:"🏗️", label:"Marketplace",  active:false },
-  { to:"/app/intelligence",  icon:"🤖", label:"Intelligence", active:false },
-  { to:"/app/settings",      icon:"⚙️", label:"Settings",     active:true  },
+// The operational pipeline — the three screens a planner moves through, in order.
+const PRIMARY_NAV = [
+  { to: "/app/planning",  label: "Planning" },
+  { to: "/app/runs",      label: "Runs"     },
+  { to: "/app/dashboard", label: "Live"     },   // interim → real Live screen in Phase C
 ];
 
-function NavItems({ onClose }: { onClose?: () => void }) {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  return (
-    <>
-      <nav className="flex-1 py-3 overflow-y-auto">
-        {NAV.map(item => item.active ? (
-          <NavLink key={item.to} to={item.to} onClick={onClose}
-            className={({ isActive }) =>
-              "flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors " +
-              (isActive
-                ? "bg-white/15 text-white border-r-2 border-accent"
-                : "text-white/60 hover:text-white hover:bg-white/8")}>
-            <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ) : (
-          <div key={item.to}
-            className="flex items-center gap-3 px-4 py-3 text-sm text-white/25 cursor-not-allowed">
-            <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
-            <span>{item.label} <span className="text-xs opacity-50">soon</span></span>
-          </div>
-        ))}
-      </nav>
-      <div className="border-t border-white/10 p-4 flex-shrink-0">
-        <div className="text-xs text-white/40 truncate mb-0.5">{user?.companyName}</div>
-        <div className="text-sm font-semibold text-white truncate">{user?.name}</div>
-        <button
-          onClick={() => { logout(); navigate("/"); onClose?.(); }}
-          className="text-xs text-white/40 hover:text-red-400 transition-colors mt-1">
-          Sign out
-        </button>
-      </div>
-    </>
-  );
-}
+// Everything else, grouped by operation.
+const GROUPS = [
+  {
+    key: "freight", label: "Freight", items: [
+      { to: "/app/jobs",         icon: "📋", label: "Jobs"     },
+      { to: "/app/job-requests", icon: "📥", label: "Requests" },
+    ],
+  },
+  {
+    key: "resources", label: "Resources", items: [
+      { to: "/app/fleet",    icon: "🚛", label: "Fleet"    },
+      { to: "/app/drivers",  icon: "👥", label: "Drivers"  },
+      { to: "/app/shifts",   icon: "⏱",  label: "Shifts"   },
+      { to: "/app/holidays", icon: "🌴", label: "Holidays" },
+    ],
+  },
+];
 
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [drawer, setDrawer] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);   // desktop dropdowns
+  const [mobileOpen, setMobileOpen] = useState(false);             // mobile drawer
+  const navRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) setOpenMenu(null);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (user?.role === "driver") {
     return (
@@ -67,9 +50,7 @@ export default function AppShell() {
           <p className="text-sm text-muted mb-5">
             Driver accounts use the mobile app. This web area is limited to planners and company owners.
           </p>
-          <button
-            onClick={() => { logout(); navigate("/login"); }}
-            className="btn btn-primary w-full">
+          <button onClick={() => { logout(); navigate("/login"); }} className="btn btn-primary w-full">
             Sign out
           </button>
         </div>
@@ -77,95 +58,159 @@ export default function AppShell() {
     );
   }
 
+  const toggle = (key: string) => setOpenMenu(prev => (prev === key ? null : key));
+  const signOut = () => { logout(); navigate("/"); setOpenMenu(null); setMobileOpen(false); };
+
+  const dropdownItemCls = ({ isActive }: { isActive: boolean }) =>
+    "flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors " +
+    (isActive ? "bg-primary/8 text-primary font-semibold" : "text-slate-700 hover:bg-slate-50 hover:text-primary");
+
   return (
-    <div className="flex h-screen overflow-hidden bg-surface">
+    <div className="flex flex-col h-screen overflow-hidden bg-surface">
 
-      {/* ── Desktop sidebar ──────────────────────────────────────────────────── */}
-      <aside
-        className="hidden sm:flex flex-col flex-shrink-0"
-        style={{ width: 224, backgroundColor: "#0f172a" }}>
-        <div className="h-14 flex items-center px-5 border-b border-white/10 flex-shrink-0">
-          <span className="text-lg font-black text-white">
-            Logistic<span className="text-accent">Bay</span>
-          </span>
-        </div>
-        <NavItems />
-      </aside>
+      {/* ── Top navigation bar ──────────────────────────────────────────────── */}
+      <header ref={navRef} style={{ backgroundColor: "#0f172a" }} className="flex-shrink-0 h-14 flex items-center px-4 border-b border-white/10">
+        <span className="text-base font-black text-white mr-6 flex-shrink-0">
+          Logistic<span className="text-accent">Bay</span>
+        </span>
 
-      {/* ── Mobile drawer ────────────────────────────────────────────────────── */}
-      {drawer && (
-        <div className="sm:hidden fixed inset-0 z-50 flex">
-          <div
-            className="w-72 flex flex-col h-full"
-            style={{ backgroundColor: "#0f172a" }}>
-            <div className="h-14 flex items-center justify-between px-5 border-b border-white/10 flex-shrink-0">
-              <span className="text-base font-black text-white">
-                Logistic<span className="text-blue-400">Bay</span>
-              </span>
+        {/* Desktop nav (md+) */}
+        <div className="hidden md:flex items-stretch h-14 gap-1">
+          {PRIMARY_NAV.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === "/app/dashboard"}
+              className={({ isActive }) =>
+                "flex items-center px-4 text-sm font-semibold border-b-2 transition-colors h-full " +
+                (isActive ? "text-white border-accent" : "text-white/60 border-transparent hover:text-white hover:border-white/30")
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+
+          <span className="self-center mx-2 h-5 w-px bg-white/15" />
+
+          {GROUPS.map(group => (
+            <div key={group.key} className="relative flex items-center">
               <button
-                onClick={() => setDrawer(false)}
-                className="text-white/50 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center">
-                ×
+                onClick={() => toggle(group.key)}
+                className={"flex items-center gap-1 px-3 h-8 self-center text-sm font-medium rounded transition-colors " +
+                  (openMenu === group.key ? "bg-white/15 text-white" : "text-white/60 hover:text-white hover:bg-white/10")}
+              >
+                {group.label}
+                <span className="text-[10px]">▾</span>
+              </button>
+              {openMenu === group.key && (
+                <div className="absolute top-full left-0 mt-1 w-44 bg-white rounded-lg shadow-xl border border-border z-50 py-1 overflow-hidden">
+                  {group.items.map(item => (
+                    <NavLink key={item.to} to={item.to} onClick={() => setOpenMenu(null)} className={dropdownItemCls}>
+                      <span className="text-base w-5 text-center flex-shrink-0">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop right — date + account (md+) */}
+        <div className="ml-auto hidden md:flex items-center gap-3 flex-shrink-0">
+          <span className="hidden lg:inline text-xs text-white/40">
+            {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </span>
+          <div className="relative">
+            <button
+              onClick={() => toggle("account")}
+              className={"flex items-center gap-2 px-2.5 h-8 rounded transition-colors " +
+                (openMenu === "account" ? "bg-white/15" : "hover:bg-white/10")}
+            >
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-accent/20 text-accent text-xs font-bold">
+                {(user?.name ?? "?").charAt(0).toUpperCase()}
+              </span>
+              <span className="hidden sm:inline text-xs text-white/70 max-w-[120px] truncate">{user?.name}</span>
+              <span className="text-[10px] text-white/50">▾</span>
+            </button>
+            {openMenu === "account" && (
+              <div className="absolute top-full right-0 mt-1 w-52 bg-white rounded-lg shadow-xl border border-border z-50 py-1 overflow-hidden">
+                <div className="px-3 py-2 border-b border-border">
+                  <div className="text-xs text-muted truncate">{user?.companyName}</div>
+                  <div className="text-sm font-semibold text-primary truncate">{user?.name}</div>
+                </div>
+                <NavLink to="/app/settings" onClick={() => setOpenMenu(null)} className={dropdownItemCls}>
+                  <span className="text-base w-5 text-center">⚙️</span><span>Settings</span>
+                </NavLink>
+                <button onClick={signOut} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <span className="text-base w-5 text-center">↩</span><span>Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile hamburger (< md) */}
+        <button
+          onClick={() => setMobileOpen(v => !v)}
+          aria-label="Menu"
+          className="ml-auto md:hidden flex items-center justify-center w-9 h-9 rounded text-white hover:bg-white/10 transition-colors"
+        >
+          <span className="text-xl leading-none">{mobileOpen ? "✕" : "☰"}</span>
+        </button>
+      </header>
+
+      {/* ── Mobile drawer (< md) ─────────────────────────────────────────────── */}
+      {mobileOpen && (
+        <div className="md:hidden flex-shrink-0 bg-white border-b border-border shadow-lg max-h-[70vh] overflow-y-auto z-40">
+          <nav className="py-2">
+            {PRIMARY_NAV.map(item => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/app/dashboard"}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  "flex items-center px-4 py-3 text-sm font-semibold transition-colors " +
+                  (isActive ? "bg-primary/8 text-primary" : "text-slate-800 hover:bg-slate-50")
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+
+            {GROUPS.map(group => (
+              <div key={group.key} className="border-t border-border mt-1 pt-1">
+                <div className="px-4 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-muted">{group.label}</div>
+                {group.items.map(item => (
+                  <NavLink key={item.to} to={item.to} onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) =>
+                      "flex items-center gap-3 px-4 py-3 text-sm transition-colors " +
+                      (isActive ? "bg-primary/8 text-primary font-semibold" : "text-slate-700 hover:bg-slate-50")}>
+                    <span className="text-base w-5 text-center">{item.icon}</span><span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+
+            <div className="border-t border-border mt-1 pt-2 px-4">
+              <div className="text-xs text-muted truncate">{user?.companyName}</div>
+              <div className="text-sm font-semibold text-primary truncate mb-2">{user?.name}</div>
+              <NavLink to="/app/settings" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2 text-sm text-slate-700">
+                <span className="text-base w-5 text-center">⚙️</span><span>Settings</span>
+              </NavLink>
+              <button onClick={signOut} className="flex items-center gap-3 py-2 text-sm text-red-500">
+                <span className="text-base w-5 text-center">↩</span><span>Sign out</span>
               </button>
             </div>
-            <NavItems onClose={() => setDrawer(false)} />
-          </div>
-          <div
-            className="flex-1 bg-black/60"
-            onClick={() => setDrawer(false)} />
+          </nav>
         </div>
       )}
 
       {/* ── Content area ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-
-        {/* Mobile top bar */}
-        <div
-          className="sm:hidden h-14 flex items-center gap-3 px-4 border-b border-white/10 flex-shrink-0"
-          style={{ backgroundColor: "#0f172a" }}>
-          <button
-            onClick={() => setDrawer(true)}
-            className="text-white/60 hover:text-white p-1 flex-shrink-0"
-            aria-label="Menu">
-            <svg viewBox="0 0 18 14" className="w-5 h-4" fill="currentColor">
-              <rect y="0"  width="18" height="2" rx="1"/>
-              <rect y="6"  width="18" height="2" rx="1"/>
-              <rect y="12" width="18" height="2" rx="1"/>
-            </svg>
-          </button>
-          <span className="text-sm font-black text-white flex-1">
-            Logistic<span className="text-blue-400">Bay</span>
-          </span>
-          <span className="text-xs text-white/50 truncate max-w-[120px]">{user?.name}</span>
-        </div>
-
-        {/* Desktop top bar */}
-        <header className="hidden sm:flex h-14 bg-white border-b border-border items-center justify-between px-6 flex-shrink-0">
-          <div className="text-sm text-muted">
-            {new Date().toLocaleDateString("en-GB", {
-              weekday: "long", day: "numeric", month: "long", year: "numeric",
-            })}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              Live
-            </span>
-            <span className="text-sm font-semibold text-primary">{user?.companyName}</span>
-            <span className="text-slate-300">|</span>
-            <span className="text-sm text-muted">{user?.name}</span>
-            <button
-              onClick={() => { logout(); navigate("/"); }}
-              className="text-sm text-red-500 hover:text-red-700 font-semibold ml-1">
-              Sign out
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
-        </main>
-      </div>
+      <main className="flex-1 overflow-y-auto">
+        <Outlet />
+      </main>
     </div>
   );
 }

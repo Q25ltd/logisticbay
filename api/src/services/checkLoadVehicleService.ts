@@ -27,7 +27,9 @@ export interface LoadVehicleCheckResult {
 
 // ── Payload capacity limits by vehicle category (tonnes) ─────────────────────
 
-const PAYLOAD_T: Record<string, number> = {
+// Exported (Step 5) so the run-level compatibility helper reuses the same rules
+// rather than maintaining a parallel set.
+export const PAYLOAD_T: Record<string, number> = {
   van:           0.8,
   luton_van:     0.9,
   pickup:        1.0,
@@ -40,13 +42,13 @@ const PAYLOAD_T: Record<string, number> = {
 };
 
 // Bodies that provide active/passive temperature control
-const FRIDGE_BODIES = new Set([
+export const FRIDGE_BODIES = new Set([
   "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
 ]);
 
 // Bodies that are NOT suitable for ADR hazardous loads
 // (fridge and enclosed box trap fumes — not safe for general ADR)
-const ADR_UNSAFE_BODIES = new Set([
+export const ADR_UNSAFE_BODIES = new Set([
   "fridge", "fridge_multi_temp", "fridge_pharma", "insulated",
   "box", "double_deck_box", "panel", "luton",
 ]);

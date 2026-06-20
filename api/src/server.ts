@@ -5,6 +5,7 @@ import { PrismaPg }     from "@prisma/adapter-pg";
 import { buildApp }     from "./app.js";
 import { startAutoCleanupWorker }  from "./jobs/autoCleanupWorker.js";
 import { startShiftSubmitWorker }  from "./jobs/shiftSubmitWorker.js";
+import { startReconcileWorker }    from "./jobs/reconcileWorker.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma  = new PrismaClient({ adapter });
@@ -18,6 +19,7 @@ try {
   app.log.info("✅  Server running on http://localhost:3000");
   startAutoCleanupWorker(prisma, app.log);
   startShiftSubmitWorker(prisma, app.log);
+  startReconcileWorker(prisma, app.log);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

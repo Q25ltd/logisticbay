@@ -67,6 +67,10 @@ export interface PlanningRun {
   hasTemperatureLoad:  boolean;
   hasOversized:        boolean;
   requiredTrailerType?: string | null;
+  // Step 5: computed vehicle compatibility (false → publish blocked unless overridden).
+  trailerCompatible?:  boolean;
+  vehicleCompatible?:  boolean;
+  compatibilityOverridden?: boolean;
   maxLoadWeight?:      number | null;
   createdAt:           string;
   driver?: {
@@ -99,6 +103,12 @@ export interface PlanningAssignment {
     lng?:           number | null;
     timeWindowStart?: string | null;
     timeWindowEnd?:   string | null;
+    // Freight requirement fields returned by the API include on jobPart
+    hazardous?:       boolean | null;
+    tempControlled?:  boolean | null;
+    tempRange?:       string | null;
+    oversized?:       boolean | null;
+    stopGoodsType?:   string | null;
     job: {
       id:           number;
       jobReference: string | null;

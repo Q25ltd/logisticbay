@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Link } from "react-router-dom";
 import {
   planningApi,
   type PlannerWorkItem, type StopCluster, type UnplannedStop,
@@ -8,8 +9,7 @@ import {
   type SavedLocationOption, type DepotLocation,
 } from "../../api/planning";
 import { api } from "../../api/client";
-import { aiApi } from "../../api/ai";
-import { bodyTypeLabel } from "../../constants/vehicleTaxonomy";
+import { aiApi, type RunCheckResult } from "../../api/ai";
 import { today, addDays, cap } from "../jobs/createJobUtils";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -91,12 +91,6 @@ const RUN_TYPE_LABELS: Record<string, string> = {
   direct: "Direct", relay: "Relay", split: "Split load", consolidation: "Consolidation",
 };
 
-const FLEET_STATUS_LABEL: Record<string, string> = {
-  available: "Available", off_road: "Off Road", vor: "VOR",
-  loaded: "Loaded", in_use: "In Use", repair: "In Repair",
-};
-
-
 const GOODS_COMPAT: Record<string, { label: string; colour: string }> = {
   liquid:            { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
   bulk_liquid:       { label: "Liquid",   colour: "bg-cyan-50 text-cyan-800"    },
@@ -155,8 +149,9 @@ function goodsCompatBadge(goodsType: string | null | undefined) {
 }
 
 // ── CapacityBar ───────────────────────────────────────────────────────────────
+// Requirements-based: shows what the freight NEEDS, independent of assigned vehicle.
 
-function CapacityBar({ run, trucks }: { run: PlanningRun; trucks: FleetUnit[] }) {
+function CapacityBar({ run }: { run: PlanningRun }) {
   // Deduplicate by jobId so collect+deliver of the same job doesn't double-count
   const seenJobs = new Set<number>();
   let totalKg = 0, pallets = 0;
@@ -170,19 +165,19 @@ function CapacityBar({ run, trucks }: { run: PlanningRun; trucks: FleetUnit[] })
     }
   }
 
-  const truck  = trucks.find(t => t.id === run.assignedTruckId);
-  const maxKg  = truck?.gvwClass ? parseFloat(truck.gvwClass) * 1000 : null;
-  const pct    = maxKg && totalKg > 0 ? Math.min(100, (totalKg / maxKg) * 100) : null;
+  // Use run-level derived weight ceiling if available (maxLoadWeight from the API)
+  const maxKg = run.maxLoadWeight ?? null;
+  const pct   = maxKg && totalKg > 0 ? Math.min(100, (totalKg / maxKg) * 100) : null;
 
-  if (totalKg === 0 && pallets === 0) return null;
+  if (totalKg === 0 && pallets === 0 && !run.requiredTrailerType && !run.hasTemperatureLoad && !run.hasHazardous) return null;
 
   return (
     <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/60 space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-muted uppercase tracking-wide">Load</span>
+      <div className="flex items-center justify-between flex-wrap gap-1">
+        <span className="text-[10px] text-muted uppercase tracking-wide">Freight requirements</span>
         <span className="text-[11px] font-semibold text-primary">
           {totalKg > 0 ? `${totalKg.toLocaleString()} kg` : ""}
-          {maxKg ? <span className="font-normal text-muted"> / {maxKg >= 1000 ? `${(maxKg/1000).toFixed(0)}t` : `${maxKg}kg`}</span> : ""}
+          {maxKg ? <span className="font-normal text-muted"> target max {maxKg >= 1000 ? `${(maxKg/1000).toFixed(0)}t` : `${maxKg}kg`}</span> : ""}
         </span>
       </div>
       {pct !== null ? (
@@ -193,11 +188,24 @@ function CapacityBar({ run, trucks }: { run: PlanningRun; trucks: FleetUnit[] })
           />
         </div>
       ) : totalKg > 0 ? (
-        <div className="h-1 bg-blue-200 rounded-full" title="No vehicle assigned — cannot calculate % full" />
+        <div className="h-1 bg-blue-200 rounded-full" title="No weight ceiling — allocate a vehicle in Runs to see utilisation" />
       ) : null}
-      {pallets > 0 && (
-        <div className="text-[10px] text-muted">📦 {pallets} pallets</div>
-      )}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {pallets > 0 && (
+          <span className="text-[10px] text-muted">📦 {pallets} pallets</span>
+        )}
+        {run.requiredTrailerType && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 uppercase tracking-wide">
+            {cap(run.requiredTrailerType)}
+          </span>
+        )}
+        {run.hasTemperatureLoad && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">❄ Fridge</span>
+        )}
+        {run.hasHazardous && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-700">☢ ADR</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -502,7 +510,6 @@ function RunLane({
   onReorderStops,
   onAddWaypoint,
   onRemoveWaypoint,
-  onPublish,
   onDelete,
   onDropJob,
   onDropPart,
@@ -526,7 +533,6 @@ function RunLane({
   onReorderStops:   (runId: number, assignmentIds: number[]) => Promise<void>;
   onAddWaypoint:    (runId: number, type: string, locationText: string, seq: number, locationId?: number, scheduledTime?: string) => Promise<void>;
   onRemoveWaypoint: (runId: number, waypointId: number) => Promise<void>;
-  onPublish:        (runId: number) => Promise<void>;
   onDelete:         (runId: number) => Promise<void>;
   onDropJob:         (jobId: number, partIds?: number[]) => Promise<void>;
   onDropPart:        (jobPartId: number) => Promise<void>;
@@ -547,8 +553,6 @@ function RunLane({
   }) => Promise<void>;
 }) {
   const [saving,     setSaving]     = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [recalling,  setRecalling]  = useState(false);
   const [err,        setErr]        = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isOver,     setIsOver]     = useState(false);
@@ -588,14 +592,14 @@ function RunLane({
   const [orGeoLoading, setOrGeoLoading] = useState(false);
   const [orCreating,  setOrCreating]  = useState(false);
 
-  // AI feasibility check
-  const [aiCheck,   setAiCheck]   = useState<{ severity: "ok"|"warn"|"block"; reason: string } | null>(null);
+  // Planning check (was: AI feasibility check)
+  const [planCheck,   setPlanCheck]   = useState<RunCheckResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
   const wpTimesKey = run.waypoints.map(w => `${w.id}:${w.scheduledTime ?? ""}`).sort().join("|");
 
   useEffect(() => {
-    if (!run.assignments.length && !run.waypoints.length) { setAiCheck(null); return; }
+    if (!run.assignments.length && !run.waypoints.length) { setPlanCheck(null); return; }
     setAiLoading(true);
     const timer = setTimeout(async () => {
       try {
@@ -611,6 +615,12 @@ function RunLane({
             timeWindowStart: a.jobPart.timeWindowStart,
             timeWindowEnd:   a.jobPart.timeWindowEnd,
             customerName:    a.jobPart.job.customerName,
+            // Freight requirement fields for compatibility check
+            hazardous:       a.jobPart.hazardous,
+            tempControlled:  a.jobPart.tempControlled,
+            tempRange:       a.jobPart.tempRange,
+            oversized:       a.jobPart.oversized,
+            goodsType:       a.jobPart.stopGoodsType ?? a.jobPart.job.goodsType,
           }));
 
         const planDate = run.plannedDate ? run.plannedDate.slice(0, 10) : null;
@@ -647,11 +657,8 @@ function RunLane({
           ?? (depotStart?.scheduledTime && planDate ? `${planDate}T${depotStart.scheduledTime}:00Z` : null);
 
         const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: departureTime, vehicle });
-        setAiCheck({
-          severity: result.severity === "high" ? "block" : result.severity === "medium" || result.severity === "low" ? "warn" : "ok",
-          reason:   result.message,
-        });
-      } catch { setAiCheck(null); }
+        setPlanCheck(result);
+      } catch { setPlanCheck(null); }
       finally  { setAiLoading(false); }
     }, 800);
     return () => clearTimeout(timer);
@@ -777,29 +784,14 @@ function RunLane({
     finally { setWpAdding(false); }
   }
 
-  async function handlePublish() {
-    setPublishing(true); setErr("");
-    try { await onPublish(run.id); }
-    catch (e: unknown) { setErr((e as Error).message ?? "Publish failed"); }
-    finally { setPublishing(false); }
-  }
-
-  async function handleRecall() {
-    if (!window.confirm("Recall this run? The driver will no longer see it until you re-publish.")) return;
-    setRecalling(true); setErr("");
-    try { await onUpdate(run.id, { publishedToDriver: false }); }
-    catch (e: unknown) { setErr((e as Error).message ?? "Recall failed"); }
-    finally { setRecalling(false); }
-  }
-
-  const canPublish   = run.status !== "completed" && run.status !== "cancelled" && !run.publishedToDriver;
   const dependsOnRun = allRuns.find(r => r.id === run.dependsOnRunId);
   const isLocked     = !!dependsOnRun && dependsOnRun.status !== "completed";
 
-  const aiDot = aiLoading ? "⟳" :
-    aiCheck?.severity === "block" ? "🔴" :
-    aiCheck?.severity === "warn"  ? "🟡" :
-    aiCheck                       ? "🟢" : "";
+  // Severity dot for collapsed header
+  const planDot = aiLoading ? "⟳" :
+    planCheck?.severity === "high"   ? "🔴" :
+    (planCheck?.severity === "medium" || planCheck?.severity === "low") ? "🟡" :
+    planCheck                        ? "🟢" : "";
 
   // Combined + sorted stop list
   type RouteItem =
@@ -847,7 +839,7 @@ function RunLane({
         {run.hasHazardous   && <Badge colour="bg-red-100 text-red-700">ADR</Badge>}
         {run.hasTemperatureLoad && <Badge colour="bg-cyan-100 text-cyan-700">❄</Badge>}
         <span className="flex-1" />
-        {!collapsed && aiDot && <span className="text-sm leading-none" title={aiCheck?.reason ?? "Checking…"}>{aiDot}</span>}
+        {!collapsed && planDot && <span className="text-sm leading-none" title={planCheck?.message ?? "Checking…"}>{planDot}</span>}
         <button
           onClick={onToggleCollapsed}
           className="text-slate-400 hover:text-primary text-sm leading-none flex-shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-slate-100"
@@ -875,71 +867,125 @@ function RunLane({
 
       {/* ── Expanded body ── */}
       {!collapsed && (<>
-      {/* ── Driver + Trailer assign — full-width rows ── */}
-      <div className="flex-shrink-0 border-b border-slate-100 divide-y divide-slate-100">
-        <div className={`flex items-center px-3 py-2.5 gap-3 ${run.assignedDriverId ? "" : "bg-amber-50/40"}`}>
-          <span className="text-xs font-bold text-muted uppercase tracking-wide w-14 flex-shrink-0">Driver</span>
-          <select
-            className={`flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer min-w-0 ${run.assignedDriverId ? "text-primary" : "text-slate-400"}`}
-            value={run.assignedDriverId ?? ""}
-            disabled={saving}
-            onChange={e => {
-              const driverId = e.target.value ? parseInt(e.target.value, 10) : null;
-              const updates: Record<string, unknown> = { assignedDriverId: driverId };
-              // Keep status in sync: assigning → "assigned", removing → back to "draft"
-              if (!driverId && (run.status === "assigned")) updates.status = "draft";
-              if (driverId  && run.status === "draft")      updates.status = "assigned";
-              patch(updates);
-            }}
-          >
-            <option value="">— no driver assigned —</option>
-            {drivers.map(d => {
-              const wp = d.workPattern === "tramper" ? " 🚛" : d.workPattern === "night_driver" ? " 🌙" : d.workPattern === "day_driver" ? " ☀" : "";
-              return (
-                <option key={d.id} value={d.id}>
-                  {d.displayName}{wp}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-        <div className="flex items-center px-3 py-2.5 gap-3">
-          <span className="text-xs font-bold text-muted uppercase tracking-wide w-14 flex-shrink-0">Trailer</span>
-          <select
-            className={`flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer min-w-0 ${run.assignedTrailerId ? "text-primary" : "text-slate-400"}`}
-            value={run.assignedTrailerId ?? ""}
-            disabled={saving}
-            onChange={e => patch({ assignedTrailerId: e.target.value ? parseInt(e.target.value, 10) : null })}
-          >
-            <option value="">— no trailer —</option>
-            {trailers.map(t => (
-              <option key={t.id} value={t.id}>
-                {t.registration} · {bodyTypeLabel(t.bodyType || t.trailerType)}
-                {t.status !== "available" ? ` (${FLEET_STATUS_LABEL[t.status] ?? cap(t.status)})` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* ── Read-only vehicle & driver status line ── */}
+      <div className="flex-shrink-0 border-b border-slate-100 px-3 py-2 flex items-center gap-2">
+        <span className="text-xs text-muted flex-1">
+          {assignedDriver
+            ? <span className="font-medium text-slate-600">{assignedDriver.displayName}</span>
+            : <span className="text-slate-400 italic">No driver</span>
+          }
+          {" · "}
+          {run.assignedTrailerId
+            ? <span className="font-medium text-slate-600">Trailer #{run.assignedTrailerId}</span>
+            : <span className="text-slate-400 italic">No trailer</span>
+          }
+        </span>
+        <Link
+          to={`/app/runs/${run.id}`}
+          className="text-[11px] font-semibold text-accent hover:underline flex-shrink-0 whitespace-nowrap"
+          title="Assign vehicle &amp; driver in Runs"
+        >
+          Allocate in Runs →
+        </Link>
       </div>
 
-      {/* ── Capacity bar ── */}
-      <CapacityBar run={run} trucks={trucks} />
+      {/* ── Capacity bar (requirements-based) ── */}
+      <CapacityBar run={run} />
 
-      {/* ── AI feasibility strip (compact 1-liner) ── */}
+      {/* ── Planning signals strip ── */}
       {aiLoading && (
         <div className="px-3 py-1.5 text-xs text-muted animate-pulse bg-slate-50 border-b border-slate-100 flex-shrink-0">
-          🤖 Checking route…
+          Checking route…
         </div>
       )}
-      {!aiLoading && aiCheck && (
-        <div className={`px-3 py-1.5 text-xs border-b flex-shrink-0 ${
-          aiCheck.severity === "block" ? "bg-red-50 text-red-700 border-red-100" :
-          aiCheck.severity === "warn"  ? "bg-amber-50 text-amber-700 border-amber-100" :
-          "bg-green-50 text-green-700 border-green-100"
-        }`}>
-          <span className="font-semibold">{aiDot}</span> {aiCheck.reason}
-        </div>
-      )}
+      {!aiLoading && planCheck && (() => {
+        // Signal 1 — Planning check
+        const checkDot =
+          planCheck.severity === "high"                                        ? "🔴" :
+          planCheck.severity === "medium" || planCheck.severity === "low"      ? "🟡" :
+          "🟢";
+        const checkColour =
+          planCheck.severity === "high"   ? "bg-red-50 text-red-700 border-red-100"       :
+          planCheck.severity === "medium" ? "bg-amber-50 text-amber-700 border-amber-100" :
+          planCheck.severity === "low"    ? "bg-amber-50 text-amber-700 border-amber-100" :
+          "bg-green-50 text-green-700 border-green-100";
+
+        // Signal 2 — Run confidence
+        const conf = planCheck.confidence;
+        const confBadgeColour =
+          conf === null           ? "bg-slate-100 text-slate-500" :
+          conf >= 80              ? "bg-green-100 text-green-700"  :
+          conf >= 50              ? "bg-amber-100 text-amber-700"  :
+          "bg-red-100 text-red-700";
+        const confLabel = conf === null ? "—" : `${conf}%`;
+
+        // Signal 3 — Compatibility (advisory only — never blocks)
+        const conflicts = planCheck.compatibility.conflicts;
+
+        // Signal 4 — Direction / detour
+        const detourRatio  = planCheck.geometry.detourRatio;
+        const deadheadKm   = planCheck.geometry.deadheadKm;
+        const deadheadMi   = deadheadKm !== null ? Math.round(deadheadKm * 0.621) : null;
+        const showDirection = detourRatio !== null || deadheadMi !== null;
+
+        return (
+          <div className={`px-3 py-2 text-xs border-b flex-shrink-0 space-y-1.5 ${checkColour}`}>
+            {/* Signal 1: Planning check */}
+            <div className="flex items-start gap-1.5">
+              <span className="flex-shrink-0 font-semibold text-[10px] uppercase tracking-wide whitespace-nowrap">Planning check</span>
+              <span className="flex-shrink-0">{checkDot}</span>
+              <span className="leading-snug">{planCheck.message}</span>
+            </div>
+
+            {/* Signals 2–4 row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Signal 2: Run confidence */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-inherit opacity-70 font-medium whitespace-nowrap">Confidence</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${confBadgeColour}`}>
+                  {confLabel}
+                </span>
+              </div>
+
+              {/* Signal 3: Compatibility (advisory) */}
+              {conflicts.length > 0 && (
+                <div
+                  className="flex items-center gap-1 cursor-help"
+                  title={conflicts.map(c => c.reason).join(" · ")}
+                >
+                  <span className="text-amber-600 font-bold text-[11px]">⚠</span>
+                  <span className="text-[10px] font-semibold text-amber-700 whitespace-nowrap">
+                    Compatibility
+                  </span>
+                  <span className="text-[10px] text-amber-600 truncate max-w-[120px]">
+                    {conflicts[0].reason}{conflicts.length > 1 ? ` +${conflicts.length - 1}` : ""}
+                  </span>
+                </div>
+              )}
+              {conflicts.length === 0 && planCheck.compatibility.compatible && (
+                <span className="text-[10px] opacity-60">✓ Compatible</span>
+              )}
+
+              {/* Signal 4: Direction / detour */}
+              {showDirection && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-inherit opacity-70 font-medium whitespace-nowrap">Direction / detour</span>
+                  {detourRatio !== null && (
+                    <span className="text-[10px] font-semibold whitespace-nowrap">
+                      Detour {detourRatio.toFixed(1)}×
+                    </span>
+                  )}
+                  {deadheadMi !== null && (
+                    <span className="text-[10px] whitespace-nowrap opacity-80">
+                      · {deadheadMi} mi empty
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Stop list (scrollable) + drop zone ── */}
       <div
@@ -1435,16 +1481,6 @@ function RunLane({
               </div>
             )}
 
-            {/* Truck */}
-            <div>
-              <label className="text-xs font-semibold text-muted block mb-1">Truck unit</label>
-              <select className="input text-sm w-full py-1.5" value={run.assignedTruckId ?? ""} disabled={saving}
-                onChange={e => patch({ assignedTruckId: e.target.value ? parseInt(e.target.value, 10) : null })}>
-                <option value="">— no truck —</option>
-                {trucks.map(t => <option key={t.id} value={t.id}>{t.registration}{t.gvwClass ? ` · ${t.gvwClass}` : ""}</option>)}
-              </select>
-            </div>
-
             {/* Planner notes */}
             <div>
               <label className="text-xs font-semibold text-muted block mb-1">Notes for driver</label>
@@ -1457,35 +1493,14 @@ function RunLane({
           </div>
         )}
 
-        {/* Publish / Recall */}
-        <div className="px-3 py-2 space-y-1.5">
-          {canPublish ? (
-            <>
-              {!run.assignedDriverId && run.assignments.length > 0 && (
-                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                  Assign a driver before publishing
-                </div>
-              )}
-              <button
-                onClick={handlePublish}
-                disabled={publishing || run.assignments.length === 0 || !run.assignedDriverId}
-                className="btn text-sm px-3 py-2 bg-primary text-white disabled:opacity-40 w-full"
-              >
-                {publishing ? "Publishing…" : "📤 Publish to driver"}
-              </button>
-            </>
-          ) : run.publishedToDriver ? (
-            <div className="space-y-1.5">
-              <div className="text-center text-[11px] text-green-700 font-medium">✓ Published to driver</div>
-              <button
-                onClick={handleRecall}
-                disabled={recalling}
-                className="btn text-sm px-3 py-2 w-full border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors"
-              >
-                {recalling ? "Recalling…" : "↩ Recall run"}
-              </button>
-            </div>
-          ) : null}
+        {/* Open in Runs — publish is done on the Runs screen */}
+        <div className="px-3 py-2">
+          <Link
+            to={`/app/runs/${run.id}`}
+            className="btn text-sm px-3 py-2 w-full border border-slate-200 text-slate-600 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors flex items-center justify-center gap-1.5"
+          >
+            Open in Runs — allocate &amp; publish →
+          </Link>
         </div>
       </div>
       </>)}
@@ -1900,11 +1915,6 @@ export default function PlanningBoardPage() {
     await loadRight(date);
   }
 
-  async function handlePublish(runId: number) {
-    await planningApi.publish(runId);
-    await loadRight(date);
-  }
-
   async function handleAddWaypoint(runId: number, waypointType: string, locationText: string, sequenceNumber: number, locationId?: number, scheduledTime?: string) {
     await planningApi.addWaypoint(runId, { waypointType, locationText, sequenceNumber, locationId, scheduledTime });
     await loadRight(date);
@@ -1993,11 +2003,11 @@ export default function PlanningBoardPage() {
   // Panel title
   const panelTitle = activePool === "needs_attention" ? "Needs Attention" :
     activePool === "in_custody" ? "In Custody" :
-    activePool === "future"     ? "Future Jobs" :
+    activePool === "future"     ? "Future Freight" :
     activePool === "ready_today"? "Ready Today" :
     activeVehicle               ? VEHICLE_LABELS[activeVehicle] ?? cap(activeVehicle) :
     activeArea                  ? `Area: ${activeArea}` :
-    "All Jobs";
+    "All Freight";
 
   return (
     <div className="h-full flex flex-col">
@@ -2039,7 +2049,7 @@ export default function PlanningBoardPage() {
           className={`flex-1 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
             mobileTab === "jobs" ? "border-primary text-primary" : "border-transparent text-muted"
           }`}>
-          Jobs{totalJobCount > 0 ? ` (${totalJobCount})` : ""}
+          Freight{totalJobCount > 0 ? ` (${totalJobCount})` : ""}
         </button>
         <button onClick={() => setMobileTab("runs")}
           className={`flex-1 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
@@ -2107,7 +2117,7 @@ export default function PlanningBoardPage() {
             {!loadingLeft && totalJobCount === 0 && (
               <div className="text-center py-12 text-muted text-sm">
                 <div className="text-3xl mb-2">{search ? "🔍" : "✅"}</div>
-                <div>{search ? "No jobs match" : "All planned for this period"}</div>
+                <div>{search ? "No freight matches" : "All movements planned for this period"}</div>
                 {search && <button onClick={() => setSearch("")} className="mt-2 text-xs text-accent hover:underline">Clear search</button>}
               </div>
             )}
@@ -2144,7 +2154,7 @@ export default function PlanningBoardPage() {
                 <div key={dk} className="mb-3">
                   <div className={`text-xs font-bold uppercase tracking-wider px-1 py-1.5 mb-1 border-b flex items-center justify-between ${headerClass}`}>
                     <span>{headerLabel}</span>
-                    <span className="font-normal normal-case text-muted">{grps.length} job{grps.length !== 1 ? "s" : ""}</span>
+                    <span className="font-normal normal-case text-muted">{grps.length} movement{grps.length !== 1 ? "s" : ""}</span>
                   </div>
                   {grps.map(grp => (
                     <JobWorkCard
@@ -2165,7 +2175,7 @@ export default function PlanningBoardPage() {
           {/* Batch action bar */}
           {selectedJobIds.size > 0 && (
             <div className="flex-shrink-0 border-t border-border bg-primary/5 px-2 py-2 space-y-1.5">
-              <div className="text-xs font-semibold text-primary">{selectedJobIds.size} job{selectedJobIds.size !== 1 ? "s" : ""} selected</div>
+              <div className="text-xs font-semibold text-primary">{selectedJobIds.size} freight unit{selectedJobIds.size !== 1 ? "s" : ""} selected</div>
               <div className="flex gap-1.5">
                 {draftRuns.length === 0 ? (
                   <span className="text-xs text-muted flex-1">Create a run first</span>
@@ -2221,7 +2231,6 @@ export default function PlanningBoardPage() {
                 onReorderStops={handleReorderStops}
                 onAddWaypoint={handleAddWaypoint}
                 onRemoveWaypoint={handleRemoveWaypoint}
-                onPublish={handlePublish}
                 onDelete={handleDeleteRun}
                 onDropJob={(jobId, partIds) => handleAddJobToRun(jobId, run.id, partIds)}
                 onDropPart={partId => handleAddPartToRun(partId, run.id)}

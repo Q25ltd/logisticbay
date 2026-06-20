@@ -1,11 +1,11 @@
 # LogisticBay — Agent Instructions
 
 > Read this file first, every session, no exceptions.
-> Last updated: 2026-05-27
+> Last updated: 2026-06-06
 
 ---
 
-## The 8 documents — what each one is for
+## The 9 documents — what each one is for
 
 | Question you have | Go to |
 |---|---|
@@ -13,12 +13,15 @@
 | How do Job / JobPart / Run / LoadTrack / Event relate? What are the rules? | **ARCHITECTURE.md** |
 | What is the canonical name for a field? Is this name already used? | **DATA_DICTIONARY.md** |
 | What is actually built right now — done, partial, not started? | **STATUS.md** ← always check before proposing anything |
+| How does a load travel from registered → delivered, and what's the gated build order? | **LOAD_MOVEMENT_PLAN.md** |
 | What open decisions need answering before building a feature? | **QUESTIONS.md** |
 | What are the safety, security, and agent behaviour rules? | **SAFETY.md** |
 | What was decided in a previous session and why? | **DEVLOG.md** |
 | How should frontend pages and components be structured? | **ARCHITECTURE.md** → Frontend Rules section |
 
 **Never assume what exists. Always check STATUS.md and the actual routes/pages first.**
+
+> **LOAD_MOVEMENT_PLAN.md** is the canonical plan for the full load lifecycle (custody model, every movement scenario, and the 16-step gated build sequence). When building any load-movement / run / execution feature, follow its step gates — do not jump steps.
 
 ---
 
@@ -28,7 +31,8 @@
 2. `DATA_DICTIONARY.md` — canonical field names
 3. `STATUS.md` — what is actually built
 4. `ARCHITECTURE.md` — target design (may be ahead of schema)
-5. `PRODUCT.md` — product vision
+5. `LOAD_MOVEMENT_PLAN.md` — target design + build order for the load lifecycle (load-movement features defer to it; it defers to ARCHITECTURE on cross-cutting structure)
+6. `PRODUCT.md` — product vision
 
 ---
 

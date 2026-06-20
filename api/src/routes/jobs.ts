@@ -62,7 +62,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile) return reply.send({ data: [], pagination: { limit: 200, nextCursor: null, hasNextPage: false } });
       const assignments = await prisma.runAssignment.findMany({
-        where:  { companyId, removedAt: null, run: { assignedDriverId: profile.id } },
+        // Step 4 publish gate: drivers see only published runs (audit 🟠 #1).
+        where:  { companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
         select: { jobId: true },
         distinct: ["jobId"],
       });
@@ -133,9 +134,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const in7   = new Date(today);
     in7.setDate(today.getDate() + 7);
 
-    // Find jobs for this driver via RunAssignment
+    // Find jobs for this driver via RunAssignment.
+    // Step 4 publish gate: only runs published to the driver are visible (audit 🟠 #1).
     const assignments = await prisma.runAssignment.findMany({
-      where: { companyId, removedAt: null, run: { assignedDriverId: profile.id } },
+      where: { companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
       select: { jobId: true },
       distinct: ["jobId"],
     });
@@ -194,8 +196,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile) return forbidden(reply, "Not your job");
+      // Step 4 publish gate: a recalled/unpublished job returns 403 (audit 🟠 #1, D4.3).
       const assignment = await prisma.runAssignment.findFirst({
-        where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } },
+        where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
       });
       if (!assignment) return forbidden(reply, "Not your job");
     }
@@ -370,6 +373,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!job) return notFound(reply, "Job");
 
     // Driver assignment guard (online path only — sync checks via driverProfile)
+    // Capture the assignment id so applyJobEvent advances the right execution state.
+    let runAssignmentId: number | null = null;
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile) return forbidden(reply, "Not your job");
@@ -377,6 +382,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } },
       });
       if (!assignment) return forbidden(reply, "Not your job");
+      runAssignmentId = assignment.id;
     }
 
     // ready_to_plan gate: vehicle category required (planning-specific rule, not an event concern)
@@ -409,6 +415,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         actorUserId:     userId,
         role,
         jobId:           id,
+        runAssignmentId,
         eventType,
         clientEventId,
         clientTimestamp: clientTs,
@@ -417,6 +424,8 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         gpsLat:          body.gpsLat,
         gpsLng:          body.gpsLng,
         note:            body.note,
+        actualQuantity:  body.actualQuantity,
+        actualUnit:      body.actualUnit,
       });
     });
 
@@ -427,9 +436,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return badRequest(reply, "TRANSITION_FAILED", r.reason);
     }
     if (r.status === 'duplicate') {
-      return reply.send({ status: r.jobStatus, id, duplicate: true });
+      return reply.send({ status: r.jobStatus, executionState: r.executionState, id, duplicate: true });
     }
-    return reply.send({ status: r.jobStatus, id });
+    return reply.send({ status: r.jobStatus, executionState: r.executionState, id });
   });
 
   // ── POST /jobs/:id/note ───────────────────────────────────────────────────

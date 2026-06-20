@@ -116,13 +116,35 @@ export interface RunStopInput {
   timeWindowEnd?:   string | null;
   bookedTime?:      string | null;
   customerName?:    string | null;
+  // Freight requirement fields for compatibility check
+  hazardous?:       boolean | null;
+  tempControlled?:  boolean | null;
+  tempRange?:       string | null;
+  oversized?:       boolean | null;
+  goodsType?:       string | null;
 }
 
-export interface RunFeasibilityResult {
+export interface RunCheckResult {
   concern:     boolean;
   severity:    "high" | "medium" | "low" | "none";
   message:     string;
   suggestion?: string;
+  confidence:  number | null;
+  buffer: {
+    driveBufferPct:   number;
+    dwellPerStopMin:  number;
+    minSlackMin:      number | null;
+  };
+  compatibility: {
+    compatible: boolean;
+    conflicts:  { severity: "high" | "medium" | "low"; reason: string }[];
+  };
+  geometry: {
+    routedKm:    number | null;
+    idealKm:     number | null;
+    detourRatio: number | null;
+    deadheadKm:  number | null;
+  };
 }
 
 export type AreaType =
@@ -162,7 +184,8 @@ export const aiApi = {
       lengthM?:   number | null;
       axleLoadT?: number | null;
     } | null;
-  }) => api.post<RunFeasibilityResult>("/ai/check-run", input),
+    base?: { lat: number; lng: number } | null;
+  }) => api.post<RunCheckResult>("/ai/check-run", input),
   lookupAreas:   (postcodes: string[]) =>
     api.post<AreaInfo[]>("/ai/area-lookup", { postcodes }),
   status:        () =>

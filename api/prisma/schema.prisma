@@ -662,7 +662,10 @@ model RunAssignment {
   sequenceNumber   Int
   quantityAssigned Decimal   @default(0)
   quantityUnit     String    @default("")
-  status           String    @default("pending")
+  // Execution state (LOAD_MOVEMENT_PLAN §A4 / loadVocab EXECUTION_STATES).
+  // Advanced by driver events via applyJobEvent (Step 1). Default is the
+  // pre-execution state. Was "pending" before Step 1 (never read); migrated.
+  status           String    @default("not_started")
   addedAt          DateTime  @default(now())
   addedBy          Int
   removedAt        DateTime?

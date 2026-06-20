@@ -541,7 +541,7 @@ Bridge between a `JobPart` (stop) and a `Run`. A job stop can be assigned to one
 | sequenceNumber | Int | Yes | Positive integer, unique per run | Order of this stop within the run's route |
 | quantityAssigned | Decimal | Yes | Default: 0 | Quantity allocated for this stop on this run |
 | quantityUnit | String | Yes | Free text, default `""` | Unit of measure for the assigned quantity |
-| status | String | Yes | `pending` \| `arrived` \| `completed` \| `skipped`, default `pending` | Execution status of this assignment |
+| status | String | Yes | **enum** `EXECUTION_STATES` (loadVocab.ts): `not_started` (default) \| `en_route_pickup` \| `at_pickup` \| `loaded` \| `en_route_dropoff` \| `at_dropoff` \| `delivered` \| `exception` | Per-assignment execution state, advanced by driver events via `applyJobEvent` (Step 1). Migrated from the former `pending`/`arrived`/`completed`/`skipped`. |
 | addedAt | DateTime | Yes | ISO 8601, default now | When this stop was added to the run |
 | addedBy | Int | Yes | FK → User.id | User who added the stop to the run |
 | removedAt | DateTime? | No | ISO 8601 | When this stop was removed from the run (null = still active) |
@@ -566,11 +566,11 @@ Append-only immutable custody ledger. Every load movement (collect, deliver, tra
 | runId | Int? | No | FK → Run.id | Run during which this movement occurred |
 | runAssignmentId | Int? | No | FK → RunAssignment.id | Run assignment for this movement |
 | eventId | Int | Yes | FK → JobExecutionEvent.id | Execution event that triggered this entry |
-| transactionType | String | Yes | Free text (e.g. `collect`, `deliver`, `transfer`) | Type of custody transaction |
+| transactionType | String | Yes | **enum** — `TRANSACTION_TYPES` in `loadVocab.ts` | Type of custody transaction (see Load-movement vocabulary below) |
 | quantity | Decimal | Yes | Positive number | Quantity moved in this transaction |
 | unit | String | Yes | Free text, default `""` | Unit of measure |
-| fromCustody | String | Yes | Free text (e.g. `customer`, `driver:<id>`, `depot`) | Custody holder before this transaction |
-| toCustody | String | Yes | Free text | Custody holder after this transaction |
+| fromCustody | String | Yes | **enum** — `<base>` or `<base>:<ref>`, base ∈ `CUSTODY_BASES` in `loadVocab.ts` | Custody location before this transaction (see below) |
+| toCustody | String | Yes | **enum** — `<base>` or `<base>:<ref>`, base ∈ `CUSTODY_BASES` in `loadVocab.ts` | Custody location after this transaction (see below) |
 | driverId | Int? | No | FK → User.id | Driver who performed the movement |
 | trailerId | String | Yes | Registration string, default `""` | Trailer on which the load was moved |
 | timestamp | DateTime | Yes | ISO 8601 | Client-reported timestamp of the movement |
@@ -578,6 +578,35 @@ Append-only immutable custody ledger. Every load movement (collect, deliver, tra
 | gpsLat | Float? | No | Decimal degrees | GPS latitude at the time of the movement |
 | gpsLng | Float? | No | Decimal degrees | GPS longitude at the time of the movement |
 | notes | String? | No | Free text | Notes attached to this transaction |
+
+---
+
+## Load-movement vocabulary
+
+Canonical registry: **`loadVocab.ts`** (byte-identical in `shared/`, `api/src/constants/`, `web/src/constants/`; soft-mirrored in `mobile/src/constants/`; hash-gated by `npm run check:vocab`). Full model in **LOAD_MOVEMENT_PLAN.md** §A3–A5. These values are the single source of truth — do not introduce status/custody/transaction strings outside this registry.
+
+**Job planning status** (`Job.status`, dimension 1 — planner/reconciler only): `draft`, `pending_review`, `ready_to_plan`, `in_planning`, `planned`, `in_execution`*, `partially_collected`*, `collected`*, `partially_delivered`*, `completed`*, `attention_needed`*, `cancelled`.  *= reconciler-derived only (`DERIVED_JOB_STATUSES`); the rest are planner-set (`PLANNER_SET_JOB_STATUSES`).
+
+**Execution state** (per `RunAssignment`, dimension 2 — driver events only): `not_started`, `en_route_pickup`, `at_pickup`, `loaded`, `en_route_dropoff`, `at_dropoff`, `delivered`, `exception`.
+
+**Custody bases** (`CUSTODY_BASES`, dimension 3): `customer_origin`, `on_vehicle`, `yard`, `customer_dest`, `returned`, `written_off`. Stored as `<base>` or `<base>:<ref>` (e.g. `on_vehicle:TR12`, `yard:7`, `customer_dest:341`). Terminal bases: `customer_dest`, `written_off`.
+
+**Transaction types** (`TRANSACTION_TYPES`) and their custody transition (`TRANSACTION_CUSTODY_MAP`):
+
+| transactionType | from base → to base |
+|---|---|
+| collect | customer_origin → on_vehicle |
+| drop_at_yard | on_vehicle → yard |
+| pick_from_yard | yard → on_vehicle |
+| trailer_swap | on_vehicle → yard |
+| handover | on_vehicle → on_vehicle |
+| deliver | on_vehicle → customer_dest |
+| split | (context) → (context) |
+| consolidate | (context) → on_vehicle |
+| refuse_return | on_vehicle → returned |
+| damage_writeoff | (any) → written_off |
+
+> Migration note: prior free-text custody values (`customer`, `driver:<id>`, `depot`) are superseded by this registry. `LoadTrack` has no write path yet (Step 2), so there is no production data to migrate. `plannerWorkService.ts`'s `.includes("driver")/.includes("depot")` custody reader is updated to the new bases when its step lands.
 
 ---
 
@@ -591,7 +620,7 @@ Table: `JobExecutionEvent`
 | jobId | Int | Yes | FK → Job.id | Job the event relates to |
 | companyId | Int | Yes | FK → Company.id | Owning company |
 | driverId | Int | Yes | FK → User.id | Driver who raised the event |
-| eventType | String | Yes | `started` \| `arrived_pickup` \| `collected` \| `arrived_dropoff` \| `completed` \| `cancelled` \| `note_added` | Type of execution event |
+| eventType | String | Yes | `started` \| `arrived_pickup` \| `collected` \| `arrived_dropoff` \| `completed` \| `drop_at_yard` \| `pick_from_yard` \| `cancelled` \| `note_added` | Type of execution event. Driver-triggerable set = `EVENT_DEFINITIONS` keys (sync.constants.ts); `drop_at_yard`/`pick_from_yard` added in Step 6 (yard relay); `cancelled` is planner-only. |
 | note | String | Yes | Free text, default `""` | Optional driver note attached to the event |
 | clientEventId | String | Yes | Unique per company; UUID / device-generated | Idempotency key from the driver's device |
 | clientTimestamp | DateTime | Yes | ISO 8601 | Timestamp recorded on the driver's device |
@@ -605,8 +634,8 @@ Table: `JobExecutionEvent`
 | runAssignmentId | Int? | No | FK → RunAssignment.id | Assignment this event relates to (null for historical events) |
 | jobPartId | Int? | No | FK → JobPart.id | Stop this event relates to (null for historical events) |
 | quantityConfirmed | Decimal? | No | Positive number | Quantity confirmed by the driver at this event |
-| fromCustody | String? | No | Free text | Custody holder before this event (for load transfer events) |
-| toCustody | String? | No | Free text | Custody holder after this event (for load transfer events) |
+| fromCustody | String? | No | **enum** — base ∈ `CUSTODY_BASES` in `loadVocab.ts` | Custody location before this event (for load transfer events) |
+| toCustody | String? | No | **enum** — base ∈ `CUSTODY_BASES` in `loadVocab.ts` | Custody location after this event (for load transfer events) |
 | createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
 
 ---

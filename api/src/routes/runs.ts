@@ -8,6 +8,7 @@ import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
 import { cancelRun } from "../services/runService.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
 async function generateRunReference(
@@ -78,6 +79,9 @@ async function recalculateDerivedRequirements(
       requiredEquipment:  requiredEquipment != null ? (requiredEquipment as Prisma.InputJsonValue) : Prisma.DbNull,
     },
   });
+
+  // Step 5: requirements just changed — recompute trailer/vehicle compatibility.
+  await recomputeRunCompatibility(tx, runId, companyId);
 }
 
 // ── Driver conflict check ─────────────────────────────────────────────────────
@@ -168,6 +172,12 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
             driverWarning = `Driver already has run ${conflict.runReference} on this date — make sure the times don't overlap.`;
           }
         }
+      }
+
+      // Step 5: validate truck/trailer belong to this company before creating.
+      if (body.assignedTruckId != null || body.assignedTrailerId != null) {
+        const fv = await validateFleetAssignment(tx, companyId, body.assignedTruckId ?? null, body.assignedTrailerId ?? null);
+        if (!fv.ok) throw Object.assign(new Error(fv.message!), { statusCode: 400, code: fv.code });
       }
 
       const runReference = await generateRunReference(companyId, year, tx);
@@ -308,7 +318,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if ("compatibilityOverridden"     in body) updateData.compatibilityOverridden     = body.compatibilityOverridden;
     if ("compatibilityOverrideReason" in body) updateData.compatibilityOverrideReason = body.compatibilityOverrideReason ?? null;
 
-    let driverWarning: string | null = null;
+    const warnings: string[] = [];
+    const vehicleChanged = "assignedTruckId" in body || "assignedTrailerId" in body;
 
     const updated = await prisma.$transaction(async (tx) => {
       // Validate driver exists and is active
@@ -321,22 +332,34 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
         }
       }
 
+      // Step 5: validate truck/trailer belong to this company (status → warning).
+      if (vehicleChanged) {
+        const fv = await validateFleetAssignment(
+          tx, companyId,
+          "assignedTruckId"   in body ? (body.assignedTruckId   ?? null) : undefined,
+          "assignedTrailerId" in body ? (body.assignedTrailerId ?? null) : undefined,
+        );
+        if (!fv.ok) throw Object.assign(new Error(fv.message!), { statusCode: 400, code: fv.code });
+        warnings.push(...fv.warnings);
+      }
+
       // Warn (don't block) if this driver already has another run on the same date
       if (newDriverId != null && newDate != null) {
         const conflict = await findDriverConflict(tx, companyId, newDriverId, newDate, id);
         if (conflict) {
-          driverWarning = `Driver already has run ${conflict.runReference} on this date — make sure the times don't overlap.`;
+          warnings.push(`Driver already has run ${conflict.runReference} on this date — make sure the times don't overlap.`);
         }
       }
 
-      return tx.run.update({
-        where:   { id },
-        data:    updateData,
-        include: RUN_DETAIL_INCLUDE,
-      });
+      await tx.run.update({ where: { id }, data: updateData });
+
+      // Step 5: recompute compatibility if the truck/trailer changed.
+      if (vehicleChanged) await recomputeRunCompatibility(tx, id, companyId);
+
+      return (await tx.run.findFirst({ where: { id }, include: RUN_DETAIL_INCLUDE }))!;
     });
 
-    return reply.send(driverWarning ? { ...updated, warning: driverWarning } : updated);
+    return reply.send(warnings.length ? { ...updated, warning: warnings.join(" ") } : updated);
   });
 
   // ── DELETE /runs/:id — cancel (non-cancelled) or hard-delete (cancelled) ──
@@ -467,7 +490,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
           sequenceNumber,
           quantityAssigned: body.quantityAssigned ?? 0,
           quantityUnit:     body.quantityUnit ?? "",
-          status:           "pending",
+          status:           "not_started",   // EXECUTION_STATES initial (Step 1)
           addedBy:          userId,
           notes:            body.notes ?? null,
         },

@@ -23,6 +23,7 @@ import { parseIdParam }              from "../lib/validate.js";
 import { dayRangeUtc }               from "../lib/dateUtils.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -368,7 +369,20 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         });
       }
 
-      const updated = await prisma.run.update({
+      // Step 5: validate truck/trailer belong to this company (status → warning).
+      const vehicleChanged = b.assignedTrailerId !== undefined || b.assignedTruckId !== undefined;
+      let fleetWarnings: string[] = [];
+      if (vehicleChanged) {
+        const fv = await validateFleetAssignment(
+          prisma, companyId,
+          b.assignedTruckId   !== undefined ? (b.assignedTruckId   ?? null) : undefined,
+          b.assignedTrailerId !== undefined ? (b.assignedTrailerId ?? null) : undefined,
+        );
+        if (!fv.ok) return badRequest(reply, fv.code ?? "FLEET_INVALID", fv.message ?? "Invalid vehicle assignment");
+        fleetWarnings = fv.warnings;
+      }
+
+      await prisma.run.update({
         where: { id },
         data: {
           ...(b.runType           !== undefined ? { runType:           b.runType }           : {}),
@@ -382,10 +396,13 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           ...(b.status            !== undefined ? { status:            b.status }            : {}),
           ...(b.publishedToDriver !== undefined ? { publishedToDriver: b.publishedToDriver } : {}),
         },
-        include: RUN_INCLUDE,
       });
 
-      return reply.send(updated);
+      // Step 5: recompute compatibility if the truck/trailer changed.
+      if (vehicleChanged) await recomputeRunCompatibility(prisma, id, companyId);
+
+      const updated = await prisma.run.findFirst({ where: { id, companyId }, include: RUN_INCLUDE });
+      return reply.send(fleetWarnings.length ? { ...updated, warning: fleetWarnings.join(" ") } : updated);
     },
   );
 
@@ -437,7 +454,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           sequenceNumber:   nextSeq,
           quantityAssigned: b.quantityAssigned ?? Number(part.quantityRequired ?? 0),
           quantityUnit:     part.quantityUnit  ?? "",
-          status:           "pending",
+          status:           "not_started",   // EXECUTION_STATES initial (Step 1)
           addedBy:          userId,
         },
       });
@@ -542,6 +559,15 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       if (!run) return notFound(reply, "Run");
       if (run.assignments.length === 0) {
         return badRequest(reply, "NO_STOPS", "Add at least one stop before publishing.");
+      }
+
+      // Step 5 (D5.3): enforce vehicle compatibility at publish, with override.
+      if (!run.compatibilityOverridden && (!run.trailerCompatible || !run.vehicleCompatible)) {
+        return badRequest(reply, "COMPATIBILITY_FAILED", "Cannot publish: vehicle compatibility check failed", {
+          trailerCompatible: run.trailerCompatible,
+          vehicleCompatible: run.vehicleCompatible,
+          overrideAllowed:   true,
+        });
       }
 
       const updated = await prisma.run.update({
@@ -902,7 +928,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
                 sequenceNumber:   seq,
                 quantityAssigned: a.quantityAssigned,
                 quantityUnit:     a.quantityUnit,
-                status:           "pending",
+                status:           "not_started",   // EXECUTION_STATES initial (Step 1)
                 addedBy:          userId,
               },
             });
@@ -964,4 +990,7 @@ async function recalcDerived(runId: number, companyId: number, prisma: PrismaCli
       requiredTrailerType,
     },
   });
+
+  // Step 5: requirements just changed — recompute trailer/vehicle compatibility.
+  await recomputeRunCompatibility(prisma, runId, companyId);
 }

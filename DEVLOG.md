@@ -3,7 +3,177 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-06-06
+> Last updated: 2026-06-07
+
+---
+
+## PROD-BLOCKER fix — assignment creation wrote legacy 'pending' 2026-06-20
+
+Caught during pre-production review. The three `RunAssignment.create` sites — `routes/runs.ts:493`, `routes/planning.ts:457`, `routes/planning.ts:931` — still wrote `status: "pending"` (the pre-Step-1 vocab). After Step 1, the driver's `started` event requires `not_started` (EXECUTION_STATES). So in production every newly-planned stop would be created `pending` and **the driver could never start the job** — the exact 🔴 blocker we fixed, reintroduced at the creation sites. The test suite missed it because every test hand-creates assignments with explicit `"not_started"`; no test went through the real `POST .../assignments` endpoint and then started the chain.
+
+**Fix:** all three sites now write `status: "not_started"`. **Regression guard:** `runCompatibility.test.ts` (which uses the real `POST /runs/:id/assignments`) now asserts the created assignment is `not_started`. Existing prod `pending` rows are converted by the Step 1 migration's backfill (`UPDATE RunAssignment SET status='not_started' WHERE status='pending'`).
+
+Gates: typecheck api ✅ 0. Full DB suite + the new assertion to be re-run on Mac before deploy (this changed runs.ts/planning.ts). **Deploy note:** the migration `20260607000000_run_assignment_execution_state_default` MUST be applied to the production DB.
+
+---
+
+## Phase A / slice A2 — the three planning questions 2026-06-07
+
+The brief's three questions, first-class on the Planning screen — all deterministic/explainable (NOT AI; `/ai/check-run` route name kept, but all output + UI copy says "Planning check"). Backend by parent, web display by a Sonnet subagent.
+
+- **Q3 confidence + contingency buffer** (`services/checkRunService.ts`): applies a +15% drive / 45-min-dwell buffer BEFORE the time-window checks (so plans that only work under perfect conditions are caught), and returns an explainable 0–100 `confidence` (deductions for blown/tight windows, legal-hours, missing break, long day) + a `buffer` summary. `confidence: null` when stops lack coordinates.
+- **Q1 stop-mixing compatibility** (new `lib/loadMixing.ts`): "can these loads travel together?" — temp+ambient, different temp ranges, ADR+food, oversized-sharing. **Advisory only** — surfaced as conflict + reason, never blocks adding freight. Folded into the `check-run` result.
+- **Q2 direction / empty miles** (`checkRunService` geometry): `routedKm`, `idealKm`, `detourRatio`, and `deadheadKm` (empty miles) — deadhead only when a base location is supplied (D-A2.3; not on Planning yet → null).
+- **Web** (`api/ai.ts`, `api/planning.ts` types; `PlanningBoardPage` RunLane): the old single "AI check" dot replaced with four compact signals — Planning check (severity+message), Confidence (% badge by band), Compatibility (⚠ + reasons, advisory), Direction / detour (detour ×, empty mi). No "AI" copy remains; compatibility gates nothing.
+
+Decisions: D-A2.1 explainable confidence + default buffer; D-A2.2 small mixing matrix advisory; D-A2.3 detour now, deadhead only with reliable base; D-A2.4 one enriched call; D-A2.5 order Q3→Q1→Q2; D-A2.6 backend first then Sonnet web. User correction honoured: never call it "AI".
+
+Gates: typecheck api+web ✅ 0; check:vocab ✅; **13 backend unit tests ✅** (loadMixing 6 + checkRunService confidence/geometry 7, no DB). No schema/mobile change. **Pending:** Mac incognito smoke on the Planning board. Remaining Phase A: A3 proposals, A4 split/consolidation, A5 metrics capture.
+
+---
+
+## Phase A / slice A1 — Planning screen structural refactor 2026-06-07
+
+First slice of the three-screen re-org (`LOAD_MOVEMENT_PLAN.md` Part E). Pure re-shape, no new capability, frontend-only. Implemented by a Sonnet subagent against a precise spec; menu then reworked by hand on user feedback. Reviewed + typecheck verified by the parent.
+
+- **`PlanningBoardPage.tsx`** — removed truck/trailer/driver `<select>`s + publish/recall + S5 compat-warning from `RunLane` (asset allocation now belongs to the Runs screen). Replaced with a read-only status line + "Open in Runs — allocate & publish →" link to `/app/runs/:id`. `CapacityBar` re-driven from run requirements (`maxLoadWeight` + required trailer type / temp / ADR chips) instead of the assigned truck. Left panel copy reframed to freight units/movements. Publishing now lives on `RunDetailPage` (untouched interim asset surface; same Run table via `/runs/:id`).
+- **`AppShell.tsx`** — sidebar → horizontal top bar, **grouped by operations**: primary tabs Planning · Runs · Live (Live → `/app/dashboard` interim; no duplicate Dashboard item); `Freight ▾` (Jobs, Requests), `Resources ▾` (Fleet, Drivers, Shifts, Holidays); account menu (Settings, Sign out) on the right.
+
+Scope: only the two web files changed; no api/mobile/schema/loadVocab touch. Gates: web typecheck ✅ 0, api typecheck ✅ 0 (unaffected). **Pending:** user incognito smoke test on Mac (`npm run dev`) — Vite can't run in the Linux sandbox. Deferred to later slices: A2 (three questions), A3 (proposals), A4 (split/consolidation), A5 (metrics capture).
+
+---
+
+## Plan change — three-screen delivery re-org 2026-06-07
+
+User direction: deliver the remaining load-movement work as **three planner screens**, built vertically one at a time — **Planning** (jobs → runs), then **Runs** (asset allocation: trucks/trailers/drivers), then **Live management** (real-time firefighting: swaps, cancellations, reassignments, exceptions, on-time delivery).
+
+Decisions: (1) screen-by-screen vertical slices, not capability-first; (2) split the 2,260-line `PlanningBoardPage` monolith — Planning keeps jobs→runs, asset allocation moves to the Runs screen — and consolidate onto **one** run system within the screen work (folds in old S16).
+
+Mapping (full detail in `LOAD_MOVEMENT_PLAN.md` Part E): foundation S0–S6 stays done; old S9/S10 → Phase A (Planning); S7/S8 → Phase B (Runs); S11–S15 + audit Phase 3 → Phase C (Live). Same investigate-first + gate discipline per slice. Next: confirm S6 Mac gate, then Phase A investigate-first.
+
+---
+
+## Load-movement build — STEP 5 (vehicle assignment + real compatibility) GREEN 2026-06-07
+
+`LOAD_MOVEMENT_PLAN.md` Step 5 / audit 🟠 #2, #3 — the **last of the audit's high items**. Truck/trailer are now validated on assignment, and `trailerCompatible`/`vehicleCompatible` are actually computed so the publish gate stops being a no-op. UI pickers already existed (RunDetailPage + planning board); this was mostly backend.
+
+**What changed:**
+- **`services/checkLoadVehicleService.ts`** — exported the rule sets (`PAYLOAD_T`, `FRIDGE_BODIES`, `ADR_UNSAFE_BODIES`) so compat reuses them (no parallel rules).
+- **`lib/runCompatibility.ts` (new)** — `computeRunCompatibility()` (pure: temp→non-fridge trailer = incompatible; hazardous→ADR-unsafe body = incompatible; weight > category `PAYLOAD_T` = incompatible; no vehicle ⇒ compatible), `recomputeRunCompatibility()` (reads requirements + assigned vehicle, persists flags), `validateFleetAssignment()` (FK + companyId; not-available ⇒ warning, D5.1).
+- **`routes/runs.ts`** — recalc recomputes compat; `PATCH`/`POST` validate truck/trailer FK and recompute on vehicle change.
+- **`routes/planning.ts`** — same wiring (Option A: each system calls the shared helper, no consolidation), and **publish now enforces compatibility** with the existing `compatibilityOverridden` escape (D5.3), matching `runs.ts`.
+- **Web** — `PlanningRun` type gains the compat fields; planning run card shows a red "⚠ Vehicle not compatible with load" warning by the publish button; `RunDetailPage`'s existing ✓/✗ indicator is now real.
+- **`tests/runCompatibility.test.ts` (new)** — 7 pure-rule units + DB integration (temp load on box trailer → `trailerCompatible=false` → publish 400 `COMPATIBILITY_FAILED`; override → 200; non-existent trailer → 400 `TRAILER_NOT_FOUND`).
+
+**Decisions (user-approved):** D5.1 validate existence+companyId (status=warn); D5.2 reuse `checkLoadVehicle` rules; D5.3 enforce planning publish; D5.4 category `PAYLOAD_T` approximation; D5.5 defer double-booking; requirement calculators = Option A (shared helper, no consolidation). Non-scope honoured: no schema change, no mobile change, no yard/swap/split, no run-system consolidation (Step 16).
+
+**Gates:** typecheck ✅ (api+web) · check:vocab ✅ · pure compat unit tests ✅ 7/7 · knip ✅ baseline only (`runCompatibility.ts` wired; exported rule sets now consumed — no new unused). **Caveat:** the full `npm test --prefix api` run was interrupted (Ctrl-C mid-run from an accidental second command) before the runCompatibility DB integration + tenant isolation re-ran; everything that executed passed. Recommend a clean re-run to formally reconfirm those two suites.
+
+**Follow-up logged:** add `FleetUnit.maxPayloadT` / `FleetTrailer.maxPayloadT` for precise weight checks (D5.4); double-booking guard (D5.5).
+
+**Milestone:** Steps 0–5 close the audit's 🔴 blocker and ALL 🟠 highs (#1/#2/#3/#4/#5). The direct lifecycle is now fully load-bearing: request → planned → validated vehicle → published → executed → custody → auto-completed.
+
+---
+
+## Load-movement build — STEP 4 (publish gate) GREEN 2026-06-07
+
+`LOAD_MOVEMENT_PLAN.md` Step 4 / audit 🟠 #1 / invariant 6. **Makes publish & recall real:** `publishedToDriver` was written by publish/recall but never read, so neither affected the driver. Now the driver's own feeds filter on it.
+
+**What changed (all `api/src/routes/jobs.ts`):**
+- `GET /jobs` driver branch, `GET /jobs/my`, and `GET /jobs/:id` driver auth add `publishedToDriver: true` to the `run:` filter. A driver assigned to an unpublished/recalled run sees nothing in the lists and gets 403 on direct GET (D4.3).
+- **Left ungated (D4.2):** `PATCH /jobs/:id/status` driver guard (`jobs.ts:382`) and `/sync/events` auth (`sync.service.ts:101`) — verified by grep. Gating writes would reject a driver's offline-queued events if a run was recalled while offline (SAFETY §2 offline-first); publish/recall controls what NEW work appears, not what already-held work can be recorded.
+- **Untouched:** planner views (`GET /jobs?driverId`, `/drivers/:id/schedule`, both role-gated) keep seeing everything; publish/recall endpoints unchanged; no schema change; no mobile change (endpoints return fewer rows).
+- **New `publish-gate.test.ts`** — unpublished: GET /jobs + /jobs/my empty, GET /jobs/:id 403; planner ?driverId still sees it; publish → visible + 200; recall → hidden + 403.
+
+**Decisions (user-approved):** D4.1 gate the three driver-own reads; D4.2 leave writes ungated; D4.3 recalled direct GET → 403.
+
+**Gates (Mac):** typecheck ✅ (api+web) · check:vocab ✅ · `npm test --prefix api` ✅ **107/107** incl. the new "Publish gate" suite. knip: unchanged baseline noise (no new files; query-only edits).
+
+**Milestone:** Steps 0–4 close the audit's 🔴 blocker and 🟠 #1/#4/#5. A planner can now build a run and the driver sees it only when published — and it disappears on recall.
+
+---
+
+## Load-movement build — STEP 3 (reconciler) GREEN 2026-06-07
+
+`LOAD_MOVEMENT_PLAN.md` Step 3 (§A6) + audit 🟠 #4 + STATUS P0.14. **Removes the D1=A interim freeze:** `Job.status` and `Run.status` are now derived from execution state + custody, so a delivered B1 job auto-completes end-to-end with no manual step and the planner sees real run progress.
+
+**What changed:**
+- **`api/src/lib/reconcileLoadState.ts` (new)** — the sole writer of derived statuses (invariant 7). `deriveJobStatus()` rolls assignment execution states → `in_execution / partially_collected / collected / partially_delivered / completed`, with a dormant `attention_needed` branch (D3.5, fires once Step 11 adds exception events). Enters only from reconciler-owned statuses; never touches `draft/pending_review/ready_to_plan/cancelled`. Rolls up `Run.status` → `in_progress/completed` across **all** of a run's active assignments (a run may carry several jobs) and sets `actualStartTime`/`actualEndTime` once each (D3.3 — the never-before-written timestamps). Idempotent (writes only on change).
+- **`applyJobEvent.ts`** — calls `reconcileLoadState(tx, …)` at the end, in the same transaction (D3.1); returns the reconciled `Job.status` in the response.
+- **`api/src/jobs/reconcileWorker.ts` (new) + `server.ts`** — nightly safety-net sweep over in-flight jobs, mirroring `autoCleanupWorker` (distinct `pg_advisory_lock`, per-tenant loop, 24h `setInterval`, registered after `app.listen`) (D3.4).
+- **Tests** — `reconcileLoadState.test.ts`: 7 pure `deriveJobStatus` unit tests + DB integration (mid-chain `collected`→Job collected/Run in_progress+actualStartTime; end `completed`→Job completed/Run completed+actualEndTime; cancelled-not-overridden). Updated `applyJobEvent.test.ts` and `loadtrack.test.ts` assertions that expected `Job.status` to stay `planned` after the chain — now `completed` (the reconciler runs).
+
+**Decisions (user-approved):** D3.1 call at end of applyJobEvent (same tx); D3.2 defer the "`planned` is never set" planning-tier gap to a follow-up (reconciler treats `in_planning`/`planned` both as entry, so it works regardless); D3.3 include Run rollup + actual timestamps; D3.4 include nightly worker; D3.5 include dormant `attention_needed`. Explicit non-scope (honoured): no publish-gate change, no vehicle compatibility, no yard/swap/handover/split, no `planned`-status fix, no notification/needs-review UI, no mobile change.
+
+**Gates (Mac):** typecheck ✅ (api+web) · check:vocab ✅ · `npm test --prefix api` ✅ **95/95** incl. the new reconcile suite. knip: baseline noise only; `reconcileLoadState.ts` + `reconcileWorker.ts` not flagged (wired in); remaining loadVocab "unused exports" (`JOB_PLANNING_STATUSES`, `DERIVED_JOB_STATUSES`, etc.) are registry symbols awaiting later-step consumers — benign, same nature as `vehicleTaxonomy`; `DATABASE_URL`-in-prisma.config is the pre-existing known false-positive.
+
+**Follow-up logged (not Step 3):** set `planned` when all stops are assigned (planning-tier change to `syncJobPlanningStatuses`, D3.2 deferral). Multi-part execution granularity still carried from Steps 1–2 (reconciler reports `partially_*` honestly meanwhile).
+
+**Milestone:** Steps 0–3 close the audit's 🔴 blocker and 🟠 #4/#5. The direct lifecycle (request → planned → driver execution → custody → auto-complete) now works end-to-end.
+
+---
+
+## Load-movement build — STEP 2 (LoadTrack write path) GREEN 2026-06-07
+
+`LOAD_MOVEMENT_PLAN.md` Step 2. The custody ledger (`LoadTrack`) — defined since Phase 1 but **never written** — now records `collect` and `deliver`. "Where is the load" is answerable; precondition for every Part B scenario beyond B1. No schema change, no mobile wire change.
+
+**What changed:**
+- **`api/src/lib/loadTrack.ts` (new)** — `appendLoadTrack(tx, …)`, the single custody writer (append-only, invariant 4). Defensively validates from→to bases against `TRANSACTION_CUSTODY_MAP` (throws on a wrong transition rather than corrupting the ledger).
+- **`applyJobEvent.ts`** — on `collected`/`completed`, resolves the stop (collection vs delivery — stop-aware, D2.1), the vehicle (`assignedTrailerId ?? assignedTruckId`, D2.3), and the quantity (threaded `actualQuantity`/`actualUnit`, fallback to the stop's `quantityRequired`, D2.2), then appends the custody row referencing the just-created event id (invariant 5). The invariant-3 guard (no deliver before a collect) runs **before any write**, so a rejected deliver commits nothing. Other events write no custody.
+- **`sync.service.ts` + `routes/jobs.ts`** — pass `actualQuantity`/`actualUnit` already on the wire (no contract change).
+- **`plannerWorkService.ts`** — in-custody detection switched from `toCustody.includes("driver"/"depot")` to base-aware `custodyBaseOf()` (on_vehicle/yard = in custody), D2.4, so reads match the new writes.
+- **`loadtrack.test.ts` (new)** — B1 writes exactly two append-only rows (collect customer_origin→on_vehicle on the collection stop; deliver on_vehicle→customer_dest on the delivery stop), quantity threaded, eventId set; duplicate event → no second row; deliver-without-collect → 400 and writes nothing.
+- **`applyJobEvent.test.ts`** — cleanup order fixed (delete `loadTrack` before `jobExecutionEvent`; the chain now produces custody rows that reference events via `LoadTrack_eventId_fkey`).
+
+**Decisions (user-approved):** D2.1 stop-aware custody; D2.2 thread actualQuantity/actualUnit; D2.3 trailer-first then truck for on_vehicle; D2.4 update reader to `custodyBaseOf()`. Explicit non-scope (honoured): no yard events, no swap/handover, no split, no reconciler, no schema change, no mobile change, no `LoadTrack.trailerId` rename.
+
+**Gates (Mac):** typecheck ✅ (api+web) · check:vocab ✅ · `npm test --prefix api` ✅ **91/91** incl. the new "LoadTrack custody write path (Step 2)" suite and the Step 1 keystone chain. knip: baseline noise only; `api/src/lib/loadTrack.ts` and `api/src/constants/loadVocab.ts` are **not** flagged (now consumed); the only new "unused exports" are `loadVocab` registry symbols awaiting later-step consumers (`JOB_PLANNING_STATUSES`, `DERIVED_JOB_STATUSES`, etc.) — benign, same nature as `vehicleTaxonomy`. `DATABASE_URL`-in-prisma.config knip error is the pre-existing known false-positive.
+
+**Parked (not Step 2):** multi-stop/relay custody, yard drops, swaps/handover/split/consolidate (Steps 6+). Execution-vs-custody divergence for multi-part jobs under the job-level event model remains noted; resolved when per-stop execution lands. Job.status still derived only in Step 3.
+
+---
+
+## Load-movement build — STEP 1 (status bridge) GREEN 2026-06-07
+
+Keystone step of `LOAD_MOVEMENT_PLAN.md`. **Resolves the 🔴 audit blocker:** a `planned` job is now startable by a driver. Root cause was one field (`Job.status`) serving two disjoint vocabularies; fix separates them into three dimensions (planning status / execution state / custody).
+
+**What changed:** driver events now advance the per-`RunAssignment` EXECUTION state (loadVocab `EXECUTION_STATES`) instead of writing `Job.status`. `Job.status` is intentionally left untouched by execution (the reconciler derives it in Step 3 — decision D1=A).
+
+- `schema.prisma` + migration `20260607000000_run_assignment_execution_state_default` — `RunAssignment.status` default `pending → not_started`; backfills existing inert `pending` rows (D3). Column was never read/written before Step 1, so zero data risk.
+- `sync.constants.ts` — `EVENT_DEFINITIONS` retargeted to execution-state transitions (`started`:not_started→en_route_pickup; `arrived_pickup`→at_pickup; `collected`→loaded; `arrived_dropoff`→at_dropoff; `completed`→delivered). Kept `EVENT_TYPE_MAP` as the **inbound mobile-status alias** (mobile→server contract preserved — no app release needed) and `PLANNER_ONLY_TRANSITIONS`/`JobStatus` (legacy planner table, per approved report). Replaced the now-obsolete `STATUS_BY_EVENT_TYPE` + `ALLOWED_JOB_TRANSITIONS` (their source machine changed; were test-only) with `RESULTING_STATE_BY_EVENT` + `EXECUTION_TRANSITIONS`.
+- `applyJobEvent.ts` — resolves the RunAssignment, validates `allowedFromStates`, advances `RunAssignment.status`, populates the event's `runId`/`runAssignmentId`/`jobPartId`. Returns `jobStatus + executionState` (D2).
+- `sync.service.ts` + `routes/jobs.ts` — pass the already-resolved assignment id; online `PATCH /jobs/:id/status` returns `executionState`.
+- Tests — `sync.constants.test.ts` rewritten for the execution-state model; `applyJobEvent.test.ts` rebuilt with a full planned-job + run + assignment setup and a **keystone regression**: `planned` job driven `started→…→completed`, asserting the assignment reaches `delivered` while `Job.status` stays `planned`. (The suite never had this test — it would have caught the original blocker.)
+
+**Decisions (user-approved):** D1=A (Step 1 pure, Job.status derived later in Step 3); D2 = return `jobStatus + executionState`; D3 = migrate default to `not_started`.
+
+**Gates (Mac):** typecheck ✅ (api+web) · check:vocab ✅ · `npm test --prefix api` ✅ **82/82** incl. keystone chain test · `Job.status` confirmed unchanged by execution; `RunAssignment.status` advances through execution states · knip baseline noise only and the api `loadVocab` "unused" flag is now gone (Step 1 imports it). No references to removed symbols remain (grep). Sandbox: typecheck + check:vocab + 32 no-DB tests verified; DB tests verified on Mac.
+
+**Environment issue (not a code defect):** `prisma migrate deploy` failed in the user's shell because `DATABASE_URL` was not exported to the Prisma CLI; tests still passed against the DB (they load it via dotenv). Migration SQL is committed; apply it when the env var is available to the CLI.
+
+**Deferred to later steps (parked, not pulled forward):** Job.status reconciliation/derivation (Step 3); LoadTrack custody writes (Step 2); publish gate on `/jobs/my` (Step 4); consolidating the three `jobStatuses.ts` copies. Interim: during execution `Job.status` stays at its planning value until Step 3 — accepted under D1=A.
+
+---
+
+## Load-movement build — STEP 0 (vocabulary registries) GREEN 2026-06-07
+
+First step of `LOAD_MOVEMENT_PLAN.md` Part C. Foundation only — no runtime wiring, no deletions, no behaviour change. Establishes the single-source vocabulary that resolves the planning-vs-execution status disconnect (see audit `JOB_INTAKE_FLOW_AUDIT.md` 🔴 blocker; fix lands in Step 1).
+
+**Added:** `loadVocab.ts` — byte-identical in `shared/`, `api/src/constants/`, `web/src/constants/`, soft-mirrored in `mobile/src/constants/`. Contents:
+- `JOB_PLANNING_STATUSES` (+ `PLANNER_SET_JOB_STATUSES` / `DERIVED_JOB_STATUSES` split) — dimension 1 (Job.status), the planning-tier vocab that previously had no registry (was 303 magic-string literals).
+- `EXECUTION_STATES` — dimension 2, per-RunAssignment driver state machine.
+- `CUSTODY_BASES` (+ `customAt` builders, `custodyBaseOf`, `TERMINAL_CUSTODY_BASES`) — dimension 3 custody locations: `customer_origin | on_vehicle | yard | customer_dest | returned | written_off`.
+- `TRANSACTION_TYPES` (+ `TRANSACTION_CUSTODY_MAP`) — the 10 custody primitives every scenario composes from.
+
+**Changed:**
+- `scripts/check-vocab-sync.ts` — refactored from one global hash to independent per-group hashing; added the `loadVocab` core trio + mobile soft path. (Without this, a second vocab would have been forced to match `vehicleTaxonomy`.)
+- `DATA_DICTIONARY.md` — `LoadTrack`/`JobExecutionEvent` custody+transaction fields upgraded from "Free text" to enum refs; new "Load-movement vocabulary" section lists all canonical values + migration note (old free-text `customer`/`driver:<id>`/`depot` superseded; no data to migrate — LoadTrack has no write path until Step 2).
+
+**Decisions (user-approved):** precise custody vocab (not the old free-text words); "api owns + shared mirror" realised via the existing byte-identical-copy + hash-gate pattern (the codebase's answer to knip's cross-workspace blindness); all four registries in one file to keep the hash gate simple.
+
+**Gates (run on Mac):** typecheck ✅ (api+web exit 0) · check:vocab ✅ (exit 0; only the pre-existing mobile vehicleTaxonomy soft-warning) · `npm test --prefix api` ✅ **83/83** · knip — only new delta is the 4 `loadVocab` files under "Unused files" (documented vocab-mirror false-positive, same as `vehicleTaxonomy`; hash-gated instead). No new unused exports.
+
+**Not done (deferred to Step 1):** the three divergent `jobStatuses.ts` copies, `sync.constants.ts`, `runStatuses.ts`, and all magic-string call sites are untouched — consolidation/rewiring happens in Step 1 once the new path is proven. Nothing imports `loadVocab` yet (confirmed by grep).
 
 ---
 

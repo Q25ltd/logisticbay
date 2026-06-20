@@ -3,7 +3,29 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-06-01 (Phase 0 complete; Phase 3 in progress — error envelope, auth scope, companyId defence, cleanup worker)
+> Last updated: 2026-06-07 (Load-movement build started — see LOAD_MOVEMENT_PLAN.md)
+
+---
+
+## Load-movement build progress (LOAD_MOVEMENT_PLAN.md)
+
+Gated 16-step build of the full load lifecycle. Per-step detail + gates live in LOAD_MOVEMENT_PLAN.md and DEVLOG.md.
+
+- ✅ **Step 0 — vocabulary registries** (2026-06-07): `loadVocab.ts` added byte-identical across shared/api/web (+mobile soft); `check-vocab` group-aware and passing; DATA_DICTIONARY custody/transaction fields now enum. Foundation only — no runtime behaviour changed, nothing imports it yet. Gates: typecheck ✅, check:vocab ✅, api tests ✅ 83/83, knip shows only expected loadVocab mirror false-positives + existing baseline noise (not cleaned, by decision).
+- ✅ **Step 1 — status bridge** (2026-06-07): driver events now advance `RunAssignment.status` over `EXECUTION_STATES` instead of `Job.status`; a `planned` job is driver-startable (🔴 audit blocker resolved). Migration `..._run_assignment_execution_state_default`. Gates: typecheck ✅, check:vocab ✅, api tests ✅ 82/82 incl. keystone planned-job chain test. Job.status left to the Step 3 reconciler by design (D1=A).
+- ✅ **Step 2 — LoadTrack write path** (2026-06-07): `collected`/`completed` events append append-only custody rows (collect customer_origin→on_vehicle, deliver on_vehicle→customer_dest) via `appendLoadTrack`; stop-aware, quantity threaded, invariant-3 guarded; `plannerWorkService` reader now base-aware. Gates: typecheck ✅, check:vocab ✅, api tests ✅ 91/91. No schema/mobile change.
+- ✅ **Step 3 — reconciler** (2026-06-07): `reconcileLoadState` derives `Job.status` (in_execution/partially_collected/collected/partially_delivered/completed; dormant attention_needed) and `Run.status` rollups (+ actualStartTime/actualEndTime) from execution state + custody. Called at end of `applyJobEvent` (same tx) + nightly `reconcileWorker`. Ends the D1=A freeze; delivered B1 auto-completes. Gates: typecheck ✅, check:vocab ✅, api tests ✅ 95/95. Fixes audit 🟠 #4.
+- ✅ **Step 4 — publish gate** (2026-06-07): driver-own reads (`GET /jobs`, `/jobs/my`, `GET /jobs/:id`) filter `publishedToDriver: true`; recalled/unpublished → hidden + 403. Writes left ungated (offline-first). Planner views unaffected. Gates: typecheck ✅, check:vocab ✅, api tests ✅ 107/107. Fixes audit 🟠 #1.
+- ✅ **Step 5 — vehicle assignment + real compatibility** (2026-06-07): `runCompatibility` helper computes `trailerCompatible`/`vehicleCompatible` (reused rules); FK validation on truck/trailer assign (both run systems); planning publish now enforces compat with override; planning UI warning. Gates: typecheck ✅, check:vocab ✅, pure units ✅ 7/7, knip ✅ (full DB suite re-run recommended — interrupted). Fixes audit 🟠 #2, #3.
+- 🔶 **Step 6 — yard buffer** (2026-06-07): `drop_at_yard`/`pick_from_yard` events + custody + custody-aware reconciler (B2 relay). Implemented; sandbox gates green; **full DB suite + knip re-run pending** to record green.
+
+**Re-plan 2026-06-07 (see LOAD_MOVEMENT_PLAN.md Part E):** remaining work (old S7–S16) re-organised into **three screens, delivered vertically Planning → Runs → Live**.
+
+- 🔶 **Phase A — Planning screen** (jobs → runs): A1 ✅ + A2 ✅ — **Mac gate confirmed 2026-06-20** (full api DB suite passes; knip baseline-only). A1 = structural refactor + horizontal ops nav (+ mobile hamburger). A2 = three questions (confidence+buffer, stop-mixing compatibility, detour/empty-miles; four advisory run-lane signals, no "AI" copy). UI incognito smoke optional. Remaining: A3 proposals, A4 split/consolidation, A5 metrics capture. ← active
+- 🔲 **Phase B — Runs screen** (asset allocation): trailer swap (S7) + handover (S8) + canonical truck/trailer/driver allocation UI.
+- 🔲 **Phase C — Live management screen** (firefighting): exceptions (S11), reassign/cancel (S12), dependency enforce (S13), notifications (S14), monitoring (S15).
+- ⏳ Follow-ups: set `planned` when all stops assigned (D3.2); per-vehicle payload field + double-booking guard (D5.4/D5.5).
+- ⏳ Follow-up (deferred from S3, D3.2): set `planned` when all stops assigned (planning-tier change to `syncJobPlanningStatuses`).
 
 ---
 

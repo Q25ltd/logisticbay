@@ -9,6 +9,7 @@
  */
 
 import type { PrismaClient } from "../generated/client.js";
+import { custodyBaseOf } from "../constants/loadVocab.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -366,10 +367,11 @@ export async function getPlannerWorkItems(
 
     // ── Custody / in-custody detection ────────────────────────────────────
 
-    // A load is "in custody" if a LoadTrack exists with toCustody containing "driver" or "depot"
-    const inCustody = hasLoadTrack && track
-      ? (track.toCustody.includes("driver") || track.toCustody.includes("depot"))
-      : false;
+    // A load is "in custody" when its latest custody base is on a vehicle or in
+    // a yard (i.e. held, not yet at the customer destination). Base-aware per
+    // loadVocab CUSTODY_BASES — replaces the old free-text .includes() heuristic.
+    const toBase     = track ? custodyBaseOf(track.toCustody) : null;
+    const inCustody  = hasLoadTrack && (toBase === "on_vehicle" || toBase === "yard");
 
     // ── Warnings ──────────────────────────────────────────────────────────
 

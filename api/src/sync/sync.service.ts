@@ -16,6 +16,8 @@ export interface IncomingEvent {
   deliveryNote?: string;
   gpsLat?: number;
   gpsLng?: number;
+  /** Step 6: yard reference for drop_at_yard / pick_from_yard. */
+  yardRef?: string;
 }
 
 export interface SyncResult {
@@ -115,6 +117,7 @@ export async function processSyncEvents(
           actorUserId:     driverId,
           role:            'driver',
           jobId:           event.jobId,
+          runAssignmentId: runAssignment.id,
           eventType:       event.eventType,
           clientEventId:   event.clientEventId,
           clientTimestamp: tsResult.date,
@@ -124,6 +127,9 @@ export async function processSyncEvents(
           gpsLng:          event.gpsLng,
           note:            event.note,
           appVersion:      event.appVersion,
+          actualQuantity:  event.actualQuantity,
+          actualUnit:      event.actualUnit,
+          yardRef:         event.yardRef,
         });
       });
 
