@@ -7,6 +7,10 @@ type AuthResponse = {
   user: User;
 };
 
+type LoginResponse =
+  | AuthResponse
+  | { requiresCompanySelection: true; companies: { companyId: number; companyName: string; role: string }[]; user: { id: number; name: string; email: string } };
+
 type RegisterResponse =
   | { requiresVerification: true; email: string; companyId: number; userId: number }
   | (AuthResponse & { companyId: number; userId: number });
@@ -15,11 +19,11 @@ function storeAuthSession(data: AuthResponse) {
   setAuthTokens(data.accessToken, data.refreshToken);
 }
 
-export async function login(email: string, password: string) {
-  const data = await api.post<AuthResponse>(
-    "/auth/login", { email, password }
+export async function login(email: string, password: string, companyId?: number): Promise<LoginResponse> {
+  const data = await api.post<LoginResponse>(
+    "/auth/login", { email, password, ...(companyId ? { companyId: String(companyId) } : {}) }
   );
-  storeAuthSession(data);
+  if ("accessToken" in data) storeAuthSession(data);
   return data;
 }
 
