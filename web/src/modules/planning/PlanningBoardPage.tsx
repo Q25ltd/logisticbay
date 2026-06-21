@@ -7,6 +7,7 @@ import {
   type FleetTrailer, type FleetUnit,
   type PlanningDriver, type RunWaypoint,
   type SavedLocationOption, type DepotLocation,
+  type RunProposal,
 } from "../../api/planning";
 import { api } from "../../api/client";
 import { aiApi, type RunCheckResult } from "../../api/ai";
@@ -1625,6 +1626,248 @@ function Sidebar({
   );
 }
 
+// ── ProposalsPanel ────────────────────────────────────────────────────────────
+
+const STRATEGY_LABELS: Record<RunProposal["strategy"], string> = {
+  direct:     "Direct",
+  multi_drop: "Multi-drop",
+  groupage:   "Groupage",
+};
+
+function ProposalCard({
+  proposal,
+  index,
+  onAccept,
+  onDismiss,
+}: {
+  proposal:  RunProposal;
+  index:     number;
+  onAccept:  (index: number) => Promise<void>;
+  onDismiss: (index: number) => void;
+}) {
+  const [accepting,   setAccepting]   = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+
+  async function handleAccept() {
+    setAccepting(true);
+    setAcceptError(null);
+    try { await onAccept(index); }
+    catch (e: unknown) { setAcceptError((e as Error).message ?? "Failed to create run"); }
+    finally { setAccepting(false); }
+  }
+
+  const conf = proposal.confidence;
+  const confBandColour =
+    conf === null ? "bg-slate-100 text-slate-500" :
+    conf >= 80    ? "bg-green-100 text-green-700"  :
+    conf >= 50    ? "bg-amber-100 text-amber-700"  :
+    "bg-red-100 text-red-700";
+  const confLabel = conf === null ? "—" : `${conf}%`;
+
+  const detourRatio = proposal.geometry.detourRatio;
+  const conflicts   = proposal.compatibility.conflicts;
+
+  // Unique customer names from stops
+  const customerNames = [...new Set(
+    proposal.stops.map(s => s.customerName).filter((n): n is string => n !== null && n !== undefined)
+  )];
+
+  const strategyColour =
+    proposal.strategy === "direct"     ? "bg-blue-50 text-blue-700 border-blue-200"   :
+    proposal.strategy === "multi_drop" ? "bg-violet-50 text-violet-700 border-violet-200" :
+    "bg-amber-50 text-amber-700 border-amber-200";
+
+  return (
+    <div className="bg-white border border-border rounded-lg overflow-hidden shadow-sm">
+      {/* Header row */}
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide flex-shrink-0 ${strategyColour}`}>
+          {STRATEGY_LABELS[proposal.strategy]}
+        </span>
+
+        {/* Confidence badge */}
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${confBandColour}`}>
+          {confLabel}
+        </span>
+
+        {/* Detour chip */}
+        {detourRatio !== null && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 flex-shrink-0">
+            Detour {detourRatio.toFixed(1)}×
+          </span>
+        )}
+
+        {/* Compatibility chip */}
+        {conflicts.length > 0 ? (
+          <span
+            className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 flex-shrink-0 truncate max-w-[140px]"
+            title={conflicts.map(c => c.reason).join(" · ")}
+          >
+            ⚠ {conflicts[0].reason}
+          </span>
+        ) : (
+          <span className="text-[10px] text-slate-400 flex-shrink-0">✓ Compatible</span>
+        )}
+      </div>
+
+      {/* Why text */}
+      <div className="px-3 pb-1.5 text-[11px] text-slate-600 leading-snug">
+        {proposal.why}
+      </div>
+
+      {/* Freight summary */}
+      <div className="px-3 pb-2">
+        {customerNames.length > 0 ? (
+          <div className="text-[11px] text-slate-500 truncate">
+            {customerNames.slice(0, 3).join(" · ")}
+            {customerNames.length > 3 && <span> +{customerNames.length - 3} more</span>}
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-400">{proposal.stops.length} stop{proposal.stops.length !== 1 ? "s" : ""}</div>
+        )}
+        <div className="text-[10px] text-slate-400 mt-0.5">
+          {proposal.stops.length} stop{proposal.stops.length !== 1 ? "s" : ""}
+          {customerNames.length > 0 && <span> · {proposal.jobIds.length} movement{proposal.jobIds.length !== 1 ? "s" : ""}</span>}
+        </div>
+      </div>
+
+      {/* Accept error */}
+      {acceptError && (
+        <div className="px-3 pb-1.5 text-[11px] text-red-600 bg-red-50 border-t border-red-100">
+          {acceptError}
+        </div>
+      )}
+
+      {/* Action row */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-t border-slate-100">
+        <button
+          onClick={handleAccept}
+          disabled={accepting}
+          className="btn text-xs py-1.5 px-3 bg-primary text-white hover:opacity-90 disabled:opacity-40 flex-1"
+        >
+          {accepting ? "Creating…" : "Accept — create run skeleton"}
+        </button>
+        <button
+          onClick={() => onDismiss(index)}
+          disabled={accepting}
+          className="btn text-xs py-1.5 px-2.5 border border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700 disabled:opacity-40"
+          title="Dismiss this movement plan (reappears on next refresh)"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface ProposalsPanelProps {
+  date:       string;
+  onAccepted: () => Promise<void>;
+}
+
+function ProposalsPanel({ date, onAccepted }: ProposalsPanelProps) {
+  const [proposals,   setProposals]   = useState<RunProposal[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [fetchError,  setFetchError]  = useState<string | null>(null);
+  const [dismissed,   setDismissed]   = useState<Set<number>>(new Set());
+  const [collapsed,   setCollapsed]   = useState(false);
+
+  const loadProposals = useCallback(async (d: string) => {
+    setLoading(true);
+    setFetchError(null);
+    setDismissed(new Set());
+    try {
+      const res = await planningApi.proposeRuns(d);
+      setProposals(res.proposals);
+    } catch (e: unknown) {
+      setFetchError((e as Error).message ?? "Could not load movement plans");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadProposals(date); }, [date, loadProposals]);
+
+  function handleDismiss(index: number) {
+    setDismissed(prev => { const n = new Set(prev); n.add(index); return n; });
+  }
+
+  async function handleAccept(index: number) {
+    const proposal = proposals[index];
+    const run = await planningApi.createRun({ date, plannerNotes: proposal.why });
+    for (const stop of proposal.stops) {
+      await planningApi.addStop(run.id, stop.jobPartId);
+    }
+    await onAccepted();
+    await loadProposals(date);
+  }
+
+  const visible = proposals.filter((_, i) => !dismissed.has(i));
+
+  return (
+    <div className="border-t border-border bg-slate-50/60 flex-shrink-0">
+      {/* Section header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Proposals</span>
+        {!loading && proposals.length > 0 && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary text-white tabular-nums">
+            {visible.length}
+          </span>
+        )}
+        {loading && <span className="text-[10px] text-muted animate-pulse">Loading…</span>}
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          className="ml-auto text-slate-400 hover:text-primary text-xs leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200"
+          title={collapsed ? "Expand proposals" : "Collapse proposals"}
+        >
+          {collapsed ? "▼" : "▲"}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div className="px-2 py-2 space-y-2 max-h-96 overflow-y-auto">
+          {fetchError && (
+            <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+              {fetchError}
+            </div>
+          )}
+
+          {!loading && !fetchError && proposals.length === 0 && (
+            <div className="text-center py-4 text-xs text-muted">
+              No movement plans for this date
+            </div>
+          )}
+
+          {!loading && !fetchError && proposals.length > 0 && dismissed.size === proposals.length && (
+            <div className="text-center py-3 text-xs text-muted">
+              All movement plans dismissed —{" "}
+              <button
+                onClick={() => setDismissed(new Set())}
+                className="text-accent hover:underline"
+              >
+                restore
+              </button>
+            </div>
+          )}
+
+          {proposals.map((proposal, i) => {
+            if (dismissed.has(i)) return null;
+            return (
+              <ProposalCard
+                key={i}
+                proposal={proposal}
+                index={i}
+                onAccept={handleAccept}
+                onDismiss={handleDismiss}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
   const lq = q.toLowerCase();
   return [
@@ -2198,6 +2441,14 @@ export default function PlanningBoardPage() {
               </div>
             </div>
           )}
+
+          {/* Proposals panel — advisory movement plans */}
+          <ProposalsPanel
+            date={date}
+            onAccepted={async () => {
+              await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+            }}
+          />
         </div>
 
         {/* ── Kanban run lanes ── */}

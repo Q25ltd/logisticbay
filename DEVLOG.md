@@ -7,6 +7,37 @@
 
 ---
 
+## Phase A / slice A3 — Proposals panel (frontend) 2026-06-21
+
+Frontend-only. No api/, mobile/, or schema changes.
+
+**`web/src/api/planning.ts`**
+- Added `ProposalStop`, `ProposalConflict`, `RunProposal`, `ProposeRunsResponse` interfaces matching the backend contract exactly. No `any`.
+- Added `planningApi.proposeRuns(date)` → `GET /planning/propose-runs?date=${date}`.
+
+**`web/src/modules/planning/PlanningBoardPage.tsx`**
+- Added `ProposalCard` component: renders one proposal as a compact card — strategy badge (Direct / Multi-drop / Groupage), confidence % badge colour-coded by band (≥80 green / 50–79 amber / <50 red / null "—"), detour chip ("Detour N.N×" when not null), compatibility chip (⚠ + first conflict reason, or subtle ✓), why text, customer name list + stop count, and Accept / Dismiss actions.
+- Added `ProposalsPanel` component: fetches `proposeRuns(date)` on mount and on date change; renders proposal cards; tracks dismissed indices in local `Set` (resets on new fetch); shows collapse/expand toggle; shows card count badge.
+- Accept flow: `createRun({ date, plannerNotes: proposal.why })` → `addStop(run.id, stop.jobPartId)` for each stop in order → refreshes unplanned + runs + re-fetches proposals. Inline error shown on card if any step fails (no crash).
+- Dismiss: local UI only (Set of dismissed indices, reset on next fetch). Advisory copy: "reappears on next refresh".
+- Mounted: below the batch-action bar in the left (Jobs) column, fixed-height scrollable section (max-h-96), non-intrusive; existing drag/drop board is unchanged.
+- Copy rules enforced: panel heading "Proposals", error state "movement plans", Accept button "Accept — create run skeleton". No "auto-plan", "AI", or "dispatch-ready" anywhere in new code. Accept is never disabled by compatibility or confidence — always clickable.
+
+Gates: web typecheck ✅ 0; api typecheck ✅ 0 (unaffected). **Pending:** user incognito smoke test on Mac.
+
+## Phase A / slice A3 — proposal-first engine (backend) 2026-06-20
+
+"Never start with a blank page." Deterministic, ADVISORY proposal engine — no solver, no ML.
+
+- **`services/proposeRunsService.ts` (new)** — pure `buildProposals(stops)`: groups stops into per-job units → greedy **corridor** clustering (30 km on delivery coords, postcode-outward fallback) → splits each corridor into **compatibility-safe groups** (reuse `checkLoadMixing`, no high conflict shares a run) → emits candidate runs tagged with a **movement strategy** (`direct` / `multi_drop` / `groupage`) + a one-line "why". 6 pure unit tests.
+- **`GET /planning/propose-runs`** — fetches the same unplanned stops as `/planning/unplanned`, runs `buildProposals`, scores each with the planning check (`checkRun` → confidence/detour; compatibility already on the proposal), returns `{ proposals, total }`. **Creates nothing** — the planner accepts a proposal via the existing run endpoints. DB integration test asserts proposals returned + zero runs created.
+
+Decisions (recommended set, user "move to next step"): D-A3.1 greedy + direct/multi-drop/groupage (hub/relay/backload deferred); D-A3.2 accept = existing endpoints; D-A3.3 one server endpoint; D-A3.4 advisory only; D-A3.5 backend here, Proposals panel by Sonnet next.
+
+Gates: typecheck api ✅ 0; check:vocab ✅; no-DB unit tests ✅ **51** (incl. 6 proposeRuns). DB endpoint test runs on Mac. No schema/mobile change. **Remaining A3:** the web Proposals panel (Sonnet).
+
+---
+
 ## PROD-BLOCKER fix — assignment creation wrote legacy 'pending' 2026-06-20
 
 Caught during pre-production review. The three `RunAssignment.create` sites — `routes/runs.ts:493`, `routes/planning.ts:457`, `routes/planning.ts:931` — still wrote `status: "pending"` (the pre-Step-1 vocab). After Step 1, the driver's `started` event requires `not_started` (EXECUTION_STATES). So in production every newly-planned stop would be created `pending` and **the driver could never start the job** — the exact 🔴 blocker we fixed, reintroduced at the creation sites. The test suite missed it because every test hand-creates assignments with explicit `"not_started"`; no test went through the real `POST .../assignments` endpoint and then started the chain.

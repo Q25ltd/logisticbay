@@ -222,6 +222,51 @@ export interface PlannerWorkItem {
   postcodeDistrict: string | null;
 }
 
+// ── Proposal types ───────────────────────────────────────────────────────────
+
+export interface ProposalStop {
+  jobId:          number;
+  jobPartId:      number;
+  type:           string;
+  customerName?:  string | null;
+  postcode?:      string | null;
+  lat?:           number | null;
+  lng?:           number | null;
+  hazardous?:     boolean | null;
+  tempControlled?: boolean | null;
+  tempRange?:     string | null;
+  oversized?:     boolean | null;
+  goodsType?:     string | null;
+}
+
+export interface ProposalConflict {
+  severity: "high" | "medium" | "low";
+  reason:   string;
+}
+
+export interface RunProposal {
+  strategy:      "direct" | "multi_drop" | "groupage";
+  jobIds:        number[];
+  stops:         ProposalStop[];
+  compatibility: {
+    compatible: boolean;
+    conflicts:  ProposalConflict[];
+  };
+  why:           string;
+  confidence:    number | null;
+  geometry: {
+    routedKm:    number | null;
+    idealKm:     number | null;
+    detourRatio: number | null;
+    deadheadKm:  number | null;
+  };
+}
+
+export interface ProposeRunsResponse {
+  total:     number;
+  proposals: RunProposal[];
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const planningApi = {
@@ -298,6 +343,9 @@ export const planningApi = {
 
   getLocations: () =>
     api.get<{ data: SavedLocationOption[] }>("/locations"),
+
+  proposeRuns: (date: string) =>
+    api.get<ProposeRunsResponse>(`/planning/propose-runs?date=${date}`),
 
   /** Auto-create a follow-on delivery run for an overnight rest scenario.
    *  Creates a new relay run with the same driver + trailer, a depot_start

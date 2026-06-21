@@ -24,6 +24,8 @@ import { dayRangeUtc }               from "../lib/dateUtils.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
+import { buildProposals, type ProposalStop } from "../services/proposeRunsService.js";
+import { checkRun } from "../services/checkRunService.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -265,6 +267,68 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const clusters = clusterStops(stops);
       return reply.send({ clusters, total: stops.length });
+    },
+  );
+
+  // ── GET /planning/propose-runs — A3 proposal-first ─────────────────────────
+  // Deterministic, ADVISORY candidate runs (corridor + compatibility grouping,
+  // strategy + "why"), each scored by the planning check (confidence + detour).
+  // Creates nothing — the planner accepts a proposal via the normal run endpoints.
+  app.get(
+    "/planning/propose-runs",
+    { preHandler: [authenticate, requireRole("company_owner", "planner")] },
+    async (request, reply) => {
+      const { companyId } = request.user!;
+      const q = request.query as { date?: string; dateFrom?: string; dateTo?: string };
+      const dateFrom = q.dateFrom ?? q.date;
+      const dateTo   = q.dateTo   ?? q.date;
+
+      const baseWhere = {
+        companyId,
+        job:            { status: { in: ["ready_to_plan", "in_planning"] as string[] } },
+        runAssignments: { none: { removedAt: null as null } },
+      };
+      const where = dateFrom && dateTo
+        ? { ...baseWhere, timeWindowStart: dayRangeUtc(dateFrom, dateTo) }
+        : baseWhere;
+
+      const parts = await prisma.jobPart.findMany({
+        where,
+        include: { job: { select: { id: true, customerName: true, goodsType: true } } },
+        orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
+      });
+
+      const stops: ProposalStop[] = parts.map(p => ({
+        jobId:          p.jobId,
+        jobPartId:      p.id,
+        type:           p.type,
+        customerName:   p.job.customerName,
+        postcode:       p.postcode ?? null,
+        lat:            p.lat != null ? Number(p.lat) : null,
+        lng:            p.lng != null ? Number(p.lng) : null,
+        hazardous:      p.hazardous,
+        tempControlled: p.tempControlled,
+        tempRange:      p.tempRange,
+        oversized:      p.oversized,
+        goodsType:      p.stopGoodsType ?? p.job.goodsType,
+      }));
+
+      const proposals = buildProposals(stops);
+
+      // Score each candidate with the planning check (detour now; confidence once
+      // the planner sets a start time). Compatibility is already on the proposal.
+      const scored = await Promise.all(proposals.map(async (pr) => {
+        const check = await checkRun({
+          stops: pr.stops.map((s, i) => ({
+            sequenceNumber: i + 1, type: s.type, postcode: s.postcode, lat: s.lat, lng: s.lng,
+            hazardous: s.hazardous, tempControlled: s.tempControlled, tempRange: s.tempRange,
+            oversized: s.oversized, goodsType: s.goodsType,
+          })),
+        });
+        return { ...pr, confidence: check.confidence, geometry: check.geometry };
+      }));
+
+      return reply.send({ proposals: scored, total: stops.length });
     },
   );
 
