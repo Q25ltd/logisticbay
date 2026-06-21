@@ -121,6 +121,16 @@ export default function AppShell() {
           <span className="hidden lg:inline text-xs text-white/40">
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </span>
+          <NavLink
+            to="/app/settings"
+            className={({ isActive }) =>
+              "flex items-center gap-1.5 px-2.5 h-8 rounded text-sm transition-colors " +
+              (isActive ? "bg-white/15 text-white" : "text-white/60 hover:text-white hover:bg-white/10")
+            }
+          >
+            <span className="text-base leading-none">⚙️</span>
+            <span className="text-xs font-medium">Settings</span>
+          </NavLink>
           <div className="relative">
             <button
               onClick={() => toggle("account")}
@@ -196,7 +206,11 @@ export default function AppShell() {
             <div className="border-t border-border mt-1 pt-2 px-4">
               <div className="text-xs text-muted truncate">{user?.companyName}</div>
               <div className="text-sm font-semibold text-primary truncate mb-2">{user?.name}</div>
-              <NavLink to="/app/settings" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 py-2 text-sm text-slate-700">
+              <NavLink to="/app/settings" onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  "flex items-center gap-3 py-2.5 text-sm transition-colors " +
+                  (isActive ? "text-primary font-semibold" : "text-slate-700 hover:text-primary")
+                }>
                 <span className="text-base w-5 text-center">⚙️</span><span>Settings</span>
               </NavLink>
               <button onClick={signOut} className="flex items-center gap-3 py-2 text-sm text-red-500">
