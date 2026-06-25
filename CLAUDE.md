@@ -5,7 +5,7 @@
 
 ---
 
-## The 9 documents — what each one is for
+## The core documents — what each one is for
 
 | Question you have | Go to |
 |---|---|
@@ -14,6 +14,7 @@
 | What is the canonical name for a field? Is this name already used? | **DATA_DICTIONARY.md** |
 | What is actually built right now — done, partial, not started? | **STATUS.md** ← always check before proposing anything |
 | How does a load travel from registered → delivered, and what's the gated build order? | **LOAD_MOVEMENT_PLAN.md** |
+| How should the **Planning page** work — movement strategies, UX, the Job→Movement→Run layer, job constraints? | **PLANNING_PAGE_DESIGN.md** |
 | What open decisions need answering before building a feature? | **QUESTIONS.md** |
 | What are the safety, security, and agent behaviour rules? | **SAFETY.md** |
 | What was decided in a previous session and why? | **DEVLOG.md** |
@@ -108,7 +109,7 @@ Answer these five questions first:
 
 ## Preventative rules — apply every session, every change
 
-These rules exist because each one prevented a real bug found in `CODE_AUDIT.md`. They apply to all work, not just cleanup. If a cleanup-mode rule in `CLEANUP_PLAN.md` is stricter, the stricter one wins.
+These rules exist because each one prevented a real bug found in the 2026-05-30 audit (now `docs/archive/CODE_AUDIT.md`). They apply to all work. The cleanup effort that produced them is complete, so **this section is the single source** for these rules (the former `CLEANUP_PLAN.md` / `MESS_PREVENTION.md` are in `docs/archive/` for history only).
 
 ### Register what you create
 Every new API route file must be imported and registered in `api/src/app.ts` in the same commit it is created. Every new web page must be added to the router in `web/src/App.tsx`. After creating a file, run `grep -rn "<filename>" api/src web/src` and confirm at least one import exists before committing. Files written and never imported (e.g. former `api/src/auth.ts`, `mobile/src/apiWithQueue.ts`) are forbidden — delete them on sight.
@@ -147,7 +148,7 @@ npm run check:vocab     # must exit 0
 npm test --prefix api   # must exit 0
 npx knip                # no NEW unused exports vs baseline
 ```
-Plus the grep gates from `CLEANUP_PLAN.md` Verification Protocol when you touched the relevant code. A task without these run is not done.
+Plus the grep gates from the Verification Protocol in `docs/archive/CLEANUP_PLAN.md` (archived reference) when you touched the relevant code. A task without these run is not done.
 
 ### When in doubt, stop and ask
 If you cannot answer "what is the user-visible change of what I just did?" in one sentence, stop. If you are about to drop a column, rename a status string, change a default, or invalidate sessions — stop. Ask the user before proceeding. Silent behavioural changes are how customer trust dies.
@@ -155,7 +156,7 @@ If you cannot answer "what is the user-visible change of what I just did?" in on
 ### Public-route hygiene (web)
 The root of `web/src/App.tsx` defines the route boundary: everything declared OUTSIDE `<Route path="/app">` is public (`/`, `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`, `/request/:token`). Everything declared INSIDE `<Route path="/app">` is staff-only and gated by `auth.user`. Three rules:
 - Never add a public path under `/app/*`. Never add a staff path outside `/app/*`.
-- No provider, hook, or fetch that calls `/auth/*` may mount outside `/app/*`. `AuthCtx.Provider` and `useAuthProvider()` belong inside the `/app` route's layout, not at the root (TASK 0.6 in `CLEANUP_PLAN.md` enforces this).
+- No provider, hook, or fetch that calls `/auth/*` may mount outside `/app/*`. `AuthCtx.Provider` and `useAuthProvider()` belong inside the `/app` route's layout, not at the root.
 - Public pages (`/`, `/request/:token`) may only call public endpoints (e.g. the request-link info endpoint). They must not import `web/src/api/client.ts` if it auto-attaches a Bearer token — use a separate fetch instance.
 
 ### Browser-clean completion rule

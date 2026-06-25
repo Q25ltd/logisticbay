@@ -190,7 +190,7 @@ failed       — could not complete — attention needed
 ## 3. Run — execution container
 
 One trailer, one route, one period of work. Planner puts JobParts into Runs.
-For the full planning board design, run types, and build phases → see **PLANNING_BOARD.md**.
+For the full planning page design, movement strategies, and the Job→Movement→Run layer → see **PLANNING_PAGE_DESIGN.md**.
 
 ### Assignment order — trailer first, driver second
 

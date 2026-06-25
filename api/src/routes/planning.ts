@@ -26,6 +26,7 @@ import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
 import { buildProposals, type ProposalStop } from "../services/proposeRunsService.js";
 import { checkRun } from "../services/checkRunService.js";
+import { buildFleetCapacityProfile } from "../lib/loadCapacity.js";
 
 // ── Simple greedy GPS clustering (5 km radius) ───────────────────────────────
 
@@ -151,6 +152,7 @@ const RUN_INCLUDE = {
               id: true, jobReference: true, customerName: true,
               goodsType: true, goodsDescription: true,
               quantity: true, quantityUnit: true, weight: true,
+              stackable: true, vehicleCategory: true, minGvwClass: true,
               status: true,
             },
           },
@@ -294,9 +296,16 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const parts = await prisma.jobPart.findMany({
         where,
-        include: { job: { select: { id: true, customerName: true, goodsType: true } } },
+        include: { job: { select: { id: true, customerName: true, goodsType: true, stackable: true, weight: true, vehicleCategory: true, minGvwClass: true } } },
         orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
       });
+
+      // Q5a — pallet count a stop picks up (only collections carry a footprint).
+      const palletsOf = (p: typeof parts[number]): number | null => {
+        const isPallets = (p.quantityUnit ?? "").toLowerCase().includes("pallet");
+        if (isPallets && p.quantityRequired != null) return Number(p.quantityRequired);
+        return p.numPallets ?? null;
+      };
 
       const stops: ProposalStop[] = parts.map(p => ({
         jobId:          p.jobId,
@@ -311,9 +320,21 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         tempRange:      p.tempRange,
         oversized:      p.oversized,
         goodsType:      p.stopGoodsType ?? p.job.goodsType,
+        pallets:        palletsOf(p),
+        stackable:      p.job.stackable,
+        weightKg:       p.job.weight,
+        vehicleCategory: p.job.vehicleCategory,
+        minGvwClass:    p.job.minGvwClass,
       }));
 
       const proposals = buildProposals(stops);
+
+      // Q5a — fleet-aware capacity profile (available trailers only).
+      const fleetTrailers = await prisma.fleetTrailer.findMany({
+        where:  { companyId, status: { notIn: ["disposed"] } },
+        select: { trailerType: true, trailerLength: true, lengthM: true, decks: true, status: true },
+      });
+      const fleet = buildFleetCapacityProfile(fleetTrailers);
 
       // Score each candidate with the planning check (detour now; confidence once
       // the planner sets a start time). Compatibility is already on the proposal.
@@ -322,8 +343,11 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           stops: pr.stops.map((s, i) => ({
             sequenceNumber: i + 1, type: s.type, postcode: s.postcode, lat: s.lat, lng: s.lng,
             hazardous: s.hazardous, tempControlled: s.tempControlled, tempRange: s.tempRange,
-            oversized: s.oversized, goodsType: s.goodsType,
+            oversized: s.oversized, goodsType: s.goodsType, jobId: s.jobId,
+            pallets: s.pallets, stackable: s.stackable,
+            weightKg: s.weightKg, reqVehicleCategory: s.vehicleCategory, reqMinGvwClass: s.minGvwClass,
           })),
+          fleet,
         });
         return { ...pr, confidence: check.confidence, geometry: check.geometry };
       }));

@@ -12,12 +12,32 @@ import {
 import { api } from "../../api/client";
 import { aiApi, type RunCheckResult } from "../../api/ai";
 import { today, addDays, cap } from "../jobs/createJobUtils";
+import JobQuickLook from "./JobQuickLook";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Minutes → "Xh Ym" (drops "0m" on a whole hour, and the hour when under 60).
+function fmtHm(min: number): string {
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
+// "at yard" age — whole days (0 → "today", 1 → "1 day", N → "N days").
+function ageAtYard(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  return days <= 0 ? "today" : days === 1 ? "1 day" : `${days} days`;
+}
+// "yard:7" → "Yard 7"; "yard" → "Yard".
+function yardLabel(custody: string | null | undefined): string {
+  if (!custody) return "yard";
+  const ref = custody.replace(/^yard:?/i, "").trim();
+  return ref ? `Yard ${ref}` : "Yard";
 }
 
 function fmtDate(iso: string): string {
@@ -131,6 +151,27 @@ function Badge({ children, colour }: { children: React.ReactNode; colour: string
   return <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${colour}`}>{children}</span>;
 }
 
+// ── CheckTile — one compact, consistent feasibility tile in the planning-check strip
+type CheckTone = "ok" | "warn" | "bad" | "neutral";
+const CHECK_TONES: Record<CheckTone, string> = {
+  ok:      "bg-green-50 border-green-100 text-green-700",
+  warn:    "bg-amber-50 border-amber-100 text-amber-700",
+  bad:     "bg-red-50 border-red-100 text-red-700",
+  neutral: "bg-slate-50 border-slate-200 text-slate-600",
+};
+function CheckTile({ label, value, sub, tone, title }: {
+  label: string; value: string; sub?: string; tone: CheckTone; title?: string;
+}) {
+  return (
+    <div title={title}
+      className={`flex flex-col items-center justify-center text-center rounded-md border px-2 py-1 min-w-[60px] flex-1 ${CHECK_TONES[tone]}`}>
+      <span className="text-[13px] font-bold leading-tight">{value}</span>
+      {sub && <span className="text-[9px] leading-tight opacity-80">{sub}</span>}
+      <span className="text-[8.5px] uppercase tracking-wide opacity-70 leading-tight mt-0.5">{label}</span>
+    </div>
+  );
+}
+
 /** Single badge that merges run status + publishedToDriver into one coherent pill.
  *  Replaces the confusing two-badge (StatusBadge + "Sent") pattern. */
 function RunStatusBadge({ run }: { run: PlanningRun }) {
@@ -231,6 +272,7 @@ function JobWorkCard({
   draftRuns,
   selected,
   onSelectToggle,
+  onPeek,
 }: {
   group:           JobWorkGroup;
   onAddJobToRun:   (jobId: number, runId: number, partIds?: number[]) => Promise<void>;
@@ -238,6 +280,7 @@ function JobWorkCard({
   draftRuns:       PlanningRun[];
   selected:        boolean;
   onSelectToggle:  (jobId: number) => void;
+  onPeek:          (jobId: number) => void;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<number | "">("");
   const [adding, setAdding] = useState(false);
@@ -314,6 +357,12 @@ function JobWorkCard({
           {group.customerName ?? "Unknown customer"}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
+          {rep.custodyLocation && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700"
+              title={`Load is in custody at ${yardLabel(rep.custodyLocation)} — collected, awaiting an onward run`}>
+              📦 {yardLabel(rep.custodyLocation).toUpperCase()} · {ageAtYard(rep.inCustodySince)}
+            </span>
+          )}
           {impossible && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700" title="Delivery window closes before collection can start">
               ⛔ IMPOSSIBLE
@@ -344,11 +393,18 @@ function JobWorkCard({
           {group.jobReference && (
             <span className="font-mono text-[10px] text-muted">{group.jobReference}</span>
           )}
+          <button
+            onClick={e => { e.stopPropagation(); onPeek(group.jobId); }}
+            onMouseDown={e => e.stopPropagation()}
+            draggable={false}
+            className="text-slate-400 hover:text-blue-600 text-[12px] leading-none px-1 cursor-pointer"
+            title="Quick look at full job"
+          >ⓘ</button>
         </div>
       </div>
 
       {/* ── Stop rows ── */}
-      <div className="px-2.5 py-1 space-y-0.5">
+      <div className="px-3 py-1.5 space-y-1">
         {[...collections, ...others, ...deliveries].map(part => {
           const time      = fmtStopTime(part);
           const isCollect = part.nextAction.startsWith("Collect");
@@ -371,7 +427,7 @@ function JobWorkCard({
               className={`flex items-baseline gap-1.5 cursor-grab active:cursor-grabbing hover:bg-slate-50 rounded px-0.5 -mx-0.5 ${isBlocked ? "opacity-50" : ""}`}
               title={isBlocked ? undefined : "Drag to add just this stop to a run"}
             >
-              <span className={`flex-shrink-0 font-bold text-[10px] uppercase w-14 ${
+              <span className={`flex-shrink-0 font-bold text-[11px] uppercase w-16 ${
                 isCollect ? "text-blue-600" :
                 isDrop    ? (isBlocked ? "text-slate-400" : "text-green-700") :
                 "text-slate-500"
@@ -391,7 +447,7 @@ function JobWorkCard({
               {isBlocked ? (
                 <span className="text-[10px] font-semibold text-orange-600">⛔ collect first</span>
               ) : (
-                <span className="text-slate-500 text-[11px] truncate leading-tight">
+                <span className="text-slate-500 text-[12px] truncate leading-tight">
                   {postcode
                     ? <><span className="font-medium text-slate-700">{postcode}</span>{location !== postcode ? ` · ${location}` : ""}</>
                     : location}
@@ -521,6 +577,9 @@ function RunLane({
   collapsed,
   onToggleCollapsed,
   onCreateOvernightRun,
+  onPeek,
+  onFindCollection,
+  unplannedCollectionByJob,
 }: {
   run:              PlanningRun;
   trailers:         FleetTrailer[];
@@ -552,8 +611,12 @@ function RunLane({
     restHours?: 9 | 11;
     moveDeliveries?: boolean;
   }) => Promise<void>;
+  onPeek:           (jobId: number) => void;
+  onFindCollection: (query: string) => void;
+  unplannedCollectionByJob: Map<number, { jobPartId: number; customerName: string | null }>;
 }) {
   const [saving,     setSaving]     = useState(false);
+  const [checkExpanded, setCheckExpanded] = useState(false);
   const [err,        setErr]        = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isOver,     setIsOver]     = useState(false);
@@ -562,6 +625,27 @@ function RunLane({
   const [reorderDragId, setReorderDragId] = useState<number | null>(null);
   const [reorderOverId, setReorderOverId] = useState<number | null>(null);
   const [reordering,    setReordering]    = useState(false);
+
+  const [linkingRelay,  setLinkingRelay]  = useState(false);
+  const [relayFor,      setRelayFor]      = useState<number | null>(null);   // sourceRunId being linked
+  const [relayYardId,   setRelayYardId]   = useState<number | "">("");        // chosen yard (remembers last)
+
+  // Yard relay — link this delivery run to the run that holds its collection.
+  // Sets the feeder link (so coverage clears) and drops a yard handoff on each run.
+  async function handleLinkRelay(sourceRunId: number, yardId: number | undefined, yardText: string) {
+    setLinkingRelay(true);
+    try {
+      await onUpdate(run.id, { dependsOnRunId: sourceRunId, runType: "relay" });
+      if (!run.waypoints.some(w => w.waypointType === "yard_pickup")) {
+        await onAddWaypoint(run.id, "yard_pickup", yardText, 1, yardId);
+      }
+      const src = allRuns.find(r => r.id === sourceRunId);
+      if (src && !src.waypoints.some(w => w.waypointType === "hub_drop")) {
+        await onAddWaypoint(sourceRunId, "hub_drop", yardText, 900000, yardId);
+      }
+      setRelayFor(null);
+    } finally { setLinkingRelay(false); }
+  }
 
   // Waypoint form state
   const [showWpForm,    setShowWpForm]    = useState(false);
@@ -580,6 +664,18 @@ function RunLane({
   const [wpGeoLoading,  setWpGeoLoading]  = useState(false);
   const [savedLocs,     setSavedLocs]     = useState<SavedLocationOption[]>([]);
   const [locsLoading,   setLocsLoading]   = useState(false);
+
+  // Yard options for a relay handoff: depot first, then saved locations.
+  const yardOptions = [
+    ...(depot ? [{ id: depot.id, label: `${depot.siteName ?? depot.name} (depot)` }] : []),
+    ...savedLocs.map(l => ({ id: l.id, label: l.siteName ?? l.name ?? `Location ${l.id}` })),
+  ];
+  function confirmRelay() {
+    if (relayFor == null) return;
+    const id = relayYardId === "" ? depot?.id : Number(relayYardId);
+    const opt = yardOptions.find(o => o.id === id);
+    handleLinkRelay(relayFor, id, opt?.label.replace(/ \(depot\)$/, "") ?? depot?.siteName ?? depot?.name ?? "Yard");
+  }
 
   // Overnight rest form state
   const [showOvernightForm, setShowOvernightForm] = useState(false);
@@ -616,12 +712,21 @@ function RunLane({
             timeWindowStart: a.jobPart.timeWindowStart,
             timeWindowEnd:   a.jobPart.timeWindowEnd,
             customerName:    a.jobPart.job.customerName,
+            jobId:           a.jobId,   // Q4 coverage — match delivery ↔ collection
             // Freight requirement fields for compatibility check
             hazardous:       a.jobPart.hazardous,
             tempControlled:  a.jobPart.tempControlled,
             tempRange:       a.jobPart.tempRange,
             oversized:       a.jobPart.oversized,
             goodsType:       a.jobPart.stopGoodsType ?? a.jobPart.job.goodsType,
+            // Q5a capacity — pallet footprint (only collection stops are summed server-side)
+            pallets:         ["pallet","pallets","plt","pl"].includes((a.jobPart.job.quantityUnit ?? "").toLowerCase())
+                               ? a.jobPart.job.quantity : null,
+            stackable:       a.jobPart.job.stackable,
+            // Q5b vehicle suitability — load weight + declared vehicle requirement
+            weightKg:           a.jobPart.job.weight,
+            reqVehicleCategory: a.jobPart.job.vehicleCategory,
+            reqMinGvwClass:     a.jobPart.job.minGvwClass,
           }));
 
         const planDate = run.plannedDate ? run.plannedDate.slice(0, 10) : null;
@@ -657,7 +762,10 @@ function RunLane({
         const departureTime = run.estimatedStartTime
           ?? (depotStart?.scheduledTime && planDate ? `${planDate}T${depotStart.scheduledTime}:00Z` : null);
 
-        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: departureTime, vehicle });
+        // Q5b — pass the allocated vehicle (when assigned) so suitability can be checked.
+        const assignedVehicle = truck ? { category: truck.category ?? null } : null;
+
+        const result = await aiApi.checkRun({ stops: allStops, estimatedStartTime: departureTime, vehicle, hasFeederRun: run.dependsOnRunId != null, assignedVehicle });
         setPlanCheck(result);
       } catch { setPlanCheck(null); }
       finally  { setAiLoading(false); }
@@ -900,90 +1008,155 @@ function RunLane({
         </div>
       )}
       {!aiLoading && planCheck && (() => {
-        // Signal 1 — Planning check
-        const checkDot =
-          planCheck.severity === "high"                                        ? "🔴" :
-          planCheck.severity === "medium" || planCheck.severity === "low"      ? "🟡" :
-          "🟢";
-        const checkColour =
-          planCheck.severity === "high"   ? "bg-red-50 text-red-700 border-red-100"       :
-          planCheck.severity === "medium" ? "bg-amber-50 text-amber-700 border-amber-100" :
-          planCheck.severity === "low"    ? "bg-amber-50 text-amber-700 border-amber-100" :
-          "bg-green-50 text-green-700 border-green-100";
+        const cov   = planCheck.coverage;
+        const cap   = planCheck.capacity;
+        const veh   = planCheck.vehicleSuitability;
+        const legal = planCheck.legal;
+        const conf  = planCheck.confidence;
 
-        // Signal 2 — Run confidence
-        const conf = planCheck.confidence;
-        const confBadgeColour =
-          conf === null           ? "bg-slate-100 text-slate-500" :
-          conf >= 80              ? "bg-green-100 text-green-700"  :
-          conf >= 50              ? "bg-amber-100 text-amber-700"  :
-          "bg-red-100 text-red-700";
+        // Overall headline status
+        const overallTone: CheckTone =
+          (!cov.ok || (cap && !cap.ok) || (veh && !veh.ok)) ? "bad" :
+          planCheck.concern                                  ? "warn" : "ok";
+        const statusLabel = !cov.ok ? "Invalid movement" : planCheck.concern ? "Some issues" : "Looks good";
+        const statusDot   = overallTone === "bad" ? "🔴" : overallTone === "warn" ? "🟡" : "🟢";
+
+        const confTone: CheckTone = conf === null ? "neutral" : conf >= 80 ? "ok" : conf >= 50 ? "warn" : "bad";
         const confLabel = conf === null ? "—" : `${conf}%`;
 
-        // Signal 3 — Compatibility (advisory only — never blocks)
-        const conflicts = planCheck.compatibility.conflicts;
+        const compatible    = planCheck.compatibility.compatible;
+        const compConflicts = planCheck.compatibility.conflicts;
 
-        // Signal 4 — Direction / detour
-        const detourRatio  = planCheck.geometry.detourRatio;
-        const deadheadKm   = planCheck.geometry.deadheadKm;
-        const deadheadMi   = deadheadKm !== null ? Math.round(deadheadKm * 0.621) : null;
-        const showDirection = detourRatio !== null || deadheadMi !== null;
+        const vehTone: CheckTone = !veh || veh.conflicts.length === 0 ? "ok" : veh.ok ? "warn" : "bad";
+        const vehVal  = vehTone === "ok" ? "✓" : vehTone === "warn" ? "⚠" : "✗";
+
+        const capTone: CheckTone = !cap ? "neutral" : cap.ok ? "ok" : "bad";
+        const capVal  = !cap || cap.maxSpaces === null ? "—" : cap.ok ? "Fits" : "Split";
+
+        const detourRatio = planCheck.geometry.detourRatio;
+        const deadheadKm  = planCheck.geometry.deadheadKm;
+        const deadheadMi  = deadheadKm !== null ? Math.round(deadheadKm * 0.621) : null;
+
+        const dutyTone: CheckTone = !legal ? "neutral" :
+          legal.dutyMin > 780                                              ? "bad"  :
+          (legal.usesExtension || legal.dutyMin > 660 || legal.drivingMin > 600) ? "warn" : "ok";
+
+        // While a run is fundamentally invalid (no collection), grey the other tiles
+        // so the red error isn't competing with green ticks.
+        const coverageBlocks = !cov.ok;
+        const dim = (t: CheckTone): CheckTone => coverageBlocks ? "neutral" : t;
+
+        // Deliveries in this run whose collection isn't here (and isn't fed by a relay)
+        // → offer to add the matching unplanned collection in one click.
+        const collectedJobIds = new Set(
+          run.assignments.filter(a => a.jobPart.type === "collection" || a.jobPart.type === "pickup").map(a => a.jobId));
+        const missing = run.dependsOnRunId != null ? [] : (() => {
+          const seen = new Set<number>(); const out: { jobId: number; customerName: string }[] = [];
+          for (const a of run.assignments) {
+            if (a.jobPart.type !== "delivery" && a.jobPart.type !== "dropoff") continue;
+            if (collectedJobIds.has(a.jobId) || seen.has(a.jobId)) continue;
+            seen.add(a.jobId);
+            out.push({ jobId: a.jobId, customerName: a.jobPart.job.customerName ?? "this delivery" });
+          }
+          return out;
+        })();
 
         return (
-          <div className={`px-3 py-2 text-xs border-b flex-shrink-0 space-y-1.5 ${checkColour}`}>
-            {/* Signal 1: Planning check */}
-            <div className="flex items-start gap-1.5">
-              <span className="flex-shrink-0 font-semibold text-[10px] uppercase tracking-wide whitespace-nowrap">Planning check</span>
-              <span className="flex-shrink-0">{checkDot}</span>
-              <span className="leading-snug">{planCheck.message}</span>
-            </div>
-
-            {/* Signals 2–4 row */}
+          <div className="px-3 py-2 border-b flex-shrink-0 bg-white space-y-1.5">
+            {/* Header — status pill + quick stats + expand toggle (compact by default) */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Signal 2: Run confidence */}
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-inherit opacity-70 font-medium whitespace-nowrap">Confidence</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${confBadgeColour}`}>
-                  {confLabel}
-                </span>
-              </div>
-
-              {/* Signal 3: Compatibility (advisory) */}
-              {conflicts.length > 0 && (
-                <div
-                  className="flex items-center gap-1 cursor-help"
-                  title={conflicts.map(c => c.reason).join(" · ")}
-                >
-                  <span className="text-amber-600 font-bold text-[11px]">⚠</span>
-                  <span className="text-[10px] font-semibold text-amber-700 whitespace-nowrap">
-                    Compatibility
-                  </span>
-                  <span className="text-[10px] text-amber-600 truncate max-w-[120px]">
-                    {conflicts[0].reason}{conflicts.length > 1 ? ` +${conflicts.length - 1}` : ""}
-                  </span>
-                </div>
-              )}
-              {conflicts.length === 0 && planCheck.compatibility.compatible && (
-                <span className="text-[10px] opacity-60">✓ Compatible</span>
-              )}
-
-              {/* Signal 4: Direction / detour */}
-              {showDirection && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-inherit opacity-70 font-medium whitespace-nowrap">Direction / detour</span>
-                  {detourRatio !== null && (
-                    <span className="text-[10px] font-semibold whitespace-nowrap">
-                      Detour {detourRatio.toFixed(1)}×
-                    </span>
-                  )}
-                  {deadheadMi !== null && (
-                    <span className="text-[10px] whitespace-nowrap opacity-80">
-                      · {deadheadMi} mi empty
-                    </span>
-                  )}
-                </div>
-              )}
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Planning check</span>
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${CHECK_TONES[overallTone]}`}>{statusDot} {statusLabel}</span>
+              {!coverageBlocks && conf !== null && <span className="text-[10px] text-slate-400">· {conf}%</span>}
+              {!coverageBlocks && legal && legal.drivingMin > 0 && <span className="text-[10px] text-slate-400">· Duty ~{fmtHm(legal.dutyMin)}</span>}
+              <button onClick={() => setCheckExpanded(v => !v)} className="ml-auto text-[10px] font-medium text-slate-400 hover:text-primary whitespace-nowrap">
+                {checkExpanded ? "Hide checks ▲" : "Details ▾"}
+              </button>
             </div>
+
+            {/* Tile strip — only when expanded */}
+            {checkExpanded && (
+              <div className="flex flex-wrap gap-1.5">
+                <CheckTile label="Coverage"   value={cov.ok ? "✓" : "✗"} tone={cov.ok ? "ok" : "bad"}
+                  title={cov.ok ? "Every delivery is sourced" : cov.uncovered.join(" · ")} />
+                <CheckTile label="Confidence" value={coverageBlocks ? "—" : confLabel} tone={dim(confTone)}
+                  title={coverageBlocks ? "Blocked — fix coverage first" : "Overall plan confidence (incl. 15% buffer)"} />
+                <CheckTile label="Compatible" value={compatible ? "✓" : "⚠"} tone={dim(compatible ? "ok" : "warn")}
+                  title={compatible ? "Loads can share a trailer" : compConflicts.map(c => c.reason).join(" · ")} />
+                <CheckTile label="Vehicle"    value={vehVal} tone={dim(vehTone)}
+                  title={veh && veh.conflicts.length ? veh.conflicts.map(c => c.reason).join(" · ") : "Loads agree on a vehicle"} />
+                <CheckTile label="Capacity"   value={capVal} tone={dim(capTone)}
+                  title={cap?.reason ?? "Fits an available vehicle"} />
+                {detourRatio !== null && (
+                  <CheckTile label="Detour" value={`${detourRatio.toFixed(1)}×`} tone={dim(detourRatio > 1.4 ? "warn" : "neutral")}
+                    title={`Real road vs straight line${deadheadMi !== null ? ` · ${deadheadMi} mi empty` : ""}`} />
+                )}
+                {legal && legal.drivingMin > 0 && (
+                  <CheckTile label="Driver hours" value={`~${fmtHm(legal.dutyMin)}`}
+                    sub={`${fmtHm(legal.drivingMin)} drv${legal.drivingBreakCount > 0 ? ` · ${legal.drivingBreakCount}brk` : ""}`}
+                    tone={dim(dutyTone)}
+                    title={`Driving ${fmtHm(legal.drivingMin)}${legal.usesExtension ? " (10h extension)" : ""} · ${legal.drivingBreakCount} × 45-min break · Duty ~${fmtHm(legal.dutyMin)}`} />
+                )}
+              </div>
+            )}
+
+            {/* Headline + one-click fix for the worst issue */}
+            {planCheck.concern && (
+              <div className={`rounded-md px-2 py-1.5 text-[11px] ${overallTone === "bad" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
+                <div className="leading-snug">{planCheck.message}</div>
+                {missing.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {missing.map(m => {
+                      const coll = unplannedCollectionByJob.get(m.jobId);
+                      // Is this load's collection already on ANOTHER run? → yard relay.
+                      const sourceRun = !coll
+                        ? allRuns.find(r => r.id !== run.id && r.assignments.some(a =>
+                            a.jobId === m.jobId && (a.jobPart.type === "collection" || a.jobPart.type === "pickup")))
+                        : null;
+                      if (coll) return (
+                        <button key={m.jobId} onClick={() => { onDropPart(coll.jobPartId); }}
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white border border-current hover:opacity-80 whitespace-nowrap"
+                          title={`Adds ${m.customerName}'s collection to this run`}>
+                          + Add collection — {m.customerName}
+                        </button>
+                      );
+                      if (sourceRun) return (
+                        <button key={m.jobId}
+                          onClick={() => { setRelayFor(sourceRun.id); loadSavedLocs(); setRelayYardId(prev => prev !== "" ? prev : (depot?.id ?? "")); }}
+                          disabled={linkingRelay}
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white border border-current hover:opacity-80 disabled:opacity-50 whitespace-nowrap"
+                          title={`${m.customerName} is collected on ${sourceRun.runReference}. Link this run to pick up from the yard and deliver.`}>
+                          🔗 Yard relay from {sourceRun.runReference}
+                        </button>
+                      );
+                      return (
+                        <button key={m.jobId} onClick={() => onFindCollection(m.customerName)}
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white border border-current hover:opacity-80 whitespace-nowrap">
+                          Find collection — {m.customerName} →
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* Yard picker — choose where the handoff happens (defaults to depot) */}
+                {relayFor != null && (
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap bg-white/70 rounded p-1.5">
+                    <span className="text-[10px] font-medium">Drop &amp; pick up at:</span>
+                    <select value={relayYardId} onChange={e => setRelayYardId(e.target.value ? Number(e.target.value) : "")}
+                      className="input text-[11px] py-0.5 px-1 max-w-[160px]">
+                      {yardOptions.length === 0 && <option value="">Loading…</option>}
+                      {yardOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    </select>
+                    <button onClick={confirmRelay} disabled={linkingRelay}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded bg-primary text-white hover:opacity-90 disabled:opacity-50">
+                      {linkingRelay ? "Linking…" : "Link relay"}
+                    </button>
+                    <button onClick={() => setRelayFor(null)} disabled={linkingRelay}
+                      className="text-[10px] text-slate-500 hover:text-slate-700 px-1">Cancel</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1104,6 +1277,11 @@ function RunLane({
                         <span className="font-semibold text-[13px] text-primary truncate flex-1 min-w-0">
                           {a.jobPart.job.customerName ?? "—"}
                         </span>
+                        <button
+                          onClick={() => onPeek(a.jobId)}
+                          className="text-slate-300 hover:text-blue-600 flex-shrink-0 text-[12px] leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Quick look at full job"
+                        >ⓘ</button>
                         <button
                           onClick={() => onRemoveStop(run.id, a.id)}
                           className="text-slate-300 hover:text-red-500 flex-shrink-0 text-sm leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1553,11 +1731,12 @@ function Sidebar({
     .sort(([a], [b]) => a.localeCompare(b));
 
   function SidebarItem({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+    const empty = count === 0 && !active;
     return (
       <button
         onClick={onClick}
         className={`w-full text-left flex items-center justify-between px-2.5 py-2 rounded text-sm transition-colors ${
-          active ? "bg-primary text-white" : "text-slate-600 hover:bg-slate-100 hover:text-primary"
+          active ? "bg-primary text-white" : `hover:bg-slate-100 hover:text-primary ${empty ? "text-slate-300" : "text-slate-600"}`
         }`}
       >
         <span className="truncate">{label}</span>
@@ -1678,9 +1857,9 @@ function ProposalCard({
     "bg-amber-50 text-amber-700 border-amber-200";
 
   return (
-    <div className="bg-white border border-border rounded-lg overflow-hidden shadow-sm">
+    <div className="bg-white border border-border rounded-lg overflow-hidden shadow-sm w-72 flex-shrink-0 flex flex-col">
       {/* Header row */}
-      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2 flex-wrap">
         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide flex-shrink-0 ${strategyColour}`}>
           {STRATEGY_LABELS[proposal.strategy]}
         </span>
@@ -1739,18 +1918,19 @@ function ProposalCard({
       )}
 
       {/* Action row */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-t border-slate-100">
+      <div className="mt-auto flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border-t border-slate-100">
         <button
           onClick={handleAccept}
           disabled={accepting}
-          className="btn text-xs py-1.5 px-3 bg-primary text-white hover:opacity-90 disabled:opacity-40 flex-1"
+          className="btn text-[11px] py-1 px-2.5 bg-primary text-white hover:opacity-90 disabled:opacity-40 flex-1 whitespace-nowrap"
+          title="Accept — creates a draft run skeleton you can allocate in Runs"
         >
-          {accepting ? "Creating…" : "Accept — create run skeleton"}
+          {accepting ? "Creating…" : "Accept"}
         </button>
         <button
           onClick={() => onDismiss(index)}
           disabled={accepting}
-          className="btn text-xs py-1.5 px-2.5 border border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700 disabled:opacity-40"
+          className="btn text-[11px] py-1 px-2 border border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-700 disabled:opacity-40 whitespace-nowrap"
           title="Dismiss this movement plan (reappears on next refresh)"
         >
           Dismiss
@@ -1804,11 +1984,15 @@ function ProposalsPanel({ date, onAccepted }: ProposalsPanelProps) {
 
   const visible = proposals.filter((_, i) => !dismissed.has(i));
 
+  // Reclaim space — when there's nothing to suggest, don't show an empty strip.
+  if (!loading && !fetchError && proposals.length === 0) return null;
+
   return (
-    <div className="border-t border-border bg-slate-50/60 flex-shrink-0">
+    <div className="border-b border-border bg-slate-50/60 flex-shrink-0">
       {/* Section header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-200">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Proposals</span>
+        <span className="text-[11px] text-slate-400 hidden md:inline">Movement plans suggested by the system</span>
         {!loading && proposals.length > 0 && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary text-white tabular-nums">
             {visible.length}
@@ -1816,8 +2000,13 @@ function ProposalsPanel({ date, onAccepted }: ProposalsPanelProps) {
         )}
         {loading && <span className="text-[10px] text-muted animate-pulse">Loading…</span>}
         <button
+          onClick={() => loadProposals(date)}
+          className="ml-auto text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+          title="Refresh proposals"
+        >⟳ Refresh</button>
+        <button
           onClick={() => setCollapsed(v => !v)}
-          className="ml-auto text-slate-400 hover:text-primary text-xs leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200"
+          className="text-slate-400 hover:text-primary text-xs leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200"
           title={collapsed ? "Expand proposals" : "Collapse proposals"}
         >
           {collapsed ? "▼" : "▲"}
@@ -1825,7 +2014,7 @@ function ProposalsPanel({ date, onAccepted }: ProposalsPanelProps) {
       </div>
 
       {!collapsed && (
-        <div className="px-2 py-2 space-y-2 max-h-96 overflow-y-auto">
+        <div className="px-4 py-2.5 flex gap-3 overflow-x-auto items-stretch">
           {fetchError && (
             <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
               {fetchError}
@@ -1883,6 +2072,7 @@ export default function PlanningBoardPage() {
   const [date,           setDate]           = useState(today());
   const [lookAheadDays,  setLookAheadDays]  = useState(0);
   const [search,         setSearch]         = useState("");
+  const [peekJobId,      setPeekJobId]      = useState<number | null>(null);
   const [workItems,      setWorkItems]      = useState<PlannerWorkItem[]>([]);
   const [clusters,       setClusters]       = useState<StopCluster[]>([]);
   const [runs,           setRuns]           = useState<PlanningRun[]>([]);
@@ -2109,9 +2299,12 @@ export default function PlanningBoardPage() {
       .filter(i => i.jobId === jobId && (!partIds || partIds.includes(i.jobPartId)))
       .sort((a, b) => (a.nextAction.startsWith("Collect") ? 0 : 1) - (b.nextAction.startsWith("Collect") ? 0 : 1));
 
+    setErr("");
+    const label = jobParts[0]?.customerName ?? `job ${jobId}`;
+    let failed = 0;
     if (jobParts.length > 0) {
       for (const part of jobParts) {
-        try { await planningApi.addStop(runId, part.jobPartId); } catch { /* skip */ }
+        try { await planningApi.addStop(runId, part.jobPartId); } catch { failed++; }
       }
     } else if (!partIds) {
       // Fallback to clusters only when doing a full-job add (no partIds filter)
@@ -2119,15 +2312,18 @@ export default function PlanningBoardPage() {
         .filter(s => s.jobId === jobId)
         .sort((a, b) => (COLLECT_FIRST.has(a.type) ? 0 : 1) - (COLLECT_FIRST.has(b.type) ? 0 : 1));
       for (const stop of allStops) {
-        try { await planningApi.addStop(runId, stop.id); } catch { /* skip */ }
+        try { await planningApi.addStop(runId, stop.id); } catch { failed++; }
       }
     }
+    if (failed > 0) setErr(`Couldn't add ${failed} stop${failed > 1 ? "s" : ""} for ${label} — it may already be on another run. Check the run before publishing.`);
     await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
     setMobileTab("runs");
   }
 
   async function handleAddPartToRun(jobPartId: number, runId: number) {
-    try { await planningApi.addStop(runId, jobPartId); } catch { /* skip */ }
+    setErr("");
+    try { await planningApi.addStop(runId, jobPartId); }
+    catch (e: unknown) { setErr(`Couldn't add that stop — ${(e as Error).message ?? "it may already be assigned to another run"}.`); }
     await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
     setMobileTab("runs");
   }
@@ -2243,6 +2439,26 @@ export default function PlanningBoardPage() {
 
   const draftRuns = runs.filter(r => r.status === "draft" || r.status === "assigned");
 
+  // Map jobId → its unplanned COLLECTION part, so a run missing a collection can
+  // pull it in with one click (the matching freight is in the left column).
+  const unplannedCollectionByJob = useMemo(() => {
+    const m = new Map<number, { jobPartId: number; customerName: string | null }>();
+    for (const w of workItems) {
+      if (!w.nextAction.startsWith("Collect")) continue;
+      if (m.has(w.jobId)) continue;
+      m.set(w.jobId, { jobPartId: w.jobPartId, customerName: w.customerName ?? null });
+    }
+    return m;
+  }, [workItems]);
+
+  // Day-summary metrics (slim header strip).
+  const daySummary = useMemo(() => {
+    const trucksUsed  = new Set(runs.map(r => r.assignedTruckId).filter((x): x is number => x != null)).size;
+    const driversUsed = new Set(runs.map(r => r.assignedDriverId).filter((x): x is number => x != null)).size;
+    const unplanned   = new Set(workItems.map(i => i.jobId)).size;
+    return { runCount: runs.length, trucksUsed, trucksTotal: trucks.length, driversUsed, driversTotal: drivers.length, unplanned };
+  }, [runs, trucks.length, drivers.length, workItems]);
+
   // Panel title
   const panelTitle = activePool === "needs_attention" ? "Needs Attention" :
     activePool === "in_custody" ? "In Custody" :
@@ -2270,6 +2486,16 @@ export default function PlanningBoardPage() {
         </div>
 
         <span className="hidden sm:inline text-sm text-muted">{fmtDate(date)}</span>
+
+        {/* Day summary — at-a-glance state of the day */}
+        <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-500 ml-3 pl-3 border-l border-slate-200">
+          <span><b className="text-slate-700 tabular-nums">{daySummary.runCount}</b> run{daySummary.runCount !== 1 ? "s" : ""}</span>
+          <span>Trucks <b className="text-slate-700 tabular-nums">{daySummary.trucksUsed}/{daySummary.trucksTotal}</b></span>
+          <span>Drivers <b className="text-slate-700 tabular-nums">{daySummary.driversUsed}/{daySummary.driversTotal}</b></span>
+          <span className={daySummary.unplanned > 0 ? "text-amber-700 font-medium" : ""}>
+            <b className="tabular-nums">{daySummary.unplanned}</b> unplanned
+          </span>
+        </div>
 
         <div className="ml-auto flex gap-1.5">
           <button onClick={handleCreateRun} disabled={creatingRun}
@@ -2302,6 +2528,14 @@ export default function PlanningBoardPage() {
         </button>
       </div>
 
+      {/* ── Proposals — full-width strip on top ── */}
+      <ProposalsPanel
+        date={date}
+        onAccepted={async () => {
+          await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+        }}
+      />
+
       {/* ── 3-panel layout ── */}
       <div className="flex-1 flex overflow-hidden">
 
@@ -2319,7 +2553,7 @@ export default function PlanningBoardPage() {
         </div>
 
         {/* Jobs panel */}
-        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-80 lg:w-96 flex-shrink-0 sm:border-r border-border`}>
+        <div className={`${mobileTab === "jobs" ? "flex" : "hidden"} sm:flex flex-col w-full sm:w-96 lg:w-[28rem] xl:w-[30rem] flex-shrink-0 sm:border-r border-border`}>
 
           <div className="px-3 pt-3 pb-2 border-b border-border flex-shrink-0 space-y-2">
             <div className="flex items-center justify-between">
@@ -2408,6 +2642,7 @@ export default function PlanningBoardPage() {
                       onSelectToggle={toggleJobSelect}
                       onAddJobToRun={handleAddJobToRun}
                       onAddPartToRun={handleAddPartToRun}
+                      onPeek={setPeekJobId}
                     />
                   ))}
                 </div>
@@ -2442,13 +2677,6 @@ export default function PlanningBoardPage() {
             </div>
           )}
 
-          {/* Proposals panel — advisory movement plans */}
-          <ProposalsPanel
-            date={date}
-            onAccepted={async () => {
-              await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
-            }}
-          />
         </div>
 
         {/* ── Kanban run lanes ── */}
@@ -2492,6 +2720,9 @@ export default function PlanningBoardPage() {
                 collapsed={collapsedRunIds.has(run.id)}
                 onToggleCollapsed={() => toggleRunCollapsed(run.id)}
                 onCreateOvernightRun={handleCreateOvernightRun}
+                onPeek={setPeekJobId}
+                onFindCollection={(q) => { setSearch(q); }}
+                unplannedCollectionByJob={unplannedCollectionByJob}
               />
             ))}
 
@@ -2507,6 +2738,7 @@ export default function PlanningBoardPage() {
           </div>
         </div>
       </div>
+      <JobQuickLook jobId={peekJobId} onClose={() => setPeekJobId(null)} />
     </div>
   );
 }

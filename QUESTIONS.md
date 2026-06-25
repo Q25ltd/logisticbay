@@ -28,6 +28,13 @@
 
 ---
 
+## 0z. Planning page / Load-Movement layer — open design questions (added 2026-06-24, see PLANNING_PAGE_DESIGN.md)
+
+- [ ] **Does `Movement` become a persisted entity, or stay a derived view?** A planning-time object that owns a load's chosen strategy + legs and links to the run(s) that execute them — persist it, or derive it on the fly from Job + Runs + custody? Decision gate before the "persist the Movement/Load-Journey object" step.
+- [ ] **Job constraints — hard vs soft.** For `storageAllowed` / `relayAllowed` / `directPreferred` / `timeCritical` / `tramperAllowed` (and existing `canSplitShipment`): which are *hard* (planning must not offer the strategy at all) vs *soft* (offered with a warning)?
+- [ ] **Corridor / journey grouping source.** Where does the corridor/load-journey grouping (the structure beyond region/area) get its definition — saved corridors, derived GPS clusters, or both?
+- [ ] **Constraint defaults & intake UI.** Confirm the default for each new constraint (proposed: storage/relay/tramper = true, direct/timeCritical = false) and where they're captured in job creation.
+
 ## 0. Planning board — open design questions (added 2026-05-26)
 
 - [~] **Tramper overnight rest — next-day run continuity.** When a tramper uses an `overnight_rest` waypoint to record where they parked up, the system does not yet auto-suggest that the next-day run starts from that location. **Current state:** planner manually creates a new run and adds a `depot_start` waypoint at the overnight address. **Open:** should the system detect the overnight rest and pre-fill the next run's start location? If yes, is the connection between runs via `dependsOnRunId` or by matching the `overnight_rest` waypoint location to the following run's `depot_start`?

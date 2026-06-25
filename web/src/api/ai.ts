@@ -122,6 +122,17 @@ export interface RunStopInput {
   tempRange?:       string | null;
   oversized?:       boolean | null;
   goodsType?:       string | null;
+  // Q4 coverage — which job this stop belongs to (match delivery ↔ collection).
+  jobId?:           number | null;
+  // Q5a capacity — pallet count + stackability of the load picked up at this stop.
+  pallets?:         number | null;
+  stackable?:       boolean | null;
+  // Q5b vehicle suitability — load weight + declared vehicle requirement.
+  weightKg?:           number | null;
+  reqVehicleCategory?: string | null;
+  reqMinGvwClass?:     string | null;
+  reqBodyTypes?:       string[] | null;
+  reqEquipment?:       string[] | null;
 }
 
 export interface RunCheckResult {
@@ -144,6 +155,31 @@ export interface RunCheckResult {
     idealKm:     number | null;
     detourRatio: number | null;
     deadheadKm:  number | null;
+  };
+  // Q4 — is every delivery serviceable (its load collected somewhere in the chain)?
+  coverage: { ok: boolean; uncovered: string[] };
+  // Q5a — does the load physically fit the company's fleet? (split if not)
+  capacity: {
+    ok:        boolean;
+    footprint: number | null;
+    maxSpaces: number | null;
+    splitInto: number | null;
+    reason:    string | null;
+  };
+  // Q5b — do the loads agree on a vehicle, and does any allocated vehicle suit them?
+  vehicleSuitability: {
+    ok:            boolean;
+    requiredClass: string | null;
+    assignedClass: string | null;
+    conflicts:     { severity: "high" | "medium" | "low"; reason: string }[];
+  };
+  // Q3b — drivers'-hours summary (EC 561 + WTD).
+  legal: {
+    drivingMin:        number;
+    drivingBreakCount: number;
+    workingMin:        number;
+    dutyMin:           number;
+    usesExtension:     boolean;
   };
 }
 
@@ -185,6 +221,13 @@ export const aiApi = {
       axleLoadT?: number | null;
     } | null;
     base?: { lat: number; lng: number } | null;
+    hasFeederRun?: boolean;
+    assignedVehicle?: {
+      category?:  string | null;
+      payloadKg?: number | null;
+      bodyType?:  string | null;
+      equipment?: string[] | null;
+    } | null;
   }) => api.post<RunCheckResult>("/ai/check-run", input),
   lookupAreas:   (postcodes: string[]) =>
     api.post<AreaInfo[]>("/ai/area-lookup", { postcodes }),

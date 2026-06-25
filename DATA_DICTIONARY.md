@@ -1484,3 +1484,36 @@ Key planning-specific API endpoints (supplement to the standard CRUD routes).
 | `DELETE` | `/planning/runs/:id/waypoints/:waypointId` | Remove a waypoint from a run. |
 | `GET` | `/planning/fleet` | Returns `{ trailers, trucks, depot }` for the planner's fleet picker. |
 | `GET` | `/planning/drivers?date=YYYY-MM-DD` | Returns available drivers for the given date (see `PlanningDriver` type above). |
+| `POST` | `/ai/check-run` | Deterministic planning check (NOT AI). Returns `confidence`, `buffer`, `compatibility`, `geometry`, `coverage` (Q4), `capacity` (Q5a). Route loads the company's available-trailer profile and injects it for the fleet-aware capacity check. |
+| `GET` | `/planning/propose-runs?date=YYYY-MM-DD` | Candidate run proposals (greedy corridor clustering + compatibility split). Each candidate is scored by `/ai/check-run` logic with the same fleet profile injected. |
+
+---
+
+## Planning feasibility — derived terms (in-memory, non-schema)
+
+Computed by the planning check (`checkRunService` + `loadCapacity`); **not** persisted columns. Canonical names — do not alias.
+
+| Term | Meaning |
+|---|---|
+| `confidence` | 0–100 score for a run plan; explainable deductions. `null` when coords are missing. |
+| `legal` (Q3b) | `{ drivingMin, drivingBreakCount, workingMin, dutyMin, usesExtension }` — drivers'-hours summary (EC 561/2006 + WTD). |
+| `drivingMin` | Total raw driving time (ORS, or haversine ×1.25 ÷ 60 km/h fallback). |
+| `drivingBreakCount` | 45-min breaks required = `max(0, ceil(drivingMin / 270) − 1)` — one per 4.5h driving, leg-independent. |
+| `workingMin` | Driving + loading/unloading work (30 min/stop). |
+| `dutyMin` | Whole-run span: buffered drive + dwell + breaks. Compared to ~13h (`MAX_DUTY_MIN=780`) / ~11h (`LONG_DUTY_MIN=660`). |
+| `usesExtension` | True when driving is in the 9–10h band (relies on the 10-hour extension, ≤2×/week). >10h is a hard fail, not an extension. |
+| `coverage` (Q4) | `{ ok, uncovered[] }` — a delivery is *covered* only if its load is sourced (matching collection/pickup for the same `jobId`, a yard/depot pickup waypoint, or a feeding relay run via `hasFeederRun`). |
+| `capacity` (Q5a) | `{ ok, footprint, maxSpaces, splitInto, reason }` — does the load fit the company's fleet? |
+| `vehicleSuitability` (Q5b) | `{ ok, requiredClass, assignedClass, conflicts[] }` — do the run's loads agree on a vehicle class, and (when allocated) does the vehicle suit them? |
+| `requiredClass` / `assignedClass` | Vehicle category (`van`/`luton_van`/`rigid`/`tractor`/`drawbar`) the loads need / the allocated vehicle is. Derived in `lib/vehicleClass.ts` (`categoryFromWeight`, `classRank`, `classCanCarry`). |
+| `RunStop.reqVehicleCategory` / `reqMinGvwClass` / `reqBodyTypes` / `reqEquipment` | A job's DECLARED vehicle requirement (Job.`vehicleCategory`/`minGvwClass`/`bodyTypes`/`equipment`), threaded per stop for the suitability check. Declared takes priority; weight/pallets derive a class as fallback. |
+| `assignedVehicle` | Check-run input `{ category, payloadKg?, bodyType?, equipment? }` for the allocated vehicle. A substitute passes if it meets-or-exceeds the requirement (bigger is fine). |
+| `footprint` | Floor pallet spaces a load needs = `stackable ? ceil(pallets/2) : pallets`. Summed over a run's **collection** stops (peak load). |
+| `maxPalletSpaces` / `maxSpaces` | Largest floor-pallet capacity among the company's **available** trailers (`buildFleetCapacityProfile`). `null` = no trailers registered. |
+| `splitInto` | Recommended number of loads when `footprint > maxSpaces` = `ceil(footprint / maxSpaces)`. |
+| `hasDoubleDeck` | True if any available trailer has `decks ≥ 2`. |
+| `FleetCapacityProfile` | `{ maxPalletSpaces, hasDoubleDeck, trailerCount }` — derived from `FleetTrailer` (`trailerLength`/`lengthM` × `decks`; 13.6 m single deck = 26 spaces). |
+
+`RunStop` (check-run input) carries `pallets` + `stackable` per stop. `pallets` comes from JobPart `quantityRequired`/`numPallets` when the unit is pallets; `stackable` is the Job-level flag.
+
+`PlannerWorkItem` gains `custodyLocation` (the load's current custody ref, e.g. `yard:7`) and `inCustodySince` (ISO timestamp it entered custody) — used by the date-independent **At yard / In custody** pool so a yard-stored load (relay/DC/swap) shows every day with its age until its onward leg is delivered.

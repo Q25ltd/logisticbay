@@ -39,6 +39,9 @@ export interface PlannerWorkItem {
   sortScore:        number;
   groupKey:         string;
   postcodeDistrict: string | null;  // UK outward code e.g. "LS27", "M1", "SW1A"
+  // In-custody (yard storage): where the load is parked + when it got there.
+  custodyLocation:  string | null;  // e.g. "yard:7" — the load's current custody ref
+  inCustodySince:   string | null;  // ISO — when it entered custody (for "N days at yard")
 }
 
 // ── UK postcode district extraction ──────────────────────────────────────────
@@ -252,10 +255,39 @@ export async function getPlannerWorkItems(
     }),
   ]);
 
-  // De-duplicate by id
+  // ── 1b. In-custody loads parked at a yard — DATE-INDEPENDENT ───────────────
+  //
+  // A load collected and dropped at a yard (relay / DC / swap) has status
+  // `collected` — excluded from the date-scoped query above — and may sit for
+  // days. It must NEVER fall out of view, so we fetch it on its own: latest
+  // custody base = yard, onward (delivery) leg not yet on an active run.
+  const latestByJob = await prisma.loadTrack.findMany({
+    where:    { companyId, deletedAt: null },
+    orderBy:  [{ jobId: "asc" }, { timestamp: "desc" }],
+    distinct: ["jobId"],
+    select:   { jobId: true, toCustody: true, timestamp: true },
+  });
+  const yardByJob = new Map<number, Date>();
+  for (const r of latestByJob) {
+    if (custodyBaseOf(r.toCustody) === "yard") yardByJob.set(r.jobId, r.timestamp);
+  }
+  const custodyParts = yardByJob.size > 0
+    ? await prisma.jobPart.findMany({
+        where: {
+          companyId,
+          jobId:          { in: [...yardByJob.keys()] },
+          type:           { in: ["delivery", "dropoff"] },          // the onward leg
+          runAssignments: { none: { removedAt: null as null } },    // not yet on an active run
+          job:            { status: { notIn: ["completed", "cancelled"] } },
+        },
+        include: partInclude,
+      })
+    : [];
+
+  // De-duplicate by id (date-scoped parts + custody parts)
   const seen = new Set<number>();
   const allParts: typeof withWindow = [];
-  for (const p of [...withWindow, ...withBookedTime]) {
+  for (const p of [...withWindow, ...withBookedTime, ...custodyParts]) {
     if (!seen.has(p.id)) { seen.add(p.id); allParts.push(p); }
   }
 
@@ -514,6 +546,8 @@ export async function getPlannerWorkItems(
       sortScore:        score,
       groupKey,
       postcodeDistrict,
+      custodyLocation:  inCustody && track ? track.toCustody : null,
+      inCustodySince:   inCustody && track ? track.timestamp.toISOString() : null,
     });
   }
 

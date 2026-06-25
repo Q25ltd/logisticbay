@@ -118,6 +118,9 @@ export interface PlanningAssignment {
       quantity:     number | null;
       quantityUnit: string | null;
       weight:       number | null;
+      stackable:    boolean | null;
+      vehicleCategory: string | null;
+      minGvwClass:  string | null;
       status:       string | null;
     };
   };
@@ -220,6 +223,8 @@ export interface PlannerWorkItem {
   sortScore:        number;
   groupKey:         string;
   postcodeDistrict: string | null;
+  custodyLocation:  string | null;
+  inCustodySince:   string | null;
 }
 
 // ── Proposal types ───────────────────────────────────────────────────────────

@@ -7,6 +7,14 @@
 
 ---
 
+> **Direction (2026-06-24):** LogisticBay is a **Load Movement Planning System** — see
+> **`PLANNING_PAGE_DESIGN.md`** for the planning-page design, movement-strategy
+> catalogue, the Job→Movement→Run layer, and the job-constraint layer. Next
+> planning-layer step: **capture job constraints** (storage/relay/direct/timeCritical/
+> tramper allowed) — cheap, no re-architecture.
+
+---
+
 ## Load-movement build progress (LOAD_MOVEMENT_PLAN.md)
 
 Gated 16-step build of the full load lifecycle. Per-step detail + gates live in LOAD_MOVEMENT_PLAN.md and DEVLOG.md.
@@ -21,7 +29,16 @@ Gated 16-step build of the full load lifecycle. Per-step detail + gates live in 
 
 **Re-plan 2026-06-07 (see LOAD_MOVEMENT_PLAN.md Part E):** remaining work (old S7–S16) re-organised into **three screens, delivered vertically Planning → Runs → Live**.
 
-- 🔶 **Phase A — Planning screen** (jobs → runs): A1 ✅ + A2 ✅ + A3 🔶 — **Mac gate confirmed 2026-06-20** (full api DB suite passes; knip baseline-only). A1 = structural refactor + horizontal ops nav (+ mobile hamburger). A2 = three questions (confidence+buffer, stop-mixing compatibility, detour/empty-miles; four advisory run-lane signals, no "AI" copy). A3 = backend ✅ (proposeRunsService + GET /planning/propose-runs) + web Proposals panel ✅ (`proposeRuns` API method + `RunProposal` type; Proposals panel in left column below Jobs; strategy/confidence/detour/compatibility/why per card; Accept = createRun + addStop per stop + refresh; Dismiss = local state; copy rules enforced: Proposals/Movement plans/Run skeleton, no auto-plan/AI/dispatch-ready; web+api typecheck 0). Incognito smoke: user to verify on Mac. Remaining: A4 split/consolidation, A5 metrics capture. ← active
+- 🔶 **Phase A — Planning screen** (jobs → runs): A1 ✅ + A2 ✅ + A3 🔶 — **Mac gate confirmed 2026-06-20** (full api DB suite passes; knip baseline-only). A1 = structural refactor + horizontal ops nav (+ mobile hamburger). A2 = three questions (confidence+buffer, stop-mixing compatibility, detour/empty-miles; four advisory run-lane signals, no "AI" copy). A3 = backend ✅ (proposeRunsService + GET /planning/propose-runs) + web Proposals panel ✅ (`proposeRuns` API method + `RunProposal` type; Proposals panel in left column below Jobs; strategy/confidence/detour/compatibility/why per card; Accept = createRun + addStop per stop + refresh; Dismiss = local state; copy rules enforced: Proposals/Movement plans/Run skeleton, no auto-plan/AI/dispatch-ready; web+api typecheck 0). Incognito smoke: user to verify on Mac.
+  **A2 reopened — feasibility hardening** (see PLANNING_PAGE_DESIGN.md §5): Q4 collection-coverage ✅ (unserviceable run can no longer read green; "Coverage ✗" signal + confidence tanks; 4 tests). Q5a fleet-aware pallet capacity ✅ (`loadCapacity.ts`: footprint = stackable?ceil(p/2):p vs largest **available** trailer; over-capacity → "Capacity ✗ … split into K" signal + confidence drop; 40-pallet/no-double-deck → split into 2; check-run + propose-runs both inject the fleet profile; pure + integration tests; typecheck api+web 0). Q3b drivers'-hours model ✅ (repeating 45-min break every 4.5h driving — fixed a real bug where a single long leg got 0 breaks; 9–10h = "10h extension" advisory, >10h hard; WTD 30-min break after 6h work; ~13h duty ceiling; structured `legal{drivingMin,drivingBreakCount,workingMin,dutyMin,usesExtension}` + "Driver hours" lane line; per-run only — per-driver-day ledger deferred to Runs/Live). Q3c window-wait + real duty spread ✅ (timing clock now WAITS for a customer window to open — idle pushes later stops back, so an out-of-order plan like "deliver then drive back to a collect slot that already closed" is exposed as late instead of showing 90%; duty now uses the true depot→base spread incl. waits; fixed the screenshot RUN-2026-000009 false-feasible). Q5b vehicle-type suitability ✅ (`vehicleClass.ts` + `vehicleSuitability.ts`: required class from declared vehicleCategory/minGvwClass + weight/pallet-derived; flags a van-class load mixed with an HGV-class load — fixed the screenshot "van+artic = Compatible"; when a vehicle is allocated, checks it suits — under-class/over-payload high, wrong body/missing equipment medium; substitute OK if it meets-or-exceeds; advisory, never blocks; driver stays a variable). Next: Q5c/e remaining dimensions/height + handling equipment depth, Q5d loading-metres; then hard-on-Runs-publish vehicle check (extends S5). Then A4 consolidation summary (split now capacity-driven), A5 metrics capture. ← active
+  **🚦 Planning screen — RELEASE CLOSEOUT (2026-06-24). Scope is LOCKED — finish & ship, do not add.**
+  The screen is built. To call Phase A **done/releasable**, run the verification gate (Mac only — tsx/vitest/knip/dev server don't run in the build sandbox; both packages typecheck 0):
+  1. `npm test --prefix api` — full DB suite green (incl. yard-buffer Step 6 + the no-DB feasibility describes).
+  2. `npx knip` — no NEW unused exports vs baseline.
+  3. **Planning incognito smoke** (CLAUDE.md 6-step) + eyeball the session's UI: proposals as a top strip, compact run-check (expand on Details), ⓘ job quick-look, day-summary chips, one-click "Add collection" / "Yard relay" + yard picker.
+  When green: flip A3 + Step 6 to ✅ and Phase A to ✅.
+  **PARKED for post-release (v1.1 — do NOT build before shipping):** Q5c/e dimensions + handling equipment · Q5d loading-metres · hard-on-Runs-publish vehicle check (belongs to Phase B) · A4 consolidation summary · A5 metrics capture · route map · resizable freight column · "Split run" action (needs split endpoint) · job-constraints layer · Movement/Load-Journey persistence · per-driver-day hours ledger. All tracked in PLANNING_PAGE_DESIGN.md / QUESTIONS.md.
+
 - 🔲 **Phase B — Runs screen** (asset allocation): trailer swap (S7) + handover (S8) + canonical truck/trailer/driver allocation UI.
 - 🔲 **Phase C — Live management screen** (firefighting): exceptions (S11), reassign/cancel (S12), dependency enforce (S13), notifications (S14), monitoring (S15).
 - ⏳ Follow-ups: set `planned` when all stops assigned (D3.2); per-vehicle payload field + double-booking guard (D5.4/D5.5).
@@ -192,7 +209,7 @@ Gated 16-step build of the full load lifecycle. Per-step detail + gates live in 
 ## 🔲 NOT STARTED — future phases
 
 ### Planning board
-Full spec in **PLANNING_BOARD.md**. Three phases.
+Full design in **PLANNING_PAGE_DESIGN.md** (movement strategies, Job→Movement→Run layer, UX). Three-screen delivery in **LOAD_MOVEMENT_PLAN.md** Part E.
 
 **Phase 1 — Planning board (Types 1, 2, 3)** — BUILT 2026-05-24, updated 2026-05-24
 - [x] 1.1  Schema: `runType` + `dependsOnRunId` (self-ref FK) on Run — migration applied

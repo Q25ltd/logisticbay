@@ -3,8 +3,10 @@
  *
  * Deterministic routing/time logic — uses real HGV routing (ORS) for distances.
  * Decisions are explainable rules:
- *   - UK legal 9-hour daily driving limit
- *   - EC 561/2006 break rule (45 min after 4.5 h driving)
+ *   - EC 561/2006 daily driving limit (9 h, extendable to 10 h ≤2×/week)
+ *   - EC 561/2006 break rule — a 45-min break after EVERY 4.5 h of driving (repeating)
+ *   - Working Time Directive — a 30-min break once on-duty work passes 6 h
+ *   - ~13 h daily duty/spread ceiling (driving + work + breaks)
  *   - Time-window arrival checks per stop, computed against a CONTINGENCY BUFFER
  *     so a plan that only works under perfect conditions is flagged (Step A2 Q3)
  *   - A 0–100 confidence score with explainable deductions
@@ -17,6 +19,8 @@
 import { postcodeToCoords, getHgvLeg } from "../lib/routing.js";
 import { haversineKm }                from "../lib/geo.js";
 import { checkLoadMixing, type MixResult } from "../lib/loadMixing.js";
+import { checkCapacity, type CapacityResult, type FleetCapacityProfile } from "../lib/loadCapacity.js";
+import { checkVehicleSuitability, type SuitabilityResult, type SuitabilityConflict, type AssignedVehicle } from "../lib/vehicleSuitability.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +41,17 @@ export interface RunStop {
   tempRange?:       string | null;
   oversized?:       boolean | null;
   goodsType?:       string | null;
+  // Q4 coverage — which job this stop belongs to (match delivery ↔ collection).
+  jobId?:           number | null;
+  // Q5a capacity — pallet count + stackability of the load picked up at this stop.
+  pallets?:         number | null;
+  stackable?:       boolean | null;
+  // Q5b vehicle suitability — load weight + declared vehicle requirement of the job.
+  weightKg?:           number | null;
+  reqVehicleCategory?: string | null;   // job.vehicleCategory
+  reqMinGvwClass?:     string | null;   // job.minGvwClass
+  reqBodyTypes?:       string[] | null; // job.bodyTypes
+  reqEquipment?:       string[] | null; // job.equipment
 }
 
 export interface VehicleRestrictions {
@@ -53,6 +68,13 @@ export interface RunFeasibilityInput {
   vehicle?:            VehicleRestrictions | null;
   // A2 Q2 — depot/base coords; when present, deadhead (empty miles) is computed.
   base?:               { lat: number; lng: number } | null;
+  // Q4 coverage — true if this run is fed by a prior run (dependsOnRunId), so its
+  // deliveries' goods may have been collected upstream (relay).
+  hasFeederRun?:       boolean;
+  // Q5a capacity — the company's available-fleet capacity profile (route injects it).
+  fleet?:              FleetCapacityProfile | null;
+  // Q5b — the allocated vehicle (when a run already has one), to check it suits the load.
+  assignedVehicle?:    AssignedVehicle | null;
 }
 
 export interface RunGeometry {
@@ -79,16 +101,41 @@ export interface RunFeasibilityResult {
   compatibility: MixResult;
   // A2 Q2 — direction / empty miles.
   geometry: RunGeometry;
+  // Q4 — is every delivery serviceable (its load collected somewhere in the chain)?
+  coverage: { ok: boolean; uncovered: string[] };
+  // Q5a — does the load physically fit the company's fleet? (split if not)
+  capacity: CapacityResult;
+  // Q5b — do the loads agree on a vehicle, and does any allocated vehicle suit them?
+  vehicleSuitability: SuitabilityResult;
+  // Q3b — drivers'-hours summary (deterministic; raw, pre-buffer driving/work).
+  legal: {
+    drivingMin:        number;   // total driving time (raw)
+    drivingBreakCount: number;   // 45-min breaks required (one per 4.5h driving)
+    workingMin:        number;   // driving + loading/unloading work
+    dutyMin:           number;   // whole run incl. drive + dwell + breaks (buffered)
+    usesExtension:     boolean;  // driving is in the 9–10h extension band
+  };
 }
+
+const ZERO_LEGAL = { drivingMin: 0, drivingBreakCount: 0, workingMin: 0, dutyMin: 0, usesExtension: false };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const HGV_SPEED_KMH    = 60;
 const ROAD_FACTOR      = 1.25;
 const STOP_DWELL_MIN   = 30;
-const MAX_DRIVE_MIN    = 540;  // 9 h legal daily driving limit
-const BREAK_TRIGGER    = 270;  // 4.5 h — break required after this
-const BREAK_DURATION   = 45;   // 45-min mandatory break
+const MAX_DRIVE_MIN    = 540;  // 9 h standard daily driving limit (EC 561/2006)
+const EXTENDED_DRIVE_MIN = 600;// 10 h absolute daily driving max (extension, ≤2×/week)
+const BREAK_TRIGGER    = 270;  // 4.5 h — a 45-min break required after EVERY 4.5h driving
+const BREAK_DURATION   = 45;   // 45-min mandatory driving break
+
+// Working Time Directive (mobile workers) — a break once on-duty work passes 6h.
+const WTD_WORK_TRIGGER = 360;  // 6 h working time
+const WTD_BREAK_MIN    = 30;   // 30-min WTD break (covered by a 561 break when one falls)
+
+// Daily duty / spread (working time + breaks) — advisory ceilings.
+const MAX_DUTY_MIN     = 780;  // ~13 h daily duty
+const LONG_DUTY_MIN    = 660;  // ~11 h — long day, advisory
 
 // Contingency buffer (A2 Q3) — plans must not assume perfect conditions.
 const DRIVE_BUFFER_PCT = 0.15; // +15% on every drive leg
@@ -130,6 +177,28 @@ interface Issue {
   suggestion?: string;
 }
 
+// ── Q4 — collection coverage ───────────────────────────────────────────────────
+// A delivery is serviceable only if its load is collected somewhere in the chain:
+// a collection/pickup for the same job IN this run, a yard/depot pickup waypoint,
+// or a feeding relay run. Otherwise the truck would deliver goods it never picked up.
+const SOURCE_WAYPOINTS  = new Set(["yard_pickup", "depot_start", "reload", "pickup"]);
+const isDeliveryType    = (t: string) => t === "delivery" || t === "dropoff";
+const isCollectionType  = (t: string) => t === "collection" || t === "pickup";
+
+function computeCoverage(stops: RunStop[], hasFeederRun: boolean): { ok: boolean; uncovered: string[] } {
+  // Goods may be sourced from a yard/depot pickup or an upstream feeder run; we
+  // can't match cross-run job ids here, so either satisfies coverage at planning time.
+  if (hasFeederRun || stops.some(s => SOURCE_WAYPOINTS.has(s.type))) return { ok: true, uncovered: [] };
+  const uncovered: string[] = [];
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i];
+    if (!isDeliveryType(s.type) || s.jobId == null) continue;  // can't verify without a job id
+    const collected = stops.some(c => isCollectionType(c.type) && c.jobId === s.jobId);
+    if (!collected) uncovered.push(stopLabel(s, i));
+  }
+  return { ok: uncovered.length === 0, uncovered };
+}
+
 // ── Main function ─────────────────────────────────────────────────────────────
 
 export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibilityResult> {
@@ -139,11 +208,61 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   // to every return. It never affects feasibility/confidence.
   const compatibility = checkLoadMixing(stops);
 
+  // Q4 — collection coverage (order-independent, no coords needed). A high concern
+  // that must tank confidence so an unserviceable run can never read green.
+  const coverage = computeCoverage(stops, input.hasFeederRun ?? false);
+  const coverageIssue: Issue | null = coverage.ok ? null : {
+    penalty: 80, severity: "high",
+    message: coverage.uncovered.length === 1
+      ? `${coverage.uncovered[0]} is a delivery with no collection on this run — its goods are never picked up.`
+      : `${coverage.uncovered.length} deliveries have no collection on this run (${coverage.uncovered.slice(0, 2).join(", ")}${coverage.uncovered.length > 2 ? "…" : ""}).`,
+    suggestion: "Add the matching collection, a yard pickup, or link a feeding run.",
+  };
+
+  // Q5a — fleet-aware capacity: peak pallet footprint (sum of collected pallets) vs
+  // the company's best available vehicle. Forces a split when nothing fits whole.
+  const collectStops  = stops.filter(s => isCollectionType(s.type));
+  const totalPallets  = collectStops.reduce((sum, s) => sum + (s.pallets ?? 0), 0);
+  const allStackable  = collectStops.length > 0 && collectStops.every(s => s.stackable === true);
+  const capacity: CapacityResult = input.fleet
+    ? checkCapacity({ pallets: totalPallets, stackable: allStackable }, input.fleet)
+    : { ok: true, footprint: null, maxSpaces: null, splitInto: null, reason: null };
+  const capacityIssue: Issue | null = capacity.ok ? null : {
+    penalty: 55, severity: "high",
+    message: capacity.reason ?? "Load exceeds available vehicle capacity — a split is required.",
+    ...(capacity.splitInto ? { suggestion: `Split into ${capacity.splitInto} loads, or assign a larger / double-deck vehicle.` } : {}),
+  };
+  // Q5b — vehicle suitability: one load per job (dedupe so weight isn't double-counted
+  // across its collection + delivery stops), checked for class agreement + (when a
+  // vehicle is allocated) whether it actually suits the load.
+  const suitByJob = new Map<string, Parameters<typeof checkVehicleSuitability>[0][number]>();
+  for (const s of stops) {
+    if (!WORK_STOP_TYPES.has(s.type)) continue;
+    const key = s.jobId != null ? `job-${s.jobId}` : `seq-${s.sequenceNumber}`;
+    if (suitByJob.has(key)) continue;
+    suitByJob.set(key, {
+      label: s.customerName, weightKg: s.weightKg, pallets: s.pallets,
+      vehicleCategory: s.reqVehicleCategory, minGvwClass: s.reqMinGvwClass,
+      bodyTypes: s.reqBodyTypes, equipment: s.reqEquipment,
+    });
+  }
+  const vehicleSuitability = checkVehicleSuitability([...suitByJob.values()], input.assignedVehicle ?? null);
+  const worstSuit = vehicleSuitability.conflicts.reduce<SuitabilityConflict | null>(
+    (a, b) => (!a || SEV_RANK[b.severity] > SEV_RANK[a.severity] ? b : a), null);
+  const suitabilityIssue: Issue | null = worstSuit ? {
+    penalty: worstSuit.severity === "high" ? 50 : 18,
+    severity: worstSuit.severity,
+    message: worstSuit.reason,
+    suggestion: "Split into separate runs by vehicle type, or allocate a suitable vehicle.",
+  } : null;
+
+  const hardIssue = coverageIssue ?? capacityIssue ?? (suitabilityIssue?.severity === "high" ? suitabilityIssue : null);
+
   const baseBuffer = { driveBufferPct: DRIVE_BUFFER_PCT, dwellPerStopMin: BUFFERED_DWELL, minSlackMin: null as number | null };
   const nullGeometry: RunGeometry = { routedKm: null, idealKm: null, detourRatio: null, deadheadKm: null };
 
   if (stops.length === 0) {
-    return { concern: false, severity: "none", message: "", confidence: null, buffer: baseBuffer, compatibility, geometry: nullGeometry };
+    return { concern: false, severity: "none", message: "", confidence: null, buffer: baseBuffer, compatibility, geometry: nullGeometry, coverage, capacity, vehicleSuitability, legal: ZERO_LEGAL };
   }
 
   // ── Resolve postcodes → coords ────────────────────────────────────────────
@@ -212,41 +331,67 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     };
   }
 
-  // ── Break rule (EC 561/2006) on raw driving ───────────────────────────────
-  let breakRequired = false, breakLegIdx = -1, cum = 0;
-  for (let i = 0; i < legs.length; i++) {
-    cum += legs[i].driveMin ?? 0;
-    if (cum >= BREAK_TRIGGER && breakLegIdx === -1) { breakRequired = true; breakLegIdx = i; }
-  }
-  const restStopAfterBreak = breakLegIdx >= 0
-    ? stops.slice(breakLegIdx + 1).find(s => !WORK_STOP_TYPES.has(s.type)) : null;
+  // ── EC 561/2006 — a 45-min break after EVERY 4.5h of driving (repeating) ───
+  // A break is due at each 4.5h cumulative-driving point where driving still
+  // continues (breakpoints at 270, 540, 810… that are < total driving). This is
+  // leg-independent: a single 11h leg still requires two mid-drive breaks.
+  const drivingBreakCount = rawDriveMin > 0 ? Math.max(0, Math.ceil(rawDriveMin / BREAK_TRIGGER) - 1) : 0;
+  const drivingBreakMin   = drivingBreakCount * BREAK_DURATION;
 
-  const totalRunMin = bufferedDriveMin + stops.length * BUFFERED_DWELL + (breakRequired ? BREAK_DURATION : 0);
+  // ── Working Time Directive — 30-min break once on-duty work passes 6h, only
+  //    if the 561 driving breaks don't already cover it (little driving, lots of
+  //    loading/unloading dwell).
+  const otherWorkMin = stops.length * STOP_DWELL_MIN;
+  const workingMin   = rawDriveMin + otherWorkMin;
+  const wtdTopUpMin  = workingMin > WTD_WORK_TRIGGER && drivingBreakMin < WTD_BREAK_MIN
+    ? WTD_BREAK_MIN - drivingBreakMin : 0;
+
+  const totalBreakMin = drivingBreakMin + wtdTopUpMin;
+
+  // A rest point = any non-work stop (services, yard, depot) where a break fits.
+  const restOpportunities = stops.filter(s => !WORK_STOP_TYPES.has(s.type)).length;
+
+  const totalRunMin = bufferedDriveMin + stops.length * BUFFERED_DWELL + totalBreakMin;
 
   // ── Collect issues (no early return — we want a holistic score) ───────────
-  const issues: Issue[] = [];
+  // Coverage (Q4) leads — an unserviceable run must dominate the headline + score.
+  // Capacity (Q5a) + vehicle suitability (Q5b) follow.
+  const issues: Issue[] = [coverageIssue, capacityIssue, suitabilityIssue].filter((x): x is Issue => x !== null);
   let minSlackMin: number | null = null;
 
   // 1. Legal driving hours (on RAW driving — buffer is slack, not driving time)
-  if (hasCoords && rawDriveMin > MAX_DRIVE_MIN) {
+  if (hasCoords && rawDriveMin > EXTENDED_DRIVE_MIN) {
     issues.push({ penalty: 60, severity: "high",
-      message: `Estimated driving is ${fmtH(Math.round(rawDriveMin))} — exceeds the 9-hour legal daily limit.`,
+      message: `Estimated driving is ${fmtH(Math.round(rawDriveMin))} — over the 10-hour absolute daily limit.`,
       suggestion: "Split the run across two drivers or two days." });
+  } else if (hasCoords && rawDriveMin > MAX_DRIVE_MIN) {
+    issues.push({ penalty: 14, severity: "low",
+      message: `Driving is ${fmtH(Math.round(rawDriveMin))} — over 9h, so it relies on the 10-hour extension (allowed at most twice a week per driver).`,
+      suggestion: "Check the driver hasn't already used both 10-hour days this week." });
   }
 
-  // 2. Break needed but no rest stop in the route
-  if (breakRequired && !restStopAfterBreak) {
-    const before = stopLabel(stops[breakLegIdx], breakLegIdx);
-    const after  = stopLabel(stops[breakLegIdx + 1], breakLegIdx + 1);
+  // 2. Break(s) needed but nowhere to take them
+  if (drivingBreakCount > 0 && restOpportunities === 0) {
     issues.push({ penalty: 22, severity: "medium",
-      message: `Driver will need a 45-min break between ${before} and ${after} — no rest stop is planned there.`,
-      suggestion: "Add a waypoint (e.g. motorway services) between those two stops." });
+      message: `Driver needs ${drivingBreakCount} × 45-min break${drivingBreakCount > 1 ? "s" : ""} (one per 4.5h driving) — no rest point is planned on this route.`,
+      suggestion: "Add a waypoint (e.g. motorway services) where a break can be taken." });
   }
 
-  // 3. Time-window checks against the BUFFERED schedule
+  // 2b. Working Time Directive — over 6h on duty with no driving break to cover it
+  if (wtdTopUpMin > 0) {
+    issues.push({ penalty: 8, severity: "low",
+      message: `Over 6h on duty with little driving — a 30-min working-time break is required.` });
+  }
+
+  // 3. Time-window checks against the BUFFERED schedule.
+  //    The clock WAITS when the driver arrives before a window opens — idle time
+  //    is real and pushes every later stop back, which is how an out-of-order
+  //    plan (deliver, then drive back to collect at a slot that already closed)
+  //    gets exposed instead of looking deceptively on-time.
+  let spreadMin: number | null = null;   // depot start → final stop, incl. waits
   if (input.estimatedStartTime && hasCoords) {
     const startMs = new Date(input.estimatedStartTime).getTime();
-    let elapsedMin = 0, breakApplied = false;
+    let elapsedMin = 0, cumWork = 0, cumDrive = 0, breaksPlaced = 0, wtdInserted = wtdTopUpMin === 0;
 
     for (let i = 0; i < stops.length; i++) {
       const s = stops[i];
@@ -269,30 +414,69 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
         }
       }
 
+      // Wait for the window to open if the driver arrives early (idle, not driving).
+      // Only at customer stops — a depot/base waypoint's planned time is an
+      // estimate, not a window to sit idle for.
+      if (WORK_STOP_TYPES.has(s.type)) {
+        const openMs = s.timeWindowStart ? new Date(s.timeWindowStart).getTime()
+          : s.bookedTime ? new Date(s.bookedTime).getTime() : null;
+        if (openMs !== null && arrivalMs < openMs) {
+          elapsedMin += Math.round((openMs - arrivalMs) / 60000);
+        }
+      }
+
       elapsedMin += BUFFERED_DWELL;
+      cumWork    += STOP_DWELL_MIN;
+      // WTD break inserted once work passes 6h (when no 561 break covers it).
+      if (!wtdInserted && cumWork >= WTD_WORK_TRIGGER) { elapsedMin += wtdTopUpMin; wtdInserted = true; }
       if (i < legs.length) {
         elapsedMin += bufDrive(i);
-        if (!breakApplied && breakRequired && i === breakLegIdx) { elapsedMin += BREAK_DURATION; breakApplied = true; }
+        cumWork    += legs[i].driveMin ?? 0;
+        cumDrive   += legs[i].driveMin ?? 0;
+        // Place any 561 breaks now due (breakpoints at 270, 540… of driving),
+        // capped at the legal count so the final boundary isn't double-counted.
+        const breaksDue = Math.min(drivingBreakCount, Math.floor(cumDrive / BREAK_TRIGGER));
+        if (breaksDue > breaksPlaced) { elapsedMin += (breaksDue - breaksPlaced) * BREAK_DURATION; breaksPlaced = breaksDue; }
       }
     }
+    spreadMin = elapsedMin;  // real depot-start → last-stop span, incl. window waits
   }
 
-  // 4/5. Long day (on buffered total)
-  if (hasCoords && totalRunMin > 720) {
+  // 4/5. Daily duty / spread — use the real schedule span (incl. waiting) when we
+  // have a start time, else the buffered drive+dwell+breaks total.
+  const dutyMin = spreadMin ?? totalRunMin;
+  if (hasCoords && dutyMin > MAX_DUTY_MIN) {
     issues.push({ penalty: 22, severity: "medium",
-      message: `Run is roughly ${fmtH(Math.round(totalRunMin))} total (with buffer) — a very long day for one driver.`,
-      suggestion: "Consider splitting across two drivers or starting earlier." });
-  } else if (hasCoords && totalRunMin > 600) {
+      message: `Run spans about ${fmtH(Math.round(dutyMin))} from depot to base${spreadMin != null ? " including waiting for windows" : ""} — over the ~13h daily duty limit.`,
+      suggestion: "Split across two drivers or start earlier." });
+  } else if (hasCoords && dutyMin > LONG_DUTY_MIN) {
     issues.push({ penalty: 10, severity: "low",
-      message: `Achievable but long — roughly ${fmtH(Math.round(totalRunMin))} total with buffer${breakRequired ? " including the required break" : ""}.` });
+      message: `Long duty day — about ${fmtH(Math.round(dutyMin))}${drivingBreakCount > 0 ? ` including ${drivingBreakCount} break${drivingBreakCount > 1 ? "s" : ""}` : ""}.` });
   }
+
+  // Q3b — drivers'-hours summary (raw driving/work; duty is the real schedule span).
+  const legal = {
+    drivingMin:        Math.round(rawDriveMin),
+    drivingBreakCount,
+    workingMin:        Math.round(workingMin),
+    dutyMin:           Math.round(dutyMin),
+    usesExtension:     rawDriveMin > MAX_DRIVE_MIN && rawDriveMin <= EXTENDED_DRIVE_MIN,
+  };
 
   // ── Derive confidence + the headline result ───────────────────────────────
   if (!hasCoords) {
+    // Coverage (Q4) + capacity (Q5a) don't need coordinates — surface them even
+    // when timing can't be assessed.
+    if (hardIssue) {
+      return {
+        concern: true, severity: "high", message: hardIssue.message, ...(hardIssue.suggestion ? { suggestion: hardIssue.suggestion } : {}),
+        confidence: null, buffer: { ...baseBuffer, minSlackMin: null }, compatibility, geometry, coverage, capacity, vehicleSuitability, legal,
+      };
+    }
     return {
       concern: false, severity: "none",
       message: "No postcodes or coordinates on stops — add addresses for a planning check.",
-      confidence: null, buffer: { ...baseBuffer, minSlackMin: null }, compatibility, geometry,
+      confidence: null, buffer: { ...baseBuffer, minSlackMin: null }, compatibility, geometry, coverage, capacity, vehicleSuitability, legal,
     };
   }
 
@@ -300,13 +484,13 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const buffer = { driveBufferPct: DRIVE_BUFFER_PCT, dwellPerStopMin: BUFFERED_DWELL, minSlackMin };
 
   if (issues.length === 0) {
-    const breakNote = breakRequired
-      ? ` Break needed between ${stopLabel(stops[breakLegIdx], breakLegIdx)} and ${stopLabel(stops[breakLegIdx + 1], breakLegIdx + 1)}.`
-      : "";
+    const breakNote = drivingBreakCount > 0
+      ? ` Includes ${drivingBreakCount} required 45-min break${drivingBreakCount > 1 ? "s" : ""}.`
+      : (wtdTopUpMin > 0 ? " Includes a 30-min working-time break." : "");
     return {
       concern: false, severity: "none",
       message: `Run looks feasible with buffer — roughly ${fmtH(Math.round(totalRunMin))} total.${breakNote}`,
-      confidence, buffer, compatibility, geometry,
+      confidence, buffer, compatibility, geometry, coverage, capacity, vehicleSuitability, legal,
     };
   }
 
@@ -317,6 +501,6 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
     severity: worst.severity,
     message: worst.message,
     ...(worst.suggestion ? { suggestion: worst.suggestion } : {}),
-    confidence, buffer, compatibility, geometry,
+    confidence, buffer, compatibility, geometry, coverage, capacity, vehicleSuitability, legal,
   };
 }

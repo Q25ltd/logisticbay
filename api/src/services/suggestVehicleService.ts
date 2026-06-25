@@ -5,6 +5,8 @@
  * temperature requirements, ADR class, and fleet availability.
  */
 
+import { categoryFromWeight, KG_PER_PALLET } from "../lib/vehicleClass.js";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface StopAreaHint {
@@ -36,28 +38,8 @@ export interface VehicleSuggestion {
   fleetWarning?:      string | null;
 }
 
-// ── Vehicle payload limits ────────────────────────────────────────────────────
-
-// Max payload in kg for each category (conservative real-world values)
-const PAYLOAD_KG: Record<string, number> = {
-  van:        500,
-  luton_van:  900,
-  rigid:      16_000,
-  tractor:    26_000,
-  drawbar:    24_000,
-};
-
-// Minimum weight (kg) at which we step up to the next category
-// (use whichever threshold fits the load with headroom)
-function categoryFromWeight(kg: number): string {
-  if (kg > 16_000) return "tractor";
-  if (kg > 900)    return "rigid";
-  if (kg > 500)    return "luton_van";
-  return "van";
-}
-
-// Approximate weight per standard euro pallet (kg) — used as fallback
-const KG_PER_PALLET = 400;
+// Vehicle sizing (categoryFromWeight, KG_PER_PALLET) lives in lib/vehicleClass.ts
+// so the suggestion and the planning suitability check share one source.
 
 // ── Body type selection rules ─────────────────────────────────────────────────
 

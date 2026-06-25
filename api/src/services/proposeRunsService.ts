@@ -29,6 +29,11 @@ export interface ProposalStop {
   tempRange?:      string | null;
   oversized?:      boolean | null;
   goodsType?:      string | null;
+  pallets?:        number | null;     // Q5a — pallet count picked up at this stop
+  stackable?:      boolean | null;    // Q5a — job-level stackability
+  weightKg?:       number | null;     // Q5b — load weight
+  vehicleCategory?: string | null;    // Q5b — declared required vehicle category
+  minGvwClass?:    string | null;     // Q5b — declared min GVW class
 }
 
 export type MovementStrategy = "direct" | "multi_drop" | "groupage";

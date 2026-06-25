@@ -20,8 +20,9 @@ function makePrisma(overrides: {
   jobPartFindMany?: MockFindMany | MockFindMany[];
   loadTrackFindMany?: MockFindMany;
 } = {}) {
-  // Support an array of sequential responses for jobPart.findMany
-  // (the service calls it 3 times via Promise.all).
+  // Support an array of sequential responses for jobPart.findMany.
+  // The service issues two queries via Promise.all (timeWindowStart range, then
+  // bookedTime range); extra resolvers are harmless and ignored.
   let callCount = 0;
   const jpResponses = Array.isArray(overrides.jobPartFindMany)
     ? overrides.jobPartFindMany
@@ -194,7 +195,8 @@ describe("getPlannerWorkItems", () => {
 
     const loadTrack = makeLoadTrack({
       jobId: 20, jobPartId: 3,
-      toCustody: "driver:5", fromCustody: "customer",
+      // Custody is base-prefixed (loadVocab): a load on a vehicle is on_vehicle:<ref>.
+      toCustody: "on_vehicle:5", fromCustody: "customer_origin",
       trailerId: "",
     });
 
@@ -282,6 +284,7 @@ describe("getPlannerWorkItems", () => {
     const part = makeJobPart({
       id: 9, jobId: 50, type: "collection",
       postcode: "B1 1AA",
+      timeWindowStart: TOMORROW,   // scheduled tomorrow → matched by the timeWindow query
       job: {
         id: 50, jobReference: "LB-2026-005", customerName: "Fridge Co",
         goodsType: "food_refrigerated", goodsDescription: "Chilled food",
@@ -293,9 +296,8 @@ describe("getPlannerWorkItems", () => {
 
     const prisma = makePrisma({
       jobPartFindMany: [
-        () => Promise.resolve([]),
-        () => Promise.resolve([]),
         () => Promise.resolve([part]),
+        () => Promise.resolve([]),
       ],
       loadTrackFindMany: () => Promise.resolve([]),
     });
@@ -388,5 +390,43 @@ describe("getPlannerWorkItems", () => {
     const vehicleWarning = item.warnings.find(w => w.includes("vehicle"));
     assert.ok(vehicleWarning, "should warn about missing vehicle type");
     assert.equal(item.groupKey, "needs_attention", `expected needs_attention, got ${item.groupKey}`);
+  });
+
+  // Test 9: a load parked at a yard surfaces DATE-INDEPENDENTLY (the "don't forget it" pool)
+  test("yard-stored load: appears even with no date match, in_custody + custody location/age", async () => {
+    const twoDaysAgo = new Date(TODAY.getTime() - 2 * 86_400_000);
+    // Only the onward DELIVERY leg exists in the work list; collection is long done.
+    const deliveryPart = makeJobPart({
+      id: 21, jobId: 80, type: "delivery", postcode: "M1 1AA",
+      job: {
+        id: 80, jobReference: "LB-2026-009", customerName: "Yard Stored Co",
+        goodsType: "pallets", quantity: 12, quantityUnit: "pallets", weight: 6000,
+        vehicleCategory: "rigid", tempControlled: false, hazardClass: null, status: "collected",
+      },
+    });
+    const yardTrack = makeLoadTrack({
+      jobId: 80, jobPartId: 21, toCustody: "yard:7", fromCustody: "on_vehicle:3",
+      timestamp: twoDaysAgo, transactionType: "drop_at_yard", trailerId: "",
+    });
+
+    const prisma = makePrisma({
+      // date-scoped queries return nothing; the 3rd resolver is the custody fetch.
+      jobPartFindMany: [
+        () => Promise.resolve([]),
+        () => Promise.resolve([]),
+        () => Promise.resolve([deliveryPart]),
+      ],
+      loadTrackFindMany: () => Promise.resolve([yardTrack]),
+    });
+
+    // Look at TODAY — the load's legs are NOT in range, yet it must still surface.
+    const dateStr = TODAY.toISOString().split("T")[0]!;
+    const items = await getPlannerWorkItems(prisma, 1, dateStr, dateStr);
+
+    const item = items.find(i => i.jobId === 80);
+    assert.ok(item, "yard-stored load must appear regardless of date");
+    assert.equal(item.groupKey, "in_custody", `expected in_custody, got ${item.groupKey}`);
+    assert.equal(item.custodyLocation, "yard:7", `expected yard:7, got ${item.custodyLocation}`);
+    assert.ok(item.inCustodySince, "should carry an in-custody timestamp for age");
   });
 });

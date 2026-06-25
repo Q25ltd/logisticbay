@@ -19,6 +19,7 @@ import { suggestVehicle, suggestTrailerForRun, type VehicleSuggestionInput } fro
 import { lookupAreaTypes } from "../services/areaLookupService.js";
 import { checkLoadVehicle, type LoadVehicleCheckInput } from "../services/checkLoadVehicleService.js";
 import { checkRun, type RunStop } from "../services/checkRunService.js";
+import { buildFleetCapacityProfile } from "../lib/loadCapacity.js";
 import { badRequest } from "../lib/errors.js";
 
 export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Promise<void> {
@@ -200,17 +201,34 @@ export async function aiRoutes(app: FastifyInstance, prisma: PrismaClient): Prom
           lengthM?:   number | null;
           axleLoadT?: number | null;
         } | null;
+        assignedVehicle?: {
+          category?:  string | null;
+          payloadKg?: number | null;
+          bodyType?:  string | null;
+          equipment?: string[] | null;
+        } | null;
       };
 
       if (!Array.isArray(body.stops) || body.stops.length === 0) {
         return badRequest(reply, "BAD_REQUEST", "stops is required (non-empty array)");
       }
 
+      // Q5a — build the company's available-fleet capacity profile so the capacity
+      // check is fleet-aware (split forced when nothing can carry the load whole).
+      const { companyId } = request.user!;
+      const trailers = await prisma.fleetTrailer.findMany({
+        where:  { companyId, status: { notIn: ["disposed"] } },
+        select: { trailerType: true, trailerLength: true, lengthM: true, decks: true, status: true },
+      });
+      const fleet = buildFleetCapacityProfile(trailers);
+
       try {
         const result = await checkRun({
           stops:               body.stops as RunStop[],
           estimatedStartTime:  typeof body.estimatedStartTime === "string" ? body.estimatedStartTime : undefined,
           vehicle:             body.vehicle ?? null,
+          fleet,
+          assignedVehicle:     body.assignedVehicle ?? null,
         });
         return reply.send(result);
       } catch (err: unknown) {

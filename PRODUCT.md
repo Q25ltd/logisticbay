@@ -70,6 +70,16 @@ Job = customer promise (what must be achieved).
 Run = execution plan (how it actually happens).
 A Run can contain JobParts from multiple different Jobs.
 
+**Planning-layer addendum (2026-06-24 — does NOT re-debate the above).** The Run is
+central for *execution*. Above it sits a *planning* layer: the **Movement** (the chosen
+strategy for how a load travels) and the **Load Journey** (its custody path, which
+already exists at execution time as the `LoadTrack` ledger). The planner thinks in
+**Job → Movement → Run**; the Run stays the execution object a Movement is realised as.
+LogisticBay is, in full, a **Load Movement Planning System** whose core decision is
+*"what is the best way to move this load?"*. See **`PLANNING_PAGE_DESIGN.md`** for the
+planning-page design, the movement-strategy catalogue, the job-constraint layer, and
+the gated plan.
+
 ### 2. Splitting creates more JobParts — not more Jobs
 
 The main Job holds the customer promise. It stays one Job even if execution takes 2, 3, or 10 movements.

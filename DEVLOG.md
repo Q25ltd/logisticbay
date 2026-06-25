@@ -7,6 +7,145 @@
 
 ---
 
+## Planning — surface silent add-stop failures (release hygiene) 2026-06-24
+
+Last genuine planning code gap before release: `handleAddJobToRun` / `handleAddPartToRun` looped `addStop` with `catch { /* skip */ }` — a stop that failed to attach (already on another run, validation, network) was **silently dropped**, leaving a run quietly missing a load that could then be published. Now failures are counted and surfaced via the existing `err` banner ("Couldn't add N stops for <customer> — it may already be on another run. Check the run before publishing."). Covers the drag-to-run, batch-add, "Add collection", and yard-relay flows (all route through these handlers). Gate: typecheck api+web ✅ 0.
+
+**Planning is now feature-complete per PLANNING_PAGE_DESIGN** — remaining items are all PARKED post-release (Q5c/e, Q5d, hard-on-publish, A4/A5, route map, constraints, Movement persistence). Only gate left is the Mac verification (tests + knip + incognito). Cleared to start Phase B (Runs).
+
+## Planning — date-independent "At yard / In custody" pool 2026-06-24
+
+User concern: a load collected and dropped at a yard (relay / DC / trailer swap) can sit for **days** before its onward run is planned — how do we not forget it? Found the gap: `getPlannerWorkItems` is **date-scoped** (parts whose timeWindow/bookedTime fall in the viewed range), AND an in-custody job has status `collected` (excluded from the `ready_to_plan/in_planning` filter), so a yard-stored load **vanishes from view** until you happen to look at the right date — exactly the "forgotten load" risk.
+
+**Fix (`plannerWorkService`):** added a **date-independent** yard fetch — latest custody per job via `loadTrack.findMany({ distinct: ["jobId"], orderBy timestamp desc })`, keep jobs whose latest custody base is `yard`, then fetch their **onward (delivery) leg** regardless of date where it's not yet on an active run and the job isn't completed/cancelled. Merged into the work list (deduped) so the existing `in_custody` grouping + card rendering pick them up. `PlannerWorkItem` gained `custodyLocation` (e.g. `yard:7`) + `inCustodySince` (ISO, for age).
+
+**Web:** the freight card now shows a blue **"📦 YARD 7 · 2 days"** badge for in-custody loads (same card as before, marked as *at yard*), in the existing "Collected — in custody" section (GROUP_PRIORITY 1 → near top). Helpers `ageAtYard` / `yardLabel`. So a yard load is visible **every day** with its age until its delivery is planned and completed, then it leaves the pool. Covers relay, DC/hub, and trailer-swap (all end with custody at a yard).
+
+Test: `plannerWorkService.test.ts` — a yard load with NO date match still surfaces as `in_custody` with `custodyLocation`/`inCustodySince`. Gate: typecheck api+web ✅ 0. **Mac:** `npm test --prefix api`.
+
+## Docs — consolidation (26 → 10 active) 2026-06-24
+
+Doc sprawl was a drift risk (same procedure in several files). Triaged all root `*.md`,
+kept the **10 canonical** (CLAUDE, PRODUCT, ARCHITECTURE, DATA_DICTIONARY, STATUS,
+LOAD_MOVEMENT_PLAN, PLANNING_PAGE_DESIGN, QUESTIONS, SAFETY, DEVLOG), and **moved 16 to
+`docs/archive/`** (user choice: archive, not delete; cleanup era declared done):
+- 10 `*_INVESTIGATE.md` (Steps 1–6, Phase A/A2/A3/A4) — investigate-first scratch for DONE steps.
+- `JOB_INTAKE_FLOW_AUDIT.md` — one-off audit that spawned LOAD_MOVEMENT_PLAN.
+- `PLANNING_BOARD.md` — superseded by PLANNING_PAGE_DESIGN.
+- `PLANNING_LOAD_FEASIBILITY_DESIGN.md` — open items (Q5c/e, Q5d, hard-on-publish) folded into PLANNING_PAGE_DESIGN §5 first.
+- `CODE_AUDIT.md`, `CLEANUP_PLAN.md`, `MESS_PREVENTION.md` — cleanup-era; durable rules already in CLAUDE.md "Preventative rules" (now the single source).
+
+Added `docs/archive/README.md` (what/why/superseded-by). Repointed live references:
+CLAUDE.md (CODE_AUDIT/CLEANUP_PLAN → archive paths; dropped the stale TASK 0.6 ref),
+ARCHITECTURE.md + STATUS.md (PLANNING_BOARD → PLANNING_PAGE_DESIGN; feasibility doc →
+PLANNING_PAGE_DESIGN §5). DEVLOG left untouched (append-only history). No code change.
+`docs/archive/` also still holds an older pre-existing archival set — untouched.
+
+## Direction — Load Movement Planning System reframe + PLANNING_PAGE_DESIGN.md 2026-06-24
+
+A planning session reframed the product: **LogisticBay is a Load Movement Planning System**, not a run planner. Planning's job is to decide *the best way to move each load*; runs/drivers/trailers/live are stages of executing that decision. Captured as a new canonical doc **`PLANNING_PAGE_DESIGN.md`** (added to the CLAUDE.md doc index).
+
+Key points recorded:
+- **Layered model Job → Movement → Run → Load Journey.** The missing middle is the **Movement** (the planning-time strategy decision + its legs). The **Load Journey** = the custody path, which already exists at execution time as the `LoadTrack` ledger — so this is an *additive* planning layer, **not** a re-architecture. Reconciled with PRODUCT.md locked decision #1 ("Run is central") via a planning-layer addendum: Run stays central for *execution*.
+- **Planning is building, not firefighting.** Validation (Q1–Q5) stays in the background — quiet "looks good" by default, loud only on a real problem, and always paired with a *building action* (Add collection / Yard relay / Split). The compact run-check + one-click fixes built this week are this direction.
+- **Movement-strategy catalogue** (direct, multi-drop, groupage, relay-via-yard, relay-handover, swap, split, tramper, hub, backload) mapped to UI/UX + the Job constraint each needs + which are built; mechanics defer to LOAD_MOVEMENT_PLAN Part B.
+- **Job constraints layer** (`storageAllowed`/`relayAllowed`/`directPreferred`/`timeCritical`/`tramperAllowed` + existing `canSplitShipment`) — "Job defines the rules, Planning chooses the move." Schema currently has only `serviceType` + `canSplitShipment`; the rest is the cheapest high-value next step (no re-architecture).
+- **Confidence stays honest** (deterministic only; learning engine later). **Recurring runs parked** (templates carry strategy/constraints, never stale operational data — the Paragon failure mode).
+- **Staged plan:** (1) capture constraints, (2) make Movement a visible/accepted unit (build all runs of a relay/split from one Accept), (3) persist the Movement/Load-Journey object via LOAD_MOVEMENT_PLAN, gated behind movement Steps 7–10.
+
+Docs touched: new `PLANNING_PAGE_DESIGN.md`; `PRODUCT.md` (planning-layer addendum under decision #1); `CLAUDE.md` (doc index row); `QUESTIONS.md` (§0z — 4 open questions). No code change.
+
+## Planning — job quick-look drawer (read-only) 2026-06-21
+
+Planner need: open any job for a quick look without leaving the board. Built `web/src/modules/planning/JobQuickLook.tsx` — a read-only slide-in drawer (right side, backdrop + Esc close, `Open full job →` link to `/app/jobs/:id`). Fetches the full job via `jobsApi.get(id)`. Sections ordered per the planner's stated priority: **Goods & handling** first (goods type/description, qty, weight, dimensions, temp/hazmat/fragile/stackable flags, special requirements), then vehicle requirement, then **Stops & timing** (each stop: window/booked time, address, contact, booking ref, opening hours, access/handling, instructions), then notes + references.
+
+Wired into `PlanningBoardPage`: `peekJobId` state + an **ⓘ** button on each unplanned `JobWorkCard` (drag-safe — stops propagation) and each `RunLane` stop row; both call `onPeek(jobId)`. No backend change (reuses the existing job-detail endpoint). Gate: web typecheck ✅ 0 (also confirms every `JobPart` field used exists).
+
+**Planning-check redesign (same session):** rebuilt the run-lane check from stacked text lines into a **consistent tile strip** (`CheckTile` component) — the same tiles render every time, colour-coded by state (green/amber/red/neutral), so the planner's eye learns the layout: **Coverage · Confidence · Compatible · Vehicle · Capacity · Detour · Driver hours**. The **Driver-hours tile** is now shown (`~Duty` headline, `drv · Nbrk` sub, red >13h duty / amber on 10h-extension or long day). Added a plain-English **headline banner** for the worst issue with an inline **"Find collection →"** fix-it on coverage failures (sets the board search to the uncovered customer so matching collections surface in Unplanned Freight). `RunLane` gained `onFindCollection` (→ `setSearch`). Web typecheck ✅ 0.
+
+**Layout (same session):** moved the **Proposals panel to a full-width horizontal strip on top** (was a vertical list at the bottom of the narrow Jobs column) — cards are now fixed-width (`w-72`) side-by-side in a horizontal-scroll row, header gained a "Movement plans suggested by the system" subtitle + a **Refresh** button + collapse. **Widened the Unplanned-Freight column** `sm:w-80 lg:w-96` → `sm:w-96 lg:w-[28rem] xl:w-[30rem]`, and bumped freight-card legibility (stop labels 10→11px / w-14→w-16, location 11→12px, more row padding/spacing) so it's easier to read what's being planned. Web typecheck ✅ 0.
+
+**Planning comfort pass (same session):** four UX fixes after a screen review —
+1. **One-click missing collection.** Root friction was a job split across two columns: the delivery sits in a run flagged "no collection" while its collection sits in Unplanned Freight. Main now builds `unplannedCollectionByJob` (jobId → unplanned collection part); `RunLane` computes deliveries with no in-run collection (and no feeder run) and the fix-it banner shows **"+ Add collection — <customer>"** which adds it to *this* run in one click (via existing `onDropPart`). Falls back to "Find collection" (search filter) when no unplanned collection exists.
+2. **Compact / collapsible run check.** The 7-tile strip is now **collapsed by default** to a one-line summary (status pill · confidence · duty) with a **Details ▾** toggle — so a planner can see many runs without scrolling. Per-run `checkExpanded` state.
+3. **De-emphasise tiles on invalid runs.** When coverage is broken, non-coverage tiles are greyed (`dim()` → neutral) so the red error isn't fighting green ticks; the Confidence tile reads **"—" / "Blocked — fix coverage first"** instead of an ambiguous dash.
+4. **Day-summary + reclaim space.** Slim header chips (**Runs N · Trucks x/y · Drivers x/y · M unplanned**); Proposals strip **auto-hides when empty** (returns null); 0-count sidebar pool rows dimmed.
+
+Web typecheck ✅ 0.
+
+**Yard relay — one-click link (planning side of LOAD_MOVEMENT_PLAN B2 / Step 6):** building a relay-via-yard (driver A collects → drops at yard; driver B picks from yard → delivers) was technically possible (Collect-only/Deliver-only buttons + yard waypoints + Run-settings `runType=relay`/`dependsOnRunId`) but took ~6 hidden steps and the new "Add collection" fix-it dead-ended once the collection was on another run. Added detection + a one-click action: when a run's uncovered delivery has its **collection on another run**, the banner shows **"🔗 Yard relay from RUN-X"** → `handleLinkRelay` sets `dependsOnRunId`+`runType=relay` on this run and drops a **yard_pickup** waypoint here + a **hub_drop** on the source run (yard = company depot, skipped if already present). Coverage then clears (hasFeederRun true *and* yard pickup present — double safety). Reuses existing `onUpdate`/`onAddWaypoint` (both `loadRight`-refresh), so no backend change — the S6 custody execution already supports it. Web typecheck ✅ 0.
+
+**Yard picker (same session):** the relay link now opens a compact inline picker — "Drop & pick up at: [yard ▾] [Link relay] [Cancel]" — listing the **depot first** then the company's saved locations, defaulting to depot and remembering the last choice for the session. The chosen yard is used for both the `hub_drop` and `yard_pickup` waypoints. Web typecheck ✅ 0.
+
+Remaining ideas: "Split run" action (needs split endpoint), a small route map, and a resizable freight column.
+
+## Planning Q5b — vehicle-type suitability (fixes "van load + artic load = Compatible") 2026-06-21
+
+User point: at planning the **driver is a variable** (allocated later; shift patterns are a later phase) so the check must not assume one — what's *certain* is vehicle type, load, destination, time, and **vehicle type wasn't being checked**. Screenshot RUN-2026-000009 grouped an 11t/22-pallet artic load with an 85 kg/12-item van parcel job and read "Compatible". `checkLoadMixing` only looked at temperature/hazmat/oversized.
+
+**Build (uses ALL available info, advisory at planning):**
+- Extracted the weight→class logic into `lib/vehicleClass.ts` (`categoryFromWeight`, `KG_PER_PALLET`, `classRank`, `classCanCarry`) — shared with `suggestVehicleService` (removed its private copies; deleted its dead `PAYLOAD_KG`).
+- `lib/vehicleSuitability.ts`: per load, required class = most-demanding of declared `vehicleCategory`, `minGvwClass` (numeric→class), and weight/pallet-derived class. Flags (a) a **class mix** — a van-class load sharing a run with an HGV-class load (high); (b) when a vehicle is **allocated**, whether it suits — under-class/over-payload high, wrong body type / missing equipment medium. A substitute is fine if it **meets-or-exceeds** (bigger vehicle OK), so honest substitutions pass and only mistakes flag.
+- `checkRunService`: `RunStop` gains `weightKg` + declared `reqVehicleCategory/reqMinGvwClass/reqBodyTypes/reqEquipment`; input gains `assignedVehicle`; result gains `vehicleSuitability`. Loads deduped per job (weight not double-counted across collection+delivery). High suitability conflicts lower confidence (penalty 50) but **never block** Accept; medium = 18.
+- Routes: `/ai/check-run` accepts + passes `assignedVehicle` (per-stop fields flow through the `RunStop[]` cast); `/planning/propose-runs` threads weight + declared category/gvw; `RUN_INCLUDE` job select gains `vehicleCategory`/`minGvwClass`.
+- Web: `ai.ts` types (`vehicleSuitability`, stop fields, `assignedVehicle`); `planning.ts` job type; board passes per-stop weight + declared requirement + the assigned truck's `category`, and shows a **"Vehicle ✗/⚠ — Mixing a van-class load … with a rigid-class load …"** lane signal.
+
+Verified by node: the screenshot mix → high "these usually need different vehicles"; van under 11t → "too small"; artic under a 200 kg load → OK (substitution allowed); over-payload → high; two HGV loads → OK. Tests: `vehicleSuitability.test.ts` (pure, 11 cases) + `checkRunService.test.ts` Q5b describe (screenshot mix lowers confidence, van-too-small, coherent load OK). Gates: typecheck api+web ✅ 0. Hard-on-Runs-publish (against the actual allocated truck+trailer) extends S5 later. **Mac:** `npm test --prefix api` + `npx knip`.
+
+## Planning Q3c — window-wait timing + real duty spread (fixes "90% on an impossible run") 2026-06-21
+
+User-found bug (screenshot RUN-2026-000009): a run that delivers Midlands at Lichfield (12:00–15:00) then drives back to collect NHS at Nottingham (11:00–12:00 — already closed) showed **Confidence 90% / Long duty 12h54**. Physically impossible, flagged feasible.
+
+**Root cause:** the time-window loop never modelled **waiting for a window to open**. Arriving early didn't idle the clock, so the internal schedule ran ~hours fast and every downstream stop looked on-time. It also reported duty as drive+dwell+breaks, ignoring the real depot→base spread.
+
+**Fix (`checkRunService`):**
+- The schedule clock now **waits** when the driver reaches a customer stop before its window opens (`timeWindowStart`/`bookedTime`); idle time pushes all later stops back, exposing out-of-order plans. Gated to `WORK_STOP_TYPES` so a depot/return-to-base waypoint's planned time isn't treated as a window to sit idle for.
+- New `spreadMin` = real depot-start → last-stop span incl. waits. The duty/spread check and `legal.dutyMin` now use it (fallback to the buffered total when no start time). So a 03:00→18:00 day reads as ~14–15h duty, not 12h54.
+
+Verified by node simulation of the exact pattern: the closed-window collection lands **130–140 min late**, `minSlackMin` −140, spread **14.1h** → severity high, confidence ~0 (was 90%). Old code reached that collect at 07:20 and passed it.
+
+**Tests** (`checkRunService.test.ts`, Q3c): the out-of-order plan → concern high, negative slack, confidence <60 (fails on pre-fix code); an in-order plan with a 5h early start waits, stays feasible, and `dutyMin` reflects the wait. No web change — the "Driver hours · Duty ~Xh" line now shows the real spread automatically. Gate: api typecheck ✅ 0.
+
+## Planning Q3b — drivers'-hours model: repeating breaks + working time 2026-06-21
+
+User flagged the run-duration / legal-hours model was thin. It was: drive legs (ORS or 60 km/h fallback) ×1.15 + 45 min/stop + **one** 45-min break if driving passed 4.5h, plus a single ">9h driving" hard flag.
+
+**Bug found while building:** the original break logic was leg-based and skipped the final leg — so a **single long leg** (e.g. London→Edinburgh, ~11h driving) got **zero** breaks. Breaks must derive from *total* driving, not leg boundaries. Fixed.
+
+**New model (`checkRunService`, deterministic, no AI):**
+- **Repeating 561 break** — `drivingBreakCount = max(0, ceil(rawDriveMin / 270) − 1)`. A 9h day = 1 break, 11h = 2. Leg-independent; the schedule loop now places breaks at each 270-min cumulative-driving point (capped at the legal count) so intermediate-stop arrival slack includes them.
+- **9→10h extension band** — driving > 10h (`EXTENDED_DRIVE_MIN=600`) is a **high** hard flag; 9–10h is a **low** advisory "relies on the 10-hour extension (≤2×/week)" with `legal.usesExtension=true`. (Was a single ">9h" hard flag.)
+- **Working Time Directive** — 30-min break once on-duty work passes 6h when no 561 break already covers it (lots of dwell, little driving). Added to time + a low note.
+- **Daily duty/spread** — total run (drive + dwell + breaks) > ~13h (`MAX_DUTY_MIN=780`) medium; > ~11h (`LONG_DUTY_MIN=660`) low. (Replaces the old 12h/10h "long day".)
+- New structured `legal: { drivingMin, drivingBreakCount, workingMin, dutyMin, usesExtension }` on the result; added to all five returns (`ZERO_LEGAL` for the empty-stops case).
+
+**Web:** `ai.ts` `RunCheckResult` gains `legal`; board shows a **"Driver hours — Driving Xh ⚠(10h extension) · N × 45-min breaks · Duty ~Yh"** lane line (new `fmtHm`).
+
+**Tests** (`checkRunService.test.ts`, no-DB): short run = 0 breaks + legal summary; **the fix** — London→Edinburgh single 11h leg = **2** breaks (not 1), >10h high, `usesExtension=false`; 9–10h band → `usesExtension=true` + 2 breaks; duty > driving + breaks. Break-count + band numbers verified against the haversine fallback via node. Gates: typecheck api+web ✅ 0. **Mac:** `npm test --prefix api` (now globs `src/services/*.test.ts`).
+
+**Still per-run, not per-driver-day** (by the chosen scope): hours already driven earlier in the day, 11h daily rest, and weekly limits are NOT carried — that needs a driver-hours ledger and belongs with the Runs/Live screens. Noted for later.
+
+## Planning Q5a — fleet-aware pallet capacity (forced split) 2026-06-21
+
+Extends the planning check from "is every drop collected?" (Q4) to "can the company actually carry this whole?". A load's **pallet footprint** (stackable halves it: 40 stackable → 20 floor spaces) is compared against the **largest available vehicle the company actually owns**. If nothing fits, the run is flagged and a recommended split count is given — the planner's 40-pallet / no-double-deck case → **split into 2** (collect in one go, carry on 2 trailers).
+
+**New lib (`api/src/lib/loadCapacity.ts`, pure, no schema change):**
+- `trailerPalletSpaces({lengthM|trailerLength, decks})` — floor spaces ≈ round(length/13.6 × 26) × decks. 13.6 m single = 26, double-deck = 52.
+- `buildFleetCapacityProfile(trailers)` → `{ maxPalletSpaces, hasDoubleDeck, trailerCount }` from **available** trailers only (out-of-service/disposed don't count toward what a planner can assign).
+- `checkCapacity({pallets, stackable}, fleet)` → `{ ok, footprint, maxSpaces, splitInto, reason }`. footprint = stackable ? ceil(pallets/2) : pallets. No fleet registered → ok + "can't be checked"; no pallet data → ok.
+
+**`checkRunService` (Q5a):** `RunStop` gains `pallets`/`stackable`; input gains `fleet`; result gains `capacity`. Run footprint = sum of pallets on **collection** stops (peak load), treated non-stackable if any load is non-stackable (conservative). Over-capacity → high issue (penalty 55) → confidence drops; advisory on Planning. Coverage (Q4) still leads the headline, capacity follows (`hardIssue = coverageIssue ?? capacityIssue`).
+
+**Routes:** `/ai/check-run` and `/planning/propose-runs` both load the company's available-trailer profile and inject `fleet`; propose-runs also threads `pallets` (from part `quantityRequired`/`numPallets` when unit is pallets) + job `stackable`. `RUN_INCLUDE` job select gains `stackable`.
+
+**Web:** `ai.ts` types (`capacity`, stop `pallets`/`stackable`); `planning.ts` job type gains `stackable`; board maps `pallets`/`stackable` per stop and shows a red **"Capacity ✗ — N floor spaces needed · largest available holds M — split into K"** lane signal.
+
+**Tests:** `loadCapacity.test.ts` (pure, incl. the 40-pallet split-into-2 case, stackable-fits, double-deck-fits, no-fleet, no-pallets); `checkRunService.test.ts` capacity describe (40 non-stackable /standard-only fails+split, /double-deck passes, no-fleet no-op). Gates: typecheck api+web ✅ 0; pure capacity logic exercised via node ✅. Mac run 2026-06-21: 138 tests ✅ 0 fail.
+
+**Test-glob fix (latent gate hole):** `api` test script globbed only `src/tests/*.test.ts src/lib/*.test.ts` — so `src/services/*.test.ts` (`checkRunService`, `proposeRunsService`, `plannerWorkService`) had **never run in the suite**. The Q4 coverage + Q5a capacity *integration* describes live in `checkRunService.test.ts` and were silently skipped (only the pure `loadCapacity.test.ts` in `src/lib` ran). Added `src/services/*.test.ts` to the glob.
+
+Surfacing those tests on Mac exposed **two pre-existing `plannerWorkService` test failures** (rotted while unrun) — both stale tests, not code bugs: (1) a custody fixture used the pre-S2 free-text `"driver:5"` where custody is now base-prefixed (`on_vehicle:5`), so `custodyBaseOf` returned null and `inCustody` was false → fixed the fixture; (2) a test placed its job part in the **3rd** `jobPart.findMany` slot, but the service was reduced from 3 queries to **2** (timeWindow + bookedTime), so the part was never fetched → moved it to a queried slot and gave it a real `timeWindowStart`. Now 189 tests, 0 fail.
+
 ## Phase A / slice A3 — Proposals panel (frontend) 2026-06-21
 
 Frontend-only. No api/, mobile/, or schema changes.
@@ -24,6 +163,19 @@ Frontend-only. No api/, mobile/, or schema changes.
 - Copy rules enforced: panel heading "Proposals", error state "movement plans", Accept button "Accept — create run skeleton". No "auto-plan", "AI", or "dispatch-ready" anywhere in new code. Accept is never disabled by compatibility or confidence — always clickable.
 
 Gates: web typecheck ✅ 0; api typecheck ✅ 0 (unaffected). **Pending:** user incognito smoke test on Mac.
+
+## Planning Q4 — collection coverage (fixes "100% on an unserviceable run") 2026-06-20
+
+User-found bug: a run scored Confidence 100% / Compatible while two deliveries (NHS, Northern Chill) had **no collection** anywhere — the truck would deliver goods it never picked up. The planning check only validated time/route/compatibility, not whether each drop is serviceable.
+
+**Fix (`checkRunService`):** new **collection-coverage** check. A delivery is covered only if its load is sourced — a collection/pickup for the same `jobId` in the run, a yard/depot pickup waypoint, or a feeding relay run (`hasFeederRun`). Uncovered deliveries → high-severity issue (penalty 80, confidence forced ≤ ~20 so it can never read green), a headline message, and a structured `coverage: { ok, uncovered[] }` field. Works without coordinates too.
+- `RunStop` gains `jobId`; input gains `hasFeederRun`; result gains `coverage`.
+- Web: `ai.ts` types updated; the board passes `jobId` per stop + `hasFeederRun = run.dependsOnRunId != null`; the run lane shows a red **"Coverage ✗ — <delivery> has no collection on this run"** signal; propose-runs passes `jobId` too.
+- Tests: 4 new (`checkRunService.test.ts`) incl. the exact screenshot scenario (collect job1 + deliver job1 + orphan deliver job2 → coverage.ok false, confidence ≤25, high) + yard-waypoint and feeder-run covered cases.
+
+**A2 reopened** as feasibility hardening: Q4 ✅ done; **Q5a (fleet-aware pallet capacity)** next — see `PLANNING_LOAD_FEASIBILITY_DESIGN.md`. Gates: typecheck api+web ✅ 0, check:vocab ✅, no-DB unit tests ✅ 55. No schema change. Mac: full DB suite + Planning incognito smoke.
+
+---
 
 ## Phase A / slice A3 — proposal-first engine (backend) 2026-06-20
 
