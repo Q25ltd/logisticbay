@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
 import { runsApi, type RunReadiness, type RunCandidates, type Candidate } from "../../api/runs";
 import { planningApi, type FleetTrailer, type FleetUnit } from "../../api/planning";
 import { driversApi } from "../../api/drivers";
 import type { Run, Driver } from "../../types";
+import { runRoute, requiredTrailerLabel } from "./runUtils";
 
 // ── Allocation panel ──────────────────────────────────────────────────────────
 //
@@ -258,7 +258,7 @@ export default function RunAllocationPanel({
     const inputRef = useRef<HTMLInputElement>(null);
     const onlyBest = bestOnly[kind];
     return (
-      <div className="flex-1 min-w-0">
+      <div>
         <div className="flex items-center justify-between mb-1.5">
           <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{title}</h4>
           <span className="text-[11px] text-slate-400">{availableCount} available</span>
@@ -336,18 +336,8 @@ export default function RunAllocationPanel({
   const checksLeft = readiness ? readiness.resources.total - readiness.resources.passed : 0;
 
   // Route + load summary — derived from the run's active stops (already sorted by sequence).
-  const route = useMemo(() => {
-    const list = run?.assignments ?? [];
-    if (!list.length) return null;
-    const first = list[0]?.jobPart;
-    const last  = list[list.length - 1]?.jobPart;
-    const origin      = first?.town || first?.locationTextSnapshot?.split(",")[0]?.trim() || null;
-    const destination = last?.town  || last?.locationTextSnapshot?.split(",")[0]?.trim()  || null;
-    const units    = new Set(list.map(a => a.quantityUnit).filter(Boolean));
-    const totalQty = list.reduce((s, a) => s + (a.quantityAssigned || 0), 0);
-    const loadSummary = units.size === 1 && totalQty > 0 ? `${totalQty} ${[...units][0]}` : null;
-    return { origin, destination, stops: list.length, loadSummary };
-  }, [run]);
+  const route = useMemo(() => (run ? runRoute(run) : null), [run]);
+  const trailerReq = run ? requiredTrailerLabel(run) : null;
 
   const missingLabel =
     !driverId  ? "Missing driver" :
@@ -382,8 +372,11 @@ export default function RunAllocationPanel({
               </div>
             )}
             <div className="text-[11px] text-slate-400">
-              {route ? `${route.stops} stop${route.stops !== 1 ? "s" : ""}${route.loadSummary ? ` · ${route.loadSummary}` : ""}` : "No stops assigned"}
+              {route && route.stops > 0 ? `${route.stops} stop${route.stops !== 1 ? "s" : ""}${route.loadSummary ? ` · ${route.loadSummary}` : ""}` : "No stops assigned"}
             </div>
+            {trailerReq && (
+              <div className="text-[11px] text-amber-700 font-medium mt-0.5">Needs: {trailerReq}</div>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {readiness && (
@@ -395,7 +388,6 @@ export default function RunAllocationPanel({
                 </div>
               </div>
             )}
-            <Link to={`/app/runs/${run.id}`} className="text-[11px] text-blue-600 hover:underline whitespace-nowrap">Details</Link>
             <button onClick={onClose} className="text-slate-400 hover:text-primary text-xl leading-none">×</button>
           </div>
         </div>
@@ -419,9 +411,9 @@ export default function RunAllocationPanel({
 
       {error && <div className="mx-4 mt-2 p-2 bg-red-50 border border-red-200 rounded text-[12px] text-red-700">{error}</div>}
 
-      {/* Three columns */}
+      {/* Driver / Truck / Trailer — stacked, not squeezed 3-across (names were unreadable at real panel widths) */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        <div className="flex gap-3 items-start">
+        <div className="flex flex-col gap-4">
           <Column kind="driver"  title="Driver" />
           <Column kind="truck"   title="Truck" />
           <Column kind="trailer" title="Trailer" />

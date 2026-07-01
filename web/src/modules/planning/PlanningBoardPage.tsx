@@ -998,7 +998,7 @@ function RunLane({
           }
         </span>
         <Link
-          to={`/app/runs/${run.id}`}
+          to={`/app/runs?id=${run.id}`}
           className="text-[11px] font-semibold text-accent hover:underline flex-shrink-0 whitespace-nowrap"
           title="Assign vehicle &amp; driver in Runs"
         >
@@ -1693,7 +1693,7 @@ function RunLane({
         {/* Open in Runs — publish is done on the Runs screen */}
         <div className="px-3 py-2">
           <Link
-            to={`/app/runs/${run.id}`}
+            to={`/app/runs?id=${run.id}`}
             className="btn text-sm px-3 py-2 w-full border border-slate-200 text-slate-600 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors flex items-center justify-center gap-1.5"
           >
             Open in Runs — allocate &amp; publish →

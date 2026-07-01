@@ -7,7 +7,17 @@
 
 ---
 
-## Runs — toolbar, drag-and-drop allocation, and export cleanup 2026-07-01 (later same day)
+## Runs — consolidate to one screen + fix layout proportions 2026-07-01 (later same day)
+
+User feedback (harsh, and correct): two screens did almost the same job, and the panel/table proportions were unusable at real screen sizes — never actually tested below 1440px, and the candidate-picker's 3-column layout truncated driver/truck names to unreadable fragments.
+
+**Consolidation.** Audited every capability of `RunDetailPage.tsx` (829 lines) before touching anything: driver/truck/trailer assignment duplicated `RunAllocationPanel` (same `runsApi.candidates`/`readiness` calls, dropdowns instead of cards); add-stop/sequencing/split were already fully owned by the Planning board (`planningApi.addStop`, `resequence`, the capacity-banner split button); cancel/delete-run was already live on Planning too (✕ button, `handleDeleteRun` → `patchRun({status:"cancelled"})`). Nothing needed building anywhere. Deleted `RunDetailPage.tsx` and the `/app/runs/:id` route. Fixed the three links that would have 404'd (`DashboardPage.tsx`, `PlanningBoardPage.tsx` ×2) to `/app/runs?id=<id>` instead, and added deep-link support in `RunsPage.tsx` — forces the range filter to "All runs" (target run's date is unknown from the caller) and opens the panel immediately. Verified live: created a run dated weeks out, hit the deep link, panel opened with no console errors.
+
+Still separate and NOT consolidated: `AssignDrawer.tsx` — a third, legacy Job-level assignment system used from the old Dashboard (`jobsApi.allocate`, string `assignedTruck`/`assignedTrailer` fields on Job, predates the Run model entirely). Out of scope for this pass; flagged in STATUS.md as the real remaining B6 work.
+
+**Layout fix.** Three concrete bugs, found by actually measuring instead of guessing: (1) the 4 stat-card boxes wrapped to 2×2 under 1280px and ate most of the vertical space before a single run row was visible — replaced with one compact single-row strip (`StatGroup`, was `StatPanel`). (2) The table had no explicit column widths, so the Run cell (now 3 lines: ref, route, status) visually dominated while Driver/Truck/Trailer stayed single-line and looked tiny by comparison — added a `<colgroup>` with fixed percentages. (3) The candidate picker's driver/truck/trailer columns were squeezed 3-across in a 400–460px docked panel, truncating names to `"N…"` / `"Te…"` / `"F…"` — changed to a vertical stack (`flex flex-col gap-4` instead of 3-up `flex`), one section at a time, full width, scrollable. Screenshotted and verified at 1280×800, 1366×768, and 1440×900 this time — the sizes that should have been checked before the first version was called done.
+
+Gates: typecheck 0/0, vocab ✅, api tests 189/189 (RunDetailPage's own tests didn't exist — nothing to remove), knip zero new unused exports vs main.
 
 Further pass on the two-pane Runs screen against a second mockup screenshot (same horizontal top nav kept — no sidebar).
 

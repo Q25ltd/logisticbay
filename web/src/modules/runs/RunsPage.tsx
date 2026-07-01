@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { runsApi, type RunReadiness, type Candidate } from "../../api/runs";
 import { planningApi, type FleetTrailer, type FleetUnit } from "../../api/planning";
 import { driversApi } from "../../api/drivers";
@@ -7,6 +7,7 @@ import type { Run, Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { today, addDays } from "../jobs/createJobUtils";
 import RunAllocationPanel from "./RunAllocationPanel";
+import { runRoute, requiredTrailerLabel } from "./runUtils";
 
 const RUN_STATUS_LABELS: Record<string, string> = {
   draft: "Draft", assigned: "Assigned", in_progress: "In Progress",
@@ -44,8 +45,16 @@ function bestCandidate(list: Candidate[]): Candidate | null {
 }
 
 export default function RunsPage() {
+  const [searchParams] = useSearchParams();
+  // Deep link from Dashboard/Planning ("Allocate in Runs" / "Open in Runs") —
+  // the target run's date is unknown here, so force "all runs" to guarantee it loads.
+  const deepLinkId = (() => {
+    const parsed = parseInt(searchParams.get("id") ?? "", 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
+
   const [date, setDate] = useState(today());
-  const [rangeMode, setRangeMode] = useState<RangeMode>("day");
+  const [rangeMode, setRangeMode] = useState<RangeMode>(deepLinkId ? "all" : "day");
   const [tab, setTab] = useState<Tab>("all");
   const [runs, setRuns] = useState<Run[]>([]);
   const [readiness, setReadiness] = useState<Record<number, RunReadiness | null>>({});
@@ -54,7 +63,7 @@ export default function RunsPage() {
   const [trailers, setTrailers] = useState<FleetTrailer[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishingId, setPublishingId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(deepLinkId);
   const [error, setError] = useState("");
 
   // Toolbar state
@@ -252,34 +261,31 @@ export default function RunsPage() {
   }
 
   // ── Small pieces ────────────────────────────────────────────────────────────
-  function StatPanel({ title, total, totalLabel, stats }: {
-    title: string; total: number; totalLabel: string;
+  function StatGroup({ label, total, stats }: {
+    label: string; total: number;
     stats: { label: string; value: number; tone: string }[];
   }) {
     return (
-      <div className="rounded-xl border border-border bg-white px-4 py-3">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">{title}</div>
-        <div className="flex items-end gap-4 flex-wrap">
-          <div>
-            <div className="text-2xl font-bold text-primary leading-none">{total}</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">{totalLabel}</div>
-          </div>
-          {stats.map(s => (
-            <div key={s.label}>
-              <div className={`text-lg font-semibold leading-none ${s.tone}`}>{s.value}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <span className="font-bold text-primary">{total}</span>
+        <span className="text-slate-400">{label}</span>
+        {stats.map(s => (
+          <span key={s.label} className={`text-[11px] font-semibold ${s.tone}`}>· {s.value} {s.label}</span>
+        ))}
+      </span>
     );
   }
 
   function MissingChip() {
     return <span className="text-[11px] font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">Missing</span>;
   }
-  const assetCell = (v: string | null | undefined) =>
-    v ? <span className="text-slate-700 text-[13px]">{v}</span> : <MissingChip />;
+  const assetCell = (v: string | null | undefined, hint?: string | null) =>
+    v ? <span className="block font-semibold text-slate-700 text-[13px] truncate">{v}</span> : (
+      <div>
+        <MissingChip />
+        {hint && <div className="text-[10px] text-amber-700 mt-0.5 truncate">Needs: {hint}</div>}
+      </div>
+    );
 
   function ReadinessCell({ state, r }: { state: RunState; r: RunReadiness | null | undefined }) {
     if (state === "done") return <span className="text-slate-300">—</span>;
@@ -393,27 +399,25 @@ export default function RunsPage() {
         </Button>
       </div>
 
-      {/* Overview — Runs / Drivers / Trailers / Trucks */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
-        <StatPanel title="Runs overview" total={runStats.total} totalLabel="Total runs" stats={[
-          { label: "Missing driver",  value: runStats.noDriver,  tone: "text-rose-600" },
-          { label: "Missing trailer", value: runStats.noTrailer, tone: "text-amber-600" },
-          { label: "Ready",           value: runStats.ready,     tone: "text-green-600" },
+      {/* Overview — one compact strip, not four boxes eating vertical space */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-3.5 py-2 mb-3 rounded-lg border border-border bg-white text-[12px]">
+        <StatGroup label="runs" total={runStats.total} stats={[
+          { label: "no driver",  value: runStats.noDriver,  tone: "text-rose-600" },
+          { label: "no trailer", value: runStats.noTrailer, tone: "text-amber-600" },
+          { label: "ready",      value: runStats.ready,     tone: "text-green-600" },
         ]} />
-        <StatPanel title="Drivers" total={driverStats.total} totalLabel="Total" stats={[
-          { label: "Available", value: driverStats.available, tone: "text-green-600" },
-          { label: "Allocated", value: driverStats.allocated, tone: "text-slate-600" },
-          { label: "Inactive",  value: driverStats.inactive,  tone: "text-rose-600" },
+        <span className="w-px h-4 bg-border" />
+        <StatGroup label="drivers" total={driverStats.total} stats={[
+          { label: "available", value: driverStats.available, tone: "text-green-600" },
+          { label: "inactive",  value: driverStats.inactive,  tone: "text-rose-600" },
         ]} />
-        <StatPanel title="Trailers" total={trailerStats.total} totalLabel="Total" stats={[
-          { label: "Available", value: trailerStats.available, tone: "text-green-600" },
-          { label: "Allocated", value: trailerStats.allocated, tone: "text-slate-600" },
-          { label: "Off road",  value: trailerStats.out,       tone: "text-rose-600" },
+        <StatGroup label="trailers" total={trailerStats.total} stats={[
+          { label: "available", value: trailerStats.available, tone: "text-green-600" },
+          { label: "off road",  value: trailerStats.out,       tone: "text-rose-600" },
         ]} />
-        <StatPanel title="Trucks" total={truckStats.total} totalLabel="Total" stats={[
-          { label: "Available", value: truckStats.available, tone: "text-green-600" },
-          { label: "Allocated", value: truckStats.allocated, tone: "text-slate-600" },
-          { label: "Off road",  value: truckStats.out,       tone: "text-rose-600" },
+        <StatGroup label="trucks" total={truckStats.total} stats={[
+          { label: "available", value: truckStats.available, tone: "text-green-600" },
+          { label: "off road",  value: truckStats.out,       tone: "text-rose-600" },
         ]} />
       </div>
 
@@ -476,10 +480,20 @@ export default function RunsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto border border-border rounded-lg">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm table-fixed">
+                  <colgroup>
+                    <col style={{ width: "2.5rem" }} />
+                    <col style={{ width: "19%" }} />
+                    <col style={{ width: "7%" }} />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "9%" }} />
+                  </colgroup>
                   <thead>
                     <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
-                      <th className="px-3 py-2 font-semibold w-8">
+                      <th className="px-3 py-2 font-semibold">
                         <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} />
                       </th>
                       <th className="px-3 py-2 font-semibold">Run</th>
@@ -502,7 +516,8 @@ export default function RunsPage() {
                           </tr>
                         )}
                         {group.rows.map(({ run, r, state, driver, truck, trailer }) => {
-                          const stops = run.assignments?.length ?? 0;
+                          const route = runRoute(run);
+                          const trailerHint = requiredTrailerLabel(run);
                           const isSel = selectedId === run.id;
                           const checked = selectedRows.has(run.id);
                           return (
@@ -512,14 +527,20 @@ export default function RunsPage() {
                               <td className="px-3 py-2.5 align-top" onClick={e => e.stopPropagation()}>
                                 <input type="checkbox" checked={checked} onChange={() => toggleRow(run.id)} />
                               </td>
-                              <td className="px-3 py-2.5 align-top">
-                                <div className="font-semibold text-primary text-[13px]">{run.runReference}</div>
+                              <td className="px-3 py-2.5 align-top overflow-hidden">
+                                <div className="font-semibold text-primary text-[13px] truncate">{run.runReference}</div>
+                                {(route.origin || route.destination) && (
+                                  <div className="text-[11px] text-slate-600 truncate">{route.origin ?? "?"} → {route.destination ?? "?"}</div>
+                                )}
                                 <div className="text-[10px] text-slate-400">{RUN_STATUS_LABELS[run.status] ?? run.status}</div>
                               </td>
-                              <td className="px-3 py-2.5 align-top text-slate-500 text-[13px]">📍 {stops}</td>
+                              <td className="px-3 py-2.5 align-top text-slate-500 text-[13px]">
+                                📍 {route.stops}
+                                {route.loadSummary && <div className="text-[10px] text-slate-400">{route.loadSummary}</div>}
+                              </td>
                               <td className="px-3 py-2.5 align-top">{assetCell(driver)}</td>
                               <td className="px-3 py-2.5 align-top">{assetCell(truck)}</td>
-                              <td className="px-3 py-2.5 align-top">{assetCell(trailer)}</td>
+                              <td className="px-3 py-2.5 align-top">{assetCell(trailer, trailerHint)}</td>
                               <td className="px-3 py-2.5 align-top"><ReadinessCell state={state} r={r} /></td>
                               <td className="px-3 py-2.5 align-top text-right" onClick={e => e.stopPropagation()}>
                                 <ActionCell run={run} state={state} r={r} />
@@ -537,7 +558,7 @@ export default function RunsPage() {
 
           {/* Allocation panel */}
           {selectedId && (
-            <div className="w-full lg:w-[460px] flex-shrink-0 border border-border rounded-xl bg-white shadow-sm sticky top-4 h-[calc(100vh-7rem)] overflow-hidden">
+            <div className="w-full lg:w-[400px] xl:w-[440px] flex-shrink-0 border border-border rounded-xl bg-white shadow-sm sticky top-4 h-[calc(100vh-7rem)] overflow-hidden">
               <RunAllocationPanel
                 key={selectedId}
                 runId={selectedId}

@@ -222,7 +222,7 @@ export default function DashboardPage() {
               {sortedRuns.map(run => (
                 <div
                   key={run.id}
-                  onClick={() => navigate(`/app/runs/${run.id}`)}
+                  onClick={() => navigate(`/app/runs?id=${run.id}`)}
                   className={`card p-4 cursor-pointer hover:shadow-md transition-shadow ${borderColor(run.status)} ${run.status === "completed" ? "opacity-60" : ""}`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
