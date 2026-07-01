@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { runsApi } from "../../api/runs";
-import type { PatchRunBody } from "../../api/runs";
+import type { PatchRunBody, RunReadiness, RunCandidates, Candidate } from "../../api/runs";
 import { planningApi } from "../../api/planning";
-import type { UnplannedStop, StopCluster } from "../../api/planning";
+import type { UnplannedStop, StopCluster, FleetTrailer, FleetUnit } from "../../api/planning";
 import { driversApi } from "../../api/drivers";
 import type { Run, RunAssignment, Driver } from "../../types";
 import { Badge } from "../../components/Badge";
@@ -256,6 +256,35 @@ function AddStopPanel({
   );
 }
 
+// ── Candidate-aware asset options (B4) ────────────────────────────────────────
+
+function candOptions(cands: Candidate[], emptyLabel: string) {
+  return (
+    <>
+      <option value="">{emptyLabel}</option>
+      {cands.map(c => (
+        <option key={c.id} value={c.id}>
+          {c.label}{c.recommended ? " ★" : ""}{c.busyOn ? ` · on ${c.busyOn}` : ""}{!c.busyOn && c.reasons.length ? ` · ${c.reasons[0]}` : ""}
+        </option>
+      ))}
+    </>
+  );
+}
+
+function RecommendedHint({ cands, onPick }: { cands?: Candidate[]; onPick: (id: string) => void }) {
+  const rec = cands?.find(c => c.recommended);
+  if (!rec) return null;
+  const free = cands!.filter(c => c.available && c.suitable).length;
+  return (
+    <div className="mt-1 text-[11px] text-slate-500">
+      <button type="button" onClick={() => onPick(String(rec.id))} className="text-blue-600 hover:underline font-medium">
+        ★ Recommended: {rec.label}
+      </button>
+      {" "}· {free} available &amp; suitable
+    </div>
+  );
+}
+
 // ── RunDetailPage ─────────────────────────────────────────────────────────────
 
 export default function RunDetailPage() {
@@ -274,9 +303,16 @@ export default function RunDetailPage() {
   const [dirty, setDirty] = useState(false);
   const [showAddStop, setShowAddStop] = useState(false);
 
+  const [trucks, setTrucks] = useState<FleetUnit[]>([]);
+  const [trailers, setTrailers] = useState<FleetTrailer[]>([]);
+  const [readiness, setReadiness] = useState<RunReadiness | null>(null);
+  const [candidates, setCandidates] = useState<RunCandidates | null>(null);
+
   // Form state
   const [plannedDate, setPlannedDate] = useState("");
   const [driverId, setDriverId] = useState("");
+  const [truckId, setTruckId] = useState("");
+  const [trailerId, setTrailerId] = useState("");
   const [estimatedStartTime, setEstimatedStartTime] = useState("");
   const [estimatedEndTime, setEstimatedEndTime] = useState("");
   const [plannerNotes, setPlannerNotes] = useState("");
@@ -290,12 +326,16 @@ export default function RunDetailPage() {
       setRun(r);
       setPlannedDate(r.plannedDate ?? "");
       setDriverId(r.assignedDriverId ? String(r.assignedDriverId) : "");
+      setTruckId(r.assignedTruckId ? String(r.assignedTruckId) : "");
+      setTrailerId(r.assignedTrailerId ? String(r.assignedTrailerId) : "");
       setEstimatedStartTime(r.estimatedStartTime ?? "");
       setEstimatedEndTime(r.estimatedEndTime ?? "");
       setPlannerNotes(r.plannerNotes ?? "");
       setEndInstruction(r.endInstruction ?? "");
       setEndInstructionNote(r.endInstructionNote ?? "");
       setDirty(false);
+      runsApi.readiness(runId).then(setReadiness).catch(() => setReadiness(null));
+      runsApi.candidates(runId).then(setCandidates).catch(() => setCandidates(null));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load run");
     } finally {
@@ -307,6 +347,7 @@ export default function RunDetailPage() {
 
   useEffect(() => {
     driversApi.list("active").then(res => setDrivers(res.data)).catch(() => {});
+    planningApi.getFleet().then(f => { setTrucks(f.trucks); setTrailers(f.trailers); }).catch(() => {});
   }, []);
 
   function markDirty() { setDirty(true); }
@@ -319,6 +360,8 @@ export default function RunDetailPage() {
       const body: PatchRunBody = {
         plannedDate: plannedDate || null,
         assignedDriverId: driverId ? Number(driverId) : null,
+        assignedTruckId: truckId ? Number(truckId) : null,
+        assignedTrailerId: trailerId ? Number(trailerId) : null,
         estimatedStartTime: estimatedStartTime || null,
         estimatedEndTime: estimatedEndTime || null,
         plannerNotes: plannerNotes || undefined,
@@ -326,10 +369,11 @@ export default function RunDetailPage() {
         endInstructionNote: endInstructionNote || undefined,
       };
       const updated = await runsApi.update(runId, body);
-      const w = (updated as any).warning as string | undefined;
+      const w = (updated as { warning?: string }).warning;
       setRun(updated);
       setDirty(false);
       if (w) setWarning(w);
+      runsApi.readiness(runId).then(setReadiness).catch(() => {});
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save run");
     } finally {
@@ -441,7 +485,14 @@ export default function RunDetailPage() {
             <Button variant="outline" loading={saving} onClick={handleSave}>Save</Button>
           )}
           {run.status !== "cancelled" && !run.publishedToDriver && (
-            <Button variant="success" loading={publishing} onClick={handlePublish}>Publish to Driver</Button>
+            readiness && !readiness.ready ? (
+              <button disabled title={readiness.blockers.join(" · ")}
+                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-400 text-sm font-semibold cursor-not-allowed">
+                Publish — not ready
+              </button>
+            ) : (
+              <Button variant="success" loading={publishing} onClick={handlePublish}>Publish to Driver</Button>
+            )
           )}
           {run.status !== "cancelled" && (
             <Button variant="danger" loading={cancelling} onClick={handleCancel}>Cancel Run</Button>
@@ -460,21 +511,18 @@ export default function RunDetailPage() {
         </div>
       )}
 
-      {/* Details card */}
+      {/* Allocation card — the heart of Runs: who & what will actually do this. */}
       <div className="card p-5 mb-5">
-        <h2 className="text-base font-semibold text-primary mb-4">Run Details</h2>
+        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+          <h2 className="text-base font-semibold text-primary">Allocation</h2>
+          {readiness && run.status !== "cancelled" && run.status !== "completed" && (
+            <span className={`text-[11px] font-semibold px-2 py-1 rounded ${readiness.ready ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+              {readiness.ready ? "✓ Ready to publish" : `Not ready · ${readiness.blockers.length} blocker${readiness.blockers.length !== 1 ? "s" : ""}`}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted mb-4">Pick the driver, trailer and vehicle. ★ = best fit for this load (available &amp; suitable).</p>
         <div className="space-y-4">
-          {/* Planned date */}
-          <div>
-            <label className="block text-sm font-medium text-primary mb-1">Planned Date</label>
-            <input
-              type="date"
-              className="input w-full max-w-xs"
-              value={plannedDate}
-              onChange={e => { setPlannedDate(e.target.value); markDirty(); }}
-            />
-          </div>
-
           {/* Driver */}
           <div>
             <label className="block text-sm font-medium text-primary mb-1">Driver</label>
@@ -483,15 +531,60 @@ export default function RunDetailPage() {
               value={driverId}
               onChange={e => { setDriverId(e.target.value); markDirty(); }}
             >
-              <option value="">— No driver assigned —</option>
-              {drivers.filter(d => d.status === "active").map(d => (
-                <option key={d.id} value={d.id}>{d.displayName}</option>
-              ))}
+              {candidates
+                ? candOptions(candidates.drivers, "— No driver assigned —")
+                : (<><option value="">— No driver assigned —</option>{drivers.filter(d => d.status === "active").map(d => (
+                    <option key={d.id} value={d.id}>{d.displayName}</option>
+                  ))}</>)}
             </select>
+            <RecommendedHint cands={candidates?.drivers} onPick={v => { setDriverId(v); markDirty(); }} />
           </div>
 
-          {/* Start / End time */}
-          <div className="grid grid-cols-2 gap-4 max-w-sm">
+          {/* Trailer + Vehicle (Runs is where assets get allocated — trailer first) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+            <div>
+              <label className="block text-sm font-medium text-primary mb-1">Trailer</label>
+              <select className="input w-full" value={trailerId}
+                onChange={e => { setTrailerId(e.target.value); markDirty(); }}>
+                {candidates
+                  ? candOptions(candidates.trailers, "— No trailer —")
+                  : (<><option value="">— No trailer —</option>{trailers.filter(t => (t.status ?? "available") !== "disposed").map(t => (
+                      <option key={t.id} value={t.id}>{t.registration} · {t.trailerType ?? t.bodyType ?? "trailer"}</option>
+                    ))}</>)}
+              </select>
+              <RecommendedHint cands={candidates?.trailers} onPick={v => { setTrailerId(v); markDirty(); }} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-primary mb-1">Vehicle (unit)</label>
+              <select className="input w-full" value={truckId}
+                onChange={e => { setTruckId(e.target.value); markDirty(); }}>
+                {candidates
+                  ? candOptions(candidates.trucks, "— No vehicle —")
+                  : (<><option value="">— No vehicle —</option>{trucks.filter(t => (t.status ?? "available") !== "disposed").map(t => (
+                      <option key={t.id} value={t.id}>{t.registration}{t.gvwClass ? ` · ${t.gvwClass}` : ""}</option>
+                    ))}</>)}
+              </select>
+              <RecommendedHint cands={candidates?.trucks} onPick={v => { setTruckId(v); markDirty(); }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Schedule & notes card */}
+      <div className="card p-5 mb-5">
+        <h2 className="text-base font-semibold text-primary mb-4">Schedule &amp; notes</h2>
+        <div className="space-y-4">
+          {/* Planned date + times */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
+            <div>
+              <label className="block text-sm font-medium text-primary mb-1">Planned Date</label>
+              <input
+                type="date"
+                className="input w-full"
+                value={plannedDate}
+                onChange={e => { setPlannedDate(e.target.value); markDirty(); }}
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-primary mb-1">Est. Start Time</label>
               <input
@@ -686,6 +779,37 @@ export default function RunDetailPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Readiness — can THIS driver/vehicle/trailer execute it? (Runs B1) */}
+      {readiness && run.status !== "cancelled" && run.status !== "completed" && (
+        <div className="card p-5 mb-5">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-semibold text-primary">Readiness</h2>
+            <span className={`text-xs font-semibold px-2 py-1 rounded ${readiness.ready ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+              {readiness.ready ? "✓ Ready to publish" : `Not ready · ${readiness.blockers.length} blocker${readiness.blockers.length !== 1 ? "s" : ""}`}
+            </span>
+          </div>
+          <p className="text-xs text-muted mb-3">Planning proved the movement is good. These checks prove this driver, vehicle &amp; trailer can actually execute it.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+            {readiness.resources.checks.filter(c => c.status !== "na").map(c => {
+              const icon   = c.status === "pass" ? "✓" : c.status === "warn" ? "⚠" : c.status === "fail" ? "✗" : "?";
+              const colour = c.status === "pass" ? "text-green-600" : c.status === "warn" ? "text-amber-600" : c.status === "fail" ? "text-red-600" : "text-slate-400";
+              return (
+                <div key={c.key} className="flex items-start gap-2 text-sm" title={c.reason ?? ""}>
+                  <span className={`flex-shrink-0 font-bold ${colour}`}>{icon}</span>
+                  <span className="text-slate-700">{c.label}</span>
+                  {c.reason && (c.status === "fail" || c.status === "warn") && <span className="text-xs text-muted">— {c.reason}</span>}
+                </div>
+              );
+            })}
+          </div>
+          {!readiness.ready && readiness.blockers.length > 0 && (
+            <div className="mt-3 rounded-md bg-red-50 text-red-700 text-xs px-3 py-2">
+              <span className="font-semibold">To publish:</span> {readiness.blockers.join(" · ")}
+            </div>
+          )}
         </div>
       )}
 

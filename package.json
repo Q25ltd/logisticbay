@@ -15,5 +15,8 @@
   "devDependencies": {
     "concurrently": "^9.1.2",
     "knip": "^6.14.2"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }

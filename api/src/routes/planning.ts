@@ -1066,8 +1066,9 @@ async function recalcDerived(runId: number, companyId: number, prisma: PrismaCli
   const hasOversized       = parts.some(p => p.oversized);
   const totalWeight        = parts.reduce((s, p) => s + (p.stopWeight ? Number(p.stopWeight) : 0), 0);
   let requiredTrailerType: string | null = null;
-  if (hasTemperatureLoad) requiredTrailerType = "temperature_controlled";
-  else if (hasOversized)  requiredTrailerType = "curtainsider_or_flatbed";
+  if (hasTemperatureLoad)  requiredTrailerType = "temperature_controlled";
+  else if (hasHazardous)   requiredTrailerType = "curtainsider_or_flatbed"; // ADR needs an open body (no fume build-up)
+  else if (hasOversized)   requiredTrailerType = "curtainsider_or_flatbed";
   await prisma.run.update({
     where: { id: runId },
     data:  {

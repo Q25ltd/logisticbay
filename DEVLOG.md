@@ -7,6 +7,101 @@
 
 ---
 
+## Runs — toolbar, drag-and-drop allocation, and export cleanup 2026-07-01 (later same day)
+
+Further pass on the two-pane Runs screen against a second mockup screenshot (same horizontal top nav kept — no sidebar).
+
+**`RunsPage.tsx`** — toolbar rebuilt above the stat panels: date + range (day / 7-day window / all runs, drives `dateFrom`/`dateTo` on `runsApi.list`), search (matches run ref / driver / truck / trailer), Filters popover (status checkboxes), **Auto allocate** (sequential per-run best-candidate assignment via B4 `candidates` + existing `update` — sequential so a later run's candidate fetch already reflects the earlier run's saved assignment, no double-booking), Settings link, **New Run** (creates a draft via existing `runsApi.create` and opens it in the panel). Table gained row checkboxes (feed Auto allocate's scope — selected rows only, else all "attention" rows), Group by (driver/status) and Sort by (status/reference/readiness).
+
+**`RunAllocationPanel.tsx`** — header now derives route (origin → destination) and load summary from the run's sorted assignments/jobPart, plus a single status chip ("Missing driver/truck/trailer" or "Ready"); added a "This run needs" row of ✓/✗ chips; each candidate column got a drag-and-drop target (cards are `draggable`, dropzone parses a small JSON payload keyed by kind so a trailer card can't be dropped on the truck column) and a "best matches only" toggle; Save button is now a split button — **Save allocation** / **Save & publish**.
+
+**Export cleanup (pre-existing B1–B4 files, not newly written this session):** `npx knip` flagged 8 new unused exports vs the `main` baseline — `Candidate`/`ReadinessTruck`/`ReadinessTrailer`/`ReadinessLoad`/`CheckStatus`/`ReadinessCheck` were `export`ed from `runCandidatesService.ts` / `runReadinessService.ts` (API) and `ReadinessStatus`/`ReadinessCheck` from `web/src/api/runs.ts`, but nothing outside those files imports them by name — only the compute functions and their direct-parameter types are consumed. Dropped `export` on all 8 (module-private now); confirmed zero diff against baseline afterward.
+
+Gates: `npm run typecheck` 0/0, `npm run check:vocab` ✅, `npm test --prefix api` 200/200, `npx knip` — zero new unused exports vs `main`. Verified live in preview (create run → drag/pick driver+truck+trailer → Save → table updates, readiness recalculates, no console errors).
+
+## Runs — two-pane "Allocate Resources" screen matching the mockup 2026-07-01
+
+The earlier remake used dropdowns; the mockup (shared this session) is a **two-pane master/detail**: grouped fleet-overview stats + a runs table on the left, and a **three-column candidate picker** (DRIVER / TRUCK / TRAILER) on the right. Rebuilt to match.
+
+**`RunAllocationPanel.tsx` (new)** — the right pane. Fetches the run + B4 candidates + full driver/fleet records and renders each driver/truck/trailer as a **visible card** (initials avatar, on-duty dot, `Xh shift`, ADR badge, deterministic **fit %**), grouped **Best matches** (available & suitable) then **Other available**, each with per-column search and "view all". Click a card to select (toggle), a **Current allocation** footer shows Driver/Truck/Trailer (or "Missing"), and **Save allocation** PATCHes the run. Header shows readiness as **% + Ready / N left**, where % = `passed ÷ total` checks — an honest progress bar, NOT a fuzzy confidence score (keeps the gate rule intact). Fit % is deterministic (100 − 8·reasons, −12 if unsuitable), used only to order/label cards — labelled "fit", not "match", and never fabricated.
+
+**`RunsPage.tsx` (rebuilt)** — grouped **overview panels** (Runs / Drivers / Trailers / Trucks) computed **truthfully** from the day's runs + fleet + drivers: Runs→Total/Missing driver/Missing trailer/Ready; fleet groups→Total/Available/Allocated/Off-road (Available = in-service and not allocated to a today run). Deliberately did NOT invent "On leave / Workshop / VOR" splits the mockup shows — we don't capture those yet, so they're omitted rather than faked. **Tab filters** (All / Missing driver / Missing trailer / Missing truck / Ready) with counts. Table columns Run · Stops · Driver · Truck · Trailer · Readiness (% bar) · Action; Driver/Truck/Trailer show a red **Missing** chip when unassigned. Clicking a row (or **Allocate**) opens the panel beside the table; **Publish** stays gated on `readiness.ready`.
+
+Not yet built (still backlog, told the user): drag-and-drop into the allocation zones, top-level **Auto-allocate**, driver **avatars** (using initials), truck **make/model** + **defect** status and trailer **pallet capacity** (fields not in schema yet), and the numeric **"% match"** is our deterministic fit, not a learned score. Gate: web typecheck ✅ 0.
+
+## Runs — UI remake toward the mockup (overview cards + allocation card) 2026-06-30
+
+Reworked the Runs screens to match the planner mockup while keeping all B1–B4 logic.
+
+**Runs list (`RunsPage.tsx`)** — replaced the status-pill row with **five overview cards that ARE the filter**: Active runs / Need attention / No driver / Ready to publish / Published (click to filter, click again to clear; a completed/cancelled toggle sits on the right). Per-run state is derived once from status + readiness (`attention | checking | ready | published | done`), drives both the cards and the sort (attention first). Rows gained a **Window** column (est. start–end) and the driver now reads from `readiness.assigned.driver` with a fallback to `run.driver`; an attention row is tinted amber. Publish stays gated on `readiness.ready`.
+
+**Run detail (`RunDetailPage.tsx`)** — split the monolithic "Run Details" card into a prominent **Allocation** card (driver / trailer / vehicle, with an inline ready/blocker chip and the ★ best-fit hints) and a separate **Schedule & notes** card (date + times on one row, notes, end instruction). No logic change to save/publish/candidates.
+
+Scope held deliberately tight (no drag-allocate, no auto-allocate yet — those stay on the backlog). Gate: web typecheck ✅ 0.
+
+## Runs — driver hours = full preferred shift (theoretical allocation, not live) 2026-06-24
+
+User clarified the phasing: **Runs allocation is theoretical, not live** — every driver shows their **full `preferredShiftHours`** (no consumed/remaining tracking). Live remaining hours (tacho) are the **Live phase (last)**. Matches the three-worlds model (Planning/Runs theoretical · Live = reality).
+
+Built into the candidates (B4): `DriverLite.preferredShiftHours`; ctx `runDurationHours` (computed in the route from the run's `estimatedStartTime`/`estimatedEndTime`, "HH:MM"). Driver candidate label now shows the shift (e.g. **"Dave · 8h"**); if the shift can't cover the run's planned duration it adds a **soft** note (`shift 8h < run ~11h`) that does NOT flip suitability and never blocks — and the **recommended driver prefers one whose shift covers the run** (Sue 13h over Dave 8h for an 11h run). Web option labels surface the soft note. Readiness `driver_hours` reworded: *"Allocation uses the full preferred shift; live remaining hours are tracked on the Live screen."* Test added (`runCandidatesService.test.ts`). Gate: typecheck api+web ✅ 0.
+
+## Runs/Planning — flatbed-chemicals fix + executable split (Step 9) 2026-06-24
+
+User reported a flatbed carrying chemicals getting wrong suggestions, and that a recommended split couldn't be performed. Audited every load/asset check:
+- `checkLoadVehicle`, `runCompatibility` (S5), `suggestVehicle`, `vehicleSuitability` (Q5b) — all **correct** for flatbed+ADR (flatbed isn't ADR-unsafe; ADR recommends open bodies).
+- **`runCandidatesService` (B4) — the bug:** it took only `bodyTypes[0]`, so a chemical job accepting `[curtain, flatbed]` flagged the flatbed *"needs curtain"*; and it never applied the ADR rule (would've recommended an enclosed box). **Fixed:** match **any** acceptable body, and reject `ADR_UNSAFE_BODIES` for hazmat (reusing the canonical sets from `checkLoadVehicleService` — single source). Regression test pins it (flatbed accepted, box rejected).
+- **Trailer-requirement rollup gap (both run systems):** `recalculateDerivedRequirements` (runs.ts) and the planning.ts equivalent set `requiredTrailerType` for temp/oversized but **not hazmat**. Added `hasHazardous → curtainsider_or_flatbed` (open body) in both.
+
+**Executable split (LOAD_MOVEMENT_PLAN Step 9):** the capacity check recommended "split into N" but there was no action. Data model already supports it (`RunAssignment.quantityAssigned` + addStop accepts a partial qty; PRODUCT #2 — split distributes quantity across RunAssignments, stays one Job). Built **`POST /runs/:id/split { keepQuantity }`** (tx): this run keeps `keepQuantity` per over-size stop, the remainder of each moves to a NEW `runType:"split"` run (`generateRunReference`, `plannerNotes:"Split from RUN-X"`), then `recalculateDerivedRequirements` on both — ledger stays balanced (26+14=40). Web: an **"✂ Split into N runs"** button in the planning capacity banner (auto by `capacity.maxSpaces`, adjustable after) → `handleSplitRun` → refresh. Gate: typecheck api+web ✅ 0. The split fix-it makes the capacity recommendation actionable.
+
+## Runs — B4: see-your-fleet candidates (available + suitable) 2026-06-24
+
+User point: the B3 allocation selects were blind lists of registrations — you couldn't see what's free, what suits the load, or what's already on another run; you'd pick a reg and only then readiness would fail. Fixed with a candidates endpoint that shows fleet STATE at the moment of allocation.
+
+**`runCandidatesService.ts` (pure):** `computeRunCandidates(ctx, fleet, busy)` annotates every driver/trailer/truck with `available` (not on another run that day), `suitable` (fits the load — body type / refrigeration / hazmat / trailer rating), `busyOn` (the conflicting run ref), `recommended` (available **and** suitable; trailers prefer an exact body match so a fridge isn't grabbed for a curtain job), and sorts each list recommended → fit → free → rest, with `reasons[]` explaining any unsuitability.
+
+**Route `GET /runs/:id/candidates`:** assembles the fleet (trailers/trucks/drivers) + the run's load requirements (hazmat/temp/needs-trailer/body-type from the assignments' jobs) + a **busy map** (every non-cancelled run on the same `plannedDate` → assigned asset ids, generalising the existing driver-conflict check to trailers/trucks).
+
+**Web:** the three allocation selects are now candidate-aware — options read e.g. `TR102 · fridge ★`, `TR103 · curtain · on RUN-9` (busy), `TR101 · curtain · not refrigerated` (unsuitable reason), sorted recommended-first; each has a **"★ Recommended: <asset> · N available & suitable"** quick-pick that one-click selects it. Falls back to the plain fleet list until candidates load.
+
+Verified via node + test (`runCandidatesService.test.ts`): temp-controlled hazmat trailer load → fridge trailer + ADR driver + free truck recommended; curtain flagged "not refrigerated"; busy assets flagged with the run ref; nothing recommended when all busy. Gate: typecheck api+web ✅ 0. **Next: B5 — hard-on-publish (block the backend publish on hard resource failures, override for soft).**
+
+## Runs — B3: detail allocation + readiness panel + gated publish 2026-06-24
+
+`RunDetailPage` was driver-only allocation. Now it's the full canonical allocation surface:
+- **Trailer + Vehicle (unit) selects** added next to Driver (trailer-first per PRODUCT), populated from `planningApi.getFleet()`; `handleSave` patches `assignedTrailerId`/`assignedTruckId` (backend already supported it) and re-fetches readiness.
+- **Readiness panel** (renders B1 `GET /runs/:id/readiness`): a Ready/Not-ready pill + every resource check with a ✓/⚠/✗/? icon and its reason, plus a "To publish: …" blocker line. Copy frames the distinction: *"Planning proved the movement is good; these checks prove this driver, vehicle & trailer can execute it."*
+- **Publish is gated**: when readiness is loaded and not ready → a disabled "Publish — not ready" button (blockers as tooltip); when ready → the active publish. (Backend S4/S5 gate remains the backstop.)
+
+Gate: typecheck web ✅ 0 (api unchanged). **Next: B4 — smart resource suggestions (best available + suitable trailer/driver), reusing the suitability engine.**
+
+## Runs — B2: Runs table (scan-50, renders B1 readiness) 2026-06-24
+
+Rebuilt `RunsPage` from a card list into the **table** the Runs vision calls for:
+**Run · Driver · Trailer · Vehicle · Status · Readiness · Publish**. Each row pulls
+`GET /runs/:id/readiness` (B1) for the assigned-asset labels + the gate. Rows **sort
+problems-first** (not-ready → ready → published → completed/cancelled) so the planner
+works top-down; date + status filters kept; a day-summary chip strip (runs · *N not
+ready* · published). **Readiness** cell shows `✓ Ready` or `⚠ <first blocker> +N`
+(tooltip = all blockers); **Publish** is an inline button **enabled only when
+`ready`** (disabled with the blockers as its tooltip otherwise) → `runsApi.publish` →
+reload. Row click → detail. Backend: readiness route response gains `assigned
+{ driver, truck, trailer }` (regs) so the table renders from one call per run (Run has
+no truck/trailer relation to include). Web `runsApi.readiness` + `RunReadiness` type.
+Gate: typecheck api+web ✅ 0. *Note: per-run readiness is N calls/day — fine now; a
+batch endpoint is a later optimisation.* **Next: B3 — detail truck/trailer allocation
++ readiness breakdown panel + gated publish.**
+
+## Runs — B1: run readiness service (resource checks + publish gate) 2026-06-24
+
+First Phase B build. Runs answers a different question from Planning — Planning: *is this a good movement?* (coverage/capacity/timing); Runs: *can THIS driver + truck + trailer execute it?* Built the **Readiness model** as the keystone (the table column + the detail both render from it).
+
+**`runReadinessService.ts` (pure, no DB):** `computeRunReadiness(input)` → `{ ready, blockers[], resources: { checks[], passed, total } }`. **Ready is a GATE** (boolean + named blockers), not a blended % (a fuzzy 82% reintroduces the confusion Runs removes). Resource checks: driver assigned/available/licence/ADR(hard when hazardous)/trailer-capability; trailer assigned (hard when the load needs one)/compatible (**carries the S5 `trailerCompatible` flag — not recomputed**)/available; vehicle assigned (soft — unit is a later phase)/compatible; equipment (soft, driver-skill or vehicle-onboard); MOT / VOR / driver-hours-remaining surfaced as **`unknown`** (honest — data not captured yet; never a fake tick, never blocks). Hard `fail` → blocks publish; soft/unknown never block alone.
+
+**Route `GET /runs/:id/readiness`:** loads the run + driver (DriverProfile) + assigned truck/trailer + the assignments' job requirements (hazardClass / equipment / vehicleCategory→requiresTrailer), assembles the pure input, returns the readiness. Reuses the run's stored `trailerCompatible`/`vehicleCompatible`.
+
+Verified via node: no-driver → blocked; full compatible set → ready (9/12, the 3 unknowns don't block); hazmat+no-ADR / needs-trailer-none / incompatible-trailer / wrong-trailer-type → each blocked with a clear reason; no-stops → never ready; missing vehicle → soft warn (still ready). Test: `runReadinessService.test.ts` (8 pure cases). Gate: api typecheck ✅ 0. **Next: B2 — rebuild RunsPage as the scan-50 table (Run·Driver·Trailer·Vehicle·Status·Readiness·Publish) rendering from this.**
+
 ## Planning — surface silent add-stop failures (release hygiene) 2026-06-24
 
 Last genuine planning code gap before release: `handleAddJobToRun` / `handleAddPartToRun` looped `addStop` with `catch { /* skip */ }` — a stop that failed to attach (already on another run, validation, network) was **silently dropped**, leaving a run quietly missing a load that could then be published. Now failures are counted and surfaced via the existing `err` banner ("Couldn't add N stops for <customer> — it may already be on another run. Check the run before publishing."). Covers the drag-to-run, batch-add, "Add collection", and yard-relay flows (all route through these handlers). Gate: typecheck api+web ✅ 0.

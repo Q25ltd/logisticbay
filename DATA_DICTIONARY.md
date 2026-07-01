@@ -1517,3 +1517,16 @@ Computed by the planning check (`checkRunService` + `loadCapacity`); **not** per
 `RunStop` (check-run input) carries `pallets` + `stackable` per stop. `pallets` comes from JobPart `quantityRequired`/`numPallets` when the unit is pallets; `stackable` is the Job-level flag.
 
 `PlannerWorkItem` gains `custodyLocation` (the load's current custody ref, e.g. `yard:7`) and `inCustodySince` (ISO timestamp it entered custody) — used by the date-independent **At yard / In custody** pool so a yard-stored load (relay/DC/swap) shows every day with its age until its onward leg is delivered.
+
+## Runs readiness — derived terms (Runs screen B1; `GET /runs/:id/readiness`)
+
+Computed by `runReadinessService` (deterministic). **Resource** half of the Runs Readiness model — separate from Planning's `confidence`. Planning asks *is this a good movement?*; Runs asks *is this movement ready to execute?*
+
+| Term | Meaning |
+|---|---|
+| `ready` | **Gate** — true only when the run has stops and every *hard* check passes. Not a percentage. |
+| `blockers` | Human-readable hard failures (the reasons publish is blocked). |
+| `resources.checks` | `{ key, label, status, hard, reason }[]` — driver assigned/available/licence/ADR/trailer-capability, trailer assigned/compatible/available, vehicle assigned/compatible, equipment, mot_inspection, vor_defects, driver_hours. |
+| `CheckStatus` | `pass` / `warn` / `fail` / `unknown` / `na`. `unknown` = data not captured (MOT/VOR/tacho) — never a fake tick, never blocks alone. |
+| `hard` (per check) | A hard `fail` blocks publish; soft and `unknown` never block on their own. |
+| `trailerCompatible` / `vehicleCompatible` (on Run, from S5) | **Carried** into readiness — Runs does NOT recompute compatibility. |

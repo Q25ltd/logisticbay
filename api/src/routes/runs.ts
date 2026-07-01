@@ -9,6 +9,8 @@ import { cancelRun } from "../services/runService.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
+import { computeRunReadiness } from "../services/runReadinessService.js";
+import { computeRunCandidates } from "../services/runCandidatesService.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
 async function generateRunReference(
@@ -49,10 +51,13 @@ async function recalculateDerivedRequirements(
   }, 0);
   const maxLoadWeight = totalWeight > 0 ? totalWeight : null;
 
-  // Required trailer type: temperature wins, then hazardous, then oversized
+  // Required trailer type: temperature wins, then hazardous (ADR needs an open
+  // body — no fume build-up), then oversized.
   let requiredTrailerType: string | null = null;
   if (hasTemperatureLoad) {
     requiredTrailerType = "temperature_controlled";
+  } else if (hasHazardous) {
+    requiredTrailerType = "curtainsider_or_flatbed";
   } else if (hasOversized) {
     requiredTrailerType = "curtainsider_or_flatbed";
   }
@@ -262,6 +267,190 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!run) return notFound(reply, "Run");
 
     return reply.send(run);
+  });
+
+  // ── GET /runs/:id/readiness — B1: resource readiness + publish gate ───────
+  app.get("/runs/:id/readiness", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
+    const { companyId } = request.user!;
+
+    const run = await prisma.run.findFirst({
+      where:   { id, companyId },
+      include: { driver: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
+    });
+    if (!run) return notFound(reply, "Run");
+
+    const arr = (v: unknown): string[] | null =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+
+    const jobIds = [...new Set(run.assignments.map(a => a.jobId))];
+    const [truck, trailer, jobs] = await Promise.all([
+      run.assignedTruckId
+        ? prisma.fleetUnit.findFirst({ where: { id: run.assignedTruckId, companyId }, select: { id: true, registration: true, status: true, onboardEquipment: true } })
+        : Promise.resolve(null),
+      run.assignedTrailerId
+        ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true } })
+        : Promise.resolve(null),
+      jobIds.length
+        ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const loads = jobs.map(j => ({
+      hazardous:       !!(j.hazardClass && j.hazardClass.trim()),
+      requiresTrailer: ["artic", "tractor", "drawbar"].includes((j.vehicleCategory ?? "").toLowerCase()),
+      equipment:       arr(j.equipment),
+    }));
+
+    const d = run.driver;
+    const readiness = computeRunReadiness({
+      hasStops: run.assignments.length > 0,
+      driver: d ? {
+        id: d.id, displayName: d.displayName, status: d.status,
+        licenceClass: d.licenceClass, canDriveCategories: arr(d.canDriveCategories),
+        adrAllowed: d.adrAllowed, hiabAllowed: d.hiabAllowed, moffettAllowed: d.moffettAllowed,
+        manualHandlingAllowed: d.manualHandlingAllowed, canUseTrailer: d.canUseTrailer,
+        trailerTypesAllowed: arr(d.trailerTypesAllowed),
+      } : null,
+      truck:   truck   ? { id: truck.id, registration: truck.registration, status: truck.status, onboardEquipment: arr(truck.onboardEquipment) } : null,
+      trailer: trailer ? { id: trailer.id, registration: trailer.registration, trailerType: trailer.trailerType, bodyType: trailer.bodyType, status: trailer.status, onboardEquipment: arr(trailer.onboardEquipment) } : null,
+      loads,
+      trailerCompatible: run.trailerCompatible,
+      vehicleCompatible: run.vehicleCompatible,
+    });
+
+    // Assigned-asset labels so the Runs table can render Driver/Trailer/Vehicle
+    // columns from this one call (Run has no truck/trailer relation to include).
+    return reply.send({
+      ...readiness,
+      assigned: {
+        driver:  d?.displayName ?? null,
+        truck:   truck?.registration ?? null,
+        trailer: trailer?.registration ?? null,
+      },
+    });
+  });
+
+  // ── GET /runs/:id/candidates — B4: available + suitable assets to allocate ─
+  app.get("/runs/:id/candidates", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
+    const { companyId } = request.user!;
+
+    const run = await prisma.run.findFirst({
+      where:   { id, companyId },
+      select:  { id: true, plannedDate: true, estimatedStartTime: true, estimatedEndTime: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
+    });
+    if (!run) return notFound(reply, "Run");
+
+    const arr = (v: unknown): string[] | null =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+    const jobIds = [...new Set(run.assignments.map(a => a.jobId))];
+
+    const [trailers, trucks, driverRows, jobs, otherRuns] = await Promise.all([
+      prisma.fleetTrailer.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true }, orderBy: { registration: "asc" } }),
+      prisma.fleetUnit.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, gvwClass: true, status: true }, orderBy: { registration: "asc" } }),
+      prisma.driverProfile.findMany({ where: { companyId }, select: { id: true, displayName: true, status: true, licenceClass: true, canDriveCategories: true, adrAllowed: true, canUseTrailer: true, trailerTypesAllowed: true, preferredShiftHours: true }, orderBy: { displayName: "asc" } }),
+      jobIds.length ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { hazardClass: true, tempControlled: true, vehicleCategory: true, bodyTypes: true } }) : Promise.resolve([]),
+      run.plannedDate
+        ? prisma.run.findMany({ where: { companyId, plannedDate: run.plannedDate, status: { notIn: ["cancelled"] }, id: { not: id } }, select: { runReference: true, assignedDriverId: true, assignedTruckId: true, assignedTrailerId: true } })
+        : Promise.resolve([]),
+    ]);
+
+    // Busy = assigned to another non-cancelled run on the same date.
+    const busy = { trailers: {} as Record<number, string>, trucks: {} as Record<number, string>, drivers: {} as Record<number, string> };
+    for (const r of otherRuns) {
+      if (r.assignedTrailerId) busy.trailers[r.assignedTrailerId] = r.runReference;
+      if (r.assignedTruckId)   busy.trucks[r.assignedTruckId]     = r.runReference;
+      if (r.assignedDriverId)  busy.drivers[r.assignedDriverId]   = r.runReference;
+    }
+
+    // Planned run duration from estimated start/end ("HH:MM") — theoretical, for
+    // the shift-fit check only. No live hours here (that's the Live phase).
+    const toMin = (t?: string | null) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t ?? ""); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+    const sMin = toMin(run.estimatedStartTime), eMin = toMin(run.estimatedEndTime);
+    const runDurationHours = sMin != null && eMin != null && eMin > sMin ? (eMin - sMin) / 60 : null;
+
+    const ctx = {
+      hazardous:      jobs.some(j => !!(j.hazardClass && j.hazardClass.trim())),
+      tempControlled: jobs.some(j => j.tempControlled),
+      needsTrailer:   jobs.some(j => ["artic", "tractor", "drawbar"].includes((j.vehicleCategory ?? "").toLowerCase())),
+      // ALL acceptable bodies across the run's loads — the trailer must match ANY (not just the first).
+      acceptableBodyTypes: [...new Set(jobs.flatMap(j => arr(j.bodyTypes) ?? []))],
+      runDurationHours,
+    };
+
+    const candidates = computeRunCandidates(ctx, {
+      trailers,
+      trucks,
+      drivers: driverRows.map(d => ({ ...d, canDriveCategories: arr(d.canDriveCategories), trailerTypesAllowed: arr(d.trailerTypesAllowed), preferredShiftHours: d.preferredShiftHours })),
+    }, busy);
+
+    return reply.send(candidates);
+  });
+
+  // ── POST /runs/:id/split — split an over-capacity load into a second run ──
+  // This run keeps `keepQuantity`; the remainder of each over-size stop moves to
+  // a NEW split run. Stays one Job (PRODUCT #2 — splitting distributes quantity
+  // across RunAssignments, not new Jobs); the quantity ledger stays balanced.
+  app.post("/runs/:id/split", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
+    const id = parseIdParam(request.params);
+    if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
+    const { companyId, userId } = request.user!;
+    const body = request.body as { keepQuantity?: number };
+    const keep = typeof body.keepQuantity === "number" && body.keepQuantity > 0 ? body.keepQuantity : null;
+    if (keep === null) return badRequest(reply, "BAD_REQUEST", "keepQuantity must be a positive number");
+
+    const outcome = await prisma.$transaction(async (tx) => {
+      const run = await tx.run.findFirst({
+        where:  { id, companyId },
+        select: {
+          id: true, runReference: true, plannedDate: true,
+          assignments: { where: { removedAt: null }, select: { id: true, jobPartId: true, jobId: true, quantityAssigned: true, quantityUnit: true, sequenceNumber: true } },
+        },
+      });
+      if (!run) return { kind: "notfound" as const };
+
+      const toMove = run.assignments
+        .map(a => ({ a, qty: Number(a.quantityAssigned) }))
+        .filter(x => x.qty > keep);
+      if (toMove.length === 0) return { kind: "nothing" as const };
+
+      const year   = (run.plannedDate ?? new Date()).getUTCFullYear();
+      const newRef = await generateRunReference(companyId, year, tx);
+      const newRun = await tx.run.create({
+        data: {
+          companyId, runReference: newRef, status: "draft", runType: "split",
+          plannedDate: run.plannedDate, plannerNotes: `Split from ${run.runReference}`, createdBy: userId,
+        },
+        select: { id: true },
+      });
+
+      for (const { a, qty } of toMove) {
+        await tx.runAssignment.update({ where: { id: a.id }, data: { quantityAssigned: keep } });
+        await tx.runAssignment.create({
+          data: {
+            companyId, runId: newRun.id, jobPartId: a.jobPartId, jobId: a.jobId,
+            sequenceNumber: a.sequenceNumber, quantityAssigned: qty - keep,
+            quantityUnit: a.quantityUnit ?? "", status: "not_started", addedBy: userId,
+          },
+        });
+      }
+
+      await recalculateDerivedRequirements(run.id, companyId, tx);
+      await recalculateDerivedRequirements(newRun.id, companyId, tx);
+      return { kind: "ok" as const, newRunId: newRun.id, moved: toMove.length };
+    });
+
+    if (outcome.kind === "notfound") return notFound(reply, "Run");
+    if (outcome.kind === "nothing")  return badRequest(reply, "NOTHING_TO_SPLIT", `No stop on this run exceeds ${keep} — nothing to split.`);
+
+    const [original, newRun] = await Promise.all([
+      prisma.run.findFirst({ where: { id, companyId }, include: RUN_DETAIL_INCLUDE }),
+      prisma.run.findFirst({ where: { id: outcome.newRunId, companyId }, include: RUN_DETAIL_INCLUDE }),
+    ]);
+    return reply.send({ run: original, newRun });
   });
 
   // ── PATCH /runs/:id — update run metadata / assignment ───────────────────

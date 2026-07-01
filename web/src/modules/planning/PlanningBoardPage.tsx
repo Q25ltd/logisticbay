@@ -580,6 +580,7 @@ function RunLane({
   onPeek,
   onFindCollection,
   unplannedCollectionByJob,
+  onSplit,
 }: {
   run:              PlanningRun;
   trailers:         FleetTrailer[];
@@ -614,6 +615,7 @@ function RunLane({
   onPeek:           (jobId: number) => void;
   onFindCollection: (query: string) => void;
   unplannedCollectionByJob: Map<number, { jobPartId: number; customerName: string | null }>;
+  onSplit:          (runId: number, keepQuantity: number) => Promise<void>;
 }) {
   const [saving,     setSaving]     = useState(false);
   const [checkExpanded, setCheckExpanded] = useState(false);
@@ -629,6 +631,12 @@ function RunLane({
   const [linkingRelay,  setLinkingRelay]  = useState(false);
   const [relayFor,      setRelayFor]      = useState<number | null>(null);   // sourceRunId being linked
   const [relayYardId,   setRelayYardId]   = useState<number | "">("");        // chosen yard (remembers last)
+  const [splitting,     setSplitting]     = useState(false);
+
+  async function handleSplitClick(keepQuantity: number) {
+    setSplitting(true);
+    try { await onSplit(run.id, keepQuantity); } finally { setSplitting(false); }
+  }
 
   // Yard relay — link this delivery run to the run that holds its collection.
   // Sets the feeder link (so coverage clears) and drops a yard handoff on each run.
@@ -1136,6 +1144,16 @@ function RunLane({
                         </button>
                       );
                     })}
+                  </div>
+                )}
+                {/* Capacity over-fill → split into another run (auto by capacity) */}
+                {planCheck.capacity && !planCheck.capacity.ok && planCheck.capacity.maxSpaces != null && (
+                  <div className="mt-1.5">
+                    <button onClick={() => handleSplitClick(planCheck.capacity.maxSpaces!)} disabled={splitting}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white border border-current hover:opacity-80 disabled:opacity-50 whitespace-nowrap"
+                      title={`Keep ${planCheck.capacity.maxSpaces} here, move the rest to a new split run (you can adjust after)`}>
+                      {splitting ? "Splitting…" : `✂ Split into ${planCheck.capacity.splitInto ?? 2} runs`}
+                    </button>
                   </div>
                 )}
                 {/* Yard picker — choose where the handoff happens (defaults to depot) */}
@@ -2349,6 +2367,18 @@ export default function PlanningBoardPage() {
     await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
   }
 
+  // Split an over-capacity run: keep `keepQuantity` here, move the rest to a new
+  // split run (one Job, balanced ledger — handled server-side).
+  async function handleSplitRun(runId: number, keepQuantity: number) {
+    setErr("");
+    try {
+      await api.post(`/runs/${runId}/split`, { keepQuantity });
+      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    } catch (e: unknown) {
+      setErr((e as Error).message ?? "Couldn't split the run.");
+    }
+  }
+
   async function handleReorderStops(runId: number, assignmentIds: number[]) {
     await planningApi.reorderStops(runId, assignmentIds);
     await loadRight(date);
@@ -2723,6 +2753,7 @@ export default function PlanningBoardPage() {
                 onPeek={setPeekJobId}
                 onFindCollection={(q) => { setSearch(q); }}
                 unplannedCollectionByJob={unplannedCollectionByJob}
+                onSplit={handleSplitRun}
               />
             ))}
 

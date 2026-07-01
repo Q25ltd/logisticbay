@@ -66,10 +66,48 @@ function buildQuery(params: RunsListParams): string {
   return s ? "?" + s : "";
 }
 
+type ReadinessStatus = "pass" | "warn" | "fail" | "unknown" | "na";
+interface ReadinessCheck {
+  key:     string;
+  label:   string;
+  status:  ReadinessStatus;
+  hard:    boolean;
+  reason?: string;
+}
+export interface RunReadiness {
+  ready:     boolean;
+  blockers:  string[];
+  resources: { checks: ReadinessCheck[]; passed: number; total: number };
+  assigned:  { driver: string | null; truck: string | null; trailer: string | null };
+}
+
+export interface Candidate {
+  id:          number;
+  label:       string;
+  available:   boolean;
+  busyOn:      string | null;
+  suitable:    boolean;
+  reasons:     string[];
+  recommended: boolean;
+}
+export interface RunCandidates {
+  drivers:  Candidate[];
+  trailers: Candidate[];
+  trucks:   Candidate[];
+}
+
 export const runsApi = {
   /** List runs — filter by date, driverId, status */
   list:   (params: RunsListParams = {}) =>
     api.get<RunsListResponse>(`/runs${buildQuery(params)}`),
+
+  /** Resource readiness + publish gate for a run (Runs B1) */
+  readiness: (id: number) =>
+    api.get<RunReadiness>(`/runs/${id}/readiness`),
+
+  /** Available + suitable assets to allocate to a run (Runs B4) */
+  candidates: (id: number) =>
+    api.get<RunCandidates>(`/runs/${id}/candidates`),
 
   /** Get a single run with full assignment detail */
   get:    (id: number) =>
