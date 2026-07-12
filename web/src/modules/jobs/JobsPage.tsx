@@ -453,14 +453,13 @@ export default function JobsPage() {
         </div>
 
         {/* Search input */}
-        <div className="relative flex-shrink-0">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
+        <div className="flex-shrink-0">
           <input
             type="search"
             placeholder="Customer, ref, location…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="input text-sm pl-8 pr-2 w-52"
+            className="input text-sm w-52"
           />
         </div>
 

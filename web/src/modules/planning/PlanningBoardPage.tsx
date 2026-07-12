@@ -2599,11 +2599,10 @@ export default function PlanningBoardPage() {
               {loadingLeft && <span className="text-xs text-muted animate-pulse">Loading…</span>}
             </div>
 
-            <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
+            <div>
               <input type="search" placeholder="Search customer, ref, postcode…"
                 value={search} onChange={e => setSearch(e.target.value)}
-                className="input text-sm py-2 pl-8 pr-2 w-full" />
+                className="input text-sm py-2 w-full" />
             </div>
 
             <div className="flex gap-1">

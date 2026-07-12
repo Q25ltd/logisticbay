@@ -590,13 +590,13 @@ export default function RunsPage() {
             <option value="all">All runs</option>
           </select>
         </div>
-        <div className="relative flex-1 min-w-[180px]">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔎</span>
+        <div className="flex-1 min-w-[180px]">
           <input
+            type="search"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search run, ref, driver, vehicle…"
-            className="input w-full pl-8"
+            className="input w-full"
           />
         </div>
         <div className="relative" ref={filtersRef}>
