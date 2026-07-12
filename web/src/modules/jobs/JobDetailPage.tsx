@@ -1152,12 +1152,9 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
   // ── Liquid / tanker goods ─────────────────────────────────────────────────
   //  Checks BOTH vehicle class AND body type — a Rigid with a box body
   //  is just as wrong as a van for liquid loads.
+  // Whole words only — substring matching flagged "steel COILs" as an OIL load.
   const looksLikeFluid =
-    goodsText.includes("tanker")   || goodsText.includes("liquid")   ||
-    goodsText.includes("fuel")     || goodsText.includes("chemical")  ||
-    goodsText.includes("ibc")      || goodsText.includes("tote")      ||
-    goodsText.includes("solvent")  || goodsText.includes("oil")       ||
-    goodsText.includes("acid")     || goodsText.includes("bitumen");
+    /\b(tankers?|liquids?|fuels?|chemicals?|ibcs?|totes?|solvents?|oils?|acids?|bitumen)\b/.test(goodsText);
 
   if (looksLikeFluid) {
     if (["van", "luton_van", "pickup"].includes(category)) {
