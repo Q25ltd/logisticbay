@@ -6,7 +6,7 @@ import { driversApi } from "../../api/drivers";
 import type { Run, Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { today, addDays } from "../jobs/createJobUtils";
-import { runRoute, requiredTrailerLabel } from "./runUtils";
+import { runRoute, runTimes, requiredTrailerLabel } from "./runUtils";
 import { BODY_CATEGORIES, GVW_CLASSES, bodyTypeLabel } from "../../constants/vehicleTaxonomy";
 
 function truckLabel(t: FleetUnit): string {
@@ -757,6 +757,7 @@ export default function RunsPage() {
                         )}
                         {group.rows.map(({ run, r, state, driver, truck, trailer }) => {
                           const route = runRoute(run);
+                          const times = runTimes(run);
                           const trailerHint = requiredTrailerLabel(run);
                           const checked = selectedRows.has(run.id);
                           const highlighted = highlightId === run.id;
@@ -774,6 +775,12 @@ export default function RunsPage() {
                                 <div className="font-semibold text-primary text-[13px] truncate">{run.runReference}</div>
                                 {(route.origin || route.destination) && (
                                   <div className="text-[11px] text-slate-600 truncate">{route.origin ?? "?"} → {route.destination ?? "?"}</div>
+                                )}
+                                {(times.collect || times.deliver) && (
+                                  <div className="text-[10px] text-slate-500 leading-tight" title="Collection → delivery">
+                                    🕐 {times.collect ?? "?"} → {times.deliver ?? "?"}
+                                    {times.deliverBooked && <span className="ml-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 whitespace-nowrap">booked</span>}
+                                  </div>
                                 )}
                                 {(run.hasHazardous || run.hasTemperatureLoad || run.hasOversized || run.maxLoadWeight) && (
                                   <div className="flex items-center gap-1 flex-wrap mt-0.5">
