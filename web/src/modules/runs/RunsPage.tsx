@@ -1,13 +1,22 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { runsApi, type RunReadiness, type Candidate } from "../../api/runs";
+import { runsApi, type RunReadiness, type RunCandidates, type Candidate } from "../../api/runs";
 import { planningApi, type FleetTrailer, type FleetUnit } from "../../api/planning";
 import { driversApi } from "../../api/drivers";
 import type { Run, Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { today, addDays } from "../jobs/createJobUtils";
-import RunAllocationPanel from "./RunAllocationPanel";
 import { runRoute, requiredTrailerLabel } from "./runUtils";
+import { BODY_CATEGORIES, GVW_CLASSES, bodyTypeLabel } from "../../constants/vehicleTaxonomy";
+
+function truckLabel(t: FleetUnit): string {
+  const cat = BODY_CATEGORIES.find(c => c.value === t.category)?.label;
+  const gvw = GVW_CLASSES.find(g => g.value === t.gvwClass)?.label;
+  return [cat, gvw].filter(Boolean).join(" · ");
+}
+function trailerLabel(t: FleetTrailer): string {
+  return t.bodyType || t.trailerType ? bodyTypeLabel(t.bodyType || t.trailerType) : "";
+}
 
 const RUN_STATUS_LABELS: Record<string, string> = {
   draft: "Draft", assigned: "Assigned", in_progress: "In Progress",
@@ -44,6 +53,148 @@ function bestCandidate(list: Candidate[]): Candidate | null {
   return [...avail].sort((a, b) => (a.recommended === b.recommended ? 0 : a.recommended ? -1 : 1))[0];
 }
 
+/** Deterministic fit score from real signals (not AI) — used only to order/label candidates. */
+function fitScore(c: Candidate): number {
+  if (!c.available) return 0;
+  let s = 100 - c.reasons.length * 8;
+  if (!c.suitable) s -= 12;
+  return Math.max(45, Math.min(99, s));
+}
+
+// ── Inline asset picker — the row IS the allocation UI, and each candidate ────
+// shows WHY it fits (fit %, suggested, busy-elsewhere) instead of a blind list.
+// Candidates come from the same B4 endpoint the old side panel used, fetched on
+// demand when the picker opens (not one call per row on page load).
+// Module-level on purpose: defined inside RunsPage it would be remounted on every
+// parent re-render, losing its open state and candidate cache.
+type PickerKind = "driver" | "truck" | "trailer";
+type AssignField = "assignedDriverId" | "assignedTruckId" | "assignedTrailerId";
+const FIELD_BY_KIND: Record<PickerKind, AssignField> = {
+  driver: "assignedDriverId", truck: "assignedTruckId", trailer: "assignedTrailerId",
+};
+const POPOVER_WIDTH = 300;
+
+function AssetPicker({ run, kind, currentId, currentLabel, saving, onAssign }: {
+  run: Run; kind: PickerKind; currentId: number | null; currentLabel: string | null;
+  saving: boolean; onAssign: (runId: number, field: AssignField, raw: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [cands, setCands] = useState<RunCandidates | null>(null);
+  const [loadingCands, setLoadingCands] = useState(false);
+  // Fixed-position coords — the table wrapper is overflow-x-auto, which clips
+  // absolutely-positioned children, so the popover must escape it via `fixed`.
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function close() { setOpen(false); }
+    document.addEventListener("mousedown", onClickOutside);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  async function toggleOpen() {
+    if (!open) {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (rect) {
+        const width = Math.max(rect.width, POPOVER_WIDTH);
+        setPos({
+          top:  rect.bottom + 4,
+          left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+          width,
+        });
+      }
+      if (!cands) {
+        setLoadingCands(true);
+        try { setCands(await runsApi.candidates(run.id)); }
+        catch { setCands(null); }
+        finally { setLoadingCands(false); }
+      }
+    }
+    setOpen(o => !o);
+  }
+
+  function pick(id: number | null) {
+    setOpen(false);
+    onAssign(run.id, FIELD_BY_KIND[kind], id ? String(id) : "");
+  }
+
+  const list = kind === "driver" ? cands?.drivers : kind === "truck" ? cands?.trucks : cands?.trailers;
+  const sorted = [...(list ?? [])].sort((a, b) =>
+    a.available === b.available
+      ? (a.recommended === b.recommended ? fitScore(b) - fitScore(a) : a.recommended ? -1 : 1)
+      : a.available ? -1 : 1);
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggleOpen}
+        disabled={saving}
+        className="input text-[12px] py-1 w-full text-left flex items-center justify-between gap-1 disabled:opacity-60">
+        <span className={`truncate ${currentLabel ? "font-semibold text-slate-700" : "text-slate-400"}`}>{currentLabel ?? "— Unassigned —"}</span>
+        <span className="text-slate-400 text-[9px] flex-shrink-0">▾</span>
+      </button>
+      {open && pos && (
+        <div
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
+          className="z-30 max-h-80 overflow-y-auto bg-white border border-border rounded-lg shadow-xl">
+          {loadingCands && <div className="p-3 text-[12px] text-slate-400">Loading…</div>}
+          {!loadingCands && (
+            <>
+              <button onClick={() => pick(null)} className="w-full text-left px-3 py-2 text-[12px] text-slate-500 hover:bg-slate-50 border-b border-border">
+                — Unassigned —
+              </button>
+              {sorted.map(c => {
+                const busyElsewhere = c.busyOn && c.busyOn !== run.runReference ? c.busyOn : null;
+                const isCurrent = c.id === currentId;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => c.available && pick(c.id)}
+                    disabled={!c.available}
+                    title={c.reasons.join(" · ")}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 ${
+                      !c.available ? "opacity-50 cursor-not-allowed" : "hover:bg-slate-50"
+                    } ${isCurrent ? "bg-primary/5" : ""}`}>
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-semibold text-[13px] text-primary truncate">{c.label}</span>
+                        {isCurrent && <span className="text-primary text-xs">✓</span>}
+                        {c.recommended && !isCurrent && <span className="text-[9px] font-bold bg-green-600 text-white px-1 rounded flex-shrink-0">★ Suggested</span>}
+                      </span>
+                      <span className="block text-[11px] text-slate-500 truncate">
+                        {busyElsewhere ? `on ${busyElsewhere}` : c.reasons[0] ?? (c.suitable ? "Available" : "")}
+                      </span>
+                    </span>
+                    <span className={`flex-shrink-0 text-[11px] font-semibold ${
+                      !c.available ? "text-slate-400" : c.suitable ? "text-green-600" : "text-amber-600"
+                    }`}>
+                      {c.available ? `${fitScore(c)}%` : "busy"}
+                    </span>
+                  </button>
+                );
+              })}
+              {sorted.length === 0 && <div className="p-3 text-[12px] text-slate-400">None found</div>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RunsPage() {
   const [searchParams] = useSearchParams();
   // Deep link from Dashboard/Planning ("Allocate in Runs" / "Open in Runs") —
@@ -63,7 +214,8 @@ export default function RunsPage() {
   const [trailers, setTrailers] = useState<FleetTrailer[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishingId, setPublishingId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(deepLinkId);
+  const [savingRunId, setSavingRunId] = useState<number | null>(null);
+  const [highlightId] = useState<number | null>(deepLinkId);
   const [error, setError] = useState("");
 
   // Toolbar state
@@ -122,13 +274,29 @@ export default function RunsPage() {
   async function handleNewRun() {
     setCreatingRun(true); setError("");
     try {
-      const run = await runsApi.create({ plannedDate: date });
+      await runsApi.create({ plannedDate: date });
       await load();
-      setSelectedId(run.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create run");
     } finally {
       setCreatingRun(false);
+    }
+  }
+
+  /** Inline row edit — assign/clear a driver, truck or trailer directly on the run. */
+  async function handleAssignField(
+    runId: number,
+    field: "assignedDriverId" | "assignedTruckId" | "assignedTrailerId",
+    raw: string,
+  ) {
+    setSavingRunId(runId); setError("");
+    try {
+      await runsApi.update(runId, { [field]: raw ? Number(raw) : null });
+      await load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to update assignment");
+    } finally {
+      setSavingRunId(null);
     }
   }
 
@@ -276,17 +444,6 @@ export default function RunsPage() {
     );
   }
 
-  function MissingChip() {
-    return <span className="text-[11px] font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">Missing</span>;
-  }
-  const assetCell = (v: string | null | undefined, hint?: string | null) =>
-    v ? <span className="block font-semibold text-slate-700 text-[13px] truncate">{v}</span> : (
-      <div>
-        <MissingChip />
-        {hint && <div className="text-[10px] text-amber-700 mt-0.5 truncate">Needs: {hint}</div>}
-      </div>
-    );
-
   function ReadinessCell({ state, r }: { state: RunState; r: RunReadiness | null | undefined }) {
     if (state === "done") return <span className="text-slate-300">—</span>;
     if (state === "checking" || !r) return <span className="text-[11px] text-slate-400 animate-pulse">checking…</span>;
@@ -294,8 +451,8 @@ export default function RunsPage() {
     const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
     const left = total - passed;
     return (
-      <div className="w-28">
-        <div className="flex items-center justify-between text-[11px] mb-0.5">
+      <div className="w-full max-w-28">
+        <div className="flex items-center justify-between gap-1 text-[11px] mb-0.5 whitespace-nowrap">
           <span className={`font-semibold ${r.ready ? "text-green-700" : "text-amber-700"}`}>{pct}%</span>
           <span className="text-slate-400">{r.ready ? "Ready" : `${left} left`}</span>
         </div>
@@ -308,7 +465,9 @@ export default function RunsPage() {
 
   function ActionCell({ run, state, r }: { run: Run; state: RunState; r: RunReadiness | null | undefined }) {
     if (state === "done") return <span className="text-slate-300">—</span>;
-    if (state === "published") return <span className="badge badge-completed text-[10px]">Published</span>;
+    if (state === "published") {
+      return <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">Published</span>;
+    }
     if (state === "ready") {
       return (
         <button onClick={e => handlePublish(e, run.id)} disabled={publishingId === run.id}
@@ -317,13 +476,92 @@ export default function RunsPage() {
         </button>
       );
     }
-    // attention → Allocate (opens the panel)
+    // attention → nothing to click; the driver/truck/trailer selects on this row are the action
+    return <span className="text-[11px] text-slate-400" title={r ? r.blockers.join(" · ") : ""}>Pick assets →</span>;
+  }
+
+  // ── Company assets — read-only reference, 3 columns like the mockup's panel.
+  // The FULL fleet, each asset with its live state (available / on RUN-x / off
+  // road), so the planner sees what the company has at a glance. Allocation
+  // itself happens on the run rows — this panel never assigns anything.
+  function AssetsReferencePanel() {
+    const driverRunRef  = new Map<number, string>();
+    const truckRunRef   = new Map<number, string>();
+    const trailerRunRef = new Map<number, string>();
+    for (const x of active) {
+      if (x.run.assignedDriverId)  driverRunRef.set(x.run.assignedDriverId, x.run.runReference);
+      if (x.run.assignedTruckId)   truckRunRef.set(x.run.assignedTruckId, x.run.runReference);
+      if (x.run.assignedTrailerId) trailerRunRef.set(x.run.assignedTrailerId, x.run.runReference);
+    }
+
+    type RefStatus = { tone: "green" | "amber" | "red"; text: string };
+    const DOT: Record<RefStatus["tone"], string> = { green: "bg-green-500", amber: "bg-amber-400", red: "bg-rose-400" };
+    // Sort: available first, then allocated, then out of service.
+    const RANK: Record<RefStatus["tone"], number> = { green: 0, amber: 1, red: 2 };
+
+    function AssetEntry({ name, detail, status }: { name: string; detail: string; status: RefStatus }) {
+      return (
+        <div className="rounded-lg border border-border bg-white px-2 py-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${DOT[status.tone]}`} />
+            <span className="font-semibold text-[12px] text-slate-700 truncate">{name}</span>
+          </div>
+          <div className="text-[11px] text-slate-500 truncate">{detail || "—"}</div>
+          <div className={`text-[10px] truncate ${status.tone === "green" ? "text-green-600" : status.tone === "amber" ? "text-amber-600" : "text-rose-500"}`}>{status.text}</div>
+        </div>
+      );
+    }
+
+    const driverEntries = allDrivers.map(d => {
+      const onRun = driverRunRef.get(d.id);
+      const status: RefStatus = d.status !== "active" ? { tone: "red", text: "Inactive" }
+        : onRun ? { tone: "amber", text: `on ${onRun}` }
+        : { tone: "green", text: "Available" };
+      return { key: d.id, name: d.displayName, detail: d.preferredShiftHours ? `${d.preferredShiftHours}h shift` : "shift n/a", status };
+    }).sort((a, b) => RANK[a.status.tone] - RANK[b.status.tone]);
+
+    const truckEntries = trucks.filter(t => (t.status ?? "") !== "disposed").map(t => {
+      const onRun = truckRunRef.get(t.id);
+      const status: RefStatus = OUT_OF_SERVICE.has((t.status ?? "").toLowerCase()) ? { tone: "red", text: "Off road" }
+        : onRun ? { tone: "amber", text: `on ${onRun}` }
+        : { tone: "green", text: "Available" };
+      return { key: t.id, name: t.registration, detail: truckLabel(t), status };
+    }).sort((a, b) => RANK[a.status.tone] - RANK[b.status.tone]);
+
+    const trailerEntries = trailers.filter(t => (t.status ?? "") !== "disposed").map(t => {
+      const onRun = trailerRunRef.get(t.id);
+      const status: RefStatus = OUT_OF_SERVICE.has((t.status ?? "").toLowerCase()) ? { tone: "red", text: "Off road" }
+        : onRun ? { tone: "amber", text: `on ${onRun}` }
+        : { tone: "green", text: "Available" };
+      return { key: t.id, name: t.registration, detail: trailerLabel(t), status };
+    }).sort((a, b) => RANK[a.status.tone] - RANK[b.status.tone]);
+
+    function Column({ title, entries }: { title: string; entries: typeof driverEntries }) {
+      const availCount = entries.filter(e => e.status.tone === "green").length;
+      return (
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{title}</div>
+            <span className="text-[11px] text-green-600 font-semibold">{availCount} free</span>
+          </div>
+          <div className="space-y-1.5">
+            {entries.map(e => <AssetEntry key={e.key} name={e.name} detail={e.detail} status={e.status} />)}
+            {entries.length === 0 && <div className="text-[12px] text-slate-400 py-2 text-center border border-dashed border-border rounded-lg">None</div>}
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <button onClick={e => { e.stopPropagation(); setSelectedId(run.id); }}
-        className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-primary text-white hover:opacity-90"
-        title={r ? r.blockers.join(" · ") : ""}>
-        Allocate
-      </button>
+      <div className="border border-border rounded-xl bg-slate-50/50 p-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Company assets</div>
+        {/* 3 columns side by side wherever they fit; stacked on phones so entries stay legible */}
+        <div className="flex flex-col sm:flex-row gap-2.5 sm:items-start">
+          <Column title="Drivers"  entries={driverEntries} />
+          <Column title="Units"    entries={truckEntries} />
+          <Column title="Trailers" entries={trailerEntries} />
+        </div>
+      </div>
     );
   }
 
@@ -469,27 +707,29 @@ export default function RunsPage() {
         </div>
       )}
 
-      {/* Two-pane: table + allocation panel */}
+      {/* Runs table (with inline driver/truck/trailer pickers) + read-only assets reference */}
       {!loading && runs.length > 0 && (
-        <div className="flex gap-4 items-start">
-          {/* Table */}
-          <div className={`min-w-0 ${selectedId ? "hidden lg:block lg:flex-1" : "flex-1"}`}>
+        <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
+          {/* Table — full width when stacked (below lg), ~60% beside the assets panel on desktop */}
+          <div className="w-full min-w-0 lg:flex-1">
             {visible.length === 0 ? (
               <div className="text-center py-12 text-muted border border-dashed border-border rounded-xl">
                 <p className="text-sm">Nothing in this pile. <button onClick={() => setTab("all")} className="text-blue-600 hover:underline">Show all active runs</button></p>
               </div>
             ) : (
               <div className="overflow-x-auto border border-border rounded-lg">
-                <table className="w-full text-sm table-fixed">
+                {/* min-w keeps the pickers usable on narrow screens — the wrapper scrolls
+                    horizontally instead of crushing the columns into slivers */}
+                <table className="w-full min-w-[680px] text-sm table-fixed">
                   <colgroup>
                     <col style={{ width: "2.5rem" }} />
-                    <col style={{ width: "19%" }} />
-                    <col style={{ width: "7%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "15%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "16%" }} />
-                    <col style={{ width: "9%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "5%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "11%" }} />
                   </colgroup>
                   <thead>
                     <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
@@ -518,13 +758,16 @@ export default function RunsPage() {
                         {group.rows.map(({ run, r, state, driver, truck, trailer }) => {
                           const route = runRoute(run);
                           const trailerHint = requiredTrailerLabel(run);
-                          const isSel = selectedId === run.id;
                           const checked = selectedRows.has(run.id);
+                          const highlighted = highlightId === run.id;
+                          // Unique jobs on this run → "view full job" links.
+                          const runJobs = [...new Map(
+                            (run.assignments ?? []).filter(a => a.job).map(a => [a.job!.id, a.job!.jobReference ?? `#${a.job!.id}`]),
+                          ).entries()];
                           return (
                             <tr key={run.id}
-                              onClick={() => setSelectedId(run.id)}
-                              className={`border-t border-slate-100 cursor-pointer ${isSel ? "bg-primary/5" : state === "attention" ? "hover:bg-amber-50/40" : "hover:bg-slate-50"}`}>
-                              <td className="px-3 py-2.5 align-top" onClick={e => e.stopPropagation()}>
+                              className={`border-t border-slate-100 ${highlighted ? "bg-primary/5 ring-1 ring-inset ring-primary" : state === "attention" ? "hover:bg-amber-50/40" : "hover:bg-slate-50"}`}>
+                              <td className="px-3 py-2.5 align-top">
                                 <input type="checkbox" checked={checked} onChange={() => toggleRow(run.id)} />
                               </td>
                               <td className="px-3 py-2.5 align-top overflow-hidden">
@@ -532,17 +775,51 @@ export default function RunsPage() {
                                 {(route.origin || route.destination) && (
                                   <div className="text-[11px] text-slate-600 truncate">{route.origin ?? "?"} → {route.destination ?? "?"}</div>
                                 )}
+                                {(run.hasHazardous || run.hasTemperatureLoad || run.hasOversized || run.maxLoadWeight) && (
+                                  <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                    {run.hasHazardous && (
+                                      <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1 rounded" title="Requires an ADR-certified driver">⚠ ADR</span>
+                                    )}
+                                    {run.hasTemperatureLoad && (
+                                      <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1 rounded" title="Requires a temperature-controlled trailer">❄ Temp</span>
+                                    )}
+                                    {run.hasOversized && (
+                                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1 rounded">📏 Oversized</span>
+                                    )}
+                                    {run.maxLoadWeight && (
+                                      <span className="text-[9px] font-semibold text-slate-500">{(run.maxLoadWeight / 1000).toFixed(1)}t</span>
+                                    )}
+                                  </div>
+                                )}
                                 <div className="text-[10px] text-slate-400">{RUN_STATUS_LABELS[run.status] ?? run.status}</div>
+                                {runJobs.map(([jobId, jobRef]) => (
+                                  <Link key={jobId} to={`/app/jobs/${jobId}`}
+                                    className="block text-[11px] font-semibold text-blue-600 hover:underline truncate">
+                                    View job {jobRef} →
+                                  </Link>
+                                ))}
                               </td>
                               <td className="px-3 py-2.5 align-top text-slate-500 text-[13px]">
                                 📍 {route.stops}
                                 {route.loadSummary && <div className="text-[10px] text-slate-400">{route.loadSummary}</div>}
                               </td>
-                              <td className="px-3 py-2.5 align-top">{assetCell(driver)}</td>
-                              <td className="px-3 py-2.5 align-top">{assetCell(truck)}</td>
-                              <td className="px-3 py-2.5 align-top">{assetCell(trailer, trailerHint)}</td>
+                              <td className="px-3 py-2.5 align-top">
+                                <AssetPicker run={run} kind="driver" currentId={run.assignedDriverId ?? null} currentLabel={driver}
+                                  saving={savingRunId === run.id} onAssign={handleAssignField} />
+                              </td>
+                              <td className="px-3 py-2.5 align-top">
+                                <AssetPicker run={run} kind="truck" currentId={run.assignedTruckId ?? null} currentLabel={truck}
+                                  saving={savingRunId === run.id} onAssign={handleAssignField} />
+                              </td>
+                              <td className="px-3 py-2.5 align-top">
+                                <AssetPicker run={run} kind="trailer" currentId={run.assignedTrailerId ?? null} currentLabel={trailer}
+                                  saving={savingRunId === run.id} onAssign={handleAssignField} />
+                                {!run.assignedTrailerId && trailerHint && (
+                                  <div className="text-[10px] text-amber-700 mt-0.5 truncate">Needs: {trailerHint}</div>
+                                )}
+                              </td>
                               <td className="px-3 py-2.5 align-top"><ReadinessCell state={state} r={r} /></td>
-                              <td className="px-3 py-2.5 align-top text-right" onClick={e => e.stopPropagation()}>
+                              <td className="px-2 py-2.5 align-top text-right">
                                 <ActionCell run={run} state={state} r={r} />
                               </td>
                             </tr>
@@ -556,17 +833,10 @@ export default function RunsPage() {
             )}
           </div>
 
-          {/* Allocation panel */}
-          {selectedId && (
-            <div className="w-full lg:w-[400px] xl:w-[440px] flex-shrink-0 border border-border rounded-xl bg-white shadow-sm sticky top-4 h-[calc(100vh-7rem)] overflow-hidden">
-              <RunAllocationPanel
-                key={selectedId}
-                runId={selectedId}
-                onClose={() => setSelectedId(null)}
-                onSaved={() => load()}
-              />
-            </div>
-          )}
+          {/* Company assets — read-only 3-column reference, always visible (mockup right panel) */}
+          <div className="w-full lg:w-2/5 flex-shrink-0">
+            <AssetsReferencePanel />
+          </div>
         </div>
       )}
     </div>

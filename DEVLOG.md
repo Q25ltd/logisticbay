@@ -7,6 +7,28 @@
 
 ---
 
+## Runs — allocation ON the run card + company-assets reference panel + full responsive pass 2026-07-01 → 2026-07-12
+
+Several iterations driven by direct user correction until the screen matched the planner's actual workflow: *"allocation must be done on the card; the side panel just shows what the company has."*
+
+**Final shape (the keeper):**
+- **Run card = the workplace.** Each table row carries: run ref, route (origin → destination), requirement badges (⚠ ADR / ❄ Temp / 📏 Oversized / weight in tonnes), **"View job <ref> →" links** (to `/app/jobs/:id` — full job record without leaving Runs), stops + load summary, and **inline Driver/Truck/Trailer pickers** — custom dropdowns (not native selects) fed by the B4 `GET /runs/:id/candidates` endpoint on open, each candidate showing fit %, ★ Suggested, busy-on-run, sorted best-first. Pick → immediate `PATCH /runs/:id` → reload. "Needs: <trailer type>" hint under an empty trailer picker.
+- **Right panel = read-only company-assets reference** (`AssetsReferencePanel`): the FULL fleet in 3 columns (Drivers | Units | Trailers), every asset as a mini-card with name/plate, detail (shift hours / class·GVW / trailer body type), and live status dot — green Available / amber `on RUN-x` / red off-road-or-inactive — available sorted first, "N free" per column. Never assigns anything.
+- `RunAllocationPanel.tsx` deleted for good (briefly restored when the requirement was misread as panel-based allocation, then removed again once "allocation on the card" was confirmed). `RunsPage.tsx` is the single Runs surface.
+
+**Two real bugs found by auditing my own output (user: "check all you done and fix it"):**
+1. The picker popover was `position:absolute` inside the table's `overflow-x-auto` wrapper → **clipped invisible** for most rows (this had been misdiagnosed as a screenshot-tooling quirk). Fixed with `position:fixed` coords from the trigger's `getBoundingClientRect()`, closing on outside-click/scroll/resize.
+2. `AssetPicker` was defined **inside** the `RunsPage` component → remounted on every parent render, losing open state + candidate cache. Hoisted to module level.
+
+**Responsive pass (measured, not eyeballed — DOM `scrollWidth` checks at 1440/1280/1024/768/375):**
+- Two-pane container `flex-col lg:flex-row` — stacks below 1024 (was: side-by-side at every width, crushed).
+- Table `min-w-[680px]` inside `overflow-x-auto` — scrolls in place on narrow screens instead of crushing pickers to slivers.
+- Found via element-overflow walk: the `badge` "Published" chip overflowed its 8% column and forced a phantom horizontal scrollbar even at 1440 — replaced with the screen's slim chip style + rebalanced colgroup (Run 14 / Stops 5 / assets 20·18·20 / Readiness 12 / Action 11%); ReadinessCell hard `w-28` → `w-full max-w-28`.
+- Assets panel: 3 columns down to `sm`, stacked on phones; `sticky`/max-height scoped to `lg` only.
+- Verified: 1440 & 1280 zero scroll; 1024 table scrolls internally only; 768 stacked, panel full-width (3×225px columns); 375 clean, no page-level horizontal scroll anywhere.
+
+Gates: typecheck 0/0 · vocab sync ✅ · api tests 191/191 · knip identical to main baseline (119/82/25). Verified live in the user's Chrome (DOM-level, real click → PATCH → DB row confirmed) and in the preview browser at all five viewports.
+
 ## Runs — consolidate to one screen + fix layout proportions 2026-07-01 (later same day)
 
 User feedback (harsh, and correct): two screens did almost the same job, and the panel/table proportions were unusable at real screen sizes — never actually tested below 1440px, and the candidate-picker's 3-column layout truncated driver/truck names to unreadable fragments.
