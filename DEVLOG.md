@@ -7,6 +7,10 @@
 
 ---
 
+## Small fixes — run-card times, search bars, coil≠oil 2026-07-12
+
+Three user-driven fixes in one push batch: **(1)** run cards now show collection → delivery date/times (`runTimes` in `runUtils.ts` — first stop's window start → last stop's booked time with a "booked" chip, or window fallback; UTC wall-clock so no browser-timezone shift; wraps instead of truncating). **(2)** All three search bars (Runs, Planning board, Jobs) had the magnifier emoji rendered on top of the placeholder — `.input`'s `px-3.5` beats the `pl-8` utility in the cascade; removed the overlay icons. **(3)** Job-detail tanker warning fired on "Steel coils" because the liquid-keyword check used substring matching and "coil" contains "oil" — switched to a whole-word regex; verified ethanol still warns, coils don't.
+
 ## Runs — candidates ignored `trailersAllowed` (flatbed suggested for a fridge job) 2026-07-12
 
 User caught it in use: the picker suggested a flatbed for a job that only allows fridge trailers. Root cause in `GET /runs/:id/candidates` (`api/src/routes/runs.ts`): `acceptableBodyTypes` was built from `job.bodyTypes` only — but for tractor/artic jobs the allowed trailer bodies live in **`job.trailersAllowed`** (`bodyTypes` is the rigid's own body). Every seeded artic job has `bodyTypes: null`, so the trailer-body constraint was an empty list and `computeRunCandidates`' "needs X" check never fired. Fix: select `trailersAllowed` and merge both into `acceptableBodyTypes`. Proven against real data: fridge-only job on a fresh run → `Trans 28 · Flatbed` now `suitable=false`, reasons `["not refrigerated", "needs fridge"]`. Gates: typecheck 0/0, api tests 190/190. (Known remaining gap, already in STATUS: truck column doesn't yet compare load weight vs GVW at pick time — the publish gate still catches it.)
