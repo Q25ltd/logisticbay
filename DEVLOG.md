@@ -7,6 +7,10 @@
 
 ---
 
+## Runs — candidates ignored `trailersAllowed` (flatbed suggested for a fridge job) 2026-07-12
+
+User caught it in use: the picker suggested a flatbed for a job that only allows fridge trailers. Root cause in `GET /runs/:id/candidates` (`api/src/routes/runs.ts`): `acceptableBodyTypes` was built from `job.bodyTypes` only — but for tractor/artic jobs the allowed trailer bodies live in **`job.trailersAllowed`** (`bodyTypes` is the rigid's own body). Every seeded artic job has `bodyTypes: null`, so the trailer-body constraint was an empty list and `computeRunCandidates`' "needs X" check never fired. Fix: select `trailersAllowed` and merge both into `acceptableBodyTypes`. Proven against real data: fridge-only job on a fresh run → `Trans 28 · Flatbed` now `suitable=false`, reasons `["not refrigerated", "needs fridge"]`. Gates: typecheck 0/0, api tests 190/190. (Known remaining gap, already in STATUS: truck column doesn't yet compare load weight vs GVW at pick time — the publish gate still catches it.)
+
 ## Runs — allocation ON the run card + company-assets reference panel + full responsive pass 2026-07-01 → 2026-07-12
 
 Several iterations driven by direct user correction until the screen matched the planner's actual workflow: *"allocation must be done on the card; the side panel just shows what the company has."*

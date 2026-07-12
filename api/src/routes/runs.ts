@@ -352,7 +352,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       prisma.fleetTrailer.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true }, orderBy: { registration: "asc" } }),
       prisma.fleetUnit.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, gvwClass: true, status: true }, orderBy: { registration: "asc" } }),
       prisma.driverProfile.findMany({ where: { companyId }, select: { id: true, displayName: true, status: true, licenceClass: true, canDriveCategories: true, adrAllowed: true, canUseTrailer: true, trailerTypesAllowed: true, preferredShiftHours: true }, orderBy: { displayName: "asc" } }),
-      jobIds.length ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { hazardClass: true, tempControlled: true, vehicleCategory: true, bodyTypes: true } }) : Promise.resolve([]),
+      jobIds.length ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { hazardClass: true, tempControlled: true, vehicleCategory: true, bodyTypes: true, trailersAllowed: true } }) : Promise.resolve([]),
       run.plannedDate
         ? prisma.run.findMany({ where: { companyId, plannedDate: run.plannedDate, status: { notIn: ["cancelled"] }, id: { not: id } }, select: { runReference: true, assignedDriverId: true, assignedTruckId: true, assignedTrailerId: true } })
         : Promise.resolve([]),
@@ -377,7 +377,10 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       tempControlled: jobs.some(j => j.tempControlled),
       needsTrailer:   jobs.some(j => ["artic", "tractor", "drawbar"].includes((j.vehicleCategory ?? "").toLowerCase())),
       // ALL acceptable bodies across the run's loads — the trailer must match ANY (not just the first).
-      acceptableBodyTypes: [...new Set(jobs.flatMap(j => arr(j.bodyTypes) ?? []))],
+      // Tractor/artic jobs carry their allowed trailer bodies in `trailersAllowed`
+      // (bodyTypes is the rigid's own body) — reading only bodyTypes left the
+      // trailer check empty and let a flatbed pass for a fridge-only job.
+      acceptableBodyTypes: [...new Set(jobs.flatMap(j => [...(arr(j.bodyTypes) ?? []), ...(arr(j.trailersAllowed) ?? [])]))],
       runDurationHours,
     };
 
