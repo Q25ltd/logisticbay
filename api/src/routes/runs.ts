@@ -9,7 +9,7 @@ import { cancelRun } from "../services/runService.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
-import { computeRunReadiness } from "../services/runReadinessService.js";
+import { loadRunReadiness } from "../services/runReadinessService.js";
 import { computeRunCandidates } from "../services/runCandidatesService.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
@@ -275,60 +275,14 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId } = request.user!;
 
-    const run = await prisma.run.findFirst({
-      where:   { id, companyId },
-      include: { driver: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
-    });
-    if (!run) return notFound(reply, "Run");
-
-    const arr = (v: unknown): string[] | null =>
-      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
-
-    const jobIds = [...new Set(run.assignments.map(a => a.jobId))];
-    const [truck, trailer, jobs] = await Promise.all([
-      run.assignedTruckId
-        ? prisma.fleetUnit.findFirst({ where: { id: run.assignedTruckId, companyId }, select: { id: true, registration: true, status: true, onboardEquipment: true } })
-        : Promise.resolve(null),
-      run.assignedTrailerId
-        ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true } })
-        : Promise.resolve(null),
-      jobIds.length
-        ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true } })
-        : Promise.resolve([]),
-    ]);
-
-    const loads = jobs.map(j => ({
-      hazardous:       !!(j.hazardClass && j.hazardClass.trim()),
-      requiresTrailer: ["artic", "tractor", "drawbar"].includes((j.vehicleCategory ?? "").toLowerCase()),
-      equipment:       arr(j.equipment),
-    }));
-
-    const d = run.driver;
-    const readiness = computeRunReadiness({
-      hasStops: run.assignments.length > 0,
-      driver: d ? {
-        id: d.id, displayName: d.displayName, status: d.status,
-        licenceClass: d.licenceClass, canDriveCategories: arr(d.canDriveCategories),
-        adrAllowed: d.adrAllowed, hiabAllowed: d.hiabAllowed, moffettAllowed: d.moffettAllowed,
-        manualHandlingAllowed: d.manualHandlingAllowed, canUseTrailer: d.canUseTrailer,
-        trailerTypesAllowed: arr(d.trailerTypesAllowed),
-      } : null,
-      truck:   truck   ? { id: truck.id, registration: truck.registration, status: truck.status, onboardEquipment: arr(truck.onboardEquipment) } : null,
-      trailer: trailer ? { id: trailer.id, registration: trailer.registration, trailerType: trailer.trailerType, bodyType: trailer.bodyType, status: trailer.status, onboardEquipment: arr(trailer.onboardEquipment) } : null,
-      loads,
-      trailerCompatible: run.trailerCompatible,
-      vehicleCompatible: run.vehicleCompatible,
-    });
+    const loaded = await loadRunReadiness(prisma, companyId, id);
+    if (!loaded) return notFound(reply, "Run");
 
     // Assigned-asset labels so the Runs table can render Driver/Trailer/Vehicle
     // columns from this one call (Run has no truck/trailer relation to include).
     return reply.send({
-      ...readiness,
-      assigned: {
-        driver:  d?.displayName ?? null,
-        truck:   truck?.registration ?? null,
-        trailer: trailer?.registration ?? null,
-      },
+      ...loaded.readiness,
+      assigned: loaded.assigned,
     });
   });
 
@@ -609,6 +563,16 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
     if (!run.compatibilityOverridden && (!run.trailerCompatible || !run.vehicleCompatible)) {
       return badRequest(reply, "COMPATIBILITY_FAILED", "Cannot publish: compatibility check failed", { trailerCompatible: run.trailerCompatible, vehicleCompatible: run.vehicleCompatible, overrideAllowed: true });
+    }
+
+    // B5 — hard resource gate: publish is refused while any HARD readiness check
+    // fails (driver inactive, no ADR on hazmat, not trailer-rated, missing trailer…).
+    // Soft/unknown checks never block; the S5 compat override is honoured inside.
+    const loaded = await loadRunReadiness(prisma, companyId, id);
+    if (loaded && !loaded.readiness.ready) {
+      return badRequest(reply, "RESOURCE_NOT_READY",
+        `Cannot publish: ${loaded.readiness.blockers.join(" · ") || "run is not ready"}`,
+        { blockers: loaded.readiness.blockers });
     }
 
     const updated = await prisma.run.update({

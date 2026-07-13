@@ -24,6 +24,7 @@ import { dayRangeUtc }               from "../lib/dateUtils.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
+import { loadRunReadiness } from "../services/runReadinessService.js";
 import { buildProposals, type ProposalStop } from "../services/proposeRunsService.js";
 import { checkRun } from "../services/checkRunService.js";
 import { buildFleetCapacityProfile } from "../lib/loadCapacity.js";
@@ -656,6 +657,15 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           vehicleCompatible: run.vehicleCompatible,
           overrideAllowed:   true,
         });
+      }
+
+      // B5 — hard resource gate (same as POST /runs/:id/publish): refuse publish
+      // while any HARD readiness check fails; soft/unknown never block.
+      const loaded = await loadRunReadiness(prisma, companyId, id);
+      if (loaded && !loaded.readiness.ready) {
+        return badRequest(reply, "RESOURCE_NOT_READY",
+          `Cannot publish: ${loaded.readiness.blockers.join(" · ") || "run is not ready"}`,
+          { blockers: loaded.readiness.blockers });
       }
 
       const updated = await prisma.run.update({

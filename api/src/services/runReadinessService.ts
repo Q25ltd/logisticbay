@@ -7,12 +7,15 @@
  * **Ready-to-publish gate** — a boolean + named blockers, NOT a blended percentage
  * (a fuzzy % reintroduces the "what does 82% mean?" fog Runs exists to remove).
  *
- * Deterministic, no AI. Pure: the route assembles the run + driver + truck + trailer
- * + load requirements and calls this, mirroring checkRunService.
+ * Deterministic, no AI. `computeRunReadiness` is pure; `loadRunReadiness` below is
+ * the shared DB assembler used by GET /runs/:id/readiness AND both publish routes
+ * (B5: publish is blocked server-side while any hard check fails).
  *
  * Honesty rule: where the data doesn't exist (MOT, VOR, tacho hours-remaining), the
  * check is `unknown` — never a fake green tick, and never blocks publish on its own.
  */
+
+import type { PrismaClient } from "../generated/client.js";
 
 export interface ReadinessDriver {
   id:                    number;
@@ -201,4 +204,77 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
   const passed     = applicable.filter(c => c.status === "pass").length;
 
   return { ready, blockers, resources: { checks, passed, total: applicable.length } };
+}
+
+// ── DB assembler — shared by GET /runs/:id/readiness and both publish routes ──
+
+export interface LoadedRunReadiness {
+  readiness: RunReadiness;
+  assigned:  { driver: string | null; truck: string | null; trailer: string | null };
+}
+
+const arr = (v: unknown): string[] | null =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+
+/**
+ * Fetch everything readiness needs for one run (tenant-scoped) and compute it.
+ * The S5 compatibility override is applied here: an explicitly overridden
+ * compat failure must not re-block publish through the readiness gate.
+ * Returns null when the run doesn't exist in this company.
+ */
+export async function loadRunReadiness(
+  prisma: PrismaClient,
+  companyId: number,
+  runId: number,
+): Promise<LoadedRunReadiness | null> {
+  const run = await prisma.run.findFirst({
+    where:   { id: runId, companyId },
+    include: { driver: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
+  });
+  if (!run) return null;
+
+  const jobIds = [...new Set(run.assignments.map(a => a.jobId))];
+  const [truck, trailer, jobs] = await Promise.all([
+    run.assignedTruckId
+      ? prisma.fleetUnit.findFirst({ where: { id: run.assignedTruckId, companyId }, select: { id: true, registration: true, status: true, onboardEquipment: true } })
+      : Promise.resolve(null),
+    run.assignedTrailerId
+      ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true } })
+      : Promise.resolve(null),
+    jobIds.length
+      ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const loads = jobs.map(j => ({
+    hazardous:       !!(j.hazardClass && j.hazardClass.trim()),
+    requiresTrailer: ["artic", "tractor", "drawbar"].includes((j.vehicleCategory ?? "").toLowerCase()),
+    equipment:       arr(j.equipment),
+  }));
+
+  const d = run.driver;
+  const readiness = computeRunReadiness({
+    hasStops: run.assignments.length > 0,
+    driver: d ? {
+      id: d.id, displayName: d.displayName, status: d.status,
+      licenceClass: d.licenceClass, canDriveCategories: arr(d.canDriveCategories),
+      adrAllowed: d.adrAllowed, hiabAllowed: d.hiabAllowed, moffettAllowed: d.moffettAllowed,
+      manualHandlingAllowed: d.manualHandlingAllowed, canUseTrailer: d.canUseTrailer,
+      trailerTypesAllowed: arr(d.trailerTypesAllowed),
+    } : null,
+    truck:   truck   ? { id: truck.id, registration: truck.registration, status: truck.status, onboardEquipment: arr(truck.onboardEquipment) } : null,
+    trailer: trailer ? { id: trailer.id, registration: trailer.registration, trailerType: trailer.trailerType, bodyType: trailer.bodyType, status: trailer.status, onboardEquipment: arr(trailer.onboardEquipment) } : null,
+    loads,
+    trailerCompatible: run.compatibilityOverridden ? true : run.trailerCompatible,
+    vehicleCompatible: run.compatibilityOverridden ? true : run.vehicleCompatible,
+  });
+
+  return {
+    readiness,
+    assigned: {
+      driver:  d?.displayName ?? null,
+      truck:   truck?.registration ?? null,
+      trailer: trailer?.registration ?? null,
+    },
+  };
 }

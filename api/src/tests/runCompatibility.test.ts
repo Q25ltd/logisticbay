@@ -80,7 +80,10 @@ test("run compatibility — temp load + dry trailer blocks publish (Step 5)", as
     },
   });
   const driverProfile = await prisma.driverProfile.create({
-    data: { companyId: company.id, userId: driverUser.id, displayName: `${PREFIX}D`, status: "active" },
+    // canUseTrailer: the B5 resource gate hard-fails publish when a trailer is
+    // assigned to a driver who isn't trailer-rated — this test is about the
+    // COMPAT override, so its driver must be trailer-capable.
+    data: { companyId: company.id, userId: driverUser.id, displayName: `${PREFIX}D`, status: "active", canUseTrailer: true },
   });
   const job = await prisma.job.create({
     data: { companyId: company.id, createdByUserId: planner.id, customerName: `${PREFIX}C`, status: "ready_to_plan" },

@@ -7,6 +7,10 @@
 
 ---
 
+## Runs — B5: hard resource gate on publish (release blocker #1) 2026-07-12
+
+Both publish routes now enforce the B1 readiness gate server-side. `loadRunReadiness(prisma, companyId, runId)` extracted into `runReadinessService.ts` (was ~50 lines inlined in the GET route) and shared by `GET /runs/:id/readiness`, `POST /runs/:id/publish`, and `POST /planning/runs/:id/publish`. Publish → 400 `RESOURCE_NOT_READY` with the named blockers in the message + `details.blockers` while any **hard** check fails; soft/unknown never block (per B1's honesty rule). The S5 compatibility override is applied inside the loader (`compatibilityOverridden` → effective flags true), so an explicitly overridden compat failure cannot re-block publish through the readiness path — and the GET readiness now agrees with what publish will actually do. Real hole closed: the planning publish route had **no driver requirement at all** (only the client disabled the button). New `publishResourceGate.test.ts` (hazmat+no-ADR blocked → ADR fixed passes → planning route blocks driverless run); `runCompatibility.test.ts` fixture driver now `canUseTrailer: true` — the new gate correctly flagged the old bare fixture (trailer assigned, driver not trailer-rated). Gates: typecheck 0/0 · vocab ✅ · api tests 203/203.
+
 ## Small fixes — run-card times, search bars, coil≠oil 2026-07-12
 
 Three user-driven fixes in one push batch: **(1)** run cards now show collection → delivery date/times (`runTimes` in `runUtils.ts` — first stop's window start → last stop's booked time with a "booked" chip, or window fallback; UTC wall-clock so no browser-timezone shift; wraps instead of truncating). **(2)** All three search bars (Runs, Planning board, Jobs) had the magnifier emoji rendered on top of the placeholder — `.input`'s `px-3.5` beats the `pl-8` utility in the cascade; removed the overlay icons. **(3)** Job-detail tanker warning fired on "Steel coils" because the liquid-keyword check used substring matching and "coil" contains "oil" — switched to a whole-word regex; verified ethanol still warns, coils don't.
