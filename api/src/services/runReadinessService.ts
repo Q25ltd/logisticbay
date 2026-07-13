@@ -46,6 +46,10 @@ interface ReadinessTrailer {
   bodyType?:        string | null;
   status?:          string | null;
   onboardEquipment?: string[] | null;
+  // Load state relative to THIS run: pre-loaded with one of its jobs is the right
+  // trailer; loaded with anything else means it's full and cannot go out.
+  loadedWithThisRun?:  boolean;
+  loadedWithOtherJob?: boolean;
 }
 
 interface ReadinessLoad {
@@ -181,7 +185,14 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
       : input.trailerCompatible == null
         ? { key: "trailer_compatible", label: "Trailer suits load", status: "unknown", hard: true }
         : { key: "trailer_compatible", label: "Trailer suits load", status: "pass", hard: true });
-    checks.push((trailer.status ?? "available") === "available"
+    // Load state — HARD: a trailer full with another job cannot go out on this run.
+    if (trailer.loadedWithOtherJob) {
+      checks.push({ key: "trailer_load_state", label: "Trailer load state", status: "fail", hard: true,
+        reason: `Trailer ${trailer.registration} is loaded with another job — it's full.` });
+    } else if (trailer.loadedWithThisRun) {
+      checks.push({ key: "trailer_load_state", label: "Trailer load state", status: "pass", hard: true });
+    }
+    checks.push((trailer.status ?? "available") === "available" || trailer.loadedWithThisRun
       ? { key: "trailer_status", label: "Trailer available", status: "pass", hard: false }
       : { key: "trailer_status", label: "Trailer available", status: "warn", hard: false, reason: `Trailer ${trailer.registration} is ${trailer.status}.` });
   }
@@ -257,12 +268,15 @@ export async function loadRunReadiness(
       ? prisma.fleetUnit.findFirst({ where: { id: run.assignedTruckId, companyId }, select: { id: true, registration: true, status: true, onboardEquipment: true } })
       : Promise.resolve(null),
     run.assignedTrailerId
-      ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true } })
+      ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true, linkedJobId: true } })
       : Promise.resolve(null),
     jobIds.length
       ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true, trailersAllowed: true } })
       : Promise.resolve([]),
   ]);
+
+  const trailerLoaded         = (trailer?.status ?? "").toLowerCase() === "loaded";
+  const trailerLoadedWithOurs = trailerLoaded && trailer?.linkedJobId != null && jobIds.includes(trailer.linkedJobId);
 
   const loads = jobs.map(j => ({
     hazardous:       !!(j.hazardClass && j.hazardClass.trim()),
@@ -293,7 +307,12 @@ export async function loadRunReadiness(
       trailerTypesAllowed: arr(d.trailerTypesAllowed),
     } : null,
     truck:   truck   ? { id: truck.id, registration: truck.registration, status: truck.status, onboardEquipment: arr(truck.onboardEquipment) } : null,
-    trailer: trailer ? { id: trailer.id, registration: trailer.registration, trailerType: trailer.trailerType, bodyType: trailer.bodyType, status: trailer.status, onboardEquipment: arr(trailer.onboardEquipment) } : null,
+    trailer: trailer ? {
+      id: trailer.id, registration: trailer.registration, trailerType: trailer.trailerType, bodyType: trailer.bodyType,
+      status: trailer.status, onboardEquipment: arr(trailer.onboardEquipment),
+      loadedWithThisRun:  trailerLoadedWithOurs,
+      loadedWithOtherJob: trailerLoaded && !trailerLoadedWithOurs,
+    } : null,
     loads,
     trailerCompatible: run.compatibilityOverridden ? true : run.trailerCompatible,
     vehicleCompatible: run.compatibilityOverridden ? true : run.vehicleCompatible,

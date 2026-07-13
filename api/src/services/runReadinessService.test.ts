@@ -86,6 +86,25 @@ describe("computeRunReadiness — the publish gate", () => {
     assert.ok(r.blockers.some(b => /cleared/i.test(b)));
   });
 
+  it("pinned trailer loaded with ANOTHER job → blocked (it's full)", () => {
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE,
+      trailer: { id: 3, registration: "TR77", trailerType: "curtain", status: "loaded", loadedWithOtherJob: true },
+      loads: [{ requiresTrailer: true }], trailerCompatible: true,
+    });
+    assert.strictEqual(r.ready, false);
+    assert.ok(r.blockers.some(b => /loaded with another job/i.test(b)), JSON.stringify(r.blockers));
+  });
+
+  it("pinned trailer pre-loaded with THIS run's job → ready (that's the right trailer)", () => {
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE,
+      trailer: { id: 3, registration: "TR77", trailerType: "curtain", status: "loaded", loadedWithThisRun: true },
+      loads: [{ requiresTrailer: true }], trailerCompatible: true,
+    });
+    assert.strictEqual(r.ready, true, JSON.stringify(r.blockers));
+  });
+
   it("no stops → never ready (nothing to execute)", () => {
     const r = computeRunReadiness({ hasStops: false, driver: DAVE, loads: [] });
     assert.strictEqual(r.ready, false);

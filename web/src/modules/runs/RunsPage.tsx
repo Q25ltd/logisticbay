@@ -175,7 +175,7 @@ function AssetPicker({ run, kind, currentId, currentLabel, saving, onAssign }: {
                         {c.recommended && !isCurrent && <span className="text-[9px] font-bold bg-green-600 text-white px-1 rounded flex-shrink-0">★ Suggested</span>}
                       </span>
                       <span className="block text-[11px] text-slate-500 truncate">
-                        {busyElsewhere ? `on ${busyElsewhere}` : c.reasons[0] ?? (c.suitable ? "Available" : "")}
+                        {busyElsewhere ? `on ${busyElsewhere}` : c.reasons[0] ?? c.note ?? (c.suitable ? "Available" : "")}
                       </span>
                     </span>
                     <span className={`flex-shrink-0 text-[11px] font-semibold ${
@@ -217,6 +217,7 @@ export default function RunsPage() {
   const [savingRunId, setSavingRunId] = useState<number | null>(null);
   const [highlightId] = useState<number | null>(deepLinkId);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");   // amber, non-blocking backend warnings
 
   // Toolbar state
   const [search, setSearch] = useState("");
@@ -289,9 +290,13 @@ export default function RunsPage() {
     field: "assignedDriverId" | "assignedTruckId" | "assignedTrailerId",
     raw: string,
   ) {
-    setSavingRunId(runId); setError("");
+    setSavingRunId(runId); setError(""); setNotice("");
     try {
-      await runsApi.update(runId, { [field]: raw ? Number(raw) : null });
+      const updated = await runsApi.update(runId, { [field]: raw ? Number(raw) : null });
+      // Backend conflict warnings (driver/truck/trailer double-booked that day,
+      // trailer full with another job) — surface them, never swallow.
+      const warning = (updated as Run & { warning?: string }).warning;
+      if (warning) setNotice(warning);
       await load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update assignment");
@@ -660,6 +665,12 @@ export default function RunsPage() {
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+      {notice && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start justify-between gap-3">
+          <span>⚠ {notice}</span>
+          <button onClick={() => setNotice("")} className="text-amber-500 hover:text-amber-700 leading-none flex-shrink-0">×</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 flex-wrap mb-3 border-b border-border">

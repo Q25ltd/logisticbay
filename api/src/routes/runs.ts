@@ -294,7 +294,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
     const run = await prisma.run.findFirst({
       where:   { id, companyId },
-      select:  { id: true, plannedDate: true, estimatedStartTime: true, estimatedEndTime: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
+      select:  { id: true, plannedDate: true, estimatedStartTime: true, estimatedEndTime: true, assignedDriverId: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
     });
     if (!run) return notFound(reply, "Run");
 
@@ -303,9 +303,9 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const jobIds = [...new Set(run.assignments.map(a => a.jobId))];
 
     const [trailers, trucks, driverRows, jobs, otherRuns] = await Promise.all([
-      prisma.fleetTrailer.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true }, orderBy: { registration: "asc" } }),
+      prisma.fleetTrailer.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, linkedJobId: true }, orderBy: { registration: "asc" } }),
       prisma.fleetUnit.findMany({ where: { companyId, status: { notIn: ["disposed"] } }, select: { id: true, registration: true, gvwClass: true, status: true }, orderBy: { registration: "asc" } }),
-      prisma.driverProfile.findMany({ where: { companyId }, select: { id: true, displayName: true, status: true, licenceClass: true, canDriveCategories: true, adrAllowed: true, canUseTrailer: true, trailerTypesAllowed: true, preferredShiftHours: true }, orderBy: { displayName: "asc" } }),
+      prisma.driverProfile.findMany({ where: { companyId }, select: { id: true, displayName: true, status: true, licenceClass: true, canDriveCategories: true, adrAllowed: true, canUseTrailer: true, trailerTypesAllowed: true, preferredShiftHours: true, defaultTruckReg: true }, orderBy: { displayName: "asc" } }),
       jobIds.length ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { hazardClass: true, tempControlled: true, vehicleCategory: true, bodyTypes: true, trailersAllowed: true } }) : Promise.resolve([]),
       run.plannedDate
         ? prisma.run.findMany({ where: { companyId, plannedDate: run.plannedDate, status: { notIn: ["cancelled"] }, id: { not: id } }, select: { runReference: true, assignedDriverId: true, assignedTruckId: true, assignedTrailerId: true } })
@@ -326,6 +326,15 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const sMin = toMin(run.estimatedStartTime), eMin = toMin(run.estimatedEndTime);
     const runDurationHours = sMin != null && eMin != null && eMin > sMin ? (eMin - sMin) / 60 : null;
 
+    // Driver↔vehicle attachment: the assigned driver's usual unit + which driver
+    // each unit usually belongs to (so picking someone else's is a visible choice).
+    const usualDriverByReg: Record<string, string> = {};
+    for (const d of driverRows) {
+      const reg = (d.defaultTruckReg ?? "").trim().toUpperCase();
+      if (reg) usualDriverByReg[reg] = d.displayName;
+    }
+    const assignedDriver = run.assignedDriverId ? driverRows.find(d => d.id === run.assignedDriverId) : null;
+
     const ctx = {
       hazardous:      jobs.some(j => !!(j.hazardClass && j.hazardClass.trim())),
       tempControlled: jobs.some(j => j.tempControlled),
@@ -336,6 +345,9 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       // trailer check empty and let a flatbed pass for a fridge-only job.
       acceptableBodyTypes: [...new Set(jobs.flatMap(j => [...(arr(j.bodyTypes) ?? []), ...(arr(j.trailersAllowed) ?? [])]))],
       runDurationHours,
+      runJobIds: jobIds,
+      assignedDriverUsualReg: assignedDriver?.defaultTruckReg ?? null,
+      usualDriverByReg,
     };
 
     const candidates = computeRunCandidates(ctx, {
@@ -494,6 +506,43 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
         const conflict = await findDriverConflict(tx, companyId, newDriverId, newDate, id);
         if (conflict) {
           warnings.push(`Driver already has run ${conflict.runReference} on this date — make sure the times don't overlap.`);
+        }
+      }
+
+      // Warn (don't block) on same-day double-booking of the truck or trailer —
+      // sequenced reuse is legitimate, but never silent.
+      const newTruckId   = "assignedTruckId"   in body ? (body.assignedTruckId   ?? null) : run.assignedTruckId;
+      const newTrailerId = "assignedTrailerId" in body ? (body.assignedTrailerId ?? null) : run.assignedTrailerId;
+      if (newDate != null && (newTruckId != null || newTrailerId != null)) {
+        const clashes = await tx.run.findMany({
+          where: {
+            companyId, plannedDate: newDate, status: { notIn: ["cancelled"] }, id: { not: id },
+            OR: [
+              ...(newTruckId   != null ? [{ assignedTruckId:   newTruckId }] : []),
+              ...(newTrailerId != null ? [{ assignedTrailerId: newTrailerId }] : []),
+            ],
+          },
+          select: { runReference: true, assignedTruckId: true, assignedTrailerId: true },
+        });
+        for (const c of clashes) {
+          if (newTruckId   != null && c.assignedTruckId   === newTruckId)   warnings.push(`Truck is already on run ${c.runReference} that day.`);
+          if (newTrailerId != null && c.assignedTrailerId === newTrailerId) warnings.push(`Trailer is already on run ${c.runReference} that day.`);
+        }
+      }
+
+      // Warn immediately when the trailer being pinned is full with a different job
+      // (publish will hard-block on it — tell the planner NOW, not at publish).
+      if ("assignedTrailerId" in body && body.assignedTrailerId != null) {
+        const t = await tx.fleetTrailer.findFirst({
+          where: { id: body.assignedTrailerId, companyId },
+          select: { registration: true, status: true, linkedJobId: true },
+        });
+        if (t && (t.status ?? "").toLowerCase() === "loaded") {
+          const ourJobs = await tx.runAssignment.findMany({ where: { runId: id, removedAt: null }, select: { jobId: true } });
+          const loadedWithOurs = t.linkedJobId != null && ourJobs.some(a => a.jobId === t.linkedJobId);
+          if (!loadedWithOurs) {
+            warnings.push(`Trailer ${t.registration} is loaded${t.linkedJobId != null ? " with another job" : ""} — it's full. Publish will be blocked.`);
+          }
         }
       }
 

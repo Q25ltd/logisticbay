@@ -110,4 +110,51 @@ describe("computeRunCandidates — body-type & ADR matching", () => {
       FLEET, allBusy);
     assert.ok(!c.trailers.some(t => t.recommended));
   });
+
+  it("trailer loaded with THIS run's job → available, suitable, and recommended over an empty one", () => {
+    const trailers = [
+      { id: 1, registration: "TR101", trailerType: "curtain", status: "available" },
+      { id: 2, registration: "TR102", trailerType: "curtain", status: "loaded", linkedJobId: 55 },
+    ];
+    const c = computeRunCandidates(
+      { hazardous: false, tempControlled: false, needsTrailer: true, acceptableBodyTypes: ["curtain"], runJobIds: [55] },
+      { ...FLEET, trailers }, NO_BUSY);
+    const preloaded = c.trailers.find(t => t.id === 2)!;
+    assert.strictEqual(preloaded.available, true);
+    assert.strictEqual(preloaded.suitable, true);
+    assert.strictEqual(preloaded.recommended, true, "the trailer already carrying the load should win");
+    assert.match(preloaded.label, /loaded with this job/i);
+  });
+
+  it("trailer loaded with ANOTHER job → full, cannot be allocated", () => {
+    const trailers = [
+      { id: 2, registration: "TR102", trailerType: "curtain", status: "loaded", linkedJobId: 99 },
+    ];
+    const c = computeRunCandidates(
+      { hazardous: false, tempControlled: false, needsTrailer: true, acceptableBodyTypes: [], runJobIds: [55] },
+      { ...FLEET, trailers }, NO_BUSY);
+    const full = c.trailers.find(t => t.id === 2)!;
+    assert.strictEqual(full.available, false);
+    assert.ok(full.reasons.some(r => /another job.*full|full/i.test(r)), JSON.stringify(full.reasons));
+  });
+
+  it("driver↔vehicle attachment: the assigned driver's usual unit is recommended; another driver's unit is noted", () => {
+    const trucks = [
+      { id: 1, registration: "AB12", gvwClass: "44", status: "available" },
+      { id: 2, registration: "CD34", gvwClass: "44", status: "available" },
+    ];
+    const c = computeRunCandidates(
+      {
+        hazardous: false, tempControlled: false, needsTrailer: false, acceptableBodyTypes: [],
+        assignedDriverUsualReg: "CD34",
+        usualDriverByReg: { "AB12": "Bob", "CD34": "Dave" },
+      },
+      { ...FLEET, trucks }, NO_BUSY);
+    const daves = c.trucks.find(t => t.id === 2)!;
+    assert.strictEqual(daves.recommended, true, "Dave's usual unit should be recommended for Dave's run");
+    assert.match(daves.note ?? "", /usual unit/i);
+    const bobs = c.trucks.find(t => t.id === 1)!;
+    assert.match(bobs.note ?? "", /usually Bob's/i);
+    assert.strictEqual(bobs.suitable, true, "another driver's unit stays selectable — it's a visible choice, not a block");
+  });
 });

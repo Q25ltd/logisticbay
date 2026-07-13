@@ -89,6 +89,9 @@ export interface Candidate {
   suitable:    boolean;
   reasons:     string[];
   recommended: boolean;
+  note?:         string;    // informational: "Dave's usual unit" / "usually Bob's unit"
+  preloaded?:    boolean;   // trailer already carrying THIS run's job
+  driversUsual?: boolean;
 }
 export interface RunCandidates {
   drivers:  Candidate[];

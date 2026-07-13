@@ -31,9 +31,17 @@ export interface CandidateContext {
   // shift covers the run's planned duration. Live consumed/remaining hours are
   // the Live phase.
   runDurationHours?:  number | null;
+  // Jobs on THIS run — a trailer pre-loaded with one of them is the RIGHT trailer
+  // to take; loaded with anything else means it's full and can't be allocated.
+  runJobIds?:         number[];
+  // Driver↔vehicle attachment: the assigned driver's usual unit gets recommended;
+  // another driver's usual unit gets a "usually <name>'s" note so the planner
+  // doesn't split a driver from their vehicle without noticing.
+  assignedDriverUsualReg?: string | null;
+  usualDriverByReg?:       Record<string, string>;   // reg (uppercase) → driver display name
 }
 
-export interface TrailerLite { id: number; registration: string; trailerType?: string | null; bodyType?: string | null; status?: string | null; }
+export interface TrailerLite { id: number; registration: string; trailerType?: string | null; bodyType?: string | null; status?: string | null; linkedJobId?: number | null; }
 export interface TruckLite   { id: number; registration: string; gvwClass?: string | null; status?: string | null; }
 export interface DriverLite  {
   id: number; displayName: string; status: string;
@@ -56,6 +64,9 @@ interface Candidate {
   suitable:    boolean;
   reasons:     string[];   // why NOT suitable (empty when suitable)
   recommended: boolean;
+  note?:         string;   // informational hint (never a failure): "Dave's usual unit"
+  preloaded?:    boolean;  // trailer already carrying THIS run's job
+  driversUsual?: boolean;  // truck: the assigned driver's usual unit
 }
 
 export interface RunCandidates {
@@ -77,36 +88,56 @@ export function computeRunCandidates(
   const accept = (ctx.acceptableBodyTypes ?? []).map(lc).filter(Boolean);
 
   // ── Trailers ────────────────────────────────────────────────────────────────
+  const runJobIds = new Set(ctx.runJobIds ?? []);
   const trailers: Candidate[] = fleet.trailers.map(t => {
-    const available = !busy.trailers[t.id] && usable(t.status);
     const reasons: string[] = [];
     const body = `${lc(t.bodyType)} ${lc(t.trailerType)}`;
-    if (!usable(t.status))                                    reasons.push(`status ${t.status}`);
+    // Load state: a trailer pre-loaded with THIS run's job is the right one to
+    // take; loaded with anything else is full — cannot be allocated.
+    const loaded          = lc(t.status) === "loaded";
+    const loadedWithOurs  = loaded && t.linkedJobId != null && runJobIds.has(t.linkedJobId);
+    const loadedWithOther = loaded && !loadedWithOurs;
+    const statusOk        = usable(t.status) || loadedWithOurs;
+    const available = !busy.trailers[t.id] && statusOk;
+    if (loadedWithOther)      reasons.push(t.linkedJobId != null ? "loaded with another job — full" : "loaded — full");
+    else if (!usable(t.status) && !loadedWithOurs) reasons.push(`status ${t.status}`);
     if (ctx.tempControlled && !bodyHas(body, FRIDGE_SYNONYMS)) reasons.push("not refrigerated");
     // ADR: chemicals must NOT ride an enclosed (box/fridge) body — open bodies (flatbed/curtain) are fine.
     if (ctx.hazardous && bodyHas(body, ADR_UNSAFE_BODIES))     reasons.push("enclosed body — unsafe for ADR");
     // Acceptable body types: the trailer must match ANY of the job's allowed bodies (not just the first).
     if (accept.length > 0 && !accept.some(a => body.includes(a))) reasons.push(`needs ${(ctx.acceptableBodyTypes ?? []).join(" / ")}`);
+    if (loadedWithOurs) reasons.length = 0;   // it literally has this run's load on it
     return {
       id: t.id,
-      label: `${t.registration} · ${t.trailerType ?? t.bodyType ?? "trailer"}`,
+      label: `${t.registration} · ${loadedWithOurs ? "loaded with this job" : t.trailerType ?? t.bodyType ?? "trailer"}`,
       available, busyOn: busy.trailers[t.id] ?? null,
-      suitable: reasons.filter(r => !r.startsWith("status")).length === 0,
+      suitable: available && reasons.filter(r => !r.startsWith("status")).length === 0,
       reasons, recommended: false,
+      preloaded: loadedWithOurs,
     };
   });
 
-  // ── Trucks (units) — class/availability; body suitability is light for now. ──
+  // ── Trucks (units) — class/availability + driver↔vehicle attachment. ─────────
+  const usualByReg = ctx.usualDriverByReg ?? {};
+  const driverUsual = (ctx.assignedDriverUsualReg ?? "").trim().toUpperCase();
   const trucks: Candidate[] = fleet.trucks.map(t => {
     const available = !busy.trucks[t.id] && usable(t.status);
+    const reg = t.registration.trim().toUpperCase();
+    const isDriversUsual = driverUsual !== "" && reg === driverUsual;
     const reasons: string[] = [];
     if (!usable(t.status)) reasons.push(`status ${t.status}`);
+    const note = isDriversUsual ? "assigned driver's usual unit"
+      : usualByReg[reg] ? `usually ${usualByReg[reg]}'s unit`
+      : undefined;
     return {
       id: t.id,
       label: `${t.registration}${t.gvwClass ? ` · ${t.gvwClass}` : ""}`,
       available, busyOn: busy.trucks[t.id] ?? null,
       suitable: usable(t.status),
       reasons, recommended: false,
+      note,
+      preloaded: false,
+      driversUsual: isDriversUsual,
     };
   });
 
@@ -135,16 +166,21 @@ export function computeRunCandidates(
   });
 
   // ── Recommend: available AND suitable, best-fit first. ──────────────────────
-  // Trailers prefer an exact body match (don't grab a fridge for a curtain job).
+  // Trailers: one PRE-LOADED with this run's job beats everything; then prefer
+  // an exact body match (don't grab a fridge for a curtain job).
   const bestTrailer = trailers
     .filter(c => c.available && c.suitable)
     .sort((a, b) => {
+      const ap = a.preloaded ? 0 : 1, bp = b.preloaded ? 0 : 1;
+      if (ap !== bp) return ap - bp;
       const am = accept.length && accept.some(x => lc(a.label).includes(x)) ? 0 : 1;
       const bm = accept.length && accept.some(x => lc(b.label).includes(x)) ? 0 : 1;
       return am - bm;
     })[0];
   if (bestTrailer) bestTrailer.recommended = true;
-  const bestTruck  = trucks.find(c => c.available && c.suitable);
+  // Trucks: the assigned driver's usual unit wins when it's free and usable.
+  const bestTruck = trucks.find(c => c.available && c.suitable && c.driversUsual)
+                 ?? trucks.find(c => c.available && c.suitable);
   if (bestTruck)  bestTruck.recommended  = true;
   // Prefer a driver with NO soft warnings (e.g. shift that fully covers the run);
   // fall back to any available + suitable.
