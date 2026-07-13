@@ -90,6 +90,45 @@ test("B5 — publish blocked on hard resource failures, allowed once fixed", asy
       assert.strictEqual(JSON.parse(res.body).publishedToDriver, true);
     });
 
+    await t.test("yard-grab: artic load with NO trailer pinned publishes once driver is trailer-rated", async () => {
+      // Ops reality: the driver collects a suitable trailer at the yard and
+      // registers it at shift start — a missing trailer must not block publish,
+      // but a driver who can't pull a trailer at all must.
+      const articJob = await prisma.job.create({
+        data: { companyId: company.id, createdByUserId: planner.id, customerName: `${PREFIX}C2`, status: "ready_to_plan", vehicleCategory: "tractor", trailersAllowed: ["fridge"] },
+      });
+      const articPart = await prisma.jobPart.create({
+        data: { companyId: company.id, jobId: articJob.id, sequenceNumber: 1, type: "collection" },
+      });
+      const r = await app.inject({
+        method: "POST", url: "/runs",
+        headers: { authorization: `Bearer ${plannerToken}` },
+        payload: { assignedDriverId: driverProfile.id },
+      });
+      const articRunId = JSON.parse(r.body).id as number;
+      await app.inject({
+        method: "POST", url: `/runs/${articRunId}/assignments`,
+        headers: { authorization: `Bearer ${plannerToken}` },
+        payload: { jobPartId: articPart.id, jobId: articJob.id },
+      });
+
+      // Driver not trailer-rated (default false) → blocked even with no trailer pinned.
+      const blocked = await app.inject({ method: "POST", url: `/runs/${articRunId}/publish`, headers: { authorization: `Bearer ${plannerToken}` } });
+      assert.strictEqual(blocked.statusCode, 400, blocked.body);
+      assert.strictEqual(JSON.parse(blocked.body).code, "RESOURCE_NOT_READY");
+      assert.match(JSON.parse(blocked.body).error, /trailer-rated/i);
+
+      // Rate the driver → publishes with no trailer; readiness carries the needed type.
+      await prisma.driverProfile.update({ where: { id: driverProfile.id }, data: { canUseTrailer: true } });
+      const ready = await app.inject({ method: "GET", url: `/runs/${articRunId}/readiness`, headers: { authorization: `Bearer ${plannerToken}` } });
+      const trailerCheck = (JSON.parse(ready.body).resources.checks as { key: string; status: string; reason?: string }[]).find(c => c.key === "trailer_assigned");
+      assert.strictEqual(trailerCheck?.status, "warn");
+      assert.match(trailerCheck?.reason ?? "", /fridge/i);
+
+      const ok = await app.inject({ method: "POST", url: `/runs/${articRunId}/publish`, headers: { authorization: `Bearer ${plannerToken}` } });
+      assert.strictEqual(ok.statusCode, 200, ok.body);
+    });
+
     await t.test("planning publish route refuses a run with no driver", async () => {
       // Second run, stops but no driver — the planning route previously allowed this.
       const r2 = await app.inject({

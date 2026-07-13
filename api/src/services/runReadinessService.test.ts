@@ -43,13 +43,28 @@ describe("computeRunReadiness — the publish gate", () => {
     assert.ok(r.blockers.some(b => /ADR/i.test(b)));
   });
 
-  it("load needs a trailer but none assigned → blocked", () => {
+  it("no trailer pinned → READY with a yard-grab warning carrying the needed type", () => {
+    // Yard-grab ops: drivers collect a suitable trailer at the yard and register
+    // it at shift start — a missing trailer must not block publish.
     const r = computeRunReadiness({
       hasStops: true, driver: DAVE, truck: TRUCK,
       loads: [{ requiresTrailer: true }], vehicleCompatible: true,
+      requiredTrailerText: "temperature-controlled (fridge)",
+    });
+    assert.strictEqual(r.ready, true, JSON.stringify(r.blockers));
+    const warn = r.resources.checks.find(c => c.key === "trailer_assigned");
+    assert.strictEqual(warn?.status, "warn");
+    assert.match(warn?.reason ?? "", /temperature-controlled \(fridge\)/);
+  });
+
+  it("no trailer pinned but driver isn't trailer-rated → blocked (he'll pull one)", () => {
+    const noRating: ReadinessDriver = { ...DAVE, canUseTrailer: false };
+    const r = computeRunReadiness({
+      hasStops: true, driver: noRating, truck: TRUCK,
+      loads: [{ requiresTrailer: true }], vehicleCompatible: true,
     });
     assert.strictEqual(r.ready, false);
-    assert.ok(r.blockers.some(b => /needs a trailer/i.test(b)));
+    assert.ok(r.blockers.some(b => /trailer-rated/i.test(b)));
   });
 
   it("carries the S5 compat flag — incompatible trailer blocks (not recomputed here)", () => {

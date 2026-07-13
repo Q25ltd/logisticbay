@@ -16,6 +16,7 @@
  */
 
 import type { PrismaClient } from "../generated/client.js";
+import { bodyTypeLabel } from "../constants/vehicleTaxonomy.js";
 
 export interface ReadinessDriver {
   id:                    number;
@@ -62,6 +63,10 @@ export interface RunReadinessInput {
   // Carried from S5 (computed at assignment time) — NOT recomputed here.
   trailerCompatible?: boolean | null;
   vehicleCompatible?: boolean | null;
+  // Human text for the trailer TYPE this run needs (e.g. "temperature-controlled
+  // (fridge)") — surfaced in the no-trailer warning so the driver knows what to
+  // collect from the yard.
+  requiredTrailerText?: string | null;
 }
 
 type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "na";
@@ -134,7 +139,9 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
       checks.push({ key: "driver_adr", label: "Driver ADR", status: "na", hard: true });
     }
 
-    // Trailer capability — hard only when a trailer is assigned.
+    // Trailer capability — hard whenever the LOAD needs a trailer (the driver
+    // will pull one even if it isn't pinned yet); type clearance only checkable
+    // once a specific trailer is assigned.
     if (trailer) {
       const typeOk = (driver.trailerTypesAllowed?.length ?? 0) === 0
         || has(driver.trailerTypesAllowed, trailer.trailerType ?? "")
@@ -143,16 +150,27 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
         ? { key: "driver_trailer", label: "Driver can pull trailer", status: "pass", hard: true }
         : { key: "driver_trailer", label: "Driver can pull trailer", status: "fail", hard: true,
             reason: !driver.canUseTrailer ? `${driver.displayName} is not trailer-rated.` : `${driver.displayName} isn't cleared for ${trailer.trailerType ?? trailer.bodyType ?? "this trailer"}.` });
+    } else if (needsTrailer) {
+      checks.push(driver.canUseTrailer
+        ? { key: "driver_trailer", label: "Driver can pull trailer", status: "pass", hard: true }
+        : { key: "driver_trailer", label: "Driver can pull trailer", status: "fail", hard: true,
+            reason: `${driver.displayName} is not trailer-rated.` });
     } else {
       checks.push({ key: "driver_trailer", label: "Driver can pull trailer", status: "na", hard: true });
     }
   }
 
   // ── Trailer ───────────────────────────────────────────────────────────────
+  // Yard-grab ops: a run may publish WITHOUT a pinned trailer — the driver
+  // collects a suitable one at the yard and registers it at shift start
+  // (POST /shifts trailerReg + walkaround checks). Soft warn carries the
+  // required TYPE so the driver knows what to take. A pinned-but-incompatible
+  // trailer stays a hard fail below.
   if (needsTrailer) {
     checks.push(trailer
-      ? { key: "trailer_assigned", label: "Trailer assigned", status: "pass", hard: true }
-      : { key: "trailer_assigned", label: "Trailer assigned", status: "fail", hard: true, reason: "Load needs a trailer but none is assigned." });
+      ? { key: "trailer_assigned", label: "Trailer assigned", status: "pass", hard: false }
+      : { key: "trailer_assigned", label: "Trailer assigned", status: "warn", hard: false,
+          reason: `No trailer pinned — driver collects one at the yard.${input.requiredTrailerText ? ` Needs: ${input.requiredTrailerText}.` : ""}` });
   } else {
     checks.push({ key: "trailer_assigned", label: "Trailer assigned", status: trailer ? "pass" : "na", hard: false });
   }
@@ -242,7 +260,7 @@ export async function loadRunReadiness(
       ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true } })
       : Promise.resolve(null),
     jobIds.length
-      ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true } })
+      ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true, trailersAllowed: true } })
       : Promise.resolve([]),
   ]);
 
@@ -251,6 +269,18 @@ export async function loadRunReadiness(
     requiresTrailer: ["artic", "tractor", "drawbar"].includes((j.vehicleCategory ?? "").toLowerCase()),
     equipment:       arr(j.equipment),
   }));
+
+  // What trailer TYPE does this run need? Derived requirement wins (temp/hazard/
+  // oversize), else the union of the jobs' allowed trailer bodies — human labels
+  // only, this text is shown to planners and drivers.
+  const DERIVED_TRAILER_TEXT: Record<string, string> = {
+    temperature_controlled:  "temperature-controlled (fridge)",
+    curtainsider_or_flatbed: "curtain-sider or flatbed",
+  };
+  const allowedBodies = [...new Set(jobs.flatMap(j => arr(j.trailersAllowed) ?? []))].map(bodyTypeLabel);
+  const requiredTrailerText = run.requiredTrailerType
+    ? (DERIVED_TRAILER_TEXT[run.requiredTrailerType] ?? run.requiredTrailerType.replace(/_/g, " "))
+    : allowedBodies.length > 0 ? allowedBodies.join(" / ") : null;
 
   const d = run.driver;
   const readiness = computeRunReadiness({
@@ -267,6 +297,7 @@ export async function loadRunReadiness(
     loads,
     trailerCompatible: run.compatibilityOverridden ? true : run.trailerCompatible,
     vehicleCompatible: run.compatibilityOverridden ? true : run.vehicleCompatible,
+    requiredTrailerText,
   });
 
   return {
