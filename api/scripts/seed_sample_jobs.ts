@@ -36,7 +36,7 @@ function dateTime(base: Date, hhmm: string): Date {
 
 async function main() {
   // ── Guard: check if seed already ran ──────────────────────────────────────
-  const existingCount = await prisma.plannedJob.count({
+  const existingCount = await prisma.job.count({
     where: { companyId: COMPANY_ID, internalNotes: { contains: "[SEED]" } },
   });
   if (existingCount >= 8) {
@@ -45,14 +45,14 @@ async function main() {
   }
   // Delete any partial seed jobs so we start fresh
   if (existingCount > 0) {
-    const partial = await prisma.plannedJob.findMany({
+    const partial = await prisma.job.findMany({
       where: { companyId: COMPANY_ID, internalNotes: { contains: "[SEED]" } },
       select: { id: true, jobReference: true },
     });
     console.log(`Deleting ${partial.length} partial seed jobs…`);
     for (const j of partial) {
       await prisma.jobPart.deleteMany({ where: { jobId: j.id } });
-      await prisma.plannedJob.delete({ where: { id: j.id } });
+      await prisma.job.delete({ where: { id: j.id } });
     }
   }
 
@@ -193,16 +193,15 @@ async function main() {
 
   let created = 0;
   for (const j of jobDefs) {
-    const job = await prisma.plannedJob.create({
+    const job = await prisma.job.create({
       data: {
         companyId:       COMPANY_ID,
         createdByUserId: CREATED_BY_USER,
         customerId:      j.customer.id,
         customerName:    j.customer.name,
         jobReference:    j.ref,
-        plannedDate:     j.date,
-        materialType:    j.material,
-        quantityExpected: j.qty,
+        goodsType:       j.material,
+        quantity:        Number(j.qty),
         quantityUnit:    j.unit,
         priority:        j.priority,
         plannerNotes:    j.notes,
@@ -214,7 +213,7 @@ async function main() {
           create: j.stops.map(s => ({
             companyId:           COMPANY_ID,
             sequenceNumber:      s.seq,
-            type:                s.type as any,
+            type:                s.type,
             locationTextSnapshot: s.loc,
             siteName:            s.site,
             timeWindowStart:     s.window ? dateTime(j.date, s.window) : null,

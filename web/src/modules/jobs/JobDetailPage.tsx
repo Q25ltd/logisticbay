@@ -155,9 +155,9 @@ export default function JobDetailPage() {
       const loaded = await jobsApi.get(numId);
       setJob(loaded);
       // Async area lookup — non-blocking, silently ignored on failure
-      const postcodes = ((loaded as any).stops ?? [])
-        .map((s: any) => s.postcode)
-        .filter((p: unknown): p is string => typeof p === "string" && p.trim().length > 0);
+      const postcodes = (loaded.stops ?? [])
+        .map(s => s.postcode)
+        .filter((p): p is string => typeof p === "string" && p.trim().length > 0);
       if (postcodes.length > 0) {
         aiApi.lookupAreas(postcodes)
           .then(areas => {
@@ -311,7 +311,7 @@ export default function JobDetailPage() {
                 <Field label="Dimensions"   value={job.dimensions} />
                 {job.tempControlled && <Field label="Temperature" value={job.tempRange || "Temp-controlled"} />}
                 {job.hazardClass    && <Field label="ADR class"   value={job.hazardClass} />}
-                {(job as any).tunnelCode && <Field label="Tunnel code" value={(job as any).tunnelCode} />}
+                {job.tunnelCode && <Field label="Tunnel code" value={job.tunnelCode} />}
                 {job.fragile        && <Field label="Fragile"     value="Yes" />}
                 {job.stackable      && <Field label="Stackable"   value="Yes" />}
                 {job.weighbridgeRequired    && <Field label="Weighbridge"       value="Required" />}
@@ -475,7 +475,7 @@ export default function JobDetailPage() {
       </div>
 
       {showRepeat && (
-        <RepeatJobModal job={job as any} onClose={() => setShowRepeat(false)} />
+        <RepeatJobModal job={job} onClose={() => setShowRepeat(false)} />
       )}
     </div>
   );
@@ -1136,7 +1136,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
   if (
     maxPallets &&
     job.quantity != null &&
-    (job as any).quantityUnit === "pallets" &&
+    job.quantityUnit === "pallets" &&
     job.quantity > maxPallets
   ) {
     const better =
@@ -1180,7 +1180,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
 
   // ── Hazardous / ADR ───────────────────────────────────────────────────────
   // Check the hazardClass field AND scan the description for "class N" mentions
-  const hazardClass = (job as any).hazardClass as string | null | undefined;
+  const hazardClass = job.hazardClass as string | null | undefined;
   const adrFromDesc = goodsText.match(/\badr\b|\bclass\s*([1-9])\b|\bun\s*\d{4}\b/);
   const adrClass    = hazardClass || (adrFromDesc?.[1] ? `${adrFromDesc[1]}` : null);
 
@@ -1194,7 +1194,7 @@ function checkVehicleWarnings(category: string, bodyTypes: string[], job: Job): 
   }
 
   // ── Temperature-controlled ────────────────────────────────────────────────
-  const tempControlled = (job as any).tempControlled as boolean | null | undefined;
+  const tempControlled = job.tempControlled as boolean | null | undefined;
   if (tempControlled) {
     if (["van", "pickup"].includes(category)) {
       warnings.push(
@@ -1286,9 +1286,9 @@ function VehiclePanel({
           goodsType:        job.goodsType          ?? undefined,
           weight:           job.weight             ?? undefined,
           quantity:         job.quantity           ?? undefined,
-          quantityUnit:     (job as any).quantityUnit ?? undefined,
-          hazardClass:      (job as any).hazardClass  ?? undefined,
-          tempControlled:   (job as any).tempControlled ?? undefined,
+          quantityUnit:     job.quantityUnit ?? undefined,
+          hazardClass:      job.hazardClass  ?? undefined,
+          tempControlled:   job.tempControlled ?? undefined,
         });
         setAiCheck(result);
       } catch {
@@ -1348,9 +1348,9 @@ function VehiclePanel({
         quantityUnit:     job.quantityUnit      ?? undefined,
         goodsType:        job.goodsType         ?? undefined,
         goodsDescription: job.goodsDescription  ?? undefined,
-        tempControlled:   (job as any).tempControlled ?? undefined,
-        hazardClass:      (job as any).hazardClass    ?? undefined,
-        specialRequirements: ((job as any).specialRequirements as string[] | null) ?? undefined,
+        tempControlled:   job.tempControlled ?? undefined,
+        hazardClass:      job.hazardClass    ?? undefined,
+        specialRequirements: (job.specialRequirements as string[] | null) ?? undefined,
         stopCount:        (job.stops ?? []).length || undefined,
         stops:            stops.length ? stops : undefined,
       });

@@ -1727,8 +1727,10 @@ export default function PublicRequestForm() {
       const result = await jobRequestsPublicApi.submit(token!, body);
       setWarnings(result.warnings ?? []);
       setSubmitted(true);
-    } catch (err: any) {
-      setErrors(err.errors ?? [err.message ?? "Submission failed. Please try again."]);
+    } catch (err) {
+      // publicPost attaches an optional `errors` array to thrown Errors
+      const e = err instanceof Error ? (err as Error & { errors?: string[] }) : null;
+      setErrors(e?.errors ?? [e?.message || "Submission failed. Please try again."]);
     } finally {
       setSubmitting(false);
     }

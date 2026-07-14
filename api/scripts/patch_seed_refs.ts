@@ -19,7 +19,7 @@ const REFS: Record<string, string> = {
 
 async function main() {
   for (const [ref, customerRef] of Object.entries(REFS)) {
-    const updated = await prisma.plannedJob.updateMany({
+    const updated = await prisma.job.updateMany({
       where: { jobReference: ref, companyId: 1 },
       data:  { customerRef },
     });

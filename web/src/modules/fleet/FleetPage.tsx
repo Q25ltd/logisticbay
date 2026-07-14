@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState, useEffect } from "react";
 import { fleetApi } from "../../api/fleet";
 import type { FleetUnit, FleetTrailer } from "../../types";
@@ -34,8 +35,8 @@ export default function FleetPage() {
       ]);
       setUnits(unitRes.data);
       setTrailers(trailerRes.data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -56,8 +57,8 @@ export default function FleetPage() {
       await fleetApi.units.remove(unit.id);
       setSuccess("Unit archived");
       load();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(errorMessage(err));
     }
   }
 
@@ -67,8 +68,8 @@ export default function FleetPage() {
       await fleetApi.trailers.remove(trailer.id);
       setSuccess("Trailer archived");
       load();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(errorMessage(err));
     }
   }
 

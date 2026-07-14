@@ -638,7 +638,7 @@ export default function CreateJobPage() {
       if (Array.isArray(job.specialRequirements))  setSpecialItems(job.specialRequirements as string[]);
 
       // Restore loadData blob (type-specific sub-fields)
-      const ldb = (job as any).loadData as Record<string, unknown> | null;
+      const ldb = job.loadData as Record<string, unknown> | null;
       if (ldb) {
         // Restore pallet lines — support new palletLines array and old single-type format
         if (Array.isArray(ldb.palletLines) && (ldb.palletLines as unknown[]).length > 0) {
@@ -751,7 +751,7 @@ export default function CreateJobPage() {
       // Transport requirements
       if (job.vehicleCategory) setVehicleCategory(job.vehicleCategory);
       if (Array.isArray(job.trailersAllowed)) setTrailersAllowed(job.trailersAllowed as string[]);
-      if (Array.isArray((job as any).bodyTypes)) setBodyTypes((job as any).bodyTypes as string[]);
+      if (Array.isArray(job.bodyTypes)) setBodyTypes(job.bodyTypes as string[]);
 
       // Rejection / exception policy — flat Job columns (not a blob)
       if (job.failureAction && job.failureAction !== "call_assistance") setFailureAction(job.failureAction);
@@ -759,19 +759,19 @@ export default function CreateJobPage() {
       if (job.alternativeReturnPostcode)     setAltReturnPostcode(job.alternativeReturnPostcode);
       if (job.alternativeReturnContactName)  setAltReturnContactName(job.alternativeReturnContactName);
       if (job.alternativeReturnContactPhone) setAltReturnContactPhone(job.alternativeReturnContactPhone);
-      if ((job as any).alternativeReturnSiteName)              setAltReturnSiteName((job as any).alternativeReturnSiteName);
-      if ((job as any).alternativeReturnAddressLine2)          setAltReturnAddressLine2((job as any).alternativeReturnAddressLine2);
-      if ((job as any).alternativeReturnTown)                  setAltReturnTown((job as any).alternativeReturnTown);
-      if ((job as any).alternativeReturnCounty)                setAltReturnCounty((job as any).alternativeReturnCounty);
-      if ((job as any).alternativeReturnCountry)               setAltReturnCountry((job as any).alternativeReturnCountry);
-      if ((job as any).alternativeReturnLat != null)           setAltReturnLat(String((job as any).alternativeReturnLat));
-      if ((job as any).alternativeReturnLng != null)           setAltReturnLng(String((job as any).alternativeReturnLng));
-      if ((job as any).alternativeReturnNavigationInstructions) setAltReturnNavInstructions((job as any).alternativeReturnNavigationInstructions);
+      if (job.alternativeReturnSiteName)              setAltReturnSiteName(job.alternativeReturnSiteName);
+      if (job.alternativeReturnAddressLine2)          setAltReturnAddressLine2(job.alternativeReturnAddressLine2);
+      if (job.alternativeReturnTown)                  setAltReturnTown(job.alternativeReturnTown);
+      if (job.alternativeReturnCounty)                setAltReturnCounty(job.alternativeReturnCounty);
+      if (job.alternativeReturnCountry)               setAltReturnCountry(job.alternativeReturnCountry);
+      if (job.alternativeReturnLat != null)           setAltReturnLat(String(job.alternativeReturnLat));
+      if (job.alternativeReturnLng != null)           setAltReturnLng(String(job.alternativeReturnLng));
+      if (job.alternativeReturnNavigationInstructions) setAltReturnNavInstructions(job.alternativeReturnNavigationInstructions);
       if (job.approvalContactName)  setApprovalContactName(job.approvalContactName);
       if (job.approvalContactPhone) setApprovalContactPhone(job.approvalContactPhone);
-      if ((job as any).photosRequiredOnRejection)  setPhotosOnRejection(true);
-      if ((job as any).rejectionSignatureRequired) setSignatureOnRejection(true);
-      if ((job as any).rejectionNotes)             setRejectionNotes((job as any).rejectionNotes);
+      if (job.photosRequiredOnRejection)  setPhotosOnRejection(true);
+      if (job.rejectionSignatureRequired) setSignatureOnRejection(true);
+      if (job.rejectionNotes)             setRejectionNotes(job.rejectionNotes);
       const hasEp = job.failureAction !== "call_assistance" || !!job.alternativeReturnAddress || !!job.approvalContactName;
       if (hasEp) setShowExceptionPolicy(true);
 

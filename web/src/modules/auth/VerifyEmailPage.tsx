@@ -1,3 +1,4 @@
+import { errorMessage as messageFromError } from "../../lib/errorMessage";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { verifyEmail } from "../../api/auth";
@@ -21,9 +22,9 @@ export default function VerifyEmailPage({ onLogin }: { onLogin: () => void }) {
         setStatus("success");
         await onLogin();
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         setStatus("error");
-        setErrorMessage(err.message || "Verification failed. The link may have expired.");
+        setErrorMessage(messageFromError(err, "Verification failed. The link may have expired."));
       });
   }, [token]);
 

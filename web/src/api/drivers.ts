@@ -35,9 +35,9 @@ export interface DayScheduleResult {
 
 export const driversApi = {
   list:         (status?: string) => api.get<{ data: Driver[] }>(`/drivers${status ? "?status=" + status : ""}`),
-  create:       (body: unknown) => api.post<Driver>("/drivers", body),
+  create:       (body: unknown) => api.post<Driver & { defaultPin: string | null; loginEmail: string; isAgencyDriver: boolean; message: string }>("/drivers", body),
   update:       (id: number, b: unknown) => api.patch<Driver>(`/drivers/${id}`, b),
   setStatus:    (id: number, status: string) => api.patch<Driver>(`/drivers/${id}/status`, { status }),
-  resetPin:     (id: number) => api.post(`/drivers/${id}/reset-password`, {}),
+  resetPin:     (id: number) => api.post<{ ok: true; defaultPin: string; loginEmail: string; message: string }>(`/drivers/${id}/reset-password`, {}),
   getSchedule:  (id: number, date: string) => api.get<DayScheduleResult>(`/drivers/${id}/schedule?date=${date}`),
 };

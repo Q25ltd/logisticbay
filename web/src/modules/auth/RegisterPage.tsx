@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { registerCompany } from "../../api/auth";
@@ -30,7 +31,7 @@ export default function RegisterPage({ onLogin }: { onLogin?: () => void }) {
         await onLogin?.();
       }
     }
-    catch (err: any) { setError(err.message); }
+    catch (err) { setError(errorMessage(err)); }
     finally { setLoading(false); }
   }
 

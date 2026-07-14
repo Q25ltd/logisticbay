@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { resetPassword } from "../../api/auth";
@@ -25,8 +26,8 @@ export default function ResetPasswordPage() {
       await resetPassword(token, newPassword);
       setDone(true);
       setTimeout(() => navigate("/login"), 2500);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }

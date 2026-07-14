@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -75,11 +76,11 @@ function firstStop(job: PlannedJob, role: "from" | "to") {
 }
 
 function stopName(stop: ReturnType<typeof firstStop>): string {
-  return (stop as any)?.siteName || stop?.locationTextSnapshot || (stop as any)?.town || "—";
+  return stop?.siteName || stop?.locationTextSnapshot || stop?.town || "—";
 }
 
 function stopSubtext(stop: ReturnType<typeof firstStop>): string {
-  const s = stop as any;
+  const s = stop;
   return [s?.town, s?.postcode].filter(Boolean).join(" ") || "";
 }
 
@@ -266,7 +267,7 @@ function NoteModal({ jobId, onClose }: { jobId: number; onClose: () => void }) {
     if (!note.trim()) return;
     setLoading(true);
     try { await jobsApi.addNote(jobId, note.trim(), crypto.randomUUID()); onClose(); }
-    catch (err: any) { alert(err.message); }
+    catch (err) { alert(errorMessage(err)); }
     finally { setLoading(false); }
   }
 
@@ -308,7 +309,7 @@ export default function JobsPage() {
     try {
       const j = await jobsApi.listRange(dateRange.from, dateRange.to);
       setJobs(j.data);
-    } catch (err: any) { setError(err.message); }
+    } catch (err) { setError(errorMessage(err)); }
     setLoading(false);
   }, [dateRange]);
 
@@ -317,7 +318,7 @@ export default function JobsPage() {
 
   async function handleStatusChange(id: number, status: string) {
     try {
-      const result = await jobsApi.updateStatus(id, status) as any;
+      const result = await jobsApi.updateStatus(id, status);
       setSuccess("Status updated");
       setTimeout(() => setSuccess(""), 3000);
       if (result?.warnings?.length) {
@@ -325,7 +326,7 @@ export default function JobsPage() {
         setTimeout(() => setWarning(""), 8000);
       }
       load();
-    } catch (err: any) { alert(err.message); }
+    } catch (err) { alert(errorMessage(err)); }
   }
 
   async function handleDelete(job: PlannedJob) {
@@ -340,7 +341,7 @@ export default function JobsPage() {
         setTimeout(() => setWarning(""), 8000);
       }
       load();
-    } catch (err: any) { alert(err.message); }
+    } catch (err) { alert(errorMessage(err)); }
   }
 
   const filtered = jobs.filter(j => {
@@ -350,7 +351,7 @@ export default function JobsPage() {
       const inCustomer  = (j.customerName  ?? "").toLowerCase().includes(q);
       const inRef       = (j.jobReference  ?? "").toLowerCase().includes(q);
       const inStops     = (j.stops ?? []).some(s =>
-        [(s as any).siteName, (s as any).town, (s as any).postcode, s.locationTextSnapshot]
+        [s.siteName, s.town, s.postcode, s.locationTextSnapshot]
           .some(v => (v ?? "").toLowerCase().includes(q))
       );
       if (!inCustomer && !inRef && !inStops) return false;

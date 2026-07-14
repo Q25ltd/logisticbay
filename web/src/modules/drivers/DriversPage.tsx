@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState, useEffect } from "react";
 import { driversApi } from "../../api/drivers";
 import { api } from "../../api/client";
@@ -42,7 +43,7 @@ export default function DriversPage() {
         holidaySeniorityExtraDays: Number(company.holidaySeniorityExtraDays ?? 1),
         holidaySeniorityMaxExtraDays: Number(company.holidaySeniorityMaxExtraDays ?? 5),
       });
-    } catch (err: any) { setError(err.message); }
+    } catch (err) { setError(errorMessage(err)); }
     setLoading(false);
   }
 
@@ -55,15 +56,15 @@ export default function DriversPage() {
       await driversApi.setStatus(driver.id, next);
       setSuccess(`${driver.displayName} ${next === "active" ? "activated" : "deactivated"} ✓`);
       load();
-    } catch (err: any) { alert(err.message); }
+    } catch (err) { alert(errorMessage(err)); }
   }
 
   async function handleResetPin(driver: Driver) {
     if (!confirm(`Reset PIN for ${driver.displayName}?`)) return;
     try {
-      const res = await driversApi.resetPin(driver.id) as any;
+      const res = await driversApi.resetPin(driver.id);
       setPinReset({ email: res.loginEmail, pin: res.defaultPin, name: driver.displayName });
-    } catch (err: any) { alert(err.message); }
+    } catch (err) { alert(errorMessage(err)); }
   }
 
   const filtered = drivers

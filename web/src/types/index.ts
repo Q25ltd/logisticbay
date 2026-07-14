@@ -238,6 +238,17 @@ export interface Job {
   alternativeReturnPostcode?:     string | null;
   alternativeReturnContactName?:  string | null;
   alternativeReturnContactPhone?: string | null;
+  alternativeReturnSiteName?:               string | null;
+  alternativeReturnAddressLine2?:           string | null;
+  alternativeReturnTown?:                   string | null;
+  alternativeReturnCounty?:                 string | null;
+  alternativeReturnCountry?:                string | null;
+  alternativeReturnLat?:                    number | null;
+  alternativeReturnLng?:                    number | null;
+  alternativeReturnNavigationInstructions?: string | null;
+  rejectionSignatureRequired?:    boolean;
+  rejectionNotes?:                string | null;
+  tunnelCode?:                    string | null;
 
   // proof / quality
   requirePOD?:                  boolean;

@@ -11,10 +11,7 @@
     "migrate:prod": "sh -c 'set -a && . ./.env && set +a && DATABASE_URL=$DATABASE_URL_PROD npx prisma migrate deploy'",
     "studio:local": "prisma studio",
     "generate": "prisma generate",
-    "backfill:vocab": "tsx scripts/backfill_vocab_v1.ts",
-    "backfill:stops-v2": "tsx scripts/backfill_stops_v2.ts",
-    "backfill:job-stop-type": "tsx scripts/backfill_job_stop_type.ts",
-    "test": "node --import tsx/esm --test --test-force-exit --test-timeout=30000 src/tests/*.test.ts src/lib/*.test.ts src/services/*.test.ts"
+    "test": "node --import tsx/esm --test --test-timeout=30000 src/tests/*.test.ts src/lib/*.test.ts src/services/*.test.ts"
   },
   "keywords": [],
   "author": "",

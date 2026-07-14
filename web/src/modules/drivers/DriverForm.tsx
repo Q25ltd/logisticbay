@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState } from "react";
 import { driversApi } from "../../api/drivers";
 import type { Driver } from "../../types";
@@ -129,14 +130,14 @@ export default function DriverForm({ initial, onSave, onCancel }: {
         await driversApi.update(initial.id, payload);
         onSave();
       } else {
-        const result = await driversApi.create(payload) as any;
+        const result = await driversApi.create(payload);
         if (result.defaultPin) {
           setLoginDetails({ email: result.loginEmail, pin: result.defaultPin });
           return;
         }
         onSave();
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err) { setError(errorMessage(err)); }
     finally { setLoading(false); }
   }
 

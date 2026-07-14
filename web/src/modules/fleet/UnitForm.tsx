@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState } from "react";
 import { fleetApi } from "../../api/fleet";
 import type { FleetUnit } from "../../types";
@@ -83,8 +84,8 @@ export default function UnitForm({ initial, onSave, onCancel }: {
         await fleetApi.units.create(payload);
       }
       onSave();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }

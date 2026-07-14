@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -100,7 +101,7 @@ export default function HolidaysPage() {
         holidaySeniorityMaxExtraDays: Number(holidaySeniorityMaxExtraDays),
       });
       setPolicySuccess("Policy saved ✓");
-    } catch (err: any) { setPolicyError(err.message); }
+    } catch (err) { setPolicyError(errorMessage(err)); }
     finally { setPolicySaving(false); }
   }
 
@@ -114,8 +115,8 @@ export default function HolidaysPage() {
       setPlannerNotes(
         Object.fromEntries((res.data ?? []).map((r) => [r.id, r.plannerNote ?? ""]))
       );
-    } catch (err: any) {
-      setError(err.message ?? "Failed to load holiday requests");
+    } catch (err) {
+      setError(errorMessage(err, "Failed to load holiday requests"));
     } finally {
       setLoading(false);
     }
@@ -137,8 +138,8 @@ export default function HolidaysPage() {
       });
       setSuccess(status === "approved" ? "Holiday approved ✓" : "Holiday declined ✓");
       await load();
-    } catch (err: any) {
-      setError(err.message ?? "Failed to update holiday request");
+    } catch (err) {
+      setError(errorMessage(err, "Failed to update holiday request"));
     } finally {
       setSavingId(null);
     }
@@ -324,7 +325,7 @@ export default function HolidaysPage() {
                     <div className="font-bold text-primary">
                       {request.driverProfile?.displayName ?? `Driver #${request.driverProfileId}`}
                     </div>
-                    <Badge status={statusBadge(request.status) as any} />
+                    <Badge status={statusBadge(request.status)} />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted">

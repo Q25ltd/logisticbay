@@ -1,3 +1,4 @@
+import { errorMessage } from "../../lib/errorMessage";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -63,7 +64,7 @@ function DepotSection({ initial }: { initial: DepotLocation | null }) {
       setSuccess("Depot saved ✓");
       setMode("idle");
       setLocName(""); setLocStreet(""); setLocTown(""); setLocPostcode("");
-    } catch (err: any) { setError(err.message); }
+    } catch (err) { setError(errorMessage(err)); }
     finally { setSaving(false); }
   }
 
@@ -77,7 +78,7 @@ function DepotSection({ initial }: { initial: DepotLocation | null }) {
       setSuccess("Depot saved ✓");
       setMode("idle");
       setPickedId("");
-    } catch (err: any) { setError(err.message); }
+    } catch (err) { setError(errorMessage(err)); }
     finally { setSaving(false); }
   }
 
@@ -249,7 +250,7 @@ export default function SettingsPage() {
         reportEmailEnabled,
       });
       setCompanySuccess("Settings saved ✓");
-    } catch (err: any) { setCompanyError(err.message); }
+    } catch (err) { setCompanyError(errorMessage(err)); }
     finally { setCompanySaving(false); }
   }
 
@@ -262,7 +263,7 @@ export default function SettingsPage() {
       await api.post("/auth/change-password", { currentPassword: currentPw, newPassword: newPw });
       setPwSuccess("Password changed ✓");
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    } catch (err: any) { setPwError(err.message); }
+    } catch (err) { setPwError(errorMessage(err)); }
     finally { setPwLoading(false); }
   }
 

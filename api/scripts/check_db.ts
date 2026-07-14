@@ -14,7 +14,7 @@ async function main() {
   console.log("Customers:", JSON.stringify(customers, null, 2));
   const drivers = await prisma.driverProfile.findMany({ select: { id: true, companyId: true, displayName: true }, take: 10 });
   console.log("Drivers:", JSON.stringify(drivers, null, 2));
-  const jobs = await prisma.plannedJob.findMany({ select: { id: true, companyId: true, jobReference: true, status: true }, take: 5 });
+  const jobs = await prisma.job.findMany({ select: { id: true, companyId: true, jobReference: true, status: true }, take: 5 });
   console.log("Existing jobs:", JSON.stringify(jobs, null, 2));
 }
 
