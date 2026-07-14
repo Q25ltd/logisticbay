@@ -10,7 +10,7 @@ import type {
   CreateSegmentBody,
   CreateDeliveryBody,
   SubmitShiftBody,
-} from "../types/requests.js";
+} from "../schemas/shifts.js";
 import {
   CreateShiftSchema,
   CreateSegmentSchema,
@@ -19,6 +19,7 @@ import {
 } from "../schemas/shifts.js";
 import { parseBody, parseIdParam } from "../lib/validate.js";
 import { normalizeShiftVehicleClass } from "../lib/vehicleCompat.js";
+import type { TrailerOwnership } from "../constants/fleetVocab.js";
 import { badRequest, conflict, forbidden, notFound, validationFailed } from "../lib/errors.js";
 
 export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
@@ -92,6 +93,28 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       ? body.odometerStart
       : prevSegment?.odometerStart ?? 0;
 
+    // Trailer identity may only come from the fleet registry (four-intake-gates
+    // rule). A reg that matches the company fleet is "company"; otherwise the
+    // driver's contractor/third_party claim is stored, or "unregistered" is
+    // flagged for the planner. Never blocks — shift data must not be lost.
+    const trailerReg = body.trailerReg?.trim().toUpperCase() || null;
+    let trailerOwnership: TrailerOwnership | null = null;
+    let trailerWarning: string | null = null;
+    if (trailerReg) {
+      const fleetTrailer = await prisma.fleetTrailer.findFirst({
+        where:  { companyId, registration: trailerReg, status: { not: "deleted" } },
+        select: { id: true },
+      });
+      if (fleetTrailer) {
+        trailerOwnership = "company";
+      } else if (body.trailerOwnership) {
+        trailerOwnership = body.trailerOwnership;
+      } else {
+        trailerOwnership = "unregistered";
+        trailerWarning = `Trailer ${trailerReg} is not registered in your company fleet. Check the registration, or record it as a contractor or third-party trailer.`;
+      }
+    }
+
     const segment = await prisma.shiftSegment.create({
       data: {
         companyId,
@@ -101,7 +124,8 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
         needsTruckCheck:   body.needsTruckCheck   ?? true,
         needsTrailerCheck: body.needsTrailerCheck ?? true,
         truckReg:          body.truckReg.trim().toUpperCase(),
-        trailerReg:        body.trailerReg?.trim().toUpperCase() ?? null,
+        trailerReg,
+        trailerOwnership,
         odometerStart,
         truckChecks:       (body.truckChecks ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
         trailerChecks:     (body.trailerReg ? (body.trailerChecks ?? Prisma.JsonNull) : Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
@@ -117,11 +141,17 @@ export async function shiftRoutes(app: FastifyInstance, prisma: PrismaClient) {
       app.log.warn({ failedTruck, failedTrailer, shiftId }, "Segment has failed checks");
     }
 
+    if (trailerWarning) {
+      app.log.warn({ trailerReg, shiftId }, "Segment uses a trailer not in the company fleet");
+    }
+
     return reply.status(201).send({
-      segmentId:     segment.id,
-      segmentNumber: segment.segmentNumber,
-      hasDefects:    failedTruck.length > 0 || failedTrailer.length > 0,
-      failedItems:   { truck: failedTruck, trailer: failedTrailer },
+      segmentId:        segment.id,
+      segmentNumber:    segment.segmentNumber,
+      hasDefects:       failedTruck.length > 0 || failedTrailer.length > 0,
+      failedItems:      { truck: failedTruck, trailer: failedTrailer },
+      trailerOwnership,
+      ...(trailerWarning ? { warning: trailerWarning } : {}),
     });
   });
 

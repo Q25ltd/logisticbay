@@ -429,6 +429,39 @@ The forms are identical in fields. CJP adds `plannedDate`, `plannerNotes`, `save
 
 ---
 
+## Four intake gates — the only sources of truth (decided 2026-07-14)
+
+**All data in the system is born at exactly four controlled intake forms. Everything else only manipulates it.**
+
+| # | Gate | What it creates | Validation |
+|---|------|-----------------|------------|
+| 1 | Public job form (PRF) | Job + JobPart | `CreateJobSchema` (shared with CJP) |
+| 2 | Internal job form (CJP) | Job + JobPart | `CreateJobSchema` (shared with PRF) |
+| 3 | Driver registration | DriverProfile + User | `CreateDriverSchema` / `PatchDriverSchema` |
+| 4 | Unit / trailer registration | FleetUnit / FleetTrailer | `CreateFleetUnitSchema` etc. + taxonomy checks (2026-07-14) |
+
+Rules that follow from this:
+
+1. **No unknown data.** Every intake gate validates its full input (Zod). Nothing enters the
+   system that a form did not deliberately capture. Free-text identity fields that bypass a
+   registry are violations — they must resolve against, or be flagged against, the registered
+   entity (e.g. a shift's `trailerReg` is matched against FleetTrailer: ours → `company`,
+   otherwise the driver's `contractor`/`third_party` claim or an `unregistered` flag — see
+   `ShiftSegment.trailerOwnership`, 2026-07-14).
+2. **Algorithms may only consume form-born data.** Every calculation (readiness, candidates,
+   capacity, suitability, proposals) must trace its inputs back to fields these four forms
+   actually capture. If a form doesn't capture something, the algorithm reports **unknown** —
+   it never assumes, defaults, or fabricates (the readiness service's honest-`unknown` for
+   MOT/VOR is the model).
+3. **Form changes propagate.** Adding/changing a field on any gate means: PRF/CJP twin rule,
+   schema + DB column, DATA_DICTIONARY.md entry, and updating every algorithm that should
+   consume it — in the same effort. A form field no algorithm reads, or an algorithm input
+   no form writes, is a defect.
+4. **Derived data never masquerades as intake data.** Statuses, custody, rollups, ETAs are
+   computed from intake data + execution events and must be recomputable from them.
+
+---
+
 ## Frontend page structure rules
 
 ### Page responsibility

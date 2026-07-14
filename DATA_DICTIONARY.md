@@ -703,6 +703,7 @@ Table: `ShiftSegment`
 | vehicleClass | String | Yes | `tractor` \| `rigid` \| `van` \| other, default `tractor` | Class of vehicle used in this segment |
 | truckReg | String | Yes | Registration string | Truck registration for this segment |
 | trailerReg | String? | No | Registration string | Trailer registration for this segment |
+| trailerOwnership | String? | No | `company` \| `contractor` \| `third_party` \| `unregistered` (fleetVocab.ts) | Server matches trailerReg against FleetTrailer: `company` when it's ours; the driver may claim `contractor`/`third_party` for a non-fleet trailer; `unregistered` = unknown reg, no claim — flagged to the planner |
 | odometerStart | Int | Yes | Kilometres or miles (integer) | Odometer reading at segment start |
 | odometerEnd | Int? | No | Kilometres or miles (integer) | Odometer reading at segment end |
 | startTime | DateTime | Yes | ISO 8601 | Segment start time |

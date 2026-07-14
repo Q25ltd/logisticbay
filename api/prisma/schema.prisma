@@ -804,6 +804,7 @@ model ShiftSegment {
   vehicleClass      String    @default("tractor")
   truckReg          String
   trailerReg        String?
+  trailerOwnership  String?   // fleetVocab TRAILER_OWNERSHIPS — server sets "company"/"unregistered"; driver claims contractor/third_party
   odometerStart     Int
   odometerEnd       Int?
   startTime         DateTime  @default(now())

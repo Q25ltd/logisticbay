@@ -297,63 +297,8 @@ export interface AddJobNoteBody {
 }
 
 // ── Shifts ────────────────────────────────────────────────────────────────────
-
-export interface CreateShiftBody {
-  shiftDate?: string;
-  startTime?: string;
-}
-
-export interface CreateSegmentBody {
-  truckReg:          string;
-  trailerReg?:       string;
-  vehicleClass?:     string;
-  odometerStart?:    number;
-  truckChecks?:      CheckItem[];
-  trailerChecks?:    CheckItem[];
-  needsTruckCheck?:  boolean;
-  needsTrailerCheck?: boolean;
-  prevOdometerEnd?:  number;
-}
-
-export interface CheckItem {
-  key:     string;
-  label?:  string;
-  result?: "pass" | "fail";
-  ok?:     boolean;
-  note?:   string;
-}
-
-export interface CreateDeliveryBody {
-  materials?:   string;
-  collectFrom?: string;
-  deliverTo?:   string;
-  ticketNo?:    string;
-  startTime?:   string;
-  finishTime?:  string;
-  hours?:       string;
-  mileage?:     string;
-  tonnes?:      string;
-  kgs?:         string;
-  notes?:       string;
-  loadType?:    string;
-  pallets?:     string;
-}
-
-export interface SubmitShiftBody {
-  odometerEnd?:  number;
-  segmentNotes?: string;
-  nightOut?:     boolean;
-  expenses?:     string;
-  delaysNote?:   string;
-  defectsNote?:  string;
-  endTime?:      string;
-  totalHours?:   string;
-  breakMins?:    string | number;
-  poaMins?:      string | number;
-  workingMins?:  string | number;
-  fuelDrawn?:    string;
-  adBlueDrawn?:  string;
-}
+// Shift request bodies are z.infer types exported from schemas/shifts.ts —
+// the Zod schema is the single source of truth.
 
 // ── Availability ──────────────────────────────────────────────────────────────
 

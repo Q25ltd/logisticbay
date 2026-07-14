@@ -1,79 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { parseIdParam } from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
 import { PrismaClient } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { gvwForCategory, isBodyCategory, isBodyType, isGvwClass, isOnboardEquipment } from "../constants/jobCreation.js";
-import { badRequest, conflict, notFound } from "../lib/errors.js";
-
-// ── Fleet Units ──────────────────────────────────────────────────────────────
-
-interface CreateUnitBody {
-  registration: string;
-  vehicleClass?:  string;
-  bodyCategory?: string;
-  gvwClass?: string;
-  bodyType?: string;
-  onboardEquipment?: string[];
-  status?:       string;
-  notes?:        string;
-  yardLocation?: string;
-  heightM?:      number | null;
-  widthM?:       number | null;
-  lengthM?:      number | null;
-  axleLoadT?:    number | null;
-}
-
-interface PatchUnitBody {
-  registration?: string;
-  vehicleClass?:  string;
-  bodyCategory?: string;
-  gvwClass?: string;
-  bodyType?: string;
-  onboardEquipment?: string[];
-  status?:        string;
-  notes?:         string;
-  yardLocation?:  string;
-  heightM?:       number | null;
-  widthM?:        number | null;
-  lengthM?:       number | null;
-  axleLoadT?:     number | null;
-}
-
-// ── Fleet Trailers ───────────────────────────────────────────────────────────
-
-interface CreateTrailerBody {
-  registration: string;
-  trailerType?:   string;
-  bodyType?:      string;
-  trailerLength?: string;
-  decks?:         number;
-  compartments?:  number | null;
-  onboardEquipment?: string[];
-  status?:       string;
-  notes?:        string;
-  yardLocation?: string;
-  heightM?:      number | null;
-  widthM?:       number | null;
-  lengthM?:      number | null;
-  axleLoadT?:    number | null;
-}
-
-interface PatchTrailerBody {
-  registration?: string;
-  trailerType?:   string;
-  bodyType?:      string;
-  trailerLength?: string;
-  decks?:         number;
-  compartments?:  number | null;
-  onboardEquipment?: string[];
-  status?:        string;
-  notes?:         string;
-  yardLocation?:  string;
-  heightM?:       number | null;
-  widthM?:        number | null;
-  lengthM?:       number | null;
-  axleLoadT?:     number | null;
-}
+import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
+import {
+  CreateFleetUnitSchema, PatchFleetUnitSchema,
+  CreateFleetTrailerSchema, PatchFleetTrailerSchema,
+} from "../schemas/fleet.js";
 
 function legacyUnitClass(value: unknown) {
   const source = typeof value === "string" ? value.trim() : "";
@@ -140,10 +74,11 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /fleet/units ────────────────────────────────────────────────────
   app.post("/fleet/units", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as CreateUnitBody;
+    const parsed = parseBody(CreateFleetUnitSchema, request.body);
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
+    const body = parsed.data;
     const { companyId } = request.user!;
 
-    if (!body.registration?.trim()) return badRequest(reply, "BAD_REQUEST", "Registration is required");
     const legacy = legacyUnitClass(body.vehicleClass);
     const bodyCategory = (body.bodyCategory ?? legacy.bodyCategory).trim();
     const gvwClass = (body.gvwClass ?? legacy.gvwClass).trim();
@@ -182,7 +117,9 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.patch("/fleet/units/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseIdParam(request.params);
     if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
-    const body = request.body as PatchUnitBody;
+    const parsed = parseBody(PatchFleetUnitSchema, request.body);
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
+    const body = parsed.data;
     const { companyId } = request.user!;
 
     const unit = await prisma.fleetUnit.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
@@ -240,6 +177,24 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.status(204).send();
   });
 
+  // ── GET /fleet/trailers/lookup?reg= ──────────────────────────────────────
+  // Driver-accessible (no planner role): the driver app checks a hooked-up
+  // trailer's registration against the company fleet at vehicle setup, and
+  // asks "contractor or third party?" when it is not ours.
+  app.get("/fleet/trailers/lookup", { preHandler: authenticate }, async (request, reply) => {
+    const { companyId } = request.user!;
+    const q = request.query as { reg?: string };
+    const reg = q.reg?.trim().toUpperCase() ?? "";
+    if (!reg || reg.length > 20) return badRequest(reply, "BAD_REQUEST", "reg query parameter is required (max 20 chars)");
+
+    const trailer = await prisma.fleetTrailer.findFirst({
+      where:  { companyId, registration: reg, status: { not: "deleted" } },
+      select: { id: true, registration: true, bodyType: true, trailerType: true, status: true },
+    });
+
+    return reply.send({ known: trailer !== null, trailer });
+  });
+
   // ── GET /fleet/trailers ──────────────────────────────────────────────────
   app.get("/fleet/trailers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const { companyId } = request.user!;
@@ -259,10 +214,11 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
   // ── POST /fleet/trailers ─────────────────────────────────────────────────
   app.post("/fleet/trailers", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
-    const body = request.body as CreateTrailerBody;
+    const parsed = parseBody(CreateFleetTrailerSchema, request.body);
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
+    const body = parsed.data;
     const { companyId } = request.user!;
 
-    if (!body.registration?.trim()) return badRequest(reply, "BAD_REQUEST", "Registration is required");
     const bodyType = (body.bodyType ?? legacyTrailerType(body.trailerType)).trim();
     if (!bodyType) return badRequest(reply, "BAD_REQUEST", "Trailer body type is required");
     if (!isBodyType(bodyType)) return badRequest(reply, "BAD_REQUEST", "Trailer body type is invalid");
@@ -272,7 +228,9 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
       data: {
         companyId,
         registration: body.registration.trim().toUpperCase(),
-        trailerType:   body.trailerType?.trim() || bodyType,
+        // trailerType is a legacy display alias — always persist the canonical
+        // body type so token-matching algorithms never see free-typed values
+        trailerType:   bodyType,
         bodyType,
         trailerLength: body.trailerLength?.trim() ?? "",
         decks:         body.decks ?? 1,
@@ -295,7 +253,9 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.patch("/fleet/trailers/:id", { preHandler: [authenticate, requireRole("company_owner", "planner")] }, async (request, reply) => {
     const id   = parseIdParam(request.params);
     if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
-    const body = request.body as PatchTrailerBody;
+    const parsed = parseBody(PatchFleetTrailerSchema, request.body);
+    if (!parsed.ok) return validationFailed(reply, parsed.errors);
+    const body = parsed.data;
     const { companyId } = request.user!;
 
     const trailer = await prisma.fleetTrailer.findFirst({ where: { id, companyId, status: { not: "deleted" } } });
@@ -308,7 +268,9 @@ export async function fleetRoutes(app: FastifyInstance, prisma: PrismaClient) {
       where: { id },
       data: {
         registration: body.registration?.trim().toUpperCase() ?? trailer.registration,
-        trailerType:   body.trailerType?.trim()   ?? trailer.trailerType,
+        // when the body type changes, the legacy trailerType alias follows it —
+        // this self-heals old rows whose trailerType was free-typed
+        trailerType:   body.bodyType !== undefined && bodyType ? bodyType : trailer.trailerType,
         bodyType,
         trailerLength: body.trailerLength?.trim() ?? trailer.trailerLength,
         decks:         body.decks                 ?? trailer.decks,

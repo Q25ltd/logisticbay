@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CLAIMABLE_TRAILER_OWNERSHIPS } from "../constants/fleetVocab.js";
 
 const CheckItemSchema = z.object({
   key:    z.string().max(64),
@@ -16,6 +17,10 @@ export const CreateShiftSchema = z.object({
 export const CreateSegmentSchema = z.object({
   truckReg:           z.string().max(64).min(1, "Truck registration is required"),
   trailerReg:         z.string().max(64).optional(),
+  // The driver's answer to the app's "this trailer is not in your company
+  // fleet" prompt — only claimable values; "company"/"unregistered" are set
+  // server-side from the fleet lookup.
+  trailerOwnership:   z.enum(CLAIMABLE_TRAILER_OWNERSHIPS).optional(),
   vehicleClass:       z.string().max(64).optional(),
   odometerStart:      z.number().int().min(0).optional(),
   truckChecks:        z.array(CheckItemSchema).optional(),

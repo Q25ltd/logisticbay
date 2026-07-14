@@ -319,6 +319,17 @@
 
 ### Fleet management
 
+- [x] Should `routes/fleet.ts` and `routes/locations.ts` get Zod input validation? (found 2026-07-13)
+      **Fleet: DONE 2026-07-14** under the four-intake-gates rule (`api/src/schemas/fleet.ts` —
+      shape/caps/status enums/dimension bounds; taxonomy checks already existed in the routes).
+      **Locations: still open** — same principle applies, needs a schema matched to the web form.
+
+- [ ] Mobile follow-up (2026-07-14): the driver app should call `GET /fleet/trailers/lookup?reg=`
+      at vehicle setup and, when `known: false`, prompt "this trailer is not in your company
+      fleet — contractor or third party?" and send `trailerOwnership` with the segment.
+      Until then, unknown regs are stored as `unregistered` and surfaced via the segment
+      response `warning`. (Mobile is a separate repo/session.)
+
 - [ ] Who can mark a vehicle as VOR (vehicle off road)?
 
 - [ ] When a vehicle is marked VOR, does the system automatically prevent it being assigned?
