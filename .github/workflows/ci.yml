@@ -49,6 +49,9 @@ jobs:
       - name: Check vocab sync
         run: npm run check:vocab
 
+      - name: Check dictionary vs schema
+        run: npm run check:docs
+
       - name: Apply migrations
         run: cd api && npx prisma migrate deploy
 

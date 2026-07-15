@@ -1,7 +1,7 @@
 # LogisticBay — Agent Instructions
 
 > Read this file first, every session, no exceptions.
-> Last updated: 2026-06-06
+> Last updated: 2026-07-15
 
 ---
 
@@ -64,6 +64,46 @@ Do not wait to be asked. Do this automatically before saying "done".
 ---
 
 ## Mandatory rules
+
+### Anti-drift — the four-intake-gates rule is the system idea. Never leave it.
+
+LogisticBay has ONE core idea (ARCHITECTURE.md § Four intake gates): **all data is
+born at exactly four forms** — public job form (PRF), internal job form (CJP),
+driver registration, unit/trailer registration. Everything else only manipulates
+that data. Every feature, field, check, and algorithm must trace back to it.
+These rules exist because agents repeatedly invented data and the system then
+checked false information (see DEVLOG 2026-07-14):
+
+1. **Never create a schema column without a form that writes it.** A column no
+   intake form (or server-side derivation from form data) populates is a
+   phantom — algorithms will read its default and call it truth. If a feature
+   needs a new fact, add the form field FIRST, in the same effort.
+2. **Never make an algorithm consume a field without proving the write path.**
+   Before reading `x.field` in any check/candidate/readiness/proposal code,
+   grep for who WRITES it and confirm a form feeds it. If nothing does, the
+   algorithm must report **unknown** — never assume, default, or fabricate.
+3. **Never duplicate a concept under a new name.** Before adding any field,
+   check DATA_DICTIONARY.md AND the schema for an existing home (the entrance
+   pin already lived in `lat`/`lng` when someone invented `gateLat`). One
+   concept, one name, one column.
+4. **No current-state snapshots outside STATUS.md.** Sentences like "currently
+   not written", "not yet implemented", "X does not exist" rot silently.
+   STATUS.md is the ONLY file allowed to describe what is built; other docs
+   must point to it instead of asserting state.
+5. **Docs may be stale — code and schema win.** If a doc contradicts the code,
+   the doc is wrong: fix the doc in the same session and note it in DEVLOG.
+   Never "fix" code to match a stale doc claim.
+6. **Removed things get tombstones, not silence.** When a model/column/file is
+   removed, its DATA_DICTIONARY entry becomes a ~~strikethrough~~ (REMOVED —
+   what replaced it) note in the same commit, and every live doc mentioning it
+   gets swept (`grep -rn "<name>" *.md`).
+7. **`npm run check:docs` is a gate.** It mechanically diffs DATA_DICTIONARY.md
+   against `schema.prisma` — a documented-but-nonexistent model or field fails
+   the build. Run it with the other gates before every commit.
+8. **Test fixtures must be form-shaped.** Create test data the way the intake
+   forms do (job-level fields, bare stops) — never write directly to columns
+   production code cannot write, or tests will stay green while the feature is
+   dead in production.
 
 ### Field naming
 Before naming any new field, state, variable, or JSON key — check **DATA_DICTIONARY.md** first.
@@ -136,7 +176,7 @@ Every Prisma read filters by `companyId` from the JWT. Every write includes `com
 Delete it. Git history is the archive. A `//` followed by what looks like a former code line, or a `/* … */` wrapping a function body, fails review automatically.
 
 ### One status string registry
-Every status value (`"draft"`, `"in_progress"`, `"cancelled"`, etc.) comes from a const exported from one file per concept. Magic strings in route handlers are forbidden. Job statuses live in `api/src/sync/sync.constants.ts`; run statuses in `api/src/sync/runStatuses.ts` (once TASK 4.5 lands).
+Every status value (`"draft"`, `"in_progress"`, `"cancelled"`, etc.) comes from a const exported from one file per concept. Magic strings in route handlers are forbidden. Job statuses live in `api/src/constants/loadVocab.ts` (`JOB_PLANNING_STATUSES` — planner-set + reconciler-derived split); run statuses in `api/src/sync/runStatuses.ts`; execution states in `loadVocab.ts` (`EXECUTION_STATES`); fleet statuses + trailer ownership in `api/src/constants/fleetVocab.ts`.
 
 ### One soft-delete convention
 A model is soft-deleted via `deletedAt: DateTime?` (preferred) OR `status: 'deleted'` — never both, never invent a third. `RunAssignment.removedAt` is grandfathered; do not copy that name on new models. New models use `deletedAt`. Every list/get query must filter `deletedAt: null` (or equivalent) — this is non-negotiable.
@@ -145,6 +185,7 @@ A model is soft-deleted via `deletedAt: DateTime?` (preferred) OR `status: 'dele
 ```bash
 npm run typecheck       # must exit 0
 npm run check:vocab     # must exit 0
+npm run check:docs      # must exit 0 — DATA_DICTIONARY vs schema.prisma
 npm test --prefix api   # must exit 0
 npx knip                # no NEW unused exports vs baseline
 ```
@@ -181,5 +222,5 @@ Failing any of 1–6 means the task is not done.
 | `branchId` on Job and Run | No Branch model in schema. All at Company level. Do NOT add `branchId` to queries. |
 | `job_creator` role | Not enforced in routes. Only `company_owner` and `planner` used in `requireRole`. |
 | `manager` role | Role string exists, no route guards use it. |
-| Job statuses `planned`, `partially_collected`, `partially_delivered`, `attention_needed` | Not yet implemented. Current set: `draft`, `pending_review`, `ready_to_plan`, `in_progress`, `completed`, `cancelled`. |
+| Job status vocabulary | FULLY implemented — see `loadVocab.ts` `JOB_PLANNING_STATUSES`: planner-set (`draft`, `pending_review`, `ready_to_plan`, `in_planning`, `planned`, `cancelled`) + reconciler-derived (`in_execution`, `partially_collected`, `collected`, `partially_delivered`, `completed`, `attention_needed`). Only the `planned` transition trigger (set when all stops assigned, D3.2) is still deferred. |
 | Run statuses `at_collection`, `loading`, `in_transit`, `at_delivery`, `failed` | Not yet implemented. Current set: `draft`, `assigned`, `in_progress`, `completed`, `cancelled`. |

@@ -1,6 +1,6 @@
 # LogisticBay — Data Dictionary
 
-> Last updated: 2026-05-27 (added workPattern, basePostcode, baseLat, baseLng to DriverProfile; added PlanningDriver response type; added Planning API endpoint table). Source of truth: `api/prisma/schema.prisma`.
+> Last updated: 2026-07-15 (doc-integrity pass: removed dead JobRequest sections + plannedDate; form mapping unified to Job/JobPart; missing scalars documented). Source of truth: `api/prisma/schema.prisma` — verified by `npm run check:docs`.
 
 This document is the authoritative reference for every field that LogisticBay collects, stores, or processes. Fields are grouped by database model or logical data group. For each field the table shows: its column/key name, data type, whether it is required, the allowed values or format, and a plain-English description. JSON blob sub-fields are expanded into individual rows. Enum values list every known option. Multi-select chip arrays list every choosable value.
 
@@ -202,9 +202,6 @@ Table: `FleetTrailer`
 | attachedUnitId | Int? | No | FK → FleetUnit.id | Tractor unit this trailer is currently attached to |
 | linkedJobId | Int? | No | FK → Job.id | Job this trailer is currently allocated to |
 | yardLocation | String? | No | Free text | Current yard or bay location |
-| loadStatus | String | Yes | `empty` \| `loaded_standing` \| `loaded_with_driver`, default `empty` | Standing load state — updated by execution events, never set manually |
-| standingNote | String? | No | Free text | Note about what load the trailer is carrying while standing |
-| standingRunId | Int? | No | FK → Run.id | Run that left the load standing on this trailer |
 | createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
 | updatedAt | DateTime | Yes | ISO 8601 | Last update timestamp |
 
@@ -227,8 +224,6 @@ Table: `SavedLocation`
 | postcode | String? | No | Postcode string | Royal Mail postcode |
 | lat | Float? | No | Decimal degrees | Geographical latitude of the site (building centroid or entrance) |
 | lng | Float? | No | Decimal degrees | Geographical longitude of the site |
-| gateLat | Float? | No | Decimal degrees | Latitude of the specific truck gate / entrance point |
-| gateLng | Float? | No | Decimal degrees | Longitude of the specific truck gate / entrance point |
 | contactName | String? | No | Free text | Name of the on-site contact |
 | contactPhone | String? | No | Phone string | Phone number for the on-site contact |
 | instructions | String? | No | Free text | Gate codes, access instructions shown to the driver |
@@ -289,7 +284,6 @@ The internal `CreateJobPage` (CJP) form writes directly to `Job`. The public `Pu
 | status | String | Yes | `draft` \| `pending_review` \| `ready_to_plan` \| `in_planning` \| `planned` \| `in_progress` \| `completed` \| `cancelled`, default `draft` | Current job status. `pending_review` = PRF submission awaiting planner accept; `ready_to_plan` = accepted / confirmed, ready for run building; `in_planning` = run being built; `planned` = assigned to a run; `in_progress` = driver has started; `completed` = all stops done; `cancelled` = voided |
 | priority | String | Yes | `low` \| `normal` \| `high` \| `urgent`, default `normal` | Job planning priority |
 | jobTitle | String? | No | Free text | Optional short human-readable job title shown in lists and notifications |
-| plannedDate | DateTime? | No | ISO 8601 date | Date the job is planned for |
 | serviceType | String? | No | `delivery` \| `collection` \| `collection_delivery` \| `transfer` \| `trunking` \| `sameday` \| `next_day` \| `economy` \| `last_mile` \| `first_mile` \| `drayage` \| `container_haulage` \| `intermodal` \| `cross_dock` \| `warehousing` \| `returns` \| `abnormal` \| `removals` \| `courier` | Service classification (see `vehicleTaxonomy.ts` SERVICE_TYPES) |
 | jobType | String? | No | `ftl` \| `ltl` \| `groupage` \| `multi_drop` \| `multi_collection` \| `milk_run` \| `return_load` \| `trunking` \| `shunt` \| `pallet_network` \| `fcl` \| `lcl` \| `sameday_express` \| `abnormal` \| `subcontracted` | Load / service type classification (see `vehicleTaxonomy.ts` JOB_TYPES) |
 | canSplitShipment | String | Yes | `must_stay_together` \| `can_split_partially` \| `can_split_freely`, default `must_stay_together` | Whether the shipment can be split across multiple vehicles |
@@ -326,7 +320,7 @@ The internal `CreateJobPage` (CJP) form writes directly to `Job`. The public `Pu
 | weighbridgeRequired | Boolean | Yes | Default: `false` | Whether a weighbridge ticket must be obtained |
 | securingRequirements | Json? | No | String array | Load securing equipment or methods required |
 | specialRequirements | Json? | No | String array | Special requirement flags (e.g. `fragile`, `high_value`, `oversized`, `dangerous_goods`) |
-| loadData | Json? | No | See **Job — loadData blob** below | Type-specific goods sub-fields (palletLines, cageCount, container details, etc.). Populated on accept from `JobRequest.loadData`. |
+| loadData | Json? | No | See **Job — loadData blob** below | Type-specific goods sub-fields (palletLines, cageCount, container details, etc.). Written directly by both intake forms. |
 | vehicleCategory | String? | No | `van` \| `luton_van` \| `pickup` \| `rigid` \| `tractor` \| `drawbar` \| `heavy_haulage` \| `spmt` \| `plant` | Required vehicle body category — matches `FleetUnit.bodyCategory` |
 | bodyTypes | Json? | No | String array — values match `FleetUnit.bodyType` | Required body type(s) — array because a job may accept multiple |
 | minGvwClass | String? | No | `3.5t` \| `7.5t` \| `12t` \| `18t` \| `26t` \| `32t` \| `44t` | Minimum GVW class required — matches `FleetUnit.gvwClass` |
@@ -370,7 +364,7 @@ The internal `CreateJobPage` (CJP) form writes directly to `Job`. The public `Pu
 
 ## Job — loadData blob
 
-Stored in `Job.loadData` (Json?). Populated on accept from `JobRequest.loadData` and also written by `CreateJobPage` for the public-form path. Sub-field shape is identical to `JobRequest.loadData` — see that section for full field documentation. Contains type-specific sub-details (palletLines, cage count, container details, machinery specs, etc.).
+Stored in `Job.loadData` (Json?). Written directly by both intake forms (CJP and PRF share the builder). Contains type-specific sub-details (palletLines, cage count, container details, machinery specs, etc.).
 
 > **Note:** Top-level load fields (`goodsType`, `goodsDescription`, `quantity`, `quantityUnit`, `weight`, `tempControlled`, `hazardClass`, etc.) are **direct columns on Job**, not stored inside this blob. `loadData` only holds the goods-type-specific repeater / sub-detail fields.
 
@@ -401,15 +395,11 @@ One row per physical piece of work on a job (collection, delivery, etc.). Multip
 | locationTextSnapshot | String | Yes | Free text, default `""` | Single-line address snapshot for display |
 | lat | Float? | No | Decimal degrees | Latitude of the stop entrance |
 | lng | Float? | No | Decimal degrees | Longitude of the stop entrance |
-| gateLat | Float? | No | Decimal degrees | Gate-specific latitude |
-| gateLng | Float? | No | Decimal degrees | Gate-specific longitude |
-| coordinateVerified | Boolean | Yes | Default: `false` | Whether the coordinates have been manually verified by a planner |
 | timeWindowStart | DateTime? | No | ISO 8601 datetime | Earliest acceptable arrival datetime |
 | timeWindowEnd | DateTime? | No | ISO 8601 datetime | Latest acceptable arrival datetime |
 | bookedTime | DateTime? | No | ISO 8601 datetime | Exact booked appointment time |
 | earliestArrivalMinutes | Int? | No | Minutes from shift start | Earliest arrival expressed as minutes from shift start |
 | unloadingAllowanceMinutes | Int? | No | Minutes | Estimated time allowed for loading/unloading at this stop |
-| standingChargeNote | String | Yes | Free text, default `""` | Note relating to any standing charge at this stop |
 | contactName | String | Yes | Free text, default `""` | On-site contact name |
 | contactPhone | String | Yes | Phone string, default `""` | On-site contact phone |
 | contactEmail | String | Yes | Email string, default `""` | On-site contact email |
@@ -432,13 +422,6 @@ One row per physical piece of work on a job (collection, delivery, etc.). Multip
 | exchangeCollectQty | Decimal? | No | Positive number | Number of empty units to collect back as part of an equipment exchange |
 | exchangeUnit | String | Yes | `pallets` \| `roll_cages` \| `stillages` \| `ibc_tanks` \| `other`, default `""` | Type of equipment being exchanged |
 | loadReadiness | String | Yes | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure`, default `""` | Whether the load will be ready when the driver arrives (collection stops) |
-| stopGoodsType | String? | No | Free text | Type of goods being handled at this specific stop (drives trailer compatibility checks) |
-| stopWeight | Decimal? | No | Positive number (kg) | Weight of the goods at this specific stop |
-| tempControlled | Boolean | Yes | Default: `false` | Whether the goods at this stop require temperature control |
-| tempRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range if temperature-controlled |
-| hazardous | Boolean | Yes | Default: `false` | Whether the goods at this stop are hazardous |
-| hazardClass | String? | No | ADR class string (e.g. `Class 3`) | ADR hazard class for the goods at this stop |
-| oversized | Boolean | Yes | Default: `false` | Whether the load at this stop is oversized |
 | heightRestriction | String | Yes | Free text (e.g. `4.2m`), default `""` | Height restriction at this specific stop |
 | weightRestriction | String | Yes | Free text (e.g. `7.5t`), default `""` | Weight restriction at this specific stop |
 | lengthRestriction | String | Yes | Free text (e.g. `18m`), default `""` | Length restriction at this specific stop (maximum vehicle length) |
@@ -496,7 +479,6 @@ Execution container for a driver's day. Independent of individual jobs — jobs 
 | assignedDriverId | Int? | No | FK → DriverProfile.id | Driver assigned to this run |
 | assignedTruckId | Int? | No | FK → FleetUnit.id | Truck assigned to this run |
 | assignedTrailerId | Int? | No | FK → FleetTrailer.id | Trailer assigned to this run |
-| plannedDate | DateTime? | No | ISO 8601 date | Date the run is planned for |
 | estimatedStartTime | String? | No | HH:MM | Estimated start time |
 | estimatedEndTime | String? | No | HH:MM | Estimated end time |
 | actualStartTime | DateTime? | No | ISO 8601 | Actual start time recorded by driver |
@@ -580,6 +562,7 @@ Append-only immutable custody ledger. Every load movement (collect, deliver, tra
 | notes | String? | No | Free text | Notes attached to this transaction |
 
 ---
+| deletedAt | DateTime? | No | ISO 8601 | Soft-delete timestamp (custody rows are never hard-deleted — SAFETY §7) |
 
 ## Load-movement vocabulary
 
@@ -639,6 +622,8 @@ Table: `JobExecutionEvent`
 | createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
 
 ---
+| actorUserId | Int? | No | FK → User.id | User who recorded the event (planner actions) |
+| driverProfileId | Int? | No | FK → DriverProfile.id | Driver the event belongs to |
 
 ## JobAudit
 
@@ -659,6 +644,7 @@ Job-specific append-only audit log. For all other entity types use `AuditLog`.
 | createdAt | DateTime | Yes | ISO 8601 | Timestamp of the action |
 
 ---
+| field | String | Yes | Field name, default `""` | Specific field the audit entry refers to (empty = whole-record action) |
 
 ## Shift / ShiftSegment / DeliveryTask
 
@@ -877,267 +863,16 @@ Table: `ClientRequestLink`
 
 ---
 
-## JobRequest — Top-level fields (denormalized columns)
+## ~~JobRequest~~ (REMOVED — PRF writes directly to Job + JobPart)
 
-Table: `JobRequest`
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| id | Int | Yes (auto) | Auto-increment PK | Surrogate primary key |
-| companyId | Int | Yes | FK → Company.id | Company that received the request |
-| requestLinkId | Int? | No | FK → ClientRequestLink.id | Link used to submit the request |
-| customerId | Int? | No | FK → Customer.id | Customer matched / linked after planner review |
-| source | String | Yes | `internal_manual` \| `client_request_link`, default `client_request_link` | How the request entered the system |
-| status | String | Yes | `pending_review` \| `accepted` \| `rejected` \| `cancelled`, default `pending_review` | Current review status |
-| customerName | String | Yes | Free text, default `""` | Denormalised customer company name (from requesterData) |
-| contactName | String | Yes | Free text, default `""` | Denormalised contact name (from requesterData) |
-| contactPhone | String | Yes | Phone string, default `""` | Denormalised contact phone (from requesterData) |
-| contactEmail | String | Yes | Email string, default `""` | Denormalised contact email (from requesterData) |
-| pricingType | String | Yes | `quote_required` \| `agreed_rate_exists` \| `contract_rate_exists` \| `to_be_confirmed`, default `quote_required` | Pricing arrangement (server always forces `quote_required` for public form submissions) |
-| internalOfficeNotes | String? | No | Free text | Internal notes added by office staff; never exposed on the public form |
-| reviewedAt | DateTime? | No | ISO 8601 | Timestamp of the accept/reject decision |
-| reviewedBy | Int? | No | FK → User.id | User who reviewed the request |
-| rejectionReason | String? | No | `no_capacity` \| `outside_service_area` \| `incomplete_information` \| `pricing_issue` \| `duplicate_request` \| `other` | Reason code for rejection |
-| reviewNotes | String? | No | Free text | Planner's free-text notes on their decision |
-| reviewData | Json? | No | `{ plannerNotes: string }` | Populated when reviewed: planner notes recorded at accept time |
-| convertedJobId | Int? | No | FK → Job.id (unique) | Job created when the request was accepted |
-| createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
-| updatedAt | DateTime | Yes | ISO 8601 | Last update timestamp |
-
----
-
-## JobRequest — requesterData blob
-
-Stored in `JobRequest.requesterData` (Json column, default `{}`).
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| customerCompanyName | String | Yes | Free text | Customer's company or organisation name |
-| contactName | String | Yes | Free text | Full name of the person submitting the request |
-| contactPhone | String | Yes | Phone string | Phone number for the submitting contact |
-| contactEmail | String | Yes | Email string | Email address for the submitting contact |
-| customerRef | String? | No | Free text | Customer's own internal reference / order number for the job |
-
----
-
-## JobRequest — stops blob (per stop — every field)
-
-Stored in `JobRequest.stops` (Json column, default `[]`). Each element in the array is a stop object with the following fields.
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| type | String | Yes | `collection` \| `delivery` \| `reload` \| `return` \| `waypoint` \| `other` | Category of this stop |
-| sequence | Number | Yes | Positive integer | 1-based position of the stop in the route |
-| siteName | String | Yes | Free text | Name of the company or site at this address |
-| street | String | Yes | Free text | First line of the street address |
-| addressLine2 | String? | No | Free text | Second line of the address (unit, building, etc.) |
-| town | String | Yes | Free text | Town or city |
-| countyRegion | String? | No | Free text | County or region |
-| postcode | String | Yes | Postcode string | Royal Mail postcode |
-| country | String? | No | ISO 3166-1 alpha-2 code, default `GB`. Supported: `GB` `AT` `BE` `BG` `HR` `CY` `CZ` `DK` `EE` `FI` `FR` `DE` `GR` `HU` `IE` `IT` `LV` `LT` `LU` `MT` `NL` `PL` `PT` `RO` `SK` `SI` `ES` `SE` | Country — stored as ISO code, displayed as full name in UI |
-| lat | Number | Yes | Decimal degrees | Latitude of the exact truck entrance / gate |
-| lng | Number | Yes | Decimal degrees | Longitude of the exact truck entrance / gate |
-| navigationInstructions | String | Yes | Free text | Gate codes, barrier procedures, which entrance to use |
-| referenceNumber | String? | Required for `collection` and `delivery` | Free text | Warehouse release number (collection) or goods-in booking number (delivery) |
-| contactName | String? | No | Free text | On-site contact person |
-| contactPhone | String? | No | Phone string | On-site contact phone number |
-| contactEmail | String? | No | Email string | On-site contact email address |
-| bookingRequired | Boolean? | No | `true` \| `false` | Whether advance booking is required before the driver arrives |
-| bookingRef | String? | No | Free text | Pre-arranged booking reference number |
-| openingHours | String? | No | Free text (e.g. `Mon–Fri 06:00–18:00`) | Site opening hours |
-| siteRestrictions | String[]? | No | Free text array | Legacy field for site restrictions (use accessRequirements in new submissions) |
-| date | String | Yes | `YYYY-MM-DD` | Date of the collection or delivery |
-| earliestArrivalTime | String | Yes | `HH:MM` | Earliest acceptable arrival time |
-| latestArrivalTime | String | Yes | `HH:MM` | Latest acceptable arrival time |
-| bookedTime | String? | No | `HH:MM` | Fixed appointment time if the site gave one |
-| unloadingAllowanceMinutes | Number | Yes | Positive integer (minutes) | Estimated time needed for loading or unloading |
-| quantityRequired | Number? | No | Positive integer | Number of items/units being collected or delivered at this specific stop (not the total job quantity). Maps to `JobPart.quantityRequired`. |
-| quantityUnit | String? | No | `pallets` \| `roll_cages` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` | Unit of measure for the per-stop quantity. Maps to `JobPart.quantityUnit`. |
-| stopNotes | String? | No | Free text | Free-text notes specific to this stop — anything not covered by other fields (e.g. partial loads, bay numbers, wait instructions) |
-| exchangeDropQty | Number? | No | Positive integer | Number of full units (pallets, cages, etc.) to drop at this stop as part of an exchange |
-| exchangeCollectQty | Number? | No | Positive integer | Number of empty units to collect back from this stop as part of an exchange |
-| exchangeUnit | String? | No | `pallets` \| `roll_cages` \| `stillages` \| `ibc_tanks` \| `other` | Type of equipment being exchanged (only present when exchangeDropQty or exchangeCollectQty is set) |
-| handlingMethods | String[]? | No | `forklift` \| `loading_bay` \| `hiab` \| `moffett` \| `tail_lift` \| `pump_truck` \| `handball` \| `overhead_crane` \| `magnetic_crane` \| `side_loading` \| `roro` \| `tipper_discharge` \| `grab` \| `pump_discharge` \| `walking_floor` \| `conveyor` \| `other` (or `other: <description>` when free-text is provided) | Methods used to load or unload the vehicle at this stop. When "other" is selected with a description, the value is serialised as `other: <free text>` |
-| handlingMethodOther | String? | No | Free text | Description of the handling method when `other` is selected in handlingMethods. Substituted into the array as `other: <value>` on submission |
-| proofRequirements | String[]? | No | `signature_required` \| `photos_required` \| `pod_required` \| `weighbridge_ticket_required` \| `seal_number_required` \| `name_required` | Proof documents or signatures required at this stop |
-| accessRequirements | String[]? | No | `narrow_road` \| `height_restriction` \| `weight_restriction` \| `length_restriction` \| `no_artic_access` \| `no_trailer_access` \| `residential_area` \| `security_checkin` \| `ppe_required` \| `ppe_safety_boots` \| `ppe_hi_vis` \| `ppe_hard_hat` \| `ppe_gloves` \| `ppe_glasses` \| `driver_id_required` \| `do_not_arrive_early` \| `holding_area_required` \| `port_access` \| `airport_access` | Site access constraints. `ppe_required` is the top-level flag; `ppe_*` sub-items record specific PPE needed. |
-| loadReadiness | String? | No | `ready_now` \| `ready_at_booked_time` \| `still_being_prepared` \| `unsure` | Whether the load will be ready when the driver arrives (collection stops only) |
-| heightRestriction | String? | No | Free text (e.g. `4.2m`) | Height restriction value (only present when `height_restriction` is in accessRequirements). Maps to `JobPart.heightRestriction`. |
-| weightRestriction | String? | No | Free text (e.g. `7.5t`) | Weight restriction value (only present when `weight_restriction` is in accessRequirements). Maps to `JobPart.weightRestriction`. |
-| lengthRestriction | String? | No | Free text (e.g. `18m`) | Length restriction value (only present when `length_restriction` is in accessRequirements). Maps to `JobPart.lengthRestriction`. |
-| entranceDistanceFromPostcode | Number? | Set server-side | Decimal miles or `null` | Distance in miles between the submitted entrance pin and the centroid of the given postcode (calculated on submission) |
-| entranceWarningLevel | String? | Set server-side | `ok` \| `warn` \| `danger` | Server-computed flag: `warn` if pin is >1 mile from postcode; `danger` if >3 miles |
-
----
-
-## JobRequest — loadData blob
-
-Stored in `JobRequest.loadData` (Json column, default `{}`). Copied verbatim to `Job.loadData` on accept.
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| goodsType | String | Yes | `pallets` \| `roll_cages` \| `machinery` \| `building_materials` \| `food_refrigerated` \| `bulk_material` \| `liquid_bulk` \| `steel_long` \| `vehicles` \| `containers` \| `general` \| `other` | High-level category of goods being transported |
-| goodsTypeOther | String? | No | Free text | Description of goods when goodsType = `other` |
-| goodsDescription | String | Yes | Free text, min 15 characters | Detailed description of what is being transported |
-| quantity | Number | Yes | Positive number | Quantity of goods |
-| unit | String | Yes | `pallets` \| `roll_cages` \| `ldm` \| `tonnes` \| `kg` \| `bags` \| `items` \| `loads` \| `litres` \| `cubic_metres` \| `other` (or custom string when `other` selected) | Unit of measure for the quantity. `ldm` = loading metres (European road freight standard) |
-| estimatedWeight | Number? | Yes (validated) | Positive number (kg) | Estimated total weight of the load in kilograms |
-| palletLines | Array? | No | Array of `{ type?, typeOther?, count?, dimL?, dimW? }` — see below | Multi-type pallet repeater. Replaces the old single-type `palletType`/`palletCount`/`palletDimL`/`palletDimW` fields. Each entry represents one pallet type present in the load. `type` values: `euro` \| `uk` \| `half` \| `chep` \| `other`. When `type = "other"`: `typeOther` is a free-text description, `dimL`/`dimW` are mm dimensions. Legacy jobs may still have the old single-type fields — forms restore them via the backward-compat path. |
-| weightPerUnit | Number? | No | Positive number (kg) | Gross weight per individual pallet or unit including packaging — required for tail lift and fork truck safety calculations |
-| stackable | Boolean? | No | `true` \| `false` | Whether pallets can be stacked (only when goodsType = `pallets` or unit = `pallets`) |
-| ispm15Required | Boolean? | No | `true` \| `false` | Whether all wood packaging must be ISPM-15 certified (heat-treated and marked HT) — only shown when any stop is outside GB |
-| cageCount | Number? | No | Positive integer | Number of roll cages / yorks (only when goodsType = `roll_cages`) |
-| cageFolded | Boolean? | No | `true` \| `false` | Whether the cages are folded / nested (only when goodsType = `roll_cages`) |
-| buildingMaterialType | String? | No | `bricks_blocks` \| `timber` \| `aggregates` \| `plasterboard` \| `roofing` \| `glass` \| `insulation` \| `pipes_ducting` \| `other` | Sub-type of building material (only when goodsType = `building_materials`) |
-| buildingMaterialPalletised | Boolean? | No | `true` \| `false` | Whether the building materials are palletised rather than loose |
-| buildingMaterialLongestItem | String? | No | Free text in metres (e.g. `6`) | Length of the longest single item (only when goodsType = `building_materials`) |
-| buildingMaterialWeatherSensitive | Boolean? | No | `true` \| `false` | Whether the load must be kept dry / covered during transit |
-| liquidProductType | String? | No | Free text (e.g. `Vegetable oil`) | Description of the liquid product (only when goodsType = `liquid_bulk`) |
-| liquidFoodGrade | Boolean? | No | `true` \| `false` | Whether the product requires a food-grade tanker (only when goodsType = `liquid_bulk`) |
-| generalPackagingType | String? | No | `palletised` \| `boxed` \| `loose` \| `shrink_wrapped` \| `other` | How the general goods are packaged (only when goodsType = `general`) |
-| generalPieceCount | Number? | No | Positive integer | Total number of individual pieces (only when goodsType = `general`) |
-| loadHeight | String? | No | Free text in metres (e.g. `2.4`) | Overall height of the loaded goods — applies to all goodsType values |
-| dimensions | String? | No | Free text (e.g. `4.5m × 2.2m × 3.1m`) | Physical dimensions — longest item length for `steel_long`; L×W×H for `machinery` |
-| machineryPieceWeight | Number? | No | Positive number (kg) | Weight of one individual piece of machinery (only when goodsType = `machinery`) |
-| machineryLiftingPoints | Boolean? | No | `true` \| `false` | Whether the machine has lifting points / lifting eyes |
-| machinerySkidMounted | Boolean? | No | `true` \| `false` | Whether the machine is skid-mounted |
-| craneRequired | Boolean? | No | `true` \| `false` | Whether a crane is needed on site (only when goodsType = `machinery`) |
-| steelPieceCount | Number? | No | Positive integer | Number of individual steel pieces (only when goodsType = `steel_long`) |
-| steelWidth | String? | No | Free text in metres (e.g. `2.4`) | Width of the widest piece (only when goodsType = `steel_long`) |
-| tippingRequired | Boolean? | No | `true` \| `false` | Whether tipping is required at delivery (only when goodsType = `bulk_material`) |
-| temperatureRange | String? | No | Free text (e.g. `2°C – 8°C`) | Required temperature range (only when goodsType = `food_refrigerated`) |
-| chilledFrozenAmbient | String? | No | `chilled` \| `frozen` \| `ambient` \| `dry` \| `wet` | Temperature / moisture classification of the load |
-| foodTempLogger | Boolean? | No | `true` \| `false` | Whether a continuous temperature data logger is required during transit |
-| foodCleanVehicle | Boolean? | No | `true` \| `false` | Whether a clean vehicle declaration must be provided before loading |
-| foodHaccp | Boolean? | No | `true` \| `false` | Whether HACCP (Hazard Analysis and Critical Control Points) compliance is required |
-| foodAllergenFree | Boolean? | No | `true` \| `false` | Whether the vehicle must be allergen / nut-free to prevent cross-contamination |
-| foodPreCooled | Boolean? | No | `true` \| `false` | Whether the trailer must be pre-cooled to the target temperature before loading |
-| vehicleCount | Number? | No | Positive integer | Number of vehicles to be transported (only when goodsType = `vehicles`) |
-| vehicleMakeModel | String? | No | Free text (e.g. `2019 Ford Transit Custom`) | Year, make and model of the vehicle(s) being transported |
-| vehicleKeysWithVehicle | Boolean? | No | `true` \| `false` | Whether keys will be with the vehicle (only when goodsType = `vehicles`) |
-| driveable | Boolean? | No | `true` \| `false` | Whether transported vehicles are driveable RORO (only when goodsType = `vehicles`) |
-| containerSize | String? | No | `20ft` \| `40ft` \| `45ft` \| `other` | Container size (only when goodsType = `containers`) |
-| containerSizeOther | String? | No | Free text | Description of container size when containerSize = `other` |
-| loadedOrEmpty | String? | No | `loaded` \| `empty` | Whether the container is loaded or empty (only when goodsType = `containers`) |
-| containerNumber | String? | No | Free text (e.g. `MSCU1234567`) | Container identification number |
-| containerIsoType | String? | No | `gp` \| `hc` \| `rf` \| `ot` \| `fr` \| `tk` \| `other` | ISO container type code. `gp` = general purpose dry, `hc` = high cube, `rf` = reefer/refrigerated, `ot` = open top, `fr` = flat rack, `tk` = tank container |
-| containerBookingRef | String? | No | Free text (e.g. `MSKU1234567`) | Port booking reference or container release number — required by the terminal to release the box. Without this the driver cannot uplift. |
-| containerTerminal | String? | No | Free text (e.g. `DP World London Gateway — Berth 3`) | Terminal name and berth where the container is to be collected or delivered |
-| containerCutOff | String? | No | ISO 8601 datetime | Port cut-off date and time — container must arrive before this or it misses the sailing |
-| containerSealNumber | String? | No | Free text (e.g. `ML-12345678`) | Customs seal number fitted at collection — recorded for customs purposes |
-| loadNotes | String? | No | Free text | Additional load-specific notes for the driver and planner |
-| canSplitShipment | String? | No | `must_stay_together` \| `can_split_partially` \| `can_split_freely` | Whether the shipment can be split across multiple vehicles |
-| securingRequirements | String[]? | No | `straps_required` \| `chains_required` \| `edge_protection_required` \| `sheets_required` \| `curtains_must_not_touch_load` \| `stanchions_required` \| `temperature_monitoring_required` | Load securing equipment or methods required |
-| isWaste | Boolean? | No | `true` \| `false` | Whether the goods are classified as controlled waste under the Environmental Protection Act 1990. A valid Waste Carrier Licence and Waste Transfer Note are legally required. |
-| ewcCode | String? | No | Free text (e.g. `15 01 01`) | European Waste Catalogue code identifying the waste type — must accompany the Waste Transfer Note |
-| wasteTrnNumber | String? | No | Free text (e.g. `WTN-2026-001`) | Waste Transfer Note document reference — must travel with the load |
-| adrProperShippingName | String? | No | Free text (e.g. `FLAMMABLE LIQUID, N.O.S.`) | Official ADR proper shipping name as required on transport documents — only when `dangerous_goods` selected |
-| adrSubsidiaryRisk | String? | No | Free text (e.g. `8`) | ADR subsidiary risk class — only present when the substance has a secondary hazard |
-| adrFlashPoint | String? | No | Free text in °C (e.g. `23`) | Flash point — required for Class 3 flammable liquids |
-| adrEmsCode | String? | No | Free text (e.g. `F-E, S-E`) | Emergency Schedule code — required for sea or multimodal moves involving dangerous goods |
-| adrEmergencyContact | String? | No | Free text (e.g. `CHEMTREC: +1-800-424-9300`) | 24-hour emergency response telephone number to appear on transport documents |
-| stgoCategory | String? | No | `cat1` \| `cat2` \| `cat3` \| `so` | Special Types General Order category for abnormal / indivisible loads. `cat1` = up to 44t, `cat2` = up to 80t, `cat3` = up to 150t, `so` = Special Order (>150t or non-standard). Affects route notifications, speed limits, and police escort requirements. |
-| movementOrderNumber | String? | No | Free text (e.g. `MO-2026-00123`) | Movement order reference issued by the relevant highways authority — required before movement of Cat 3 / SO loads |
-| subcontractingAllowed | String? | No | `yes` \| `with_approval` \| `no` | Whether the haulier may subcontract this job to another operator or use the spot market |
-| driverQualifications | Object? | No | See sub-fields below | Additional driver qualification or vetting requirements beyond standard CPC and licence |
-| driverQualifications.cscsRequired | Boolean? | No | `true` \| `false` | Whether the driver must hold a CSCS (Construction Skills Certification Scheme) card |
-| driverQualifications.bs7858Required | Boolean? | No | `true` \| `false` | Whether the driver must hold BS7858 security vetting clearance (airports, data centres, MOD sites) |
-| driverQualifications.dbsLevel | String? | No | `basic` \| `enhanced` | DBS (Disclosure and Barring Service) check level required |
-| crossBorderData | Object? | No | See sub-fields below | Cross-border customs and crossing data — only present when one or more stops are outside GB |
-| crossBorderData.shipperEori | String? | No | Free text (e.g. `GB123456789000`) | Exporter's Economic Operator Registration and Identification number — required for customs declarations |
-| crossBorderData.consigneeEori | String? | No | Free text (e.g. `DE987654321000`) | Importer's EORI number |
-| crossBorderData.hsCode | String? | No | Free text (e.g. `8703 23 19 00`) | Harmonised System commodity code — at least 6 digits. Used for customs declarations and tariff preference claims. |
-| crossBorderData.customsMovementType | String? | No | `t1` \| `t2` \| `t2f` \| `national` \| `unsure` | Customs transit procedure. `t1` = External Community Transit, `t2` = Internal Community Transit, `t2f` = Internal Transit (special territories), `national` = domestic only, `unsure` = planner to advise |
-| crossBorderData.incoterms | String? | No | `exw` \| `fca` \| `cpt` \| `cip` \| `dap` \| `dpu` \| `ddp` \| `fas` \| `fob` \| `cfr` \| `cif` | Incoterms 2020 trade term defining freight/insurance responsibility and risk transfer point |
-| crossBorderData.crossingRequired | Boolean? | No | `true` \| `false` | Whether a sea or tunnel crossing is required |
-| crossBorderData.crossingType | String? | No | `eurotunnel` \| `dover_calais` \| `dover_dunkirk` \| `harwich_hook` \| `hull_rotterdam` \| `roscoff_plymouth` \| `other` | Crossing route (only when crossingRequired = `true`) |
-| crossBorderData.crossingBookingRef | String? | No | Free text (e.g. `EU123456789`) | Customer-supplied crossing booking reference. Leave blank if the carrier books it. |
-
----
-
-## JobRequest — specialRequirementsData blob
-
-Stored in `JobRequest.specialRequirementsData` (Json column, default `{}`).
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| items | String[]? | No | `dangerous_goods` \| `fragile` \| `high_value` \| `oversized` \| `secure_transport_required` \| `escort_required` | Special requirement flags. **`temperature_controlled` / `temperature_monitored` are intentionally absent** — temperature is captured via `goodsType = food_refrigerated` + `chilledFrozenAmbient` in Section 3 to avoid duplicate signals. |
-| adrClass | String? | No | Free text (e.g. `Class 3 — Flammable liquids`) | ADR hazard class description (only when `dangerous_goods` selected) |
-| unNumber | String? | No | Free text (e.g. `UN 1993`) | UN dangerous goods number (only when `dangerous_goods` selected) |
-| packingGroup | String? | No | `I` \| `II` \| `III` | ADR packing group (only when `dangerous_goods` selected) |
-| hazardousQuantityKg | Number? | No | Positive number (kg) | Total quantity of dangerous goods in kilograms |
-| hazardousPaperworkAvailable | Boolean? | No | `true` \| `false` | Whether the customer will provide hazardous goods documentation |
-| oversizedWidth | String? | No | Free text in metres | Width of the oversized load |
-| oversizedHeight | String? | No | Free text in metres | Height of the oversized load |
-| oversizedLength | String? | No | Free text in metres | Length of the oversized load |
-
-> **Note:** The following ADR extended fields and STGO / movement order fields are stored in `loadData` (not in this blob): `adrProperShippingName`, `adrSubsidiaryRisk`, `adrFlashPoint`, `adrEmsCode`, `adrEmergencyContact`, `stgoCategory`, `movementOrderNumber`. This is a known inconsistency — they will be migrated to `specialRequirementsData` in a future cleanup.
-
----
-
-## JobRequest — transportRequirementsData blob
-
-Stored in `JobRequest.transportRequirementsData` (Json column, default `{}`).
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| plannerDecides | Boolean? | No | `true` \| `false`, default `true` | When `true` the planner selects the vehicle; when `false` the customer specifies requirements |
-| reqBodyCategory | String? | No | `tractor` \| `rigid` \| `van` \| `other` | Customer-requested vehicle body category (only when plannerDecides = `false`) |
-| reqBodyType | String? | No | `curtainsider` \| `flatbed` \| `box` \| `tipper` \| `fridge` \| `tanker` \| `other` | Customer-requested body type (only when plannerDecides = `false`) |
-| reqEquipment | String[]? | No | Equipment code strings (e.g. `tail_lift`, `hiab_crane`) | Specific equipment the customer requires on the vehicle |
-| trailerTypesAllowed | String[]? | No | Trailer type code strings | Trailer types the customer permits |
-
----
-
-## JobRequest — billingData blob
-
-Stored in `JobRequest.billingData` (Json column, default `{}`). Copied verbatim to individual billing columns on `Job` on accept (`purchaseOrderNumber`, `billingReference`, `declaredGoodsValue`, etc.).
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| pricingType | String? | No | `quote_required` \| `agreed_rate_exists` \| `contract_rate_exists` \| `to_be_confirmed` | Pricing arrangement selected by the customer (note: server always overrides to `quote_required` for public form submissions) |
-| declaredGoodsValue | Number? | Yes (validated) | Positive number (GBP) | Declared value of the goods for insurance / risk purposes |
-| currency | String? | No | ISO 4217 currency code (e.g. `GBP`) | Currency of the declared value |
-| purchaseOrderNumber | String? | No | Free text (e.g. `PO-2026-12345`) | Customer's purchase order number for their finance team |
-| billingReference | String? | No | Free text (e.g. `COST-CENTRE-123`) | Customer's billing reference or cost centre code |
-| vatRegistered | Boolean? | No | `true` \| `false` | Whether the customer is VAT registered |
-| vatNumber | String? | No | Free text (e.g. `GB 123 4567 89`) | Customer's VAT registration number |
-
----
-
-## JobRequest — notesData blob
-
-Stored in `JobRequest.notesData` (Json column, default `{}`). On accept, the `driverNoteChips`, `driverVisibleNotes`, and `safetyInstructions` values are written to direct columns on `Job`.
-
-The "Notes for driver" section was removed from the public intake form. Only `customerNotes` is collected from the customer (in the Section 1 optional block). Driver-specific fields are planner-managed only.
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| customerNotes | String? | No | Free text | Notes from the customer for the planner — collected in Section 1 (optional). Not shown to drivers. |
-| driverNoteChips | String[]? | No | `call_before_arrival` \| `report_to_security` \| `use_rear_entrance` \| `ppe_required` \| `bring_straps` \| `bring_pump_truck` \| `do_not_arrive_early` | Quick-select instructions for the driver — planner-managed only, not on public form |
-| driverVisibleNotes | String? | No | Free text | Free-text instructions the driver must read before the job — planner-managed only |
-| safetyInstructions | String? | No | Free text | Safety information (COSHH, hazard warnings, PPE requirements) — planner-managed only |
-
----
-
-## JobRequest — exceptionPolicyData blob
-
-Stored in `JobRequest.exceptionPolicyData` (Json column, default `{}`). On accept, these values are written to direct exception policy columns on `Job` (`alternativeReturnAddress`, `approvalContactName`, `photosRequiredOnRejection`, etc.) — see the `Job` table for the canonical column names.
-
-| Field | Type | Required | Values / Format | Description |
-|---|---|---|---|---|
-| rejectionAction | String? | No | `call_office_before_leaving` \| `return_to_collection_point` \| `deliver_to_alternative_address` \| `wait_for_further_instruction` \| `do_not_return_without_approval` \| `other` | What the driver should do if the delivery is refused |
-| alternativeReturnAddress | String? | No | Free text | Street address of the alternative delivery location |
-| alternativeReturnPostcode | String? | No | Postcode string | Postcode of the alternative delivery address |
-| alternativeReturnContactName | String? | No | Free text | Contact name at the alternative address |
-| alternativeReturnContactPhone | String? | No | Phone string | Contact phone at the alternative address |
-| approvalContactName | String? | No | Free text | Name of the person to call for approval before leaving |
-| approvalContactPhone | String? | No | Phone string | Phone of the approval contact |
-| photosRequiredOnRejection | Boolean? | No | `true` \| `false` | Whether the driver must take photos if rejected |
-| rejectionSignatureRequired | Boolean? | No | `true` \| `false` | Whether the driver must obtain a signature from the refusing party |
-| rejectionNotes | String? | No | Free text | Additional instructions for rejection / return situations |
-
----
+The staging `JobRequest` model (top-level columns + requesterData / stops /
+loadData / specialRequirementsData / transportRequirementsData / billingData /
+notesData / exceptionPolicyData blobs) was **removed** in the PlannedJob → Job
+schema refactor. The public request form (PRF) now validates with the SAME
+`CreateJobSchema` as the internal form (CJP) and writes directly to `Job` +
+`JobPart` with `status = pending_review`. Accepting a request only flips the
+status and adds planner fields — nothing is copied between models.
+See the **Job** and **JobPart** sections and the form-field mapping below.
 
 ## AuditLog
 
@@ -1163,6 +898,7 @@ Append-only. Covers all entity types except jobs (which use `JobAudit`). Rows ar
 | createdAt | DateTime | Yes | ISO 8601 | Timestamp of the action |
 
 ---
+| field | String | Yes | Field name, default `""` | Specific field name for updates (empty = whole-record action) |
 
 ## RefreshToken
 
@@ -1187,165 +923,166 @@ Table: `RefreshToken`
 
 Both the internal `CreateJobPage` form and the public `PublicRequestForm` now share identical stop and load structures. The table below maps every labelled UI field to its database location. Where the two forms write to different locations, the destination column is noted.
 
-> **Internal form** (`CreateJobPage`) writes directly to `Job` + `JobPart`.
-> **Public form** (`PublicRequestForm`) writes to `JobRequest` blobs. On accept, the accept handler copies blob data to `Job` and creates `JobPart` rows.
->
-> **Note:** The `LoadDetails` table no longer exists. All `LoadDetails.xxx` references below map to `Job.xxx` instead.
+> **Both forms write to the same place.** The internal form (`CreateJobPage`) and the
+> public form (`PublicRequestForm`) submit through the same `CreateJobSchema` and write
+> directly to `Job` + `JobPart` — the PRF simply lands with `status = pending_review`.
+> (The former `JobRequest` staging model and the `LoadDetails` table are both removed;
+> any old `JobRequest.*` / `LoadDetails.*` reference maps to `Job` / `JobPart`.)
 
-| UI Section | Form field label | Internal form (CreateJobPage) | Public form (PublicRequestForm) |
-|---|---|---|---|
-| **Your details** | Company / organisation name | `Job.customerName` (via customerId lookup or free text) | `JobRequest.requesterData.customerCompanyName` → also `JobRequest.customerName` |
-| **Your details** | Contact name | `Job.bookingContactName` | `JobRequest.requesterData.contactName` → also `JobRequest.contactName` |
-| **Your details** | Contact phone | `Job.bookingContactPhone` | `JobRequest.requesterData.contactPhone` → also `JobRequest.contactPhone` |
-| **Your details** | Contact email | `Job.bookingContactEmail` | `JobRequest.requesterData.contactEmail` → also `JobRequest.contactEmail` |
-| **Your details** | Your internal reference / order number | `Job.customerRef` | `JobRequest.requesterData.customerRef` |
-| **Your details (optional)** | Notes for the planner | `Job.plannerNotes` | `JobRequest.notesData.customerNotes` |
-| **Stops (per stop)** | Stop type | `JobPart.type` | `JobRequest.stops[n].type` |
-| **Stops (per stop)** | Collection / delivery reference | `JobPart.referenceNumber` | `JobRequest.stops[n].referenceNumber` |
-| **Stops (per stop)** | Quantity at this stop | `JobPart.quantityRequired` | `JobRequest.stops[n].quantityRequired` |
-| **Stops (per stop)** | Unit (per-stop quantity) | `JobPart.quantityUnit` | `JobRequest.stops[n].quantityUnit` |
-| **Stops (per stop)** | Site name | `JobPart.siteName` | `JobRequest.stops[n].siteName` |
-| **Stops (per stop)** | Address line 1 | `JobPart.street` | `JobRequest.stops[n].street` |
-| **Stops (per stop)** | Address line 2 | `JobPart.addressLine2` | `JobRequest.stops[n].addressLine2` |
-| **Stops (per stop)** | Town / city | `JobPart.town` | `JobRequest.stops[n].town` |
-| **Stops (per stop)** | County / region | `JobPart.countyRegion` | `JobRequest.stops[n].countyRegion` |
-| **Stops (per stop)** | Postcode | `JobPart.postcode` | `JobRequest.stops[n].postcode` |
-| **Stops (per stop)** | Country | `JobPart.country` | `JobRequest.stops[n].country` |
-| **Stops (per stop)** | Collection / delivery date | `JobPart.timeWindowStart` (date component) | `JobRequest.stops[n].date` |
-| **Stops (per stop)** | Earliest arrival | `JobPart.timeWindowStart` or `JobPart.earliestArrivalMinutes` | `JobRequest.stops[n].earliestArrivalTime` |
-| **Stops (per stop)** | Latest arrival | `JobPart.timeWindowEnd` | `JobRequest.stops[n].latestArrivalTime` |
-| **Stops (per stop)** | Fixed appointment time | `JobPart.bookedTime` | `JobRequest.stops[n].bookedTime` |
-| **Stops (per stop)** | Estimated loading / unloading time | `JobPart.unloadingAllowanceMinutes` | `JobRequest.stops[n].unloadingAllowanceMinutes` |
-| **Stops (per stop)** | Latitude (entrance pin) | `JobPart.lat` | `JobRequest.stops[n].lat` |
-| **Stops (per stop)** | Longitude (entrance pin) | `JobPart.lng` | `JobRequest.stops[n].lng` |
-| **Stops (per stop)** | Entrance instructions | `JobPart.navigationInstructions` | `JobRequest.stops[n].navigationInstructions` |
-| **Stops (per stop)** | How will this be loaded / unloaded? | `JobPart.handlingMethods` | `JobRequest.stops[n].handlingMethods[]` |
-| **Stops (per stop)** | Other handling method — describe | `JobPart.handlingMethods` (serialised as `other: <text>`) | `JobRequest.stops[n].handlingMethodOther` → serialised into `handlingMethods[]` |
-| **Stops (per stop)** | Site access requirements | `JobPart.accessRequirements` | `JobRequest.stops[n].accessRequirements[]` |
-| **Stops (per stop)** | Height restriction value | `JobPart.heightRestriction` | `JobRequest.stops[n].heightRestriction` |
-| **Stops (per stop)** | Weight restriction value | `JobPart.weightRestriction` | `JobRequest.stops[n].weightRestriction` |
-| **Stops (per stop)** | Length restriction value | `JobPart.lengthRestriction` | `JobRequest.stops[n].lengthRestriction` |
-| **Stops (per stop)** | Will the load be ready? | `JobPart.loadReadiness` | `JobRequest.stops[n].loadReadiness` |
-| **Stops (per stop)** | Stop notes | `JobPart.stopNotes` | `JobRequest.stops[n].stopNotes` |
-| **Stops (per stop)** | Equipment exchange — Drop (full) | `JobPart.exchangeDropQty` | `JobRequest.stops[n].exchangeDropQty` |
-| **Stops (per stop)** | Equipment exchange — Collect empties | `JobPart.exchangeCollectQty` | `JobRequest.stops[n].exchangeCollectQty` |
-| **Stops (per stop)** | Equipment exchange — Unit | `JobPart.exchangeUnit` | `JobRequest.stops[n].exchangeUnit` |
-| **Stops (per stop — optional)** | Proof required at this stop | `JobPart.proofRequirements` | `JobRequest.stops[n].proofRequirements[]` |
-| **Stops (per stop — optional)** | Site contact name | `JobPart.contactName` | `JobRequest.stops[n].contactName` |
-| **Stops (per stop — optional)** | Site contact phone | `JobPart.contactPhone` | `JobRequest.stops[n].contactPhone` |
-| **Stops (per stop — optional)** | Site contact email | `JobPart.contactEmail` | `JobRequest.stops[n].contactEmail` |
-| **Stops (per stop — optional)** | Booking required before arrival | `JobPart.bookingRequired` | `JobRequest.stops[n].bookingRequired` |
-| **Stops (per stop — optional)** | Booking reference | `JobPart.bookingRef` | `JobRequest.stops[n].bookingRef` |
-| **Stops (per stop — optional)** | Opening hours | `JobPart.openingHours` | `JobRequest.stops[n].openingHours` |
-| **Load details** | What are you moving? (goods type) | `Job.goodsType` | `JobRequest.loadData.goodsType` |
-| **Load details** | Other goods type — describe | `Job.goodsType` (as free text) | `JobRequest.loadData.goodsTypeOther` |
-| **Load details** | Description of goods | `Job.goodsDescription` | `JobRequest.loadData.goodsDescription` |
-| **Load details** | Quantity | `Job.quantity` | `JobRequest.loadData.quantity` |
-| **Load details** | Unit | `Job.quantityUnit` | `JobRequest.loadData.unit` |
-| **Load details** | Estimated total weight (kg) | `Job.weight` | `JobRequest.loadData.estimatedWeight` |
-| **Load details** | Pallet types (multi-line repeater) | n/a | `JobRequest.loadData.palletLines[]` |
-| **Load details** | Weight per pallet (kg) | n/a | `JobRequest.loadData.weightPerUnit` |
-| **Load details** | ISPM-15 certified wood packaging required | n/a | `JobRequest.loadData.ispm15Required` |
-| **Load details** | Pallets are stackable | `Job.stackable` | `JobRequest.loadData.stackable` |
-| **Load details** | Number of cages | n/a | `JobRequest.loadData.cageCount` |
-| **Load details** | Cages are folded / nested | n/a | `JobRequest.loadData.cageFolded` |
-| **Load details** | Overall load height (m) | n/a | `JobRequest.loadData.loadHeight` |
-| **Load details** | Dimensions (L × W × H) | `Job.dimensions` | `JobRequest.loadData.dimensions` |
-| **Load details** | Material type (building materials) | n/a | `JobRequest.loadData.buildingMaterialType` |
-| **Load details** | Load is palletised (building materials) | n/a | `JobRequest.loadData.buildingMaterialPalletised` |
-| **Load details** | Longest single item (m) | n/a | `JobRequest.loadData.buildingMaterialLongestItem` |
-| **Load details** | Weather sensitive / needs sheeting | n/a | `JobRequest.loadData.buildingMaterialWeatherSensitive` |
-| **Load details** | Product description (liquid / tanker) | n/a | `JobRequest.loadData.liquidProductType` |
-| **Load details** | Food-grade product | n/a | `JobRequest.loadData.liquidFoodGrade` |
-| **Load details** | Packaging type (general goods) | n/a | `JobRequest.loadData.generalPackagingType` |
-| **Load details** | Total number of pieces (general goods) | n/a | `JobRequest.loadData.generalPieceCount` |
-| **Load details** | Individual piece weight (kg) | n/a | `JobRequest.loadData.machineryPieceWeight` |
-| **Load details** | Machine has lifting points | n/a | `JobRequest.loadData.machineryLiftingPoints` |
-| **Load details** | Machine is skid-mounted | n/a | `JobRequest.loadData.machinerySkidMounted` |
-| **Load details** | Crane required on site | `Job.loadData` (sub-field `craneRequired`) | `JobRequest.loadData.craneRequired` |
-| **Load details** | Number of pieces (steel) | n/a | `JobRequest.loadData.steelPieceCount` |
-| **Load details** | Width of widest piece (m) | n/a | `JobRequest.loadData.steelWidth` |
-| **Load details** | Tipping required at delivery | n/a | `JobRequest.loadData.tippingRequired` |
-| **Load details** | Wet or dry / Chilled, frozen or ambient? | n/a | `JobRequest.loadData.chilledFrozenAmbient` |
-| **Load details** | Required temperature range | `Job.tempRange` | `JobRequest.loadData.temperatureRange` |
-| **Load details** | Number of vehicles | n/a | `JobRequest.loadData.vehicleCount` |
-| **Load details** | Make and model | n/a | `JobRequest.loadData.vehicleMakeModel` |
-| **Load details** | Keys will be with the vehicle | n/a | `JobRequest.loadData.vehicleKeysWithVehicle` |
-| **Load details** | Vehicles are driveable (RORO) | n/a | `JobRequest.loadData.driveable` |
-| **Load details** | Container size | n/a | `JobRequest.loadData.containerSize` |
-| **Load details** | Other container size — describe | n/a | `JobRequest.loadData.containerSizeOther` |
-| **Load details** | Loaded or empty? | n/a | `JobRequest.loadData.loadedOrEmpty` |
-| **Load details** | Container number | n/a | `JobRequest.loadData.containerNumber` |
-| **Load details** | Container ISO type | n/a | `JobRequest.loadData.containerIsoType` |
-| **Load details** | Port booking reference / release number | n/a | `JobRequest.loadData.containerBookingRef` |
-| **Load details** | Terminal / port name | n/a | `JobRequest.loadData.containerTerminal` |
-| **Load details** | Port cut-off date & time | n/a | `JobRequest.loadData.containerCutOff` |
-| **Load details** | Seal number | n/a | `JobRequest.loadData.containerSealNumber` |
-| **Load details** | Can this shipment be split? | `Job.canSplitShipment` | `JobRequest.loadData.canSplitShipment` |
-| **Load details** | Load securing requirements | `Job.securingRequirements` | `JobRequest.loadData.securingRequirements[]` |
-| **Load details** | Additional load notes | `Job.internalNotes` | `JobRequest.loadData.loadNotes` |
-| **Load details** | These goods are classified as waste | n/a | `JobRequest.loadData.isWaste` |
-| **Load details** | EWC code (European Waste Catalogue) | n/a | `JobRequest.loadData.ewcCode` |
-| **Load details** | Waste Transfer Note number | n/a | `JobRequest.loadData.wasteTrnNumber` |
-| **Load details (food)** | Temperature data logger required | n/a | `JobRequest.loadData.foodTempLogger` |
-| **Load details (food)** | Clean vehicle declaration required | n/a | `JobRequest.loadData.foodCleanVehicle` |
-| **Load details (food)** | HACCP compliance required | n/a | `JobRequest.loadData.foodHaccp` |
-| **Load details (food)** | Allergen-free vehicle required | n/a | `JobRequest.loadData.foodAllergenFree` |
-| **Load details** | Load is fragile | `Job.fragile` | via `JobRequest.specialRequirementsData.items[]` |
-| **Load details** | Temperature controlled | `Job.tempControlled` | via `JobRequest.specialRequirementsData.items[]` |
-| **Load details** | Special requirements (multi-check) | `Job.specialRequirements` | `JobRequest.specialRequirementsData.items[]` |
-| **Special requirements** | ADR class | `Job.hazardClass` | `JobRequest.specialRequirementsData.adrClass` |
-| **Special requirements** | UN number | n/a | `JobRequest.specialRequirementsData.unNumber` |
-| **Special requirements** | Packing group | n/a | `JobRequest.specialRequirementsData.packingGroup` |
-| **Special requirements** | Hazardous goods quantity (kg) | n/a | `JobRequest.specialRequirementsData.hazardousQuantityKg` |
-| **Special requirements** | Hazardous paperwork available | n/a | `JobRequest.specialRequirementsData.hazardousPaperworkAvailable` |
-| **Special requirements** | Proper shipping name (ADR) | n/a | `JobRequest.loadData.adrProperShippingName` |
-| **Special requirements** | Subsidiary risk class | n/a | `JobRequest.loadData.adrSubsidiaryRisk` |
-| **Special requirements** | Flash point (°C) | n/a | `JobRequest.loadData.adrFlashPoint` |
-| **Special requirements** | EMS code | n/a | `JobRequest.loadData.adrEmsCode` |
-| **Special requirements** | 24-hour emergency contact | n/a | `JobRequest.loadData.adrEmergencyContact` |
-| **Special requirements** | Oversized load width (m) | n/a | `JobRequest.specialRequirementsData.oversizedWidth` |
-| **Special requirements** | Oversized load height (m) | n/a | `JobRequest.specialRequirementsData.oversizedHeight` |
-| **Special requirements** | Oversized load length (m) | n/a | `JobRequest.specialRequirementsData.oversizedLength` |
-| **Special requirements** | STGO category | n/a | `JobRequest.loadData.stgoCategory` |
-| **Special requirements** | Movement order number | n/a | `JobRequest.loadData.movementOrderNumber` |
-| **Transport requirements** | Let the planner choose (toggle) | n/a (planner always specifies directly) | `JobRequest.transportRequirementsData.plannerDecides` |
-| **Transport requirements** | Vehicle body category | `Job.vehicleCategory` | `JobRequest.transportRequirementsData.reqBodyCategory` |
-| **Transport requirements** | Body types (multi-select) | `Job.bodyTypes` (Json array) | `JobRequest.transportRequirementsData.reqBodyType` |
-| **Transport requirements** | Equipment required | `Job.equipment` | `JobRequest.transportRequirementsData.reqEquipment` |
-| **Transport requirements** | Trailer types allowed | `Job.trailersAllowed` | `JobRequest.transportRequirementsData.trailerTypesAllowed` |
-| **Transport requirements** | Can this job be subcontracted? | n/a | `JobRequest.loadData.subcontractingAllowed` |
-| **Transport requirements** | CSCS card required | n/a | `JobRequest.loadData.driverQualifications.cscsRequired` |
-| **Transport requirements** | BS7858 security vetting required | n/a | `JobRequest.loadData.driverQualifications.bs7858Required` |
-| **Transport requirements** | DBS check level | n/a | `JobRequest.loadData.driverQualifications.dbsLevel` |
-| **International** | Shipper EORI number | n/a | `JobRequest.loadData.crossBorderData.shipperEori` |
-| **International** | Consignee EORI number | n/a | `JobRequest.loadData.crossBorderData.consigneeEori` |
-| **International** | Commodity / HS code | n/a | `JobRequest.loadData.crossBorderData.hsCode` |
-| **International** | Customs movement type | n/a | `JobRequest.loadData.crossBorderData.customsMovementType` |
-| **International** | Incoterms | n/a | `JobRequest.loadData.crossBorderData.incoterms` |
-| **International** | Sea or tunnel crossing required | n/a | `JobRequest.loadData.crossBorderData.crossingRequired` |
-| **International** | Crossing route | n/a | `JobRequest.loadData.crossBorderData.crossingType` |
-| **International** | Crossing booking reference | n/a | `JobRequest.loadData.crossBorderData.crossingBookingRef` |
-| **Billing** | Declared value of goods (£) | n/a (internal form does not collect) | `JobRequest.billingData.declaredGoodsValue` |
-| **Billing** | Purchase order number | `Job.purchaseOrderNumber` | `JobRequest.billingData.purchaseOrderNumber` |
-| **Billing** | Billing reference / cost code | `Job.billingReference` | `JobRequest.billingData.billingReference` |
-| **Billing** | VAT registered | n/a | `JobRequest.billingData.vatRegistered` |
-| **Billing** | VAT number | n/a | `JobRequest.billingData.vatNumber` |
-| **Driver instructions** | Driver note chips | `Job.driverNoteChips` (direct column) | not on public form |
-| **Driver instructions** | Driver visible notes | `Job.driverVisibleNotes` (direct column) | not on public form |
-| **Driver instructions** | Safety instructions | `Job.safetyInstructions` (direct column) | not on public form |
-| **Exception / return policy** | If delivery is rejected — what should driver do? | `Job.failureAction` / `Job.rejectionNotes` | `JobRequest.exceptionPolicyData.rejectionAction` |
-| **Exception / return policy** | Alternative delivery address | `Job.alternativeReturnAddress` | `JobRequest.exceptionPolicyData.alternativeReturnAddress` |
-| **Exception / return policy** | Alternative delivery postcode | `Job.alternativeReturnPostcode` | `JobRequest.exceptionPolicyData.alternativeReturnPostcode` |
-| **Exception / return policy** | Contact name at alternative address | `Job.alternativeReturnContactName` | `JobRequest.exceptionPolicyData.alternativeReturnContactName` |
-| **Exception / return policy** | Contact phone (alternative address) | `Job.alternativeReturnContactPhone` | `JobRequest.exceptionPolicyData.alternativeReturnContactPhone` |
-| **Exception / return policy** | Approval contact name | `Job.approvalContactName` | `JobRequest.exceptionPolicyData.approvalContactName` |
-| **Exception / return policy** | Approval contact phone | `Job.approvalContactPhone` | `JobRequest.exceptionPolicyData.approvalContactPhone` |
-| **Exception / return policy** | Photos required on rejection | `Job.photosRequiredOnRejection` | `JobRequest.exceptionPolicyData.photosRequiredOnRejection` |
-| **Exception / return policy** | Rejection signature required | `Job.rejectionSignatureRequired` | `JobRequest.exceptionPolicyData.rejectionSignatureRequired` |
-| **Exception / return policy** | Additional rejection / return notes | `Job.rejectionNotes` | `JobRequest.exceptionPolicyData.rejectionNotes` |
-| **Server-computed (not on form)** | Distance from postcode to entrance pin | n/a | `JobRequest.stops[n].entranceDistanceFromPostcode` |
-| **Server-computed (not on form)** | Entrance pin warning level | n/a | `JobRequest.stops[n].entranceWarningLevel` |
+| UI Section | Form field label | Database location (both forms) |
+|---|---|---|
+| **Your details** | Company / organisation name | `Job.customerName` (via customerId lookup or free text) |
+| **Your details** | Contact name | `Job.bookingContactName` |
+| **Your details** | Contact phone | `Job.bookingContactPhone` |
+| **Your details** | Contact email | `Job.bookingContactEmail` |
+| **Your details** | Your internal reference / order number | `Job.customerRef` |
+| **Your details (optional)** | Notes for the planner | `Job.plannerNotes` |
+| **Stops (per stop)** | Stop type | `JobPart.type` |
+| **Stops (per stop)** | Collection / delivery reference | `JobPart.referenceNumber` |
+| **Stops (per stop)** | Quantity at this stop | `JobPart.quantityRequired` |
+| **Stops (per stop)** | Unit (per-stop quantity) | `JobPart.quantityUnit` |
+| **Stops (per stop)** | Site name | `JobPart.siteName` |
+| **Stops (per stop)** | Address line 1 | `JobPart.street` |
+| **Stops (per stop)** | Address line 2 | `JobPart.addressLine2` |
+| **Stops (per stop)** | Town / city | `JobPart.town` |
+| **Stops (per stop)** | County / region | `JobPart.countyRegion` |
+| **Stops (per stop)** | Postcode | `JobPart.postcode` |
+| **Stops (per stop)** | Country | `JobPart.country` |
+| **Stops (per stop)** | Collection / delivery date | `JobPart.timeWindowStart` (date component) |
+| **Stops (per stop)** | Earliest arrival | `JobPart.timeWindowStart` or `JobPart.earliestArrivalMinutes` |
+| **Stops (per stop)** | Latest arrival | `JobPart.timeWindowEnd` |
+| **Stops (per stop)** | Fixed appointment time | `JobPart.bookedTime` |
+| **Stops (per stop)** | Estimated loading / unloading time | `JobPart.unloadingAllowanceMinutes` |
+| **Stops (per stop)** | Latitude (entrance pin) | `JobPart.lat` |
+| **Stops (per stop)** | Longitude (entrance pin) | `JobPart.lng` |
+| **Stops (per stop)** | Entrance instructions | `JobPart.navigationInstructions` |
+| **Stops (per stop)** | How will this be loaded / unloaded? | `JobPart.handlingMethods` |
+| **Stops (per stop)** | Other handling method — describe | `JobPart.handlingMethods` (serialised as `other: <text>`) |
+| **Stops (per stop)** | Site access requirements | `JobPart.accessRequirements` |
+| **Stops (per stop)** | Height restriction value | `JobPart.heightRestriction` |
+| **Stops (per stop)** | Weight restriction value | `JobPart.weightRestriction` |
+| **Stops (per stop)** | Length restriction value | `JobPart.lengthRestriction` |
+| **Stops (per stop)** | Will the load be ready? | `JobPart.loadReadiness` |
+| **Stops (per stop)** | Stop notes | `JobPart.stopNotes` |
+| **Stops (per stop)** | Equipment exchange — Drop (full) | `JobPart.exchangeDropQty` |
+| **Stops (per stop)** | Equipment exchange — Collect empties | `JobPart.exchangeCollectQty` |
+| **Stops (per stop)** | Equipment exchange — Unit | `JobPart.exchangeUnit` |
+| **Stops (per stop — optional)** | Proof required at this stop | `JobPart.proofRequirements` |
+| **Stops (per stop — optional)** | Site contact name | `JobPart.contactName` |
+| **Stops (per stop — optional)** | Site contact phone | `JobPart.contactPhone` |
+| **Stops (per stop — optional)** | Site contact email | `JobPart.contactEmail` |
+| **Stops (per stop — optional)** | Booking required before arrival | `JobPart.bookingRequired` |
+| **Stops (per stop — optional)** | Booking reference | `JobPart.bookingRef` |
+| **Stops (per stop — optional)** | Opening hours | `JobPart.openingHours` |
+| **Load details** | What are you moving? (goods type) | `Job.goodsType` |
+| **Load details** | Other goods type — describe | `Job.goodsType` (as free text) |
+| **Load details** | Description of goods | `Job.goodsDescription` |
+| **Load details** | Quantity | `Job.quantity` |
+| **Load details** | Unit | `Job.quantityUnit` |
+| **Load details** | Estimated total weight (kg) | `Job.weight` |
+| **Load details** | Pallet types (multi-line repeater) | n/a |
+| **Load details** | Weight per pallet (kg) | n/a |
+| **Load details** | ISPM-15 certified wood packaging required | n/a |
+| **Load details** | Pallets are stackable | `Job.stackable` |
+| **Load details** | Number of cages | n/a |
+| **Load details** | Cages are folded / nested | n/a |
+| **Load details** | Overall load height (m) | n/a |
+| **Load details** | Dimensions (L × W × H) | `Job.dimensions` |
+| **Load details** | Material type (building materials) | n/a |
+| **Load details** | Load is palletised (building materials) | n/a |
+| **Load details** | Longest single item (m) | n/a |
+| **Load details** | Weather sensitive / needs sheeting | n/a |
+| **Load details** | Product description (liquid / tanker) | n/a |
+| **Load details** | Food-grade product | n/a |
+| **Load details** | Packaging type (general goods) | n/a |
+| **Load details** | Total number of pieces (general goods) | n/a |
+| **Load details** | Individual piece weight (kg) | n/a |
+| **Load details** | Machine has lifting points | n/a |
+| **Load details** | Machine is skid-mounted | n/a |
+| **Load details** | Crane required on site | `Job.loadData` (sub-field `craneRequired`) |
+| **Load details** | Number of pieces (steel) | n/a |
+| **Load details** | Width of widest piece (m) | n/a |
+| **Load details** | Tipping required at delivery | n/a |
+| **Load details** | Wet or dry / Chilled, frozen or ambient? | n/a |
+| **Load details** | Required temperature range | `Job.tempRange` |
+| **Load details** | Number of vehicles | n/a |
+| **Load details** | Make and model | n/a |
+| **Load details** | Keys will be with the vehicle | n/a |
+| **Load details** | Vehicles are driveable (RORO) | n/a |
+| **Load details** | Container size | n/a |
+| **Load details** | Other container size — describe | n/a |
+| **Load details** | Loaded or empty? | n/a |
+| **Load details** | Container number | n/a |
+| **Load details** | Container ISO type | n/a |
+| **Load details** | Port booking reference / release number | n/a |
+| **Load details** | Terminal / port name | n/a |
+| **Load details** | Port cut-off date & time | n/a |
+| **Load details** | Seal number | n/a |
+| **Load details** | Can this shipment be split? | `Job.canSplitShipment` |
+| **Load details** | Load securing requirements | `Job.securingRequirements` |
+| **Load details** | Additional load notes | `Job.internalNotes` |
+| **Load details** | These goods are classified as waste | n/a |
+| **Load details** | EWC code (European Waste Catalogue) | n/a |
+| **Load details** | Waste Transfer Note number | n/a |
+| **Load details (food)** | Temperature data logger required | n/a |
+| **Load details (food)** | Clean vehicle declaration required | n/a |
+| **Load details (food)** | HACCP compliance required | n/a |
+| **Load details (food)** | Allergen-free vehicle required | n/a |
+| **Load details** | Load is fragile | `Job.fragile` |
+| **Load details** | Temperature controlled | `Job.tempControlled` |
+| **Load details** | Special requirements (multi-check) | `Job.specialRequirements` |
+| **Special requirements** | ADR class | `Job.hazardClass` |
+| **Special requirements** | UN number | n/a |
+| **Special requirements** | Packing group | n/a |
+| **Special requirements** | Hazardous goods quantity (kg) | n/a |
+| **Special requirements** | Hazardous paperwork available | n/a |
+| **Special requirements** | Proper shipping name (ADR) | n/a |
+| **Special requirements** | Subsidiary risk class | n/a |
+| **Special requirements** | Flash point (°C) | n/a |
+| **Special requirements** | EMS code | n/a |
+| **Special requirements** | 24-hour emergency contact | n/a |
+| **Special requirements** | Oversized load width (m) | n/a |
+| **Special requirements** | Oversized load height (m) | n/a |
+| **Special requirements** | Oversized load length (m) | n/a |
+| **Special requirements** | STGO category | n/a |
+| **Special requirements** | Movement order number | n/a |
+| **Transport requirements** | Let the planner choose (toggle) | n/a (planner always specifies directly) |
+| **Transport requirements** | Vehicle body category | `Job.vehicleCategory` |
+| **Transport requirements** | Body types (multi-select) | `Job.bodyTypes` (Json array) |
+| **Transport requirements** | Equipment required | `Job.equipment` |
+| **Transport requirements** | Trailer types allowed | `Job.trailersAllowed` |
+| **Transport requirements** | Can this job be subcontracted? | n/a |
+| **Transport requirements** | CSCS card required | n/a |
+| **Transport requirements** | BS7858 security vetting required | n/a |
+| **Transport requirements** | DBS check level | n/a |
+| **International** | Shipper EORI number | n/a |
+| **International** | Consignee EORI number | n/a |
+| **International** | Commodity / HS code | n/a |
+| **International** | Customs movement type | n/a |
+| **International** | Incoterms | n/a |
+| **International** | Sea or tunnel crossing required | n/a |
+| **International** | Crossing route | n/a |
+| **International** | Crossing booking reference | n/a |
+| **Billing** | Declared value of goods (£) | n/a (internal form does not collect) |
+| **Billing** | Purchase order number | `Job.purchaseOrderNumber` |
+| **Billing** | Billing reference / cost code | `Job.billingReference` |
+| **Billing** | VAT registered | n/a |
+| **Billing** | VAT number | n/a |
+| **Driver instructions** | Driver note chips | `Job.driverNoteChips` (direct column) |
+| **Driver instructions** | Driver visible notes | `Job.driverVisibleNotes` (direct column) |
+| **Driver instructions** | Safety instructions | `Job.safetyInstructions` (direct column) |
+| **Exception / return policy** | If delivery is rejected — what should driver do? | `Job.failureAction` / `Job.rejectionNotes` |
+| **Exception / return policy** | Alternative delivery address | `Job.alternativeReturnAddress` |
+| **Exception / return policy** | Alternative delivery postcode | `Job.alternativeReturnPostcode` |
+| **Exception / return policy** | Contact name at alternative address | `Job.alternativeReturnContactName` |
+| **Exception / return policy** | Contact phone (alternative address) | `Job.alternativeReturnContactPhone` |
+| **Exception / return policy** | Approval contact name | `Job.approvalContactName` |
+| **Exception / return policy** | Approval contact phone | `Job.approvalContactPhone` |
+| **Exception / return policy** | Photos required on rejection | `Job.photosRequiredOnRejection` |
+| **Exception / return policy** | Rejection signature required | `Job.rejectionSignatureRequired` |
+| **Exception / return policy** | Additional rejection / return notes | `Job.rejectionNotes` |
+| **Server-computed (not on form)** | Distance from postcode to entrance pin | n/a |
+| **Server-computed (not on form)** | Entrance pin warning level | n/a |
 
 ---
 
@@ -1397,7 +1134,7 @@ Returned by `GET /planning/drivers?date=YYYY-MM-DD`. One row per active driver a
 
 ### PlannerWorkItem
 
-Returned by `GET /planning/work-items`. One row per unplanned `JobPart`. Sorted and grouped by priority so planners can build runs in the right order.
+Returned by `GET /planning/work-items`. One row per `JobPart` that still needs planning — nothing assigned, or only part of the quantity assigned (the remainder stays visible). Sorted and grouped by priority so planners can build runs in the right order.
 
 | Field | Type | Description |
 |---|---|---|
@@ -1419,6 +1156,8 @@ Returned by `GET /planning/work-items`. One row per unplanned `JobPart`. Sorted 
 | weight | Float? | Total load weight in kg |
 | quantity | Float? | Quantity of goods |
 | quantityUnit | String? | Unit of measure |
+| assignedQuantity | Float | Quantity of this stop already on active runs (split / multi-trip shares) |
+| remainingQuantity | Float? | Quantity still to plan — a partially assigned stop stays on the board showing "N of total remaining" |
 | hasHazardous | Boolean | Whether any stop on this job has hazardous goods |
 | hasTempControl | Boolean | Whether the load requires temperature control |
 | riskLevel | `"high"` \| `"medium"` \| `"low"` \| `"none"` | Overall risk level for this work item |

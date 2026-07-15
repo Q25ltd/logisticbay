@@ -3,9 +3,90 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-07-14
+> Last updated: 2026-07-15
 
 ---
+
+## Audit of a parallel agent's uncommitted Runs-screen work 2026-07-15 (review, no code changes)
+
+User asked to verify another session's changes for gate bypasses. Reviewed the four files not touched by this session: **all clean — no four-intake-gates violations, no invented fields, no validation bypass.** (1) `RunsPage.tsx` (+518/−172): presentational redesign of the run card (status chips, allocation band, requirement badges) — ZERO api-call changes; publish stays gated (`disabled={!canPublish}`, blockers in tooltip); weight badge reads the derived share-apportioned `maxLoadWeight`. (2) `runUtils.ts`: two real bug fixes — load summary summed collect+deliver (double-count) and concatenated Prisma Decimal strings ("0"+"14"+"14"="01414"); now collection-only + Number(). (3) `runCandidatesService.ts`: candidate labels now use `BODY_TYPES` human labels (no raw enums in UI — per rule). (4) PRF+CJP twin change: for trailer-pulling categories the type chips store as `trailersAllowed` (not unit `bodyTypes`) — fixes the artic bodyTypes confusion at INTAKE; `bodyCategoryNeedsTrailer` added to shared+api+web taxonomy mirrors, vocab-sync green. Only fault: no DEVLOG entry was written for that work — recorded here instead. Combined gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests 248/248 · build ✅.
+
+## Quantity ledger — remainders never vanish; multi-trip same-driver planning 2026-07-15 (same day, follow-up)
+
+User-reported after the split fix: **deleting a split leg made its 4 pallets disappear** — the part had an active assignment (the kept 26), so the planning board's `runAssignments: none` filter hid it forever; nothing showed "4 of 30 unassigned". And **multi-trip was impossible**: the assignment routes hard-blocked a second run for the same stop (ALREADY_ASSIGNED), so the only way to plan "same driver, several trips" was the split button.
+
+**Quantity ledger** (`partQuantityLedger` in runService — one source, both routes): total = form-born (stop `quantityRequired`, else job `quantity`); assigned = Σ active assignments; remaining = total − assigned.
+
+- **Planning board**: a part now stays on the board while remaining > 0 — card shows amber **"4 of 30 Pallets remaining"** (`PlannerWorkItem.assignedQuantity/remainingQuantity`; dictionary updated). Deleting a split leg = the remainder reappears instantly.
+- **Assignment routes (both)**: same stop on several runs is ALLOWED while quantity remains — that IS multi-trip (each run = one trip; same driver on same day is the existing warn-not-block). New assignment defaults to the REMAINDER. Guardrails: same run twice → 409 ALREADY_ON_RUN; nothing left → 409 FULLY_ASSIGNED with the breakdown ("26 on RUN-16, 4 on RUN-23"); requesting more than remains → 400 OVER_ASSIGNED with numbers; no-quantity parts keep the old single-assignment rule.
+- **Driver app payload**: `GET /jobs`/`my` runAssignments now include `quantityAssigned`/`quantityUnit`/`runId` — the driver can see "pick 26 this trip, 4 next" (mobile UI rendering = mobile session).
+- `plannerWorkService.test` mock builder cleaned: dropped-phantom-column fields removed, `runAssignments`/`quantityRequired` mirrors the real include (anti-drift rule 8).
+
+`runSplitShares.test.ts` extended to 8 subtests: delete-split-leg → remainder re-assignable; second trip defaults 4; third refused FULLY_ASSIGNED; explicit 10 > remaining 4 refused OVER_ASSIGNED. Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests 248/248 · build ✅ · knip baseline.
+
+## Split shares — each run now carries ITS share, not the job total 2026-07-15 (later same day)
+
+User-reported: a 30-pallet / 13.5t job split across two runs showed "collect 30 pallets" and full weight on BOTH runs, and the capacity check demanded splitting again (infinite loop). Diagnosis: the split ENDPOINT was already correct (`quantityAssigned` 26/4, ledger balanced) — the lies were downstream readers using job-level totals:
+
+- **Capacity/suitability inputs (web check-run mapping)**: pallets + weightKg now use `quantityAssigned` when > 0 (weight apportioned `weight × share ÷ total`); a split run is checked against its own share.
+- **Derived `maxLoadWeight` (runService)**: apportioned by share — RUN-16/RUN-23 healed from 13 500/13 500 to **11 700/1 800** (existing rows recalculated via script).
+- **Planning lane stop rows + CapacityBar**: show "4 of 30 Pallets" (amber) + share weight when split.
+- **Split is now choosable with guardrails**: "Keep here: [n] → k move to a new run" editable input on the capacity banner (default = biggest trailer capacity); must be ≥1 and < largest assigned quantity; endpoint validated by new `SplitRunSchema` (Zod) and refuses NOTHING_TO_SPLIT with a human message.
+- **Assignment-creation default unified**: `POST /runs/:id/assignments` now defaults `quantityAssigned` from the stop's `quantityRequired` → job `quantity` (was `?? 0`, diverging from the planning route) + inherits the quantity unit.
+
+New `runSplitShares.test.ts` (5 subtests): default share from form-born quantities, guardrail refusal, 26/4 balance on collect+deliver, apportioned 11 700/1 800 weights. Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests 245/245 · build ✅ · knip baseline.
+
+## Documentation-integrity pass + permanent anti-drift guard 2026-07-15
+
+Follow-through on the full MD audit (19 findings): every live doc now matches the code, and drift is now MACHINE-CHECKED.
+
+**New gate — `npm run check:docs`** (`scripts/check-docs-sync.ts`, wired into package.json, the CLAUDE.md verification protocol, and CI): mechanically diffs DATA_DICTIONARY.md against `schema.prisma` — a documented-but-nonexistent model or field, or a schema model with no dictionary section, FAILS the build. Verified it catches both failure classes (injected a ghost model + phantom field → 2 errors; restored → green). Tombstone sections ("~~Name~~ (REMOVED…)"), multi-model headers ("A / B"), and an explicit non-model-section allowlist are understood.
+
+**CLAUDE.md — new "Anti-drift" section** (8 rules, top of Mandatory rules): no column without a form that writes it; prove the write path before an algorithm reads a field; one concept one name; no current-state snapshots outside STATUS.md; docs lose to code — fix the doc; removed things get tombstones + a repo-wide grep; check:docs is a gate; test fixtures must be form-shaped. Also fixed: stale status-registry pointer (canonical vocab is `loadVocab.ts`, not sync.constants), the Known-gaps rows about job statuses (derived statuses ARE live).
+
+**Doc fixes:** DATA_DICTIONARY — 9 dead JobRequest sections (~262 lines) → one tombstone; form-field mapping rewritten (both forms write Job+JobPart via one schema — the old PRF column mapped every field to dead JobRequest blobs); Job.plannedDate row removed; 5 missing scalars documented. STATUS — partial-table self-contradictions fixed (LoadTrack write path, Runs screen, fleet pickers), stale 🔲 checklist items flipped ([x] 1.9 split, 1.10 validation, 1.12 reconciler). ARCHITECTURE — execution-regime section rewritten to the Step-1/Step-3 reality (driver events drive RunAssignment.EXECUTION_STATES; reconciler derives Job.status), regime diagram redrawn, "future statuses" block replaced (they're live), plannedDate row + wrong priority values fixed. LOAD_MOVEMENT_PLAN — "LoadTrack currently never written" corrected. QUESTIONS — quick-status table mechanically recounted (279 questions, 28 answered/partial), header dates bumped everywhere.
+
+**Code leftovers removed:** CJP no longer sends the dropped `plannedDate`; accept endpoint/client/drawer no longer carry it (date derives from stop windows server-side); web `Job.plannedDate` type field removed; JobQuickLook now derives its date from stops; `gateLat/gateLng` re-removed from JobPartSchema (had reappeared on disk).
+
+Gates: typecheck 0/0 · vocab ✅ · **check:docs ✅ (28 models)** · api tests 240/240 · build ✅ · knip baseline.
+
+## Phantom-column purge + field-name audit fixes 2026-07-14 (third pass, user-directed)
+
+User challenge: "check all fields in all active forms — how can I be sure you don't miss something again?" Answer implemented: **the phantom storage is now deleted, so the compiler physically prevents any algorithm from reading it again.** Every candidate column was first verified EMPTY in dev AND production (row counts, read-only).
+
+**16 columns dropped** (migration `20260714120000_drop_phantom_columns`): `JobPart.gateLat/gateLng/coordinateVerified/standingChargeNote/stopGoodsType/stopWeight/tempControlled/tempRange/hazardous/hazardClass/oversized`, `SavedLocation.gateLat/gateLng`, `FleetTrailer.loadStatus/standingNote/standingRunId`. All consumers simplified to job-level intake truth; DATA_DICTIONARY rows removed.
+
+**gateLat verdict (user was right):** the stop card's required "Exact entrance pin — lat, lng" already captures the gate location in `lat`/`lng`; gateLat/gateLng was a duplicate concept. **jobQuality.hasGate() was scoring the empty duplicate — every job silently lost quality points for a field it actually had.** Now reads `lat`/`lng`.
+
+**Step-16 duplication closed:** planning.ts had its own `recalcDerived` copy (also reading dead columns). Single implementation now lives in `runService.recalculateDerivedRequirements`, used by both routes/runs.ts and routes/planning.ts.
+
+**Form fixes (per user's design):**
+- **Driver notes at accept time** — the CJP deliberately has NO driver-notes section; the planner adds/edits them when accepting a PRF request. The accept drawer now has "Notes to driver" + "Safety instructions" textareas pre-filled with the customer's PRF values; accept endpoint validates via new `AcceptJobRequestSchema` (Zod — replaced the unvalidated cast) and stores them. Test: `acceptDriverNotes.test.ts`.
+- **Usual truck captured** — DriverForm gained "Usual truck (registration)" (`defaultTruckReg`); the 2026-07-12 usual-unit ★ recommendation finally has a form feeding it.
+- **Dead StopState twin deleted** — `createJobTypes.ts` removed entirely + createJobUtils stripped to cap/today/addDays (makeStop/jobPartToStopState/stopComplete/toMins/fmtMins/nowDisplay had zero callers and carried alias names like `heightRestrictionValue`).
+- **Retracted finding:** PRF DOES send `alternativeReturnAddressLine2` (earlier report extraction clipped it) — no twin gap there.
+
+⚠ **Prod deploy note:** run `npm run migrate:prod --prefix api` — this migration and `20260714000000_shift_segment_trailer_ownership` are both pending on production.
+
+Gates: typecheck 0/0 · vocab ✅ · api tests **240/240** · build ✅ · knip exports 119→112 (dead-code removal, nothing new).
+
+## Data-lineage audit: intake → run creation — dead stop-columns fed every requirement check 2026-07-14 (later same day)
+
+Full pipeline audit (user directive: every check/algorithm must use form-born data, nothing invented). **Biggest find: `JobPart.hazardous / tempControlled / tempRange / oversized / stopGoodsType / stopWeight` are columns NO intake path writes** (`buildStopData` never sets them; `JobPartSchema` doesn't accept them) — yet three consumers read them as truth:
+
+1. **`recalculateDerivedRequirements` (runs.ts)** — run badges (⚠ ADR / ❄ Temp / 📏 / weight), `requiredTrailerType`, and `maxLoadWeight` derived ONLY from the dead columns → permanently false/null in production. The runCompatibility tests passed because their FIXTURES write the columns directly via Prisma — a write path production doesn't have (green tests, dead feature). Fixed: assignments now include the parent Job; effective flags = stop override OR job-level truth (`hazardClass`/`tempControlled`/`specialRequirements` incl. `dangerous_goods`/`oversized`); weight = stop weights else job.weight counted once per job (collect+deliver must not double-count). New `runDerivedRequirements.test.ts` proves it from a form-shaped fixture (job-level fields, bare stops).
+2. **propose-runs mapping (planning.ts)** — same dead reads → the Q1/Q2 stop-mixing compatibility in proposals never fired. Fixed with the same job-level fallback (job select extended).
+3. **Web planning board check-run mapping (PlanningBoardPage)** — same dead reads sent to `/ai/check-run` → live run-lane compatibility equally blind. Fixed with the same fallback; `RUN_INCLUDE` job select + web type extended (hazardClass/tempControlled/tempRange/specialRequirements).
+
+`plannerWorkService` already did the fallback correctly — it was the model. Stop-level columns are kept as future per-stop overrides (QUESTIONS: capture per-stop in the forms, or drop the columns).
+
+**Also fixed:** (a) substring keyword matching in `suggestVehicleService` ("car" ⊂ "cardboard" → car transporter suggested for cardboard; "plant" ⊂ "plant pots") and `loadMixing` food hints ("fresh" ⊂ "air fresheners") → whole-word regex, same class as the coil≠oil fix. (b) **`routing.ts` fetches had NO timeout** — a throttled ORS response hung `checkRun` indefinitely (surfaced as a 30s test cancellation once `--test-force-exit` stopped masking hangs; also a production hang risk since `/ai/check-run` and propose-runs call ORS inline). Added `AbortSignal.timeout` (8s ORS, 5s postcodes.io); every caller already treats null as "routing unavailable" → haversine fallback.
+
+**Audited clean:** jobValidation, jobQuality (but see gateLat below), plannerWork, loadCapacity (available-only fleet profile ✓), vehicleClass/vehicleSuitability (job-level reqs ✓), runCandidates ctx (job-level ✓), runReadiness (job-level hazardClass ✓), driverSchedule (form-born base coords ✓), reconciler custody chain.
+
+**Reported, not fixed (QUESTIONS.md):** `gateLat`/`gateLng` accepted by schema + scored by jobQuality but captured by NO form; `/ai/*` route bodies are unvalidated casts (planner-only advisory, still a rule violation); propose-runs test hits the live ORS API (flaky under rate limits — consider stubbing); truck-GVW-vs-load-weight at pick time (known gap, unchanged).
+
+Gates: typecheck 0/0 · vocab ✅ · api tests **239/239, 0 cancelled, ~5.5s ×2** · build ✅ · knip: exports 119 = baseline, types 77.
 
 ## Fleet intake gate + shift trailer ownership (four-intake-gates enforcement) 2026-07-14
 

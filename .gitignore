@@ -37,3 +37,4 @@ api/.env
 .claude/
 .vercel
 .env*.local
+.expo/

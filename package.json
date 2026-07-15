@@ -9,6 +9,7 @@
     "build": "npm run build --prefix web",
     "typecheck": "concurrently -n API,WEB -c blue,green \"./api/node_modules/.bin/tsc --noEmit --project api/tsconfig.json\" \"./web/node_modules/.bin/tsc --noEmit --project web/tsconfig.json\"",
     "check:vocab": "api/node_modules/.bin/tsx scripts/check-vocab-sync.ts",
+    "check:docs": "api/node_modules/.bin/tsx scripts/check-docs-sync.ts",
     "deploy": "npm run build && npx vercel --prod",
     "ship": "sh scripts/ship.sh"
   },

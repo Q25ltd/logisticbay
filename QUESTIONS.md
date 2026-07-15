@@ -5,20 +5,23 @@
 > Before building any feature, check the relevant section — if questions are unanswered, answer them first.
 >
 > Key: [x] = answered · [~] = partial answer · [ ] = still open
-> Last updated: 2026-05-27
+> Last updated: 2026-07-15
 
 ---
 
 ## Quick status
 
-| Section | Total | Answered | Remaining |
+Counts include [x] answered and [~] partially answered. Regenerate with the
+count logic in DEVLOG 2026-07-15 when sections change.
+
+| Section | Total | Answered/partial | Remaining |
 |---|---|---|---|
-| Operations & load movement | 42 | 15 | 27 |
-| Company management | 48 | 0 | 48 |
-| Financial system | 38 | 0 | 38 |
-| Platform & compliance | 32 | 0 | 32 |
-| Product & notifications | 36 | 0 | 36 |
-| **Total** | **196** | **14** | **182** |
+| Operations & load movement | 54 | 25 | 29 |
+| Company management | 73 | 3 | 70 |
+| Financial system | 58 | 0 | 58 |
+| Platform & compliance | 41 | 0 | 41 |
+| Product & notifications | 53 | 0 | 53 |
+| **Total** | **279** | **28** | **251** |
 
 ---
 
@@ -323,6 +326,25 @@
       **Fleet: DONE 2026-07-14** under the four-intake-gates rule (`api/src/schemas/fleet.ts` —
       shape/caps/status enums/dimension bounds; taxonomy checks already existed in the routes).
       **Locations: still open** — same principle applies, needs a schema matched to the web form.
+
+- [x] Per-stop load flags (2026-07-14 audit): **RESOLVED same day — columns dropped**
+      (verified 0 rows with data in dev AND prod). All consumers read job-level intake
+      truth. If per-stop overrides are ever needed for multi-load jobs, add capture to
+      the CJP/PRF stop cards FIRST, then re-add columns (four-intake-gates rule).
+
+- [x] `gateLat`/`gateLng` (2026-07-14 audit): **RESOLVED same day** — the stop card's
+      required "Exact entrance pin" already captures the gate location in `lat`/`lng`;
+      gateLat/gateLng were a duplicate concept (0 rows of data in dev + prod). Columns
+      dropped; quality scoring now reads `lat`/`lng` (jobs stop losing points for a
+      field they actually have).
+
+- [ ] `/ai/*` route bodies (2026-07-14 audit): check-run / suggest-vehicle / check-vehicle-load /
+      suggest-run-trailer parse `request.body` via unvalidated casts. Planner-only and
+      advisory, but they should get Zod schemas like every other route.
+
+- [ ] propose-runs integration test calls the LIVE ORS routing API — flaky under rate
+      limits (now bounded by the 8s routing timeout, but still network-dependent).
+      Consider stubbing routing in tests.
 
 - [ ] Mobile follow-up (2026-07-14): the driver app should call `GET /fleet/trailers/lookup?reg=`
       at vehicle setup and, when `known: false`, prompt "this trailer is not in your company

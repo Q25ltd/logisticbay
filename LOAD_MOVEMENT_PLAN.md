@@ -98,7 +98,7 @@ Driver events map 1:1 to transitions here. Because the state lives on the **assi
 
 ## A5. Dimension 3 — Custody ledger (`LoadTrack`) — the heart of "track all paths"
 
-`LoadTrack` already exists in the schema, fully defined, **append-only**, and **currently never written** (audit 🟠 #5). It is the spine of every scenario in Part B. One row = one custody transfer of a quantity.
+`LoadTrack` exists in the schema, fully defined, **append-only** — the write path went live in Step 2 (2026-06-07); see STATUS.md for current state. It is the spine of every scenario in Part B. One row = one custody transfer of a quantity.
 
 **Custody locations** (`fromCustody` / `toCustody` string values — one registry):
 

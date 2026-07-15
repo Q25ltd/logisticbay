@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-07-14 (four-intake-gates rule → fleet intake hardened + ShiftSegment.trailerOwnership; see ARCHITECTURE.md § Four intake gates)
+> Last updated: 2026-07-15 (quantity ledger: partial/split remainders stay visible on the board; multi-trip same-driver assignment with over-assign guardrails; driver sees per-trip quantities)
 
 ---
 
@@ -159,7 +159,7 @@ Gated 16-step build of the full load lifecycle. Per-step detail + gates live in 
 - `RunAssignment` model: links `JobPart` to a `Run` with sequence number, quantities, custody
 - API: full CRUD, publish (`POST /runs/:id/publish`), assignments CRUD, resequence
 - Web `RunsPage` — list runs by date, status filter, create new run modal
-- Web `RunDetailPage` — assignment management (add/remove job stops, resequence)
+- Runs screen (`RunsPage`) — one-screen asset allocation (RunDetailPage consolidated away 2026-07-01; stop management lives on the Planning board)
 - `DashboardPage` — today's runs overview by status, driver names, assignment counts
 
 ### Mobile (driver app)
@@ -194,13 +194,13 @@ Gated 16-step build of the full load lifecycle. Per-step detail + gates live in 
 |------|-----------|----------------|
 | **Jobs list (web)** | List, filter by status, search | Filter by date range, customer filter |
 | **Job detail (web)** | All fields displayed | POD viewer, audit log display, stop-level execution status |
-| **Run detail (web)** | Add/remove assignments, resequence | Truck/trailer picker UI (schema supports it, UI doesn't wire it), live status from mobile |
+| **Runs screen (web)** | One-screen asset allocation: inline driver/truck/trailer pickers fed by candidates, readiness gate, publish (RunDetailPage deleted 2026-07-01) | Live status from mobile |
 | **Planning dashboard** | Today's runs, driver names | "Ready to plan" jobs backlog panel, drag-to-assign |
 | **Driver profiles (web)** | CRUD — name, pay rate, min hours, `workPattern` (day_driver/night_driver/tramper), `basePostcode` (auto-geocoded to `baseLat`/`baseLng` via postcodes.io), work pattern badge display in driver list | Availability board (see all drivers week view), working time compliance display |
 | **Shifts (web)** | Basic list | Full shift detail with PDF, delivery task breakdown |
-| **LoadTrack** | Schema + model fully defined | No write path from mobile or API yet — custody chain not recorded |
+| **LoadTrack** | Write path live since Step 2 (2026-06-07): collect/deliver/yard events append custody rows; reconciler derives statuses from them | Planner-facing custody viewer UI |
 | **Job audit log** | `JobAudit` rows written on accept/reject | No viewer in web planner UI |
-| **Fleet ↔ Run linkage** | Schema has `assignedTruckId` / `assignedTrailerId` | Run creation UI does not yet offer truck/trailer picker |
+| **Fleet ↔ Run linkage** | Inline truck/trailer pickers on the Runs screen (2026-07-12), FK-validated, compatibility-checked | MOT/VOR fields on fleet records |
 | **Job status guards** | PATCH /jobs/:id/status exists; `applyJobEvent` shared state machine; `clientEventId` required; cancel blocked on normal path | Role-based edit restrictions post-assignment; planner override endpoint (TASK 3.8) |
 | **API code quality** | Phase 2 cleanup complete — event definitions single source, GPS/timestamp helpers, shared state machine, cancelRun service, parseIdParam/dayRangeUtc/TxClient | Phase 3 bug fixes; error envelope standardisation (TASK 3.7 in progress) |
 
@@ -220,10 +220,10 @@ Full design in **PLANNING_PAGE_DESIGN.md** (movement strategies, Job→Movement�
 - [~] 1.6  Trailer assignment on run card — **CHANGED: now optional** (plan said required). Decision: real-world planning often doesn't know trailer upfront. API enforcement removed; red warning removed. Trailer can be assigned later.
 - [x] 1.7  Driver assignment on run card (optional)
 - [~] 1.8  Run dependency locking — UI badge shows "🔒 Waiting on RUN-X"; `dependsOnRunId` stored and shown. **API does not enforce lock** (does not block publish if dependency isn't complete). Full enforcement not yet built.
-- [ ] 1.9  Split load UI — assign quantity per run, balance check
-- [~] 1.10 AI validation — route feasibility check (`POST /ai/check-run`): haversine distances, HGV drive time, time window assessment. **Only route feasibility built.** Spec also lists: ADR on wrong trailer, temp load on non-fridge, weight vs capacity, split-load balance — these are NOT done.
+- [x] 1.9  Split load UI — executable split `POST /runs/:id/split` + "✂ Split into N runs" button (2026-06-24)
+- [x] 1.10 Planning validation — route feasibility, drivers' hours, window waits, fleet-aware capacity (Q5a), vehicle suitability (Q5b), stop-mixing compatibility (ADR/temp), weight vs capacity — all deterministic (see Phase A / A2 above).
 - [x] 1.11 "Suggest all runs" button — job-aware grouping (all stops from same job stay together), one run per cluster, AI vehicle suggestion per run
-- [ ] 1.12 Job progress update — job status derived from RunAssignment completion
+- [x] 1.12 Job progress update — `reconcileLoadState` derives Job.status from execution state + custody (Step 3, 2026-06-07)
 - [~] 1.13 Publish run → status set to "assigned", `publishedToDriver = true`. **No push notification to driver yet** (plan said driver gets notified). Trailer enforcement removed (see 1.6).
 
 **Planning board extras — 2026-05-27:**

@@ -3,7 +3,7 @@
 > The five core objects, their fields, how they relate, status flows, splitting logic, warning rules,
 > and frontend structure rules. This is the technical design — not a build-status tracker.
 > For current build status see STATUS.md. For field names see DATA_DICTIONARY.md.
-> Last updated: 2026-05-19
+> Last updated: 2026-07-15
 
 ---
 
@@ -15,11 +15,11 @@ Known gaps:
 | This doc says | Reality today |
 |---|---|
 | `branchId` on Job / Run | No Branch model in schema. Do NOT add `branchId` to queries. |
-| `executionDate` on Job | Schema uses `plannedDate` |
+| `executionDate` on Job | Removed concept — the date derives from the first collection stop's `timeWindowStart` (no Job-level date column) |
 | `totalQuantityRequired` on Job | Schema uses `quantity` |
 | `materialType` on Job | Schema uses `goodsType` + `goodsDescription` |
 | `serviceType` values: standard/express/timed | Schema uses `multi_drop`, `collection`, `delivery` |
-| Job statuses: planned / partially_collected / partially_delivered / attention_needed | Not yet implemented |
+| Job statuses: planned / partially_collected / partially_delivered / attention_needed | Implemented — `loadVocab.ts` `JOB_PLANNING_STATUSES` (reconciler derives the execution-side statuses); only the automatic `planned` transition (all stops assigned) is deferred |
 | Run statuses: at_collection / loading / in_transit / at_delivery / failed | Not yet implemented |
 | `job_creator` role | Not enforced in routes |
 
@@ -57,8 +57,7 @@ Holds the full requirement. Never split — only its JobParts are split.
 | customerId | Int? | link to Customer if known |
 | customerName | String | always stored even if customerId exists (history) |
 | customerRef | String? | customer's own order/reference |
-| plannedDate | Date? | execution date |
-| priority | String | `normal`, `urgent`, `critical` |
+| priority | String | `low`, `normal`, `high`, `urgent` |
 | quantity | Decimal? | total quantity |
 | quantityUnit | String? | pallets, boxes, kg, litres, etc. |
 | goodsType | String? | type of goods (pallets, bulk, machinery, etc.) |
@@ -100,17 +99,21 @@ Never set by driver events.
 | `ready_to_plan` | Accepted/created; no stop currently in an active run | `syncJobPlanningStatuses()` or planner accept |
 | `in_planning` | At least one stop assigned to a draft/assigned run | `syncJobPlanningStatuses()` |
 
-#### Execution regime
-Set by `applyJobEvent()` from driver events (online or offline sync).
-Never set by planning operations.
+#### Execution regime (Step 1 + Step 3, 2026-06-07)
+Driver events advance **`RunAssignment.status`** over `EXECUTION_STATES`
+(loadVocab.ts) — they never write `Job.status` directly. The reconciler
+(`reconcileLoadState`) then DERIVES the job-level execution statuses from
+assignment states + custody, at the end of `applyJobEvent` (same tx) and
+nightly.
 
 | Status | Meaning | Set by |
 |---|---|---|
-| `in_progress` | Driver started the job (first event fired) | `applyJobEvent` via event `started` |
-| `arrived_pickup` | Driver at collection point | `applyJobEvent` via event `arrived_pickup` |
-| `collected` | Cargo collected | `applyJobEvent` via event `collected` |
-| `arrived_dropoff` | Driver at delivery point | `applyJobEvent` via event `arrived_dropoff` |
-| `completed` | All work confirmed | `applyJobEvent` via event `completed` |
+| `in_execution` | At least one part's execution has begun | reconciler (derived) |
+| `partially_collected` | Some but not all parts collected | reconciler (derived) |
+| `collected` | All parts collected, none delivered | reconciler (derived) |
+| `partially_delivered` | Some but not all parts delivered | reconciler (derived) |
+| `completed` | All parts delivered, ledger closed | reconciler (derived) |
+| `attention_needed` | An exception is open | reconciler (derived) |
 | `cancelled` | Rejected or cancelled | Planner override endpoint only |
 
 #### Terminal / intake statuses
@@ -124,23 +127,26 @@ Never set by planning operations.
 A job never goes backwards across the boundary. Once in the execution regime (`in_progress` or beyond), `syncJobPlanningStatuses()` ignores it — it only touches jobs still in the planning tier (`ready_to_plan`, `in_planning`).
 
 ```
-PLANNING TIER           EXECUTION TIER
+PLANNING TIER (planner-set)          EXECUTION TIER (reconciler-derived)
 draft
 pending_review
-ready_to_plan ──────► in_progress ──► arrived_pickup ──► collected ──► arrived_dropoff ──► completed
-in_planning                                                                                 cancelled
+ready_to_plan ──► in_planning ──► planned ──► in_execution ──► partially_collected
+                                                    │                  │
+                                              attention_needed    collected ──► partially_delivered ──► completed
+(cancelled can occur from any planning-tier status)
 ```
 
-#### Future statuses (not yet implemented)
+(Driver events run the per-stop machine `EXECUTION_STATES` on RunAssignment —
+`not_started → en_route_pickup → at_pickup → loaded → en_route_dropoff →
+at_dropoff → delivered` (+ `exception`) — and the reconciler rolls those up to Job.status.)
 
-```
-planned             🔲 runs assigned, none started yet
-partially_collected 🔲 some qty collected, not all
-partially_delivered 🔲 some qty delivered, not all
-attention_needed    🔲 problem state — stuck driver, failed delivery
-```
+#### Status vocabulary source
 
-These will be derived from events and load positions once the execution engine is complete.
+The full vocabulary (planner-set + reconciler-derived) is the registry
+`JOB_PLANNING_STATUSES` in `api/src/constants/loadVocab.ts` — the derived
+execution statuses above went live with the Step 3 reconciler (2026-06-07).
+Only the automatic `planned` transition (set when every stop is assigned,
+D3.2) is still deferred — see STATUS.md.
 
 ---
 
