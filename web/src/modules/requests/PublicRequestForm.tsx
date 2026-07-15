@@ -11,6 +11,8 @@ import {
   BODY_TYPES,
   BODY_TYPES_BY_CATEGORY,
   TRAILER_BODY_TYPE_VALUES,
+  bodyCategoryNeedsTrailer,
+  type BodyCategory,
 } from "../../constants/vehicleTaxonomy";
 import { useParams } from "react-router-dom";
 import { today } from "../jobs/createJobUtils";
@@ -1681,11 +1683,17 @@ export default function PublicRequestForm() {
       dimensions:           dimensions.trim() || undefined,
       canSplitShipment:     canSplitShipment || undefined,
 
-      // Vehicle requirements
+      // Vehicle requirements. For trailer-pulling categories the type chips ARE
+      // trailer body types (they match FleetTrailer.bodyType) — store them as
+      // trailersAllowed, not unit bodyTypes. (PRF/CJP twin — same rule in CJP.)
       vehicleCategory:      plannerDecides ? undefined : vehicleCategory || undefined,
-      bodyTypes:            plannerDecides ? undefined : bodyTypes.length ? bodyTypes : undefined,
+      bodyTypes:            plannerDecides || bodyCategoryNeedsTrailer(vehicleCategory as BodyCategory)
+                              ? undefined : bodyTypes.length ? bodyTypes : undefined,
       equipment:            plannerDecides ? undefined : equipment.length ? equipment : undefined,
-      trailersAllowed:      plannerDecides ? undefined : trailersAllowed.length ? trailersAllowed : undefined,
+      trailersAllowed:      plannerDecides ? undefined
+                              : bodyCategoryNeedsTrailer(vehicleCategory as BodyCategory)
+                                ? (bodyTypes.length ? bodyTypes : undefined)
+                                : trailersAllowed.length ? trailersAllowed : undefined,
 
       // Billing
       declaredGoodsValue:   declaredValue ? String(parseFloat(declaredValue)) : undefined,

@@ -748,10 +748,16 @@ export default function CreateJobPage() {
       if (job.billingReference)   setBillingRef(String(job.billingReference));
       if (job.purchaseOrderNumber) setPurchaseOrderNumber(job.purchaseOrderNumber);
 
-      // Transport requirements
+      // Transport requirements. The type chips live in bodyTypes state; for
+      // trailer-pulling categories they were stored as trailersAllowed — restore
+      // them back into the chip state so edit mode shows the selection.
       if (job.vehicleCategory) setVehicleCategory(job.vehicleCategory);
       if (Array.isArray(job.trailersAllowed)) setTrailersAllowed(job.trailersAllowed as string[]);
-      if (Array.isArray(job.bodyTypes)) setBodyTypes(job.bodyTypes as string[]);
+      const chipSource = job.vehicleCategory
+        && bodyCategoryNeedsTrailer(job.vehicleCategory as BodyCategory)
+        && Array.isArray(job.trailersAllowed) && job.trailersAllowed.length
+        ? job.trailersAllowed : job.bodyTypes;
+      if (Array.isArray(chipSource)) setBodyTypes(chipSource as string[]);
 
       // Rejection / exception policy — flat Job columns (not a blob)
       if (job.failureAction && job.failureAction !== "call_assistance") setFailureAction(job.failureAction);
@@ -961,16 +967,10 @@ export default function CreateJobPage() {
       };
     });
 
-    // Derive planned date from the first collection stop's date (no explicit field)
-    const firstCollectDate = stops
-      .find(s => s.type === "collection" && s.date)
-      ?.date?.slice(0, 10);
-
     return {
       saveMode,
       customerId,
       customerName,
-      plannedDate:              firstCollectDate || undefined,
       bookingContactName,
       bookingContactPhone,
       bookingContactEmail,
@@ -996,11 +996,17 @@ export default function CreateJobPage() {
       specialRequirements:      specialItems.length ? specialItems : undefined,
       hazardClass:              hazardClass.trim()  || undefined,
       tunnelCode:               tunnelCode.trim()   || undefined,
-      // Transport requirements — flat canonical names
+      // Transport requirements — flat canonical names. For trailer-pulling
+      // categories the type chips ARE trailer body types (they match
+      // FleetTrailer.bodyType) — store them as trailersAllowed, not unit bodyTypes.
       vehicleCategory:          plannerDecides ? undefined : vehicleCategory || undefined,
-      bodyTypes:                plannerDecides ? undefined : bodyTypes.length ? bodyTypes : undefined,
+      bodyTypes:                plannerDecides || bodyCategoryNeedsTrailer(vehicleCategory as BodyCategory)
+                                  ? undefined : bodyTypes.length ? bodyTypes : undefined,
       equipment:                plannerDecides ? undefined : equipment.length ? equipment : undefined,
-      trailersAllowed:          plannerDecides ? undefined : trailersAllowed.length ? trailersAllowed : undefined,
+      trailersAllowed:          plannerDecides ? undefined
+                                  : bodyCategoryNeedsTrailer(vehicleCategory as BodyCategory)
+                                    ? (bodyTypes.length ? bodyTypes : undefined)
+                                    : trailersAllowed.length ? trailersAllowed : undefined,
       // Billing — flat canonical names (schema expects strings for monetary fields)
       declaredGoodsValue:       declaredValue.trim() || undefined,
       billingReference:         billingRef.trim() || undefined,

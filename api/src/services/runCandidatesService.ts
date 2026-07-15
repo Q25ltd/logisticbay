@@ -14,8 +14,13 @@
  */
 
 import { FRIDGE_BODIES, ADR_UNSAFE_BODIES } from "./checkLoadVehicleService.js";
+import { BODY_TYPES } from "../constants/vehicleTaxonomy.js";
 
 const lc = (s?: string | null) => (s ?? "").toLowerCase();
+// Human label for a body-type value — candidate labels are user-facing, so raw
+// enum values like "curtain_sider" must not leak into the picker.
+const bodyTypeLabel = (v?: string | null) =>
+  v ? (BODY_TYPES.find(b => b.value === v)?.label ?? v) : null;
 // A trailer's body string (bodyType + trailerType) contains one of these tokens.
 const bodyHas = (body: string, tokens: Iterable<string>) =>
   [...tokens].some(t => body.includes(lc(t)));
@@ -109,7 +114,7 @@ export function computeRunCandidates(
     if (loadedWithOurs) reasons.length = 0;   // it literally has this run's load on it
     return {
       id: t.id,
-      label: `${t.registration} · ${loadedWithOurs ? "loaded with this job" : t.trailerType ?? t.bodyType ?? "trailer"}`,
+      label: `${t.registration} · ${loadedWithOurs ? "loaded with this job" : bodyTypeLabel(t.trailerType) ?? bodyTypeLabel(t.bodyType) ?? "trailer"}`,
       available, busyOn: busy.trailers[t.id] ?? null,
       suitable: available && reasons.filter(r => !r.startsWith("status")).length === 0,
       reasons, recommended: false,

@@ -7,7 +7,7 @@ import type { Run, Driver } from "../../types";
 import { Button } from "../../components/Button";
 import { today, addDays } from "../jobs/createJobUtils";
 import { runRoute, runTimes, requiredTrailerLabel } from "./runUtils";
-import { BODY_CATEGORIES, GVW_CLASSES, bodyTypeLabel } from "../../constants/vehicleTaxonomy";
+import { BODY_CATEGORIES, GVW_CLASSES, ONBOARD_EQUIPMENT, bodyTypeLabel } from "../../constants/vehicleTaxonomy";
 
 function truckLabel(t: FleetUnit): string {
   const cat = BODY_CATEGORIES.find(c => c.value === t.category)?.label;
@@ -73,9 +73,20 @@ const FIELD_BY_KIND: Record<PickerKind, AssignField> = {
   driver: "assignedDriverId", truck: "assignedTruckId", trailer: "assignedTrailerId",
 };
 const POPOVER_WIDTH = 300;
+const KIND_META: Record<PickerKind, { icon: string; noun: string }> = {
+  driver:  { icon: "👤", noun: "driver" },
+  truck:   { icon: "🚚", noun: "truck" },
+  trailer: { icon: "🚛", noun: "trailer" },
+};
 
-function AssetPicker({ run, kind, currentId, currentLabel, saving, onAssign }: {
+/** "John Smith" → "JS" for the driver avatar circle. */
+function initials(name: string): string {
+  return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
+function AssetPicker({ run, kind, currentId, currentLabel, subtitle, saving, onAssign }: {
   run: Run; kind: PickerKind; currentId: number | null; currentLabel: string | null;
+  subtitle?: string | null;
   saving: boolean; onAssign: (runId: number, field: AssignField, raw: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -105,7 +116,9 @@ function AssetPicker({ run, kind, currentId, currentLabel, saving, onAssign }: {
 
   async function toggleOpen() {
     if (!open) {
-      const rect = btnRef.current?.getBoundingClientRect();
+      // Anchor the popover to the whole control (chip or placeholder), not the ▾
+      // button — with a selected asset the ▾ is only a few px wide.
+      const rect = boxRef.current?.getBoundingClientRect();
       if (rect) {
         const width = Math.max(rect.width, POPOVER_WIDTH);
         setPos({
@@ -137,15 +150,37 @@ function AssetPicker({ run, kind, currentId, currentLabel, saving, onAssign }: {
 
   return (
     <div className="relative" ref={boxRef}>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={toggleOpen}
-        disabled={saving}
-        className="input text-[12px] py-1 w-full text-left flex items-center justify-between gap-1 disabled:opacity-60">
-        <span className={`truncate ${currentLabel ? "font-semibold text-slate-700" : "text-slate-400"}`}>{currentLabel ?? "— Unassigned —"}</span>
-        <span className="text-slate-400 text-[9px] flex-shrink-0">▾</span>
-      </button>
+      {currentLabel ? (
+        // Assigned → rich chip: avatar/icon, name + subtitle, ✓, clear ×, change ▾
+        <div className={`flex items-center gap-1.5 border border-border rounded-lg bg-white pl-1.5 pr-1 py-1 ${saving ? "opacity-60" : ""}`}>
+          {kind === "driver" ? (
+            <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+              {initials(currentLabel)}
+            </span>
+          ) : (
+            <span className="w-6 h-6 rounded bg-slate-100 text-[12px] flex items-center justify-center flex-shrink-0">{KIND_META[kind].icon}</span>
+          )}
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block text-[12px] font-semibold text-slate-700 truncate">{currentLabel}</span>
+            {subtitle && <span className="block text-[10px] text-slate-500 truncate">{subtitle}</span>}
+          </span>
+          <span className="text-green-600 text-[12px] flex-shrink-0" title="Assigned">✓</span>
+          <button type="button" onClick={() => pick(null)} disabled={saving} title={`Remove ${KIND_META[kind].noun}`}
+            className="text-slate-300 hover:text-rose-500 text-[14px] leading-none px-0.5 flex-shrink-0">×</button>
+          <button ref={btnRef} type="button" onClick={toggleOpen} disabled={saving} title={`Change ${KIND_META[kind].noun}`}
+            className="text-slate-400 hover:text-slate-600 text-[9px] px-1 py-1 flex-shrink-0">▾</button>
+        </div>
+      ) : (
+        <button
+          ref={btnRef}
+          type="button"
+          onClick={toggleOpen}
+          disabled={saving}
+          className="input text-[12px] py-1.5 w-full text-left flex items-center justify-between gap-1 disabled:opacity-60">
+          <span className="text-slate-400">Select {KIND_META[kind].noun}</span>
+          <span className="text-slate-400 text-[9px] flex-shrink-0">▾</span>
+        </button>
+      )}
       {open && pos && (
         <div
           style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
@@ -189,6 +224,277 @@ function AssetPicker({ run, kind, currentId, currentLabel, saving, onAssign }: {
               {sorted.length === 0 && <div className="p-3 text-[12px] text-slate-400">None found</div>}
             </>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Run card — the run's info + allocation controls in one card (2026-07-15 UX ──
+// refresh). Module-level for the same remount reason as AssetPicker. Everything
+// rendered here is form-born or derived server-side: route/times from stops,
+// badges from Run derived requirements, checks straight from the B1 readiness
+// endpoint — no invented categories.
+interface RunRow {
+  run: Run; r: RunReadiness | null | undefined; state: RunState;
+  driver: string | null; truck: string | null; trailer: string | null;
+}
+
+const WORK_PATTERN_LABELS: Record<string, string> = {
+  day_driver: "Day driver", night_driver: "Night driver", tramper: "Tramper",
+};
+const CHECK_ICON: Record<string, { icon: string; cls: string }> = {
+  pass:    { icon: "✓", cls: "text-green-600" },
+  warn:    { icon: "⚠", cls: "text-amber-600" },
+  fail:    { icon: "✕", cls: "text-rose-600" },
+  unknown: { icon: "?", cls: "text-slate-400" },
+};
+
+function cardStatusChip(run: Run, state: RunState): { label: string; cls: string } {
+  switch (state) {
+    case "done":      return { label: RUN_STATUS_LABELS[run.status] ?? run.status, cls: "bg-slate-100 text-slate-500 border-slate-200" };
+    case "published": return { label: "Published", cls: "bg-blue-50 text-blue-700 border-blue-200" };
+    case "checking":  return { label: "Checking…", cls: "bg-slate-50 text-slate-400 border-slate-200" };
+    case "ready":     return { label: "Ready to publish", cls: "bg-green-50 text-green-700 border-green-200" };
+    case "attention":
+      // Severity-honest colours: no driver blocks publish (hard), truck/trailer are soft.
+      if (!run.assignedDriverId)  return { label: "Missing driver",  cls: "bg-rose-50 text-rose-700 border-rose-200" };
+      if (!run.assignedTruckId)   return { label: "Missing truck",   cls: "bg-amber-50 text-amber-700 border-amber-200" };
+      if (!run.assignedTrailerId) return { label: "Missing trailer", cls: "bg-amber-50 text-amber-700 border-amber-200" };
+      return { label: "Not ready", cls: "bg-rose-50 text-rose-700 border-rose-200" };
+  }
+}
+
+function fmtRunDate(iso: string | null | undefined): { label: string | null; dayChip: "Today" | "Tomorrow" | null } {
+  if (!iso) return { label: null, dayChip: null };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { label: null, dayChip: null };
+  const label = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const ymd = iso.slice(0, 10);
+  const dayChip = ymd === today() ? "Today" as const : ymd === addDays(today(), 1) ? "Tomorrow" as const : null;
+  return { label, dayChip };
+}
+
+function AllocationSlot({ label, missing, hard, children }: {
+  label: string; missing: boolean; hard: boolean; children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-[11px] font-semibold text-slate-600">{label}</span>
+        {missing && (
+          <span className={`text-[9px] font-bold px-1.5 py-px rounded border ${
+            hard ? "bg-rose-50 text-rose-600 border-rose-200" : "bg-amber-50 text-amber-600 border-amber-200"}`}>
+            {hard ? "Required" : "Needed"}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function RunCard({ row, checked, highlighted, saving, publishing, allDrivers, trucks, trailers, onToggle, onAssign, onPublish }: {
+  row: RunRow; checked: boolean; highlighted: boolean; saving: boolean; publishing: boolean;
+  allDrivers: Driver[]; trucks: FleetUnit[]; trailers: FleetTrailer[];
+  onToggle: (id: number) => void;
+  onAssign: (runId: number, field: AssignField, raw: string) => void;
+  onPublish: (e: React.MouseEvent, runId: number) => void;
+}) {
+  const { run, r, state, driver, truck, trailer } = row;
+  const [issuesOpen, setIssuesOpen] = useState(false);
+  const route = runRoute(run);
+  const times = runTimes(run);
+  const trailerHint = requiredTrailerLabel(run);
+  const chip = cardStatusChip(run, state);
+  const { label: dateLabel, dayChip } = fmtRunDate(run.plannedDate);
+
+  // Subtitles for the assigned chips — from the already-loaded fleet/driver lists.
+  const driverObj = run.assignedDriverId ? allDrivers.find(d => d.id === run.assignedDriverId) : undefined;
+  const driverSub = driverObj
+    ? [driverObj.adrAllowed ? "ADR" : null, driverObj.workPattern ? WORK_PATTERN_LABELS[driverObj.workPattern] : null].filter(Boolean).join(" · ")
+    : null;
+  const truckObj = run.assignedTruckId ? trucks.find(t => t.id === run.assignedTruckId) : undefined;
+  const trailerObj = run.assignedTrailerId ? trailers.find(t => t.id === run.assignedTrailerId) : undefined;
+
+  // Readiness → progress; checks → issue rows (real B1 checks, "na" hidden).
+  const checks = (r?.resources.checks ?? []).filter(c => c.status !== "na");
+  const issues = checks.filter(c => c.status !== "pass");
+  const hasHardFail = issues.some(c => c.status === "fail" && c.hard);
+  const pct = r ? readinessPct(r) : -1;
+  const checksLeft = r ? r.resources.total - r.resources.passed : 0;
+
+  const equipmentLabels = (run.requiredEquipment ?? [])
+    .map(v => ONBOARD_EQUIPMENT.find(e => e.value === v)?.label ?? v);
+
+  // Unique jobs on this run → "view full job" links.
+  const runJobs = [...new Map(
+    (run.assignments ?? []).filter(a => a.job).map(a => [a.job!.id, a.job!.jobReference ?? `#${a.job!.id}`]),
+  ).entries()];
+
+  const canPublish = state === "ready";
+  const isDone = state === "done";
+
+  return (
+    <div className={`rounded-xl border bg-white shadow-sm ${highlighted ? "ring-2 ring-primary border-primary/40" : "border-border"}`}>
+      {/* ── Run information band ── */}
+      <div className="flex flex-wrap gap-x-5 gap-y-3 px-4 pt-3.5 pb-3">
+        {/* Identity: ref, status, route, load meta, job links */}
+        <div className="flex items-start gap-2.5 flex-1 min-w-[220px]">
+          <input type="checkbox" className="mt-1.5" checked={checked} onChange={() => onToggle(run.id)} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[16px] font-bold text-primary leading-tight">{run.runReference}</span>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${chip.cls}`}>{chip.label}</span>
+              {state !== "done" && <span className="text-[10px] text-slate-400">{RUN_STATUS_LABELS[run.status] ?? run.status}</span>}
+            </div>
+            {(route.origin || route.destination) && (
+              <div className="text-[13px] font-semibold text-slate-700 mt-0.5 truncate">
+                {route.origin ?? "?"} → {route.destination ?? "?"}
+              </div>
+            )}
+            <div className="flex items-center gap-2.5 flex-wrap text-[11px] text-slate-500 mt-1">
+              <span>📍 {route.stops} {route.stops === 1 ? "stop" : "stops"}</span>
+              {route.loadSummary && <span>📦 {route.loadSummary}</span>}
+              {run.maxLoadWeight != null && run.maxLoadWeight > 0 && (
+                <span>⚖ {run.maxLoadWeight.toLocaleString("en-GB")} kg</span>
+              )}
+            </div>
+            {runJobs.map(([jobId, jobRef]) => (
+              <Link key={jobId} to={`/app/jobs/${jobId}`}
+                className="block text-[11px] font-semibold text-blue-600 hover:underline truncate mt-0.5">
+                View job {jobRef} →
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Schedule: date + Today/Tomorrow, collection / delivery times */}
+        <div className="min-w-[150px] text-[11px]">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[12px] font-semibold text-slate-700">📅 {dateLabel ?? "No date"}</span>
+            {dayChip && (
+              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-px">{dayChip}</span>
+            )}
+          </div>
+          {times.collect && (
+            <div className="text-slate-500 mt-1.5">Collection <span className="font-semibold text-slate-700 ml-0.5">🕐 {times.collect}</span></div>
+          )}
+          {times.deliver && (
+            <div className="text-slate-500 mt-0.5">
+              Delivery <span className="font-semibold text-slate-700 ml-0.5">🕐 {times.deliver}</span>
+              {times.deliverBooked && (
+                <span className="ml-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1">booked</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Load needs: required trailer type + requirement badges */}
+        {(trailerHint || run.hasHazardous || run.hasTemperatureLoad || run.hasOversized || equipmentLabels.length > 0) && (
+          <div className="min-w-[130px] max-w-[200px]">
+            {trailerHint && <div className="text-[12px] font-semibold text-slate-700">🚛 {trailerHint}</div>}
+            <div className="flex gap-1 flex-wrap mt-1.5">
+              {run.hasHazardous && (
+                <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1.5 py-px rounded" title="Requires an ADR-certified driver">⚠ ADR</span>
+              )}
+              {run.hasTemperatureLoad && (
+                <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-px rounded" title="Requires a temperature-controlled trailer">❄ Temp</span>
+              )}
+              {run.hasOversized && (
+                <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-px rounded">📏 Oversized</span>
+              )}
+              {equipmentLabels.map(l => (
+                <span key={l} className="text-[9px] font-bold bg-violet-50 text-violet-700 border border-violet-200 px-1.5 py-px rounded">{l}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Readiness: % + bar (gate is boolean; % is progress through checks) */}
+        {!isDone && (
+          <div className="min-w-[130px]">
+            <div className="text-[11px] font-semibold text-slate-600 mb-1">Readiness</div>
+            {state === "checking" || !r ? (
+              <span className="text-[11px] text-slate-400 animate-pulse">checking…</span>
+            ) : (
+              <>
+                <div className={`text-[18px] font-bold leading-tight ${r.ready ? "text-green-700" : "text-amber-700"}`}>{pct}%</div>
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-1 max-w-[130px]">
+                  <div className={`h-full ${r.ready ? "bg-green-500" : "bg-amber-400"}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  {r.ready && checksLeft === 0 && <span className="text-green-700 font-semibold">All checks passed</span>}
+                  {r.ready && checksLeft > 0 && <span className="text-green-700 font-semibold">Ready</span>}
+                  {r.ready && checksLeft > 0 && <span> · {checksLeft} advisory left</span>}
+                  {!r.ready && `${checksLeft} ${checksLeft === 1 ? "check" : "checks"} left`}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Checks panel — the real B1 readiness checks, problems first */}
+        {!isDone && r && (
+          <div className={`rounded-lg border px-3 py-2.5 min-w-[190px] max-w-[240px] text-[11px] ${
+            hasHardFail ? "bg-rose-50/60 border-rose-200" : issues.length > 0 ? "bg-amber-50/60 border-amber-200" : "bg-green-50/50 border-green-200"}`}>
+            <div className="font-semibold text-slate-600 mb-1">Checks</div>
+            {issues.length === 0 && (
+              <div className="text-green-700 font-semibold flex items-center gap-1.5"><span>✓</span> All good</div>
+            )}
+            {issues.map(c => {
+              const ic = CHECK_ICON[c.status] ?? CHECK_ICON.unknown;
+              return (
+                <div key={c.key} className="flex items-start gap-1.5 py-px">
+                  <span className={`${ic.cls} flex-shrink-0`}>{ic.icon}</span>
+                  <span className="text-slate-700 min-w-0">
+                    {c.label}
+                    {issuesOpen && c.reason && <span className="block text-[10px] text-slate-500">{c.reason}</span>}
+                  </span>
+                </div>
+              );
+            })}
+            {issues.some(c => c.reason) && (
+              <button onClick={() => setIssuesOpen(o => !o)} className="mt-1 text-[10px] font-semibold text-blue-600 hover:underline">
+                {issuesOpen ? "Hide details" : "Show details"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Allocation band: driver / truck / trailer + publish ── */}
+      {!isDone && (
+        <div className="border-t border-slate-100 px-4 py-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-start">
+          <AllocationSlot label="👤 Driver" missing={!run.assignedDriverId} hard>
+            <AssetPicker run={run} kind="driver" currentId={run.assignedDriverId ?? null} currentLabel={driver}
+              subtitle={driverSub} saving={saving} onAssign={onAssign} />
+          </AllocationSlot>
+          <AllocationSlot label="🚚 Truck (Unit)" missing={!run.assignedTruckId} hard={false}>
+            <AssetPicker run={run} kind="truck" currentId={run.assignedTruckId ?? null} currentLabel={truck}
+              subtitle={truckObj ? truckLabel(truckObj) : null} saving={saving} onAssign={onAssign} />
+          </AllocationSlot>
+          <AllocationSlot label="🚛 Trailer" missing={!run.assignedTrailerId} hard={false}>
+            <AssetPicker run={run} kind="trailer" currentId={run.assignedTrailerId ?? null} currentLabel={trailer}
+              subtitle={trailerObj ? trailerLabel(trailerObj) : null} saving={saving} onAssign={onAssign} />
+            {!run.assignedTrailerId && trailerHint && (
+              <div className="text-[10px] text-amber-700 mt-1">Needs: {trailerHint}</div>
+            )}
+          </AllocationSlot>
+          <div className="flex items-end justify-end sm:col-span-2 xl:col-span-1 xl:self-end">
+            {state === "published" ? (
+              <span className="inline-block text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">✓ Published</span>
+            ) : (
+              <button
+                onClick={e => onPublish(e, run.id)}
+                disabled={!canPublish || publishing}
+                title={canPublish ? "Publish to driver" : (r ? r.blockers.join(" · ") : "Checking readiness…")}
+                className={`text-[12px] font-semibold px-4 py-2 rounded-lg ${
+                  canPublish ? "bg-green-600 text-white hover:opacity-90" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+                {publishing ? "Publishing…" : "🚀 Publish"}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -449,42 +755,6 @@ export default function RunsPage() {
     );
   }
 
-  function ReadinessCell({ state, r }: { state: RunState; r: RunReadiness | null | undefined }) {
-    if (state === "done") return <span className="text-slate-300">—</span>;
-    if (state === "checking" || !r) return <span className="text-[11px] text-slate-400 animate-pulse">checking…</span>;
-    const { passed, total } = r.resources;
-    const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
-    const left = total - passed;
-    return (
-      <div className="w-full max-w-28">
-        <div className="flex items-center justify-between gap-1 text-[11px] mb-0.5 whitespace-nowrap">
-          <span className={`font-semibold ${r.ready ? "text-green-700" : "text-amber-700"}`}>{pct}%</span>
-          <span className="text-slate-400">{r.ready ? "Ready" : `${left} left`}</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-          <div className={`h-full ${r.ready ? "bg-green-500" : "bg-amber-400"}`} style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-    );
-  }
-
-  function ActionCell({ run, state, r }: { run: Run; state: RunState; r: RunReadiness | null | undefined }) {
-    if (state === "done") return <span className="text-slate-300">—</span>;
-    if (state === "published") {
-      return <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">Published</span>;
-    }
-    if (state === "ready") {
-      return (
-        <button onClick={e => handlePublish(e, run.id)} disabled={publishingId === run.id}
-          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:opacity-90">
-          {publishingId === run.id ? "…" : "Publish"}
-        </button>
-      );
-    }
-    // attention → nothing to click; the driver/truck/trailer selects on this row are the action
-    return <span className="text-[11px] text-slate-400" title={r ? r.blockers.join(" · ") : ""}>Pick assets →</span>;
-  }
-
   // ── Company assets — read-only reference, 3 columns like the mockup's panel.
   // The FULL fleet, each asset with its live state (available / on RUN-x / off
   // road), so the planner sees what the company has at a glance. Allocation
@@ -728,125 +998,39 @@ export default function RunsPage() {
                 <p className="text-sm">Nothing in this pile. <button onClick={() => setTab("all")} className="text-blue-600 hover:underline">Show all active runs</button></p>
               </div>
             ) : (
-              <div className="overflow-x-auto border border-border rounded-lg">
-                {/* min-w keeps the pickers usable on narrow screens — the wrapper scrolls
-                    horizontally instead of crushing the columns into slivers */}
-                <table className="w-full min-w-[680px] text-sm table-fixed">
-                  <colgroup>
-                    <col style={{ width: "2.5rem" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "5%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "11%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
-                      <th className="px-3 py-2 font-semibold">
-                        <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} />
-                      </th>
-                      <th className="px-3 py-2 font-semibold">Run</th>
-                      <th className="px-3 py-2 font-semibold">Stops</th>
-                      <th className="px-3 py-2 font-semibold">Driver</th>
-                      <th className="px-3 py-2 font-semibold">Truck</th>
-                      <th className="px-3 py-2 font-semibold">Trailer</th>
-                      <th className="px-3 py-2 font-semibold">Status / Readiness</th>
-                      <th className="px-3 py-2 font-semibold text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groups.map(group => (
-                      <Fragment key={group.label ?? "__none__"}>
-                        {group.label !== null && (
-                          <tr key={`g-${group.label}`} className="bg-slate-50/80">
-                            <td colSpan={8} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                              {group.label} <span className="text-slate-400 font-normal normal-case">· {group.rows.length}</span>
-                            </td>
-                          </tr>
-                        )}
-                        {group.rows.map(({ run, r, state, driver, truck, trailer }) => {
-                          const route = runRoute(run);
-                          const times = runTimes(run);
-                          const trailerHint = requiredTrailerLabel(run);
-                          const checked = selectedRows.has(run.id);
-                          const highlighted = highlightId === run.id;
-                          // Unique jobs on this run → "view full job" links.
-                          const runJobs = [...new Map(
-                            (run.assignments ?? []).filter(a => a.job).map(a => [a.job!.id, a.job!.jobReference ?? `#${a.job!.id}`]),
-                          ).entries()];
-                          return (
-                            <tr key={run.id}
-                              className={`border-t border-slate-100 ${highlighted ? "bg-primary/5 ring-1 ring-inset ring-primary" : state === "attention" ? "hover:bg-amber-50/40" : "hover:bg-slate-50"}`}>
-                              <td className="px-3 py-2.5 align-top">
-                                <input type="checkbox" checked={checked} onChange={() => toggleRow(run.id)} />
-                              </td>
-                              <td className="px-3 py-2.5 align-top overflow-hidden">
-                                <div className="font-semibold text-primary text-[13px] truncate">{run.runReference}</div>
-                                {(route.origin || route.destination) && (
-                                  <div className="text-[11px] text-slate-600 truncate">{route.origin ?? "?"} → {route.destination ?? "?"}</div>
-                                )}
-                                {(times.collect || times.deliver) && (
-                                  <div className="text-[10px] text-slate-500 leading-tight" title="Collection → delivery">
-                                    🕐 {times.collect ?? "?"} → {times.deliver ?? "?"}
-                                    {times.deliverBooked && <span className="ml-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 whitespace-nowrap">booked</span>}
-                                  </div>
-                                )}
-                                {(run.hasHazardous || run.hasTemperatureLoad || run.hasOversized || run.maxLoadWeight) && (
-                                  <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                                    {run.hasHazardous && (
-                                      <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1 rounded" title="Requires an ADR-certified driver">⚠ ADR</span>
-                                    )}
-                                    {run.hasTemperatureLoad && (
-                                      <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1 rounded" title="Requires a temperature-controlled trailer">❄ Temp</span>
-                                    )}
-                                    {run.hasOversized && (
-                                      <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1 rounded">📏 Oversized</span>
-                                    )}
-                                    {run.maxLoadWeight && (
-                                      <span className="text-[9px] font-semibold text-slate-500">{(run.maxLoadWeight / 1000).toFixed(1)}t</span>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="text-[10px] text-slate-400">{RUN_STATUS_LABELS[run.status] ?? run.status}</div>
-                                {runJobs.map(([jobId, jobRef]) => (
-                                  <Link key={jobId} to={`/app/jobs/${jobId}`}
-                                    className="block text-[11px] font-semibold text-blue-600 hover:underline truncate">
-                                    View job {jobRef} →
-                                  </Link>
-                                ))}
-                              </td>
-                              <td className="px-3 py-2.5 align-top text-slate-500 text-[13px]">
-                                📍 {route.stops}
-                                {route.loadSummary && <div className="text-[10px] text-slate-400">{route.loadSummary}</div>}
-                              </td>
-                              <td className="px-3 py-2.5 align-top">
-                                <AssetPicker run={run} kind="driver" currentId={run.assignedDriverId ?? null} currentLabel={driver}
-                                  saving={savingRunId === run.id} onAssign={handleAssignField} />
-                              </td>
-                              <td className="px-3 py-2.5 align-top">
-                                <AssetPicker run={run} kind="truck" currentId={run.assignedTruckId ?? null} currentLabel={truck}
-                                  saving={savingRunId === run.id} onAssign={handleAssignField} />
-                              </td>
-                              <td className="px-3 py-2.5 align-top">
-                                <AssetPicker run={run} kind="trailer" currentId={run.assignedTrailerId ?? null} currentLabel={trailer}
-                                  saving={savingRunId === run.id} onAssign={handleAssignField} />
-                                {!run.assignedTrailerId && trailerHint && (
-                                  <div className="text-[10px] text-amber-700 mt-0.5 truncate">Needs: {trailerHint}</div>
-                                )}
-                              </td>
-                              <td className="px-3 py-2.5 align-top"><ReadinessCell state={state} r={r} /></td>
-                              <td className="px-2 py-2.5 align-top text-right">
-                                <ActionCell run={run} state={state} r={r} />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                {/* Select-all lives here now that there's no table header */}
+                <label className="flex items-center gap-2 text-[11px] text-slate-500 mb-2 cursor-pointer w-fit">
+                  <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} />
+                  Select all shown
+                </label>
+                <div className="space-y-3">
+                  {groups.map(group => (
+                    <Fragment key={group.label ?? "__none__"}>
+                      {group.label !== null && (
+                        <div className="px-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                          {group.label} <span className="text-slate-400 font-normal normal-case">· {group.rows.length}</span>
+                        </div>
+                      )}
+                      {group.rows.map(row => (
+                        <RunCard
+                          key={row.run.id}
+                          row={row}
+                          checked={selectedRows.has(row.run.id)}
+                          highlighted={highlightId === row.run.id}
+                          saving={savingRunId === row.run.id}
+                          publishing={publishingId === row.run.id}
+                          allDrivers={allDrivers}
+                          trucks={trucks}
+                          trailers={trailers}
+                          onToggle={toggleRow}
+                          onAssign={handleAssignField}
+                          onPublish={handlePublish}
+                        />
+                      ))}
+                    </Fragment>
+                  ))}
+                </div>
               </div>
             )}
           </div>

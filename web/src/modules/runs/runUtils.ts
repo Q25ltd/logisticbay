@@ -21,7 +21,14 @@ export function runRoute(run: Run): RunRoute {
   const origin      = first?.town || first?.locationTextSnapshot?.split(",")[0]?.trim() || null;
   const destination = last?.town  || last?.locationTextSnapshot?.split(",")[0]?.trim()  || null;
   const units    = new Set(list.map(a => a.quantityUnit).filter(Boolean));
-  const totalQty = list.reduce((s, a) => s + (a.quantityAssigned || 0), 0);
+  // The load on board is what the run COLLECTS — summing collect + deliver
+  // double-counts the same pallets. Runs with no collection stop (e.g. a
+  // yard-pick delivery leg) fall back to all stops.
+  const collects = list.filter(a => a.jobPart?.type === "collection");
+  // quantityAssigned is a Prisma Decimal — arrives as a string over JSON, so
+  // coerce before summing or `+` concatenates ("0" + "14" + "14" = "01414").
+  const totalQty = (collects.length ? collects : list)
+    .reduce((s, a) => s + (Number(a.quantityAssigned) || 0), 0);
   const loadSummary = units.size === 1 && totalQty > 0 ? `${totalQty} ${[...units][0]}` : null;
   return { origin, destination, stops: list.length, loadSummary };
 }
