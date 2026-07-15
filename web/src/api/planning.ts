@@ -103,12 +103,8 @@ export interface PlanningAssignment {
     lng?:           number | null;
     timeWindowStart?: string | null;
     timeWindowEnd?:   string | null;
-    // Freight requirement fields returned by the API include on jobPart
-    hazardous?:       boolean | null;
-    tempControlled?:  boolean | null;
-    tempRange?:       string | null;
-    oversized?:       boolean | null;
-    stopGoodsType?:   string | null;
+    // Freight requirement fields live on job — the stop-level duplicates were
+    // removed 2026-07-14 (no form wrote them)
     job: {
       id:           number;
       jobReference: string | null;
@@ -121,6 +117,10 @@ export interface PlanningAssignment {
       stackable:    boolean | null;
       vehicleCategory: string | null;
       minGvwClass:  string | null;
+      hazardClass:  string | null;
+      tempControlled: boolean | null;
+      tempRange:    string | null;
+      specialRequirements: string[] | null;
       status:       string | null;
     };
   };
@@ -216,6 +216,10 @@ export interface PlannerWorkItem {
   weight:           number | null;
   quantity:         number | null;
   quantityUnit:     string | null;
+  // Quantity ledger — remainingQuantity > 0 with assignedQuantity > 0 means a
+  // partial/multi-trip remainder still to plan ("4 of 30 remaining")
+  assignedQuantity:  number;
+  remainingQuantity: number | null;
   hasHazardous:     boolean;
   hasTempControl:   boolean;
   riskLevel:        "high" | "medium" | "low" | "none";

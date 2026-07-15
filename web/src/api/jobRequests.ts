@@ -381,9 +381,9 @@ export const jobRequestsApi = {
       `/job-requests?${new URLSearchParams({ ...(status ? { status } : {}), ...(page ? { page: String(page) } : {}) })}`,
     ),
   get:     (id: number) => api.get<import("../types").Job>(`/job-requests/${id}`),
-  /** plannedDate is required. vehicleCategory required if not already on the job. */
-  accept:  (id: number, plannedDate: string, plannerNotes?: string, vehicleCategory?: string, bodyTypes?: string[]) =>
-    api.post<{ ok: true; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, { plannedDate, plannerNotes, vehicleCategory, bodyTypes }),
+  /** vehicleCategory required if not already on the job. The collection date derives from stop time windows server-side. */
+  accept:  (id: number, body: { plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[]; driverVisibleNotes?: string; safetyInstructions?: string }) =>
+    api.post<{ ok: true; jobId: number; jobReference: string | null }>(`/job-requests/${id}/accept`, body),
   reject:  (id: number, reason: string, notes?: string) =>
     api.post<{ ok: true }>(`/job-requests/${id}/reject`, { reason, notes }),
 };

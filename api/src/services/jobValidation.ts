@@ -22,8 +22,6 @@ export interface StructuredJobPartInput {
   postcode?: unknown;
   lat?: number | null;
   lng?: number | null;
-  gateLat?: number | null;
-  gateLng?: number | null;
   timeWindowStart?: string | Date | null;
   timeWindowEnd?: string | Date | null;
   bookedTime?: string | Date | null;
@@ -235,9 +233,6 @@ export function validateStructuredJob(input: StructuredJobValidationInput): JobV
 
     if (!isFiniteNumberOrMissing(stop.lat) || !isFiniteNumberOrMissing(stop.lng)) {
       errors.push("Stop lat/lng must be valid numbers when provided");
-    }
-    if (!isFiniteNumberOrMissing(stop.gateLat) || !isFiniteNumberOrMissing(stop.gateLng)) {
-      errors.push("Stop gateLat/gateLng must be valid numbers when provided");
     }
 
     if (!hasText(stop.contactName) && !hasText(stop.contactPhone)) {

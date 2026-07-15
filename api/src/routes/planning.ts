@@ -18,7 +18,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 import { haversineKm }               from "../lib/geo.js";
-import { cancelRun }                 from "../services/runService.js";
+import { cancelRun, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText } from "../services/runService.js";
 import { parseIdParam }              from "../lib/validate.js";
 import { dayRangeUtc }               from "../lib/dateUtils.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
@@ -154,6 +154,8 @@ const RUN_INCLUDE = {
               goodsType: true, goodsDescription: true,
               quantity: true, quantityUnit: true, weight: true,
               stackable: true, vehicleCategory: true, minGvwClass: true,
+              hazardClass: true, tempControlled: true, tempRange: true,
+              specialRequirements: true,
               status: true,
             },
           },
@@ -297,7 +299,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       const parts = await prisma.jobPart.findMany({
         where,
-        include: { job: { select: { id: true, customerName: true, goodsType: true, stackable: true, weight: true, vehicleCategory: true, minGvwClass: true } } },
+        include: { job: { select: { id: true, customerName: true, goodsType: true, stackable: true, weight: true, vehicleCategory: true, minGvwClass: true, hazardClass: true, tempControlled: true, tempRange: true, specialRequirements: true } } },
         orderBy: [{ timeWindowStart: "asc" }, { id: "asc" }],
       });
 
@@ -308,6 +310,11 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         return p.numPallets ?? null;
       };
 
+      // Load flags come from the JOB-level intake fields — the forms capture
+      // hazard/temperature/oversized there (four-intake-gates rule).
+      const jobSpecial = (p: typeof parts[number]): string[] =>
+        Array.isArray(p.job.specialRequirements) ? (p.job.specialRequirements as string[]) : [];
+
       const stops: ProposalStop[] = parts.map(p => ({
         jobId:          p.jobId,
         jobPartId:      p.id,
@@ -316,11 +323,11 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         postcode:       p.postcode ?? null,
         lat:            p.lat != null ? Number(p.lat) : null,
         lng:            p.lng != null ? Number(p.lng) : null,
-        hazardous:      p.hazardous,
-        tempControlled: p.tempControlled,
-        tempRange:      p.tempRange,
-        oversized:      p.oversized,
-        goodsType:      p.stopGoodsType ?? p.job.goodsType,
+        hazardous:      !!p.job.hazardClass?.trim() || jobSpecial(p).includes("dangerous_goods"),
+        tempControlled: p.job.tempControlled,
+        tempRange:      p.job.tempRange,
+        oversized:      jobSpecial(p).includes("oversized"),
+        goodsType:      p.job.goodsType,
         pallets:        palletsOf(p),
         stackable:      p.job.stackable,
         weightKg:       p.job.weight,
@@ -513,15 +520,24 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       const part = await prisma.jobPart.findFirst({ where: { id: b.jobPartId, companyId } });
       if (!part) return notFound(reply, "Stop");
 
-      // Check not already actively assigned to another run
-      const existing = await prisma.runAssignment.findFirst({
-        where: { jobPartId: b.jobPartId, companyId, removedAt: null },
+      // Quantity ledger: a part may sit on SEVERAL runs (split / multi-trip —
+      // same driver, several trips) while the shares never exceed the total.
+      const dupOnThisRun = await prisma.runAssignment.findFirst({
+        where: { jobPartId: b.jobPartId, runId, companyId, removedAt: null },
       });
-      if (existing && existing.runId !== runId) {
-        return conflict(reply, "CONFLICT", "Stop is already assigned to another run");
+      if (dupOnThisRun) return conflict(reply, "CONFLICT", "Stop is already on this run");
+
+      const ledger = await partQuantityLedger(prisma, companyId, b.jobPartId);
+      if (!ledger) return notFound(reply, "Stop");
+      if (ledger.total == null && ledger.breakdown.length > 0) {
+        return conflict(reply, "CONFLICT", `Stop is already on ${ledger.breakdown[0].runReference} and has no quantity to split.`);
       }
-      if (existing && existing.runId === runId) {
-        return conflict(reply, "CONFLICT", "Stop is already on this run");
+      if (ledger.total != null && (ledger.remaining ?? 0) <= 0) {
+        return conflict(reply, "FULLY_ASSIGNED", `All ${ledger.total} ${part.quantityUnit || "units"} of this stop are already on runs (${ledgerBreakdownText(ledger)}).`);
+      }
+      const requestedQty = b.quantityAssigned ?? ledger.remaining ?? Number(part.quantityRequired ?? 0);
+      if (ledger.total != null && requestedQty > (ledger.remaining ?? 0)) {
+        return badRequest(reply, "OVER_ASSIGNED", `Only ${ledger.remaining} of ${ledger.total} ${part.quantityUnit || "units"} remain unassigned (${ledgerBreakdownText(ledger)}) — cannot assign ${requestedQty}.`);
       }
 
       // Get next sequence number
@@ -541,7 +557,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           jobPartId: b.jobPartId,
           jobId:     part.jobId,
           sequenceNumber:   nextSeq,
-          quantityAssigned: b.quantityAssigned ?? Number(part.quantityRequired ?? 0),
+          quantityAssigned: requestedQty,
           quantityUnit:     part.quantityUnit  ?? "",
           status:           "not_started",   // EXECUTION_STATES initial (Step 1)
           addedBy:          userId,
@@ -549,7 +565,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       });
 
       // Refresh derived requirements then advance job to in_planning
-      await recalcDerived(runId, companyId, prisma);
+      await recalculateDerivedRequirements(runId, companyId, prisma);
       await syncJobPlanningStatuses([part.jobId], companyId, prisma);
 
       const updated = await prisma.run.findFirst({ where: { id: runId }, include: RUN_INCLUDE });
@@ -578,7 +594,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         data:  { removedAt: new Date(), removedBy: userId },
       });
 
-      await recalcDerived(runId, companyId, prisma);
+      await recalculateDerivedRequirements(runId, companyId, prisma);
       // Revert job to ready_to_plan if this was its last active assignment
       await syncJobPlanningStatuses([a.jobId], companyId, prisma);
 
@@ -1034,7 +1050,7 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           }
 
           // Recalculate derived requirements on source run (delivery stops removed)
-          await recalcDerived(sourceRunId, companyId, txPrisma);
+          await recalculateDerivedRequirements(sourceRunId, companyId, txPrisma);
         }
 
         // Return the new run with full include
@@ -1065,31 +1081,3 @@ async function generateRunReference(
   return `RUN-${year}-${seq}`;
 }
 
-async function recalcDerived(runId: number, companyId: number, prisma: PrismaClient): Promise<void> {
-  const activeAssignments = await prisma.runAssignment.findMany({
-    where:   { runId, companyId, removedAt: null },
-    include: { jobPart: true },
-  });
-  const parts = activeAssignments.map(a => a.jobPart);
-  const hasHazardous       = parts.some(p => p.hazardous);
-  const hasTemperatureLoad = parts.some(p => p.tempControlled);
-  const hasOversized       = parts.some(p => p.oversized);
-  const totalWeight        = parts.reduce((s, p) => s + (p.stopWeight ? Number(p.stopWeight) : 0), 0);
-  let requiredTrailerType: string | null = null;
-  if (hasTemperatureLoad)  requiredTrailerType = "temperature_controlled";
-  else if (hasHazardous)   requiredTrailerType = "curtainsider_or_flatbed"; // ADR needs an open body (no fume build-up)
-  else if (hasOversized)   requiredTrailerType = "curtainsider_or_flatbed";
-  await prisma.run.update({
-    where: { id: runId },
-    data:  {
-      hasHazardous,
-      hasTemperatureLoad,
-      hasOversized,
-      maxLoadWeight:       totalWeight > 0 ? totalWeight : null,
-      requiredTrailerType,
-    },
-  });
-
-  // Step 5: requirements just changed — recompute trailer/vehicle compatibility.
-  await recomputeRunCompatibility(prisma, runId, companyId);
-}

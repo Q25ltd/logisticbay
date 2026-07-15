@@ -69,10 +69,9 @@ function makeJobPart(overrides: Partial<{
   timeWindowStart: Date | null;
   timeWindowEnd: Date | null;
   bookedTime: Date | null;
-  hazardous: boolean;
-  tempControlled: boolean;
-  stopWeight: number | null;
   status: string;
+  quantityRequired: number | null;
+  runAssignments: { quantityAssigned: number }[];
   job: Record<string, unknown>;
 }> = {}) {
   return {
@@ -91,10 +90,10 @@ function makeJobPart(overrides: Partial<{
     timeWindowStart:      overrides.timeWindowStart ?? null,
     timeWindowEnd:        overrides.timeWindowEnd ?? null,
     bookedTime:           overrides.bookedTime ?? null,
-    hazardous:            overrides.hazardous ?? false,
-    tempControlled: overrides.tempControlled ?? false,
-    stopWeight:           overrides.stopWeight ?? null,
     status:               overrides.status ?? "pending",
+    quantityRequired:     overrides.quantityRequired ?? null,
+    // mirrors the real partInclude: active assignments' shares (quantity ledger)
+    runAssignments:       overrides.runAssignments ?? [],
     job: overrides.job ?? {
       id: overrides.jobId ?? 10,
       jobReference:    "LB-2026-001",

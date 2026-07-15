@@ -25,7 +25,7 @@ import { env }                   from "../lib/env.js";
 import { generateJobReference }  from "../lib/jobReference.js";
 import { buildStopData }         from "../lib/jobUtils.js";
 import { parseBody, parseIdParam } from "../lib/validate.js";
-import { CreateJobSchema, type CreateJobInput } from "../schemas/jobs.js";
+import { CreateJobSchema, AcceptJobRequestSchema, type CreateJobInput } from "../schemas/jobs.js";
 import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
 import {
   validateStructuredJob,
@@ -365,7 +365,9 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
     async (request, reply) => {
       const id   = parseIdParam(request.params);
       if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
-      const body = request.body as { plannerNotes?: string; vehicleCategory?: string; bodyTypes?: string[] };
+      const parsedAccept = parseBody(AcceptJobRequestSchema, request.body);
+      if (!parsedAccept.ok) return validationFailed(reply, parsedAccept.errors);
+      const body = parsedAccept.data;
 
       const job = await prisma.job.findFirst({
         where:   { id, companyId: request.user!.companyId },
@@ -459,6 +461,14 @@ export async function jobRequestRoutes(app: FastifyInstance, prisma: PrismaClien
             vehicleCategory,
             ...(Array.isArray(body.bodyTypes) && body.bodyTypes.length
               ? { bodyTypes: body.bodyTypes }
+              : {}),
+            // Driver-facing notes: the planner reviews/edits the customer's
+            // submission at accept time (CJP has no driver-notes section).
+            ...(body.driverVisibleNotes !== undefined
+              ? { driverVisibleNotes: body.driverVisibleNotes.trim() || null }
+              : {}),
+            ...(body.safetyInstructions !== undefined
+              ? { safetyInstructions: body.safetyInstructions.trim() || null }
               : {}),
             validationStatus: validation.validationStatus,
           },

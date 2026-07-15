@@ -19,6 +19,7 @@ export default function DriverForm({ initial, onSave, onCancel }: {
     employmentStartDate: initial?.employmentStartDate ? String(initial.employmentStartDate).slice(0, 10) : "",
     driverType: initial?.driverType ?? "permanent",
     licenceClass: initial?.licenceClass ?? "",
+    defaultTruckReg: initial?.defaultTruckReg ?? "",
     endorsements: Array.isArray(initial?.endorsements) ? initial.endorsements : [] as string[],
     canUseTrailer: Boolean(initial?.canUseTrailer),
     trailerTypesAllowed: Array.isArray(initial?.trailerTypesAllowed) ? initial.trailerTypesAllowed : [] as string[],
@@ -202,6 +203,19 @@ export default function DriverForm({ initial, onSave, onCancel }: {
                 <option key={l.value} value={l.value}>{l.label}</option>
               ))}
             </select>
+          </label>
+
+          <label className="block text-sm font-semibold">
+            Usual truck (registration)
+            <input
+              className="input mt-1 w-full"
+              value={form.defaultTruckReg}
+              onChange={set("defaultTruckReg")}
+              placeholder="e.g. LV1234A"
+            />
+            <span className="block text-xs font-normal text-muted mt-0.5">
+              The unit this driver normally takes — recommended first when allocating runs.
+            </span>
           </label>
         </div>
 

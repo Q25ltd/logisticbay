@@ -7,6 +7,12 @@
 const ORS_BASE = "https://api.openrouteservice.org/v2";
 const API_KEY  = process.env.ORS_API_KEY ?? "";
 
+// Never hang on a slow/throttled routing provider — every caller treats null
+// as "routing unavailable" and falls back to haversine estimates, so a
+// bounded failure is always better than an unbounded wait.
+const ORS_TIMEOUT_MS      = 8000;
+const POSTCODE_TIMEOUT_MS = 5000;
+
 // Default HGV constraints matching a typical 44t artic
 const DEFAULT_HGV = {
   weight:     44,   // tonnes GVW
@@ -42,6 +48,7 @@ export async function getHgvLeg(
   try {
     const res = await fetch(`${ORS_BASE}/directions/driving-hgv`, {
       method: "POST",
+      signal: AbortSignal.timeout(ORS_TIMEOUT_MS),
       headers: {
         "Authorization": API_KEY,
         "Content-Type":  "application/json",
@@ -103,6 +110,7 @@ export async function getHgvMatrix(
   try {
     const res = await fetch(`${ORS_BASE}/matrix/driving-hgv`, {
       method: "POST",
+      signal: AbortSignal.timeout(ORS_TIMEOUT_MS),
       headers: {
         "Authorization": API_KEY,
         "Content-Type":  "application/json",
@@ -140,7 +148,7 @@ export async function postcodeToCoords(postcode: string): Promise<Coords | null>
   if (!clean) return null;
 
   try {
-    const res  = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`);
+    const res  = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(clean)}`, { signal: AbortSignal.timeout(POSTCODE_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json() as { result?: { latitude: number; longitude: number } };
     if (!data.result) return null;

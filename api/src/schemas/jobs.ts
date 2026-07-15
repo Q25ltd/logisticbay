@@ -17,8 +17,6 @@ const JobPartSchema = z.object({
   locationTextSnapshot:      z.string().max(4000).default(""),
   lat:                       z.number().nullable().optional(),
   lng:                       z.number().nullable().optional(),
-  gateLat:                   z.number().nullable().optional(),
-  gateLng:                   z.number().nullable().optional(),
   timeWindowStart:           z.string().max(200).nullable().optional(),
   timeWindowEnd:             z.string().max(200).nullable().optional(),
   bookedTime:                z.string().max(200).nullable().optional(),
@@ -162,6 +160,18 @@ export const PatchJobSchema = JobCreateBaseSchema.extend({
   internalNotes: z.string().max(4000).nullable().optional(),
   status:        z.string().max(64).optional(),
 }).strip();
+
+// ── Accept a PRF request into planning ────────────────────────────────────────
+// The planner reviews the customer's submission and may add/adjust the
+// driver-facing notes here (CJP deliberately has no driver-notes section —
+// they are added at accept time).
+export const AcceptJobRequestSchema = z.object({
+  plannerNotes:       z.string().max(4000).optional(),
+  vehicleCategory:    z.string().max(200).optional(),
+  bodyTypes:          z.array(z.string().max(64)).optional(),
+  driverVisibleNotes: z.string().max(4000).optional(),
+  safetyInstructions: z.string().max(4000).optional(),
+});
 
 // ── Status update, note ───────────────────────────────────────────────────────
 

@@ -86,8 +86,6 @@ export interface JobPart {
   locationTextSnapshot: string;
   lat?: number | null;
   lng?: number | null;
-  gateLat?: number | null;
-  gateLng?: number | null;
   timeWindowStart?: string | null;
   timeWindowEnd?: string | null;
   bookedTime?: string | null;
@@ -124,14 +122,7 @@ export interface JobPart {
   heightRestriction?: string;
   weightRestriction?: string;
   lengthRestriction?: string;
-  // Stop-level load flags
-  tempControlled?: boolean;
-  tempRange?: string;
-  stopGoodsType?: string;
-  stopWeight?: number | null;
-  hazardous?: boolean;
-  hazardClass?: string;
-  oversized?: boolean;
+  // Load flags live at Job level — stop-level duplicates removed 2026-07-14
 }
 
 // LoadDetails is now merged into Job — this interface is kept only for legacy template blobs
@@ -177,7 +168,6 @@ export interface Job {
   jobTitle?: string | null;
 
   // scheduling
-  plannedDate?: string | null;
   serviceType?: string;
   jobType?:     string;
   canSplitShipment?: string;
@@ -341,7 +331,7 @@ export interface RunAssignment {
   notes?:           string | null;
   // Relations (included on detail views)
   jobPart?: JobPart;
-  job?: Pick<Job, "id" | "jobReference" | "customerName" | "plannedDate" | "status" | "goodsDescription" | "plannerNotes">;
+  job?: Pick<Job, "id" | "jobReference" | "customerName" | "status" | "goodsDescription" | "plannerNotes">;
 }
 export interface FleetUnit {
   id: number;
@@ -477,8 +467,6 @@ export interface SavedLocation {
   postcode: string;
   lat: number | null;
   lng: number | null;
-  gateLat?: number | null;
-  gateLng?: number | null;
   contactName: string;
   contactPhone: string;
   instructions: string;

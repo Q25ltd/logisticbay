@@ -2,7 +2,7 @@
  * Internal review queue for incoming transport requests (pending_review jobs).
  * Planner/office staff see all pending jobs from the PRF and can accept or reject.
  *
- * Accept = sets plannedDate (required) + vehicleCategory (required if not set) + plannerNotes (optional) → ready_to_plan
+ * Accept = vehicleCategory (required if not set) + planner/driver notes → ready_to_plan (collection date derives from stop time windows server-side)
  * Reject = cancels the job and logs a reason
  */
 
@@ -304,16 +304,12 @@ function RequestRow({
   const [rejectReason,    setRejectReason]    = useState("no_capacity");
   const [rejectNotes,     setRejectNotes]     = useState("");
   const [accepting,       setAccepting]       = useState(false);
-  // Derive planned date automatically from the first collection stop's time window.
-  // Not shown to the planner — the stop dates are the source of truth.
-  const _initFirstStop = (j.stops ?? [])[0];
-  const derivedPlannedDate =
-    (j.stops ?? []).find(s => s.type === "collection" || s.type === "pickup")?.timeWindowStart?.slice(0, 10) ??
-    _initFirstStop?.timeWindowStart?.slice(0, 10) ??
-    _initFirstStop?.bookedTime?.slice(0, 10) ??
-    j.plannedDate?.slice(0, 10) ??
-    "";
+  // The collection date derives from stop time windows SERVER-side on accept.
   const [plannerNotes,    setPlannerNotes]    = useState("");
+  // Driver-facing notes: pre-filled with the customer's PRF submission so the
+  // planner reviews/edits them at accept time (CJP has no driver-notes section).
+  const [driverVisibleNotes, setDriverVisibleNotes] = useState(j.driverVisibleNotes ?? "");
+  const [safetyInstructions, setSafetyInstructions] = useState(j.safetyInstructions ?? "");
   const [vehicleCategory, setVehicleCategory] = useState(j.vehicleCategory ?? "");
   const [bodyTypes,       setBodyTypes]       = useState<string[]>((j.bodyTypes as string[] | null) ?? []);
   const [busy, setBusy] = useState(false);
@@ -343,13 +339,15 @@ function RequestRow({
     if (!vehicleAlreadySet && !vehicleCategory) { setErr("Vehicle type is required"); return; }
     setBusy(true); setErr("");
     try {
-      await jobRequestsApi.accept(
-        j.id,
-        derivedPlannedDate,
-        plannerNotes.trim() || undefined,
-        vehicleAlreadySet ? undefined : vehicleCategory,
-        bodyTypes.length ? bodyTypes : undefined,
-      );
+      await jobRequestsApi.accept(j.id, {
+        plannerNotes:       plannerNotes.trim() || undefined,
+        vehicleCategory:    vehicleAlreadySet ? undefined : vehicleCategory,
+        bodyTypes:          bodyTypes.length ? bodyTypes : undefined,
+        // Always sent — the textareas are prefilled with the customer's PRF
+        // values, so what the planner sees is exactly what gets stored.
+        driverVisibleNotes,
+        safetyInstructions,
+      });
       onAccepted();
     } catch (e: unknown) { setErr((e as Error).message); setBusy(false); }
   }
@@ -555,6 +553,32 @@ function RequestRow({
                     value={plannerNotes}
                     onChange={e => setPlannerNotes(e.target.value)}
                     placeholder="Allocated to North route. Call site before 08:00."
+                  />
+                </div>
+
+                {/* Driver-facing notes — reviewed/edited at accept time */}
+                <div>
+                  <label className="text-xs font-medium" style={{ color: "#374151" }}>
+                    Notes to driver <span className="text-xs font-normal text-slate-400">(optional — shown in the driver app)</span>
+                  </label>
+                  <textarea
+                    className="input mt-1 text-sm"
+                    rows={2}
+                    value={driverVisibleNotes}
+                    onChange={e => setDriverVisibleNotes(e.target.value)}
+                    placeholder="Ring the site office on arrival. Loading bay 4."
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium" style={{ color: "#374151" }}>
+                    Safety instructions <span className="text-xs font-normal text-slate-400">(optional — shown in the driver app)</span>
+                  </label>
+                  <textarea
+                    className="input mt-1 text-sm"
+                    rows={2}
+                    value={safetyInstructions}
+                    onChange={e => setSafetyInstructions(e.target.value)}
+                    placeholder="Hi-vis and hard hat required on site."
                   />
                 </div>
 

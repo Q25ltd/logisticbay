@@ -240,8 +240,6 @@ model SavedLocation {
   postcode             String?
   lat                  Float?
   lng                  Float?
-  gateLat              Float?
-  gateLng              Float?
   contactName          String?
   contactPhone         String?
   instructions         String?
@@ -449,17 +447,12 @@ model JobPart {
 
   lat     Float?
   lng     Float?
-  gateLat Float?
-  gateLng Float?
-
-  coordinateVerified Boolean @default(false)
 
   timeWindowStart           DateTime?
   timeWindowEnd             DateTime?
   bookedTime                DateTime?
   earliestArrivalMinutes    Int?
   unloadingAllowanceMinutes Int?
-  standingChargeNote        String?
 
   contactName     String?
   contactPhone    String?
@@ -491,14 +484,10 @@ model JobPart {
   // Load readiness reported by customer
   loadReadiness      String?
 
-  // Stop-level load specification — drives trailer compatibility checks
-  stopGoodsType        String?
-  stopWeight           Decimal?
-  tempControlled       Boolean  @default(false)
-  tempRange            String?
-  hazardous            Boolean  @default(false)
-  hazardClass          String?
-  oversized            Boolean  @default(false)
+  // Load specification lives at Job level (goodsType/weight/tempControlled/
+  // hazardClass/specialRequirements) — the intake forms capture it there.
+  // Stop-level override columns were removed 2026-07-14: no form wrote them,
+  // and algorithms reading them were checking permanently-false data.
 
   heightRestriction String?
   weightRestriction String?
@@ -1030,10 +1019,9 @@ model FleetTrailer {
   linkedJobId      Int?
   yardLocation     String?
 
-  // Standing load tracking — updated by Events, never set manually
-  loadStatus       String   @default("empty")  // empty | loaded_standing | loaded_with_driver
-  standingNote     String?
-  standingRunId    Int?
+  // Load state is tracked via status="loaded" + linkedJobId (set by planner/
+  // events). A parallel loadStatus/standingNote/standingRunId trio was removed
+  // 2026-07-14 — nothing ever wrote it (duplicate concept, permanently empty).
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

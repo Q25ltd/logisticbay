@@ -47,6 +47,16 @@ function fmtDate(iso: string): string {
 function prevDay(d: string): string { return addDays(d, -1); }
 function nextDay(d: string): string { return addDays(d, 1); }
 
+/** This run's share of a job's weight: weight × (assigned ÷ total) when the
+ *  job is split across runs; the full weight otherwise. */
+function shareWeight(assigned: number, totalQty: number | null, weight: number | null): number | null {
+  if (weight == null) return null;
+  if (totalQty != null && totalQty > 0 && assigned > 0 && assigned < totalQty) {
+    return Math.round(weight * (assigned / totalQty));
+  }
+  return weight;
+}
+
 function relativeDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d   = iso.slice(0, 10);
@@ -194,15 +204,16 @@ function goodsCompatBadge(goodsType: string | null | undefined) {
 // Requirements-based: shows what the freight NEEDS, independent of assigned vehicle.
 
 function CapacityBar({ run }: { run: PlanningRun }) {
-  // Deduplicate by jobId so collect+deliver of the same job doesn't double-count
+  // Deduplicate by jobId so collect+deliver of the same job doesn't double-count,
+  // and use THIS RUN'S assigned share (not the job total) when the job is split.
   const seenJobs = new Set<number>();
   let totalKg = 0, pallets = 0;
   for (const a of run.assignments) {
     if (!seenJobs.has(a.jobId)) {
       seenJobs.add(a.jobId);
-      totalKg += a.jobPart.job.weight ?? 0;
+      totalKg += shareWeight(a.quantityAssigned || 0, a.jobPart.job.quantity, a.jobPart.job.weight) ?? 0;
       if (["pallet","pallets","plt","pl"].includes((a.jobPart.job.quantityUnit ?? "").toLowerCase())) {
-        pallets += a.jobPart.job.quantity ?? 0;
+        pallets += (a.quantityAssigned || 0) > 0 ? (a.quantityAssigned || 0) : (a.jobPart.job.quantity ?? 0);
       }
     }
   }
@@ -476,7 +487,15 @@ function JobWorkCard({
         {rep.vehicleCategory && <Badge colour="bg-slate-100 text-slate-600">{cap(rep.vehicleCategory)}</Badge>}
         {goodsCompatBadge(rep.goodsType)}
         {rep.weight   != null && rep.weight   > 0 && <span className="text-[11px] text-muted">{rep.weight.toLocaleString()} kg</span>}
-        {rep.quantity != null && rep.quantity > 0  && <span className="text-[11px] text-muted">{rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}</span>}
+        {/* Partially assigned: what's still to plan is the REMAINDER — show
+            "4 of 30 remaining" so split/multi-trip cargo never disappears */}
+        {rep.assignedQuantity > 0 && (rep.remainingQuantity ?? 0) > 0 ? (
+          <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-1 rounded">
+            {rep.remainingQuantity} of {rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""} remaining
+          </span>
+        ) : (
+          rep.quantity != null && rep.quantity > 0 && <span className="text-[11px] text-muted">{rep.quantity}{rep.quantityUnit ? " " + cap(rep.quantityUnit) : ""}</span>
+        )}
       </div>
 
       {/* ── Warnings ── */}
@@ -632,6 +651,7 @@ function RunLane({
   const [relayFor,      setRelayFor]      = useState<number | null>(null);   // sourceRunId being linked
   const [relayYardId,   setRelayYardId]   = useState<number | "">("");        // chosen yard (remembers last)
   const [splitting,     setSplitting]     = useState(false);
+  const [splitKeep,     setSplitKeep]     = useState<number | null>(null);   // planner-chosen "keep here" share
 
   async function handleSplitClick(keepQuantity: number) {
     setSplitting(true);
@@ -721,18 +741,21 @@ function RunLane({
             timeWindowEnd:   a.jobPart.timeWindowEnd,
             customerName:    a.jobPart.job.customerName,
             jobId:           a.jobId,   // Q4 coverage — match delivery ↔ collection
-            // Freight requirement fields for compatibility check
-            hazardous:       a.jobPart.hazardous,
-            tempControlled:  a.jobPart.tempControlled,
-            tempRange:       a.jobPart.tempRange,
-            oversized:       a.jobPart.oversized,
-            goodsType:       a.jobPart.stopGoodsType ?? a.jobPart.job.goodsType,
-            // Q5a capacity — pallet footprint (only collection stops are summed server-side)
+            // Freight requirement fields — job-level intake truth (the forms
+            // capture hazard / temperature / oversized on the job)
+            hazardous:       !!a.jobPart.job.hazardClass?.trim() || (a.jobPart.job.specialRequirements ?? []).includes("dangerous_goods"),
+            tempControlled:  a.jobPart.job.tempControlled,
+            tempRange:       a.jobPart.job.tempRange,
+            oversized:       (a.jobPart.job.specialRequirements ?? []).includes("oversized"),
+            goodsType:       a.jobPart.job.goodsType,
+            // Q5a capacity — THIS RUN'S share, not the job total. After a split
+            // (26/4 of 30) each run must be checked against its own share, or
+            // the capacity check keeps demanding another split forever.
             pallets:         ["pallet","pallets","plt","pl"].includes((a.jobPart.job.quantityUnit ?? "").toLowerCase())
-                               ? a.jobPart.job.quantity : null,
+                               ? (a.quantityAssigned > 0 ? a.quantityAssigned : a.jobPart.job.quantity) : null,
             stackable:       a.jobPart.job.stackable,
-            // Q5b vehicle suitability — load weight + declared vehicle requirement
-            weightKg:           a.jobPart.job.weight,
+            // Q5b vehicle suitability — this run's share of the load weight
+            weightKg:           shareWeight(a.quantityAssigned, a.jobPart.job.quantity, a.jobPart.job.weight),
             reqVehicleCategory: a.jobPart.job.vehicleCategory,
             reqMinGvwClass:     a.jobPart.job.minGvwClass,
           }));
@@ -1146,16 +1169,31 @@ function RunLane({
                     })}
                   </div>
                 )}
-                {/* Capacity over-fill → split into another run (auto by capacity) */}
-                {planCheck.capacity && !planCheck.capacity.ok && planCheck.capacity.maxSpaces != null && (
-                  <div className="mt-1.5">
-                    <button onClick={() => handleSplitClick(planCheck.capacity.maxSpaces!)} disabled={splitting}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white border border-current hover:opacity-80 disabled:opacity-50 whitespace-nowrap"
-                      title={`Keep ${planCheck.capacity.maxSpaces} here, move the rest to a new split run (you can adjust after)`}>
-                      {splitting ? "Splitting…" : `✂ Split into ${planCheck.capacity.splitInto ?? 2} runs`}
-                    </button>
-                  </div>
-                )}
+                {/* Capacity over-fill → split into another run. The planner
+                    chooses how much STAYS here; the remainder moves to the
+                    new run. Defaults to what the biggest available trailer
+                    can carry; must be less than the largest assigned load. */}
+                {planCheck.capacity && !planCheck.capacity.ok && planCheck.capacity.maxSpaces != null && (() => {
+                  const maxAssigned = Math.max(0, ...run.assignments.map(a => a.quantityAssigned || 0));
+                  const keep = splitKeep ?? Math.min(planCheck.capacity!.maxSpaces!, Math.max(1, maxAssigned - 1));
+                  const valid = keep >= 1 && keep < maxAssigned;
+                  return (
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      <label className="text-[10px] font-medium whitespace-nowrap">Keep here:</label>
+                      <input type="number" min={1} max={Math.max(1, maxAssigned - 1)} value={keep}
+                        onChange={e => setSplitKeep(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="input text-[11px] py-0.5 px-1 w-14" />
+                      <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                        → {valid ? `${maxAssigned - keep} move to a new run` : `must be under ${maxAssigned}`}
+                      </span>
+                      <button onClick={() => handleSplitClick(keep)} disabled={splitting || !valid}
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white border border-current hover:opacity-80 disabled:opacity-50 whitespace-nowrap"
+                        title={`Keep ${keep} here, move ${Math.max(0, maxAssigned - keep)} to a new split run`}>
+                        {splitting ? "Splitting…" : "✂ Split run"}
+                      </button>
+                    </div>
+                  );
+                })()}
                 {/* Yard picker — choose where the handoff happens (defaults to depot) */}
                 {relayFor != null && (
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap bg-white/70 rounded p-1.5">
@@ -1337,19 +1375,26 @@ function RunLane({
                           );
                         })()}
                       </div>
-                      {/* Row 3: load details (only when present) */}
-                      {((a.jobPart.job.weight ?? 0) > 0 || (a.jobPart.job.quantity ?? 0) > 0) && (
-                        <div className="flex items-center gap-2 px-2 pb-1 pl-9">
-                          {(a.jobPart.job.weight ?? 0) > 0 && (
-                            <span className="text-[10px] text-muted">{a.jobPart.job.weight!.toLocaleString()} kg</span>
-                          )}
-                          {(a.jobPart.job.quantity ?? 0) > 0 && (
-                            <span className="text-[10px] text-muted">
-                              {a.jobPart.job.quantity}{a.jobPart.job.quantityUnit ? ` ${cap(a.jobPart.job.quantityUnit)}` : ""}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      {/* Row 3: load details — THIS RUN'S share when the job is
+                          split across runs ("4 of 30 Pallets"), else the total */}
+                      {((a.jobPart.job.weight ?? 0) > 0 || (a.jobPart.job.quantity ?? 0) > 0) && (() => {
+                        const totalQty = a.jobPart.job.quantity ?? 0;
+                        const share    = a.quantityAssigned || 0;
+                        const isSplit  = totalQty > 0 && share > 0 && share < totalQty;
+                        const showWeight = shareWeight(share, a.jobPart.job.quantity, a.jobPart.job.weight);
+                        return (
+                          <div className="flex items-center gap-2 px-2 pb-1 pl-9">
+                            {(showWeight ?? 0) > 0 && (
+                              <span className="text-[10px] text-muted">{showWeight!.toLocaleString()} kg{isSplit ? " (share)" : ""}</span>
+                            )}
+                            {totalQty > 0 && (
+                              <span className={`text-[10px] ${isSplit ? "font-semibold text-amber-700" : "text-muted"}`}>
+                                {isSplit ? `${share} of ${totalQty}` : totalQty}{a.jobPart.job.quantityUnit ? ` ${cap(a.jobPart.job.quantityUnit)}` : ""}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {/* Row 4: cargo state pill */}
                       {cargoPill && (
                         <div className="flex items-center gap-1 px-2 pb-1 pl-9">

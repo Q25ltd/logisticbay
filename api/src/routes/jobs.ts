@@ -27,7 +27,9 @@ const JOB_DETAIL_INCLUDE = {
   events:      { orderBy: { createdAt: "asc" as const } },
   runAssignments: {
     where:  { removedAt: null },
-    select: { id: true, jobPartId: true, status: true },
+    // quantityAssigned = this trip's share — a multi-trip driver must know how
+    // many to pick on each run ("26 first trip, 4 second").
+    select: { id: true, jobPartId: true, status: true, quantityAssigned: true, quantityUnit: true, runId: true },
   },
 } satisfies Prisma.JobInclude;
 

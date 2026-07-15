@@ -139,7 +139,7 @@ export default function JobQuickLook({ jobId, onClose }: { jobId: number | null;
           {job && (
             <div className="flex items-center gap-2 mt-2">
               <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_COLOUR[job.status] ?? "bg-slate-100 text-slate-600"}`}>{cap(job.status.replace(/_/g, " "))}</span>
-              <span className="text-[11px] text-slate-400">{fmtDate(job.plannedDate)}</span>
+              <span className="text-[11px] text-slate-400">{fmtDate(job.stops?.find(s => s.type === "collection" || s.type === "pickup")?.timeWindowStart ?? job.stops?.[0]?.timeWindowStart ?? null)}</span>
               <Link to={`/app/jobs/${job.id}`} className="ml-auto text-[12px] text-blue-600 hover:underline font-medium">Open full job →</Link>
             </div>
           )}
@@ -198,7 +198,7 @@ export default function JobQuickLook({ jobId, onClose }: { jobId: number | null;
               </Section>
             )}
 
-            <div className="px-4 py-3 text-[10px] text-slate-300">Read-only preview · {fmtDateTime(job.plannedDate)}</div>
+            <div className="px-4 py-3 text-[10px] text-slate-300">Read-only preview</div>
           </div>
         )}
       </aside>

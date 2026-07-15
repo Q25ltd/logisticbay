@@ -28,10 +28,12 @@ export interface MixResult {
 // Only freight-carrying stops contribute a load to the mix.
 const FREIGHT_STOP_TYPES = new Set(["collection", "pickup", "delivery", "dropoff", "reload"]);
 
+// Whole-word matching — substring matching flagged "air fresheners" as food
+// via "fresh" (same failure class as "coil" containing "oil").
 const FOOD_HINTS = ["food", "perishable", "fresh", "chilled", "frozen", "meat", "dairy", "produce", "grocery"];
 const isFood = (g?: string | null) => {
   const s = (g ?? "").toLowerCase();
-  return FOOD_HINTS.some(h => s.includes(h));
+  return FOOD_HINTS.some(h => new RegExp(`\\b${h}\\b`).test(s));
 };
 
 /**

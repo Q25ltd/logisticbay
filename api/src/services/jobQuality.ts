@@ -12,9 +12,12 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+// The "Exact entrance pin" on the stop card is captured in lat/lng — the
+// former gateLat/gateLng duplicate columns were removed 2026-07-14 (no form
+// wrote them, so this check silently failed for every job).
 function hasGate(stop: StructuredJobPartInput): boolean {
-  return typeof stop.gateLat === "number" && Number.isFinite(stop.gateLat)
-    && typeof stop.gateLng === "number" && Number.isFinite(stop.gateLng);
+  return typeof stop.lat === "number" && Number.isFinite(stop.lat)
+    && typeof stop.lng === "number" && Number.isFinite(stop.lng);
 }
 
 function hasTimeWindow(stop: StructuredJobPartInput): boolean {

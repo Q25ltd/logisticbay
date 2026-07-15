@@ -85,11 +85,13 @@ test("run compatibility — temp load + dry trailer blocks publish (Step 5)", as
     // COMPAT override, so its driver must be trailer-capable.
     data: { companyId: company.id, userId: driverUser.id, displayName: `${PREFIX}D`, status: "active", canUseTrailer: true },
   });
+  // tempControlled lives at JOB level — that's where the intake forms capture
+  // it (stop-level override columns were removed 2026-07-14).
   const job = await prisma.job.create({
-    data: { companyId: company.id, createdByUserId: planner.id, customerName: `${PREFIX}C`, status: "ready_to_plan" },
+    data: { companyId: company.id, createdByUserId: planner.id, customerName: `${PREFIX}C`, status: "ready_to_plan", tempControlled: true },
   });
   const part = await prisma.jobPart.create({
-    data: { companyId: company.id, jobId: job.id, sequenceNumber: 1, type: "collection", tempControlled: true },
+    data: { companyId: company.id, jobId: job.id, sequenceNumber: 1, type: "collection" },
   });
   const dryTrailer = await prisma.fleetTrailer.create({
     data: { companyId: company.id, registration: `${PREFIX}TR`, trailerType: "box", bodyType: "box", status: "available" },

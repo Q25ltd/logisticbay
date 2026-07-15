@@ -83,9 +83,11 @@ function selectBodyTypes(input: VehicleSuggestionInput): string[] {
   // ADR hazardous
   if (input.hazardClass) return ADR_BODIES;
 
-  // Description keyword matching
+  // Description keyword matching — whole words only: substring matching
+  // suggested a car transporter for "cardboard" and a low-loader for
+  // "plant pots" (same failure class as "coil" containing "oil").
   for (const { patterns, bodies } of DESCRIPTION_BODY_MAP) {
-    if (patterns.some(p => desc.includes(p))) return bodies;
+    if (patterns.some(p => new RegExp(`\\b${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(desc))) return bodies;
   }
 
   return DEFAULT_BODIES;

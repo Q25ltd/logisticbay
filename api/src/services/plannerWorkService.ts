@@ -32,6 +32,11 @@ export interface PlannerWorkItem {
   weight:           number | null;
   quantity:         number | null;
   quantityUnit:     string | null;
+  // Quantity ledger — how much of this part is already on active runs.
+  // remainingQuantity > 0 with assignedQuantity > 0 = a partial/multi-trip
+  // remainder still to plan ("4 of 30 remaining").
+  assignedQuantity:  number;
+  remainingQuantity: number | null;
   hasHazardous:     boolean;
   hasTempControl:   boolean;
   riskLevel:        "high" | "medium" | "low" | "none";
@@ -226,10 +231,12 @@ export async function getPlannerWorkItems(
   // We mirror the date-range logic from /planning/unplanned.
   // Two sub-queries: timeWindowStart in range, bookedTime in range (E.2 — plannedDate removed).
 
+  // A part belongs on the board when NOTHING is assigned — or when only part
+  // of its quantity is on runs (split leg removed / partial assignment): the
+  // REMAINDER must stay visible or cargo silently disappears from planning.
   const baseWhere = {
     companyId,
-    job:            { status: { in: ["ready_to_plan", "in_planning"] as string[] } },
-    runAssignments: { none: { removedAt: null as null } },
+    job: { status: { in: ["ready_to_plan", "in_planning"] as string[] } },
   };
 
   const jobSelect = {
@@ -242,9 +249,10 @@ export async function getPlannerWorkItems(
 
   const partInclude = {
     job: { select: jobSelect },
+    runAssignments: { where: { removedAt: null as null }, select: { quantityAssigned: true } },
   } as const;
 
-  const [withWindow, withBookedTime] = await Promise.all([
+  const [withWindowAll, withBookedTimeAll] = await Promise.all([
     prisma.jobPart.findMany({
       where: { ...baseWhere, timeWindowStart: { gte, lte } },
       include: partInclude,
@@ -254,6 +262,23 @@ export async function getPlannerWorkItems(
       include: partInclude,
     }),
   ]);
+
+  // Quantity ledger per part: total (form-born) vs Σ assigned on active runs.
+  type PartWithLedger = typeof withWindowAll[number];
+  const ledgerOf = (p: PartWithLedger) => {
+    const total    = p.quantityRequired != null ? Number(p.quantityRequired)
+                   : p.job.quantity     != null ? Number(p.job.quantity) : null;
+    const assigned = p.runAssignments.reduce((s, a) => s + Number(a.quantityAssigned), 0);
+    const remaining = total != null ? Math.max(total - assigned, 0) : null;
+    return { total, assigned, remaining };
+  };
+  const needsPlanning = (p: PartWithLedger) => {
+    if (p.runAssignments.length === 0) return true;                  // nothing assigned
+    const { total, remaining } = ledgerOf(p);
+    return total != null && (remaining ?? 0) > 0;                    // partial — remainder to plan
+  };
+  const withWindow     = withWindowAll.filter(needsPlanning);
+  const withBookedTime = withBookedTimeAll.filter(needsPlanning);
 
   // ── 1b. In-custody loads parked at a yard — DATE-INDEPENDENT ───────────────
   //
@@ -539,8 +564,10 @@ export async function getPlannerWorkItems(
       weight:           job.weight    != null ? Number(job.weight)    : null,
       quantity:         job.quantity  != null ? Number(job.quantity)  : null,
       quantityUnit:     job.quantityUnit,
-      hasHazardous:     part.hazardous  || !!job.hazardClass,
-      hasTempControl:   part.tempControlled || job.tempControlled || false,
+      assignedQuantity:  ledgerOf(part).assigned,
+      remainingQuantity: ledgerOf(part).remaining,
+      hasHazardous:     !!job.hazardClass,
+      hasTempControl:   job.tempControlled || false,
       riskLevel,
       warnings,
       sortScore:        score,

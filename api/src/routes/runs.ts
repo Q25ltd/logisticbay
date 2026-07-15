@@ -1,16 +1,17 @@
 import type { FastifyInstance } from "fastify";
-import { parseIdParam } from "../lib/validate.js";
+import { parseBody, parseIdParam } from "../lib/validate.js";
 import type { TxClient } from "../lib/types.js";
 import { dayRangeUtc } from "../lib/dateUtils.js";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
-import { cancelRun } from "../services/runService.js";
+import { cancelRun, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText } from "../services/runService.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
-import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
 import { loadRunReadiness } from "../services/runReadinessService.js";
 import { computeRunCandidates } from "../services/runCandidatesService.js";
+import { SplitRunSchema } from "../schemas/runs.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
 async function generateRunReference(
@@ -25,68 +26,6 @@ async function generateRunReference(
   });
   const seq = (company.nextRunSequence - 1).toString().padStart(6, "0");
   return `RUN-${year}-${seq}`;
-}
-
-// ── Derived requirements — recalculated whenever assignments change ────────────
-async function recalculateDerivedRequirements(
-  runId: number,
-  companyId: number,
-  tx: TxClient,
-): Promise<void> {
-  // Fetch all active (non-removed) assignments with their JobPart
-  const activeAssignments = await tx.runAssignment.findMany({
-    where:   { runId, companyId, removedAt: null },
-    include: { jobPart: true },
-  });
-
-  const parts = activeAssignments.map(a => a.jobPart);
-
-  const hasHazardous      = parts.some(p => p.hazardous);
-  const hasTemperatureLoad = parts.some(p => p.tempControlled);
-  const hasOversized       = parts.some(p => p.oversized);
-
-  // Max load weight: sum of stop weights where provided
-  const totalWeight = parts.reduce((sum, p) => {
-    return p.stopWeight ? sum + Number(p.stopWeight) : sum;
-  }, 0);
-  const maxLoadWeight = totalWeight > 0 ? totalWeight : null;
-
-  // Required trailer type: temperature wins, then hazardous (ADR needs an open
-  // body — no fume build-up), then oversized.
-  let requiredTrailerType: string | null = null;
-  if (hasTemperatureLoad) {
-    requiredTrailerType = "temperature_controlled";
-  } else if (hasHazardous) {
-    requiredTrailerType = "curtainsider_or_flatbed";
-  } else if (hasOversized) {
-    requiredTrailerType = "curtainsider_or_flatbed";
-  }
-
-  // Required equipment: union of all handling methods from all parts
-  const equipmentSet = new Set<string>();
-  for (const p of parts) {
-    if (Array.isArray(p.handlingMethods)) {
-      for (const m of p.handlingMethods as string[]) {
-        equipmentSet.add(m);
-      }
-    }
-  }
-  const requiredEquipment = equipmentSet.size > 0 ? [...equipmentSet] : null;
-
-  await tx.run.update({
-    where: { id: runId },
-    data: {
-      hasHazardous,
-      hasTemperatureLoad,
-      hasOversized,
-      maxLoadWeight:      maxLoadWeight != null ? maxLoadWeight : null,
-      requiredTrailerType,
-      requiredEquipment:  requiredEquipment != null ? (requiredEquipment as Prisma.InputJsonValue) : Prisma.DbNull,
-    },
-  });
-
-  // Step 5: requirements just changed — recompute trailer/vehicle compatibility.
-  await recomputeRunCompatibility(tx, runId, companyId);
 }
 
 // ── Driver conflict check ─────────────────────────────────────────────────────
@@ -367,9 +306,9 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const id = parseIdParam(request.params);
     if (id === null) return badRequest(reply, "BAD_REQUEST", "id must be a valid integer");
     const { companyId, userId } = request.user!;
-    const body = request.body as { keepQuantity?: number };
-    const keep = typeof body.keepQuantity === "number" && body.keepQuantity > 0 ? body.keepQuantity : null;
-    if (keep === null) return badRequest(reply, "BAD_REQUEST", "keepQuantity must be a positive number");
+    const parsedSplit = parseBody(SplitRunSchema, request.body);
+    if (!parsedSplit.ok) return validationFailed(reply, parsedSplit.errors);
+    const keep = parsedSplit.data.keepQuantity;
 
     const outcome = await prisma.$transaction(async (tx) => {
       const run = await tx.run.findFirst({
@@ -413,7 +352,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
 
     if (outcome.kind === "notfound") return notFound(reply, "Run");
-    if (outcome.kind === "nothing")  return badRequest(reply, "NOTHING_TO_SPLIT", `No stop on this run exceeds ${keep} — nothing to split.`);
+    if (outcome.kind === "nothing")  return badRequest(reply, "NOTHING_TO_SPLIT", `No load on this run carries more than ${keep} — there is nothing to move to a second run. Lower the "keep" amount below the largest assigned quantity.`);
 
     const [original, newRun] = await Promise.all([
       prisma.run.findFirst({ where: { id, companyId }, include: RUN_DETAIL_INCLUDE }),
@@ -667,12 +606,26 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (!job)    return badRequest(reply, "BAD_REQUEST", "Job not found");
     if (jobPart.jobId !== body.jobId) return badRequest(reply, "BAD_REQUEST", "JobPart does not belong to this Job");
 
-    // Check for existing active assignment of this JobPart on any run
-    const existingAssignment = await prisma.runAssignment.findFirst({
-      where: { jobPartId: body.jobPartId, companyId, removedAt: null },
+    // Quantity ledger: a part may sit on SEVERAL runs (split / multi-trip —
+    // same driver, several trips) as long as the shares never exceed the
+    // form-born total and the same run doesn't get the part twice.
+    const dupOnThisRun = await prisma.runAssignment.findFirst({
+      where: { jobPartId: body.jobPartId, runId, companyId, removedAt: null },
     });
-    if (existingAssignment) {
-      return conflict(reply, "ALREADY_ASSIGNED", "This job part is already assigned to a run");
+    if (dupOnThisRun) return conflict(reply, "ALREADY_ON_RUN", "This stop is already on this run");
+
+    const ledger = await partQuantityLedger(prisma, companyId, body.jobPartId);
+    if (!ledger) return badRequest(reply, "BAD_REQUEST", "JobPart not found");
+    if (ledger.total == null && ledger.breakdown.length > 0) {
+      // No quantity to apportion — a second assignment would just duplicate the stop.
+      return conflict(reply, "ALREADY_ASSIGNED", `This stop is already on ${ledger.breakdown[0].runReference} and has no quantity to split.`);
+    }
+    if (ledger.total != null && (ledger.remaining ?? 0) <= 0) {
+      return conflict(reply, "FULLY_ASSIGNED", `All ${ledger.total} ${job.quantityUnit || "units"} of this stop are already on runs (${ledgerBreakdownText(ledger)}).`);
+    }
+    const requestedQty = body.quantityAssigned ?? ledger.remaining ?? Number(jobPart.quantityRequired ?? job.quantity ?? 0);
+    if (ledger.total != null && requestedQty > (ledger.remaining ?? 0)) {
+      return badRequest(reply, "OVER_ASSIGNED", `Only ${ledger.remaining} of ${ledger.total} ${job.quantityUnit || "units"} remain unassigned (${ledgerBreakdownText(ledger)}) — cannot assign ${requestedQty}.`);
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -693,8 +646,10 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
           jobPartId:        body.jobPartId,
           jobId:            body.jobId,
           sequenceNumber,
-          quantityAssigned: body.quantityAssigned ?? 0,
-          quantityUnit:     body.quantityUnit ?? "",
+          // Share = requested amount, else the unassigned REMAINDER (so a
+          // second trip automatically takes what's left of the load).
+          quantityAssigned: requestedQty,
+          quantityUnit:     body.quantityUnit ?? jobPart.quantityUnit ?? job.quantityUnit ?? "",
           status:           "not_started",   // EXECUTION_STATES initial (Step 1)
           addedBy:          userId,
           notes:            body.notes ?? null,

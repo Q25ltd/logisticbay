@@ -284,7 +284,7 @@ type ExistingJobStop = {
   sequenceNumber: number; type: string; savedLocationId: number | null;
   siteName: string | null; unitName: string | null; street: string | null;
   town: string | null; postcode: string | null; locationTextSnapshot: string | null;
-  lat: number | null; lng: number | null; gateLat: number | null; gateLng: number | null;
+  lat: number | null; lng: number | null;
   timeWindowStart: Date | null; timeWindowEnd: Date | null;
   contactName: string | null; contactPhone: string | null;
   referenceNumber: string | null; instructions: string | null;
@@ -307,7 +307,7 @@ export async function patchJob(
       siteName: s.siteName ?? undefined, unitName: s.unitName ?? undefined,
       street: s.street ?? undefined, town: s.town ?? undefined, postcode: s.postcode ?? undefined,
       locationTextSnapshot: s.locationTextSnapshot || snapshotFromParts,
-      lat: s.lat, lng: s.lng, gateLat: s.gateLat, gateLng: s.gateLng,
+      lat: s.lat, lng: s.lng,
       timeWindowStart: s.timeWindowStart, timeWindowEnd: s.timeWindowEnd,
       contactName: s.contactName ?? undefined, contactPhone: s.contactPhone ?? undefined,
       referenceNumber: s.referenceNumber ?? undefined, instructions: s.instructions ?? undefined,
