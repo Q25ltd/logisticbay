@@ -23,7 +23,7 @@ import {
 describe('sync.constants — execution-state machine (Step 1)', () => {
 
   it('SUPPORTED_EVENT_TYPES matches EVENT_DEFINITIONS keys', () => {
-    const expected = ['started', 'arrived_pickup', 'collected', 'arrived_dropoff', 'completed', 'drop_at_yard', 'pick_from_yard'];
+    const expected = ['started', 'arrived_pickup', 'collected', 'arrived_dropoff', 'completed', 'drop_at_yard', 'pick_from_yard', 'trailer_swap', 'handover_offered', 'handover_accepted'];
     assert.deepStrictEqual([...SUPPORTED_EVENT_TYPES].sort(), [...expected].sort());
   });
 
@@ -41,8 +41,11 @@ describe('sync.constants — execution-state machine (Step 1)', () => {
       collected:       'loaded',
       arrived_dropoff: 'at_dropoff',
       completed:       'delivered',
-      drop_at_yard:    'delivered',
-      pick_from_yard:  'loaded',
+      drop_at_yard:      'delivered',
+      pick_from_yard:    'loaded',
+      trailer_swap:      'delivered',
+      handover_offered:  'loaded',
+      handover_accepted: 'loaded',
     };
     for (const [ev, state] of Object.entries(expected)) {
       assert.strictEqual(
@@ -72,12 +75,12 @@ describe('sync.constants — execution-state machine (Step 1)', () => {
 
   it('EXECUTION_TRANSITIONS reflects allowedFromStates → resultingState', () => {
     const expected: Record<string, string[]> = {
-      not_started:      ['en_route_pickup', 'loaded'],   // started | pick_from_yard
+      not_started:      ['en_route_pickup', 'loaded'],       // started | pick_from_yard | handover_accepted
       en_route_pickup:  ['at_pickup'],
       at_pickup:        ['loaded'],
-      loaded:           ['at_dropoff', 'delivered'],     // arrived_dropoff | drop_at_yard
-      en_route_dropoff: ['delivered'],                   // drop_at_yard
-      at_dropoff:       ['delivered'],                   // completed | drop_at_yard
+      loaded:           ['at_dropoff', 'delivered', 'loaded'], // arrived_dropoff | drop_at_yard/trailer_swap | handover_offered
+      en_route_dropoff: ['delivered'],                        // drop_at_yard | trailer_swap
+      at_dropoff:       ['delivered'],                        // completed | drop_at_yard | trailer_swap
     };
     for (const [from, targets] of Object.entries(expected)) {
       assert.deepStrictEqual(

@@ -7,9 +7,13 @@
  *
  * Step 2 (LoadTrack write path): `collected` and `completed` events also append
  * a custody row (dimension 3) via appendLoadTrack — collect (customer_origin →
- * on_vehicle) and deliver (on_vehicle → customer_dest). Other events write no
- * custody. Custody is stop-aware (D2.1): collect → collection stop, deliver →
- * delivery stop.
+ * on_vehicle) and deliver (on_vehicle → customer_dest). Custody is stop-aware
+ * (D2.1): collect → collection stop, deliver → delivery stop.
+ * Step 6 adds drop_at_yard / pick_from_yard (vehicle↔yard custody). Step 7 adds
+ * trailer_swap (B4): the load left on the dropped trailer goes on_vehicle→yard
+ * and the run continues on the new trailer (assignedTrailerId updated). Step 8
+ * adds handover_offered / handover_accepted (B3): one handover custody row
+ * (vehicleA→vehicleB) authored at accept; the offering leg ends 'delivered'.
  *
  * Both callers delegate here (A.1 — one state machine, not two):
  *   - routes/jobs.ts  PATCH /jobs/:id/status  (online path)
@@ -60,8 +64,10 @@ export interface ApplyJobEventInput {
   /** Quantity confirmed by the driver at collect/deliver (Step 2 custody). */
   actualQuantity?: string;
   actualUnit?:     string;
-  /** Step 6: yard reference for drop_at_yard / pick_from_yard (location id or label). */
+  /** Step 6: yard reference for drop_at_yard / pick_from_yard (location id or label). Step 7: also the trailer_swap drop location. */
   yardRef?:        string;
+  /** Step 7: registration of the trailer the run continues on after trailer_swap. */
+  newTrailerReg?:  string;
 }
 
 export type ApplyJobEventResult =
@@ -97,7 +103,7 @@ export async function applyJobEvent(
     eventType, clientEventId, clientTimestamp,
     needsReview, reviewReason,
     gpsLat, gpsLng, note, appVersion,
-    actualQuantity, actualUnit, yardRef,
+    actualQuantity, actualUnit, yardRef, newTrailerReg,
   } = input;
 
   // ── 1. Validate event type ──────────────────────────────────────────────────
@@ -150,17 +156,24 @@ export async function applyJobEvent(
     };
   }
 
-  // ── 6b. Custody pre-resolution (Step 2/6) — done BEFORE any write so an invalid
+  // ── 6b. Custody pre-resolution (Step 2/6/7) — done BEFORE any write so an invalid
   //        custody event fails cleanly without committing a partial transaction.
   const isCollect  = eventType === 'collected';
   const isDeliver  = eventType === 'completed';
   const isDropYard = eventType === 'drop_at_yard';
   const isPickYard = eventType === 'pick_from_yard';
+  const isSwap     = eventType === 'trailer_swap';
+  const isAccept   = eventType === 'handover_accepted';
   let custody:
-    | { transactionType: 'collect' | 'deliver' | 'drop_at_yard' | 'pick_from_yard'; jobPartId: number; fromCustody: string; toCustody: string; quantity: number; unit: string; trailerId: string }
+    | { transactionType: 'collect' | 'deliver' | 'drop_at_yard' | 'pick_from_yard' | 'trailer_swap' | 'handover'; jobPartId: number; fromCustody: string; toCustody: string; quantity: number; unit: string; trailerId: string; notes?: string }
     | null = null;
+  // Step 7: the trailer the run continues on after a swap (null = honest unknown).
+  let swapNewTrailerId: number | null = null;
+  let swapReviewReason: string | null = null;
+  // Step 8: the offering driver's assignment — its leg ends when B accepts.
+  let handoverOfferAssignmentId: number | null = null;
 
-  if (isCollect || isDeliver || isDropYard || isPickYard) {
+  if (isCollect || isDeliver || isDropYard || isPickYard || isSwap || isAccept) {
     const parts = await tx.jobPart.findMany({
       where:  { jobId, companyId },
       select: { id: true, type: true, quantityRequired: true, quantityUnit: true },
@@ -213,7 +226,8 @@ export async function applyJobEvent(
         quantity: qtyFor(part), unit: unitFor(part), trailerId };
     } else if (isPickYard) {
       // Invariant 8 stub (D6.5): can't pick from a yard nothing was dropped at.
-      const priorDrop = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: 'drop_at_yard', deletedAt: null }, select: { id: true } });
+      // Step 7: a trailer_swap row also leaves the load at a yard, so it counts as the drop.
+      const priorDrop = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: { in: ['drop_at_yard', 'trailer_swap'] }, deletedAt: null }, select: { id: true } });
       if (!priorDrop) {
         return { status: 'failed', reason: `Cannot pick job ${jobId} from yard: no prior drop_at_yard recorded.` };
       }
@@ -221,6 +235,67 @@ export async function applyJobEvent(
       custody = { transactionType: 'pick_from_yard', jobPartId: part.id,
         fromCustody: customAt.yard(await resolveYardRef()), toCustody: customAt.onVehicle(vehicleRef),
         quantity: qtyFor(part), unit: unitFor(part), trailerId };
+    } else if (isSwap) {
+      // Step 7 (B4): the load stays on the DROPPED trailer — custody must follow it
+      // to the yard or invariant 1 breaks ("the dropped load is 'lost' if no row is
+      // written"). Invariant 3: can't swap away a load that was never collected.
+      const priorCollect = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: 'collect', deletedAt: null }, select: { id: true } });
+      if (!priorCollect) {
+        return { status: 'failed', reason: `Cannot trailer-swap job ${jobId}: no prior collection recorded.` };
+      }
+      const part = collectionPart ?? fallbackPart;
+      custody = { transactionType: 'trailer_swap', jobPartId: part.id,
+        fromCustody: customAt.onVehicle(vehicleRef), toCustody: customAt.yard(await resolveYardRef()),
+        quantity: qtyFor(part), unit: unitFor(part), trailerId };
+
+      // Resolve the trailer the run continues on. An unknown or missing reg NEVER
+      // blocks the driver (offline-first, same rule as shift trailer ownership) —
+      // the run's trailer becomes null (honest unknown) and the event is flagged
+      // for planner review instead of inventing a fleet row.
+      const reg = (newTrailerReg ?? '').trim().toUpperCase();
+      if (reg === '') {
+        swapReviewReason = 'trailer_swap_no_new_trailer_reg';
+      } else {
+        const newTrailer = await tx.fleetTrailer.findFirst({
+          where:  { companyId, registration: reg, status: { not: 'deleted' } },
+          select: { id: true },
+        });
+        if (newTrailer) swapNewTrailerId = newTrailer.id;
+        else swapReviewReason = 'trailer_swap_new_trailer_not_in_fleet';
+      }
+    } else if (isAccept) {
+      // Step 8 (B3): invariant 8 — B cannot accept before A offers. The single
+      // handover custody row is authored HERE, at accept time (never at offer),
+      // so custody can't double-count; both driver IDs + the offer event are
+      // captured on the row for audit.
+      const offer = await tx.jobExecutionEvent.findFirst({
+        where:   { jobId, companyId, eventType: 'handover_offered' },
+        orderBy: { id: 'desc' },
+        select:  { id: true, runId: true, runAssignmentId: true, actorUserId: true },
+      });
+      if (!offer) {
+        return { status: 'failed', reason: `Cannot accept handover for job ${jobId}: no prior handover_offered recorded.` };
+      }
+      // An offer is consumed by exactly one accept: any handover row caused by a
+      // LATER event than this offer means it was already accepted.
+      const consumed = await tx.loadTrack.findFirst({
+        where:  { jobId, companyId, transactionType: 'handover', deletedAt: null, eventId: { gt: offer.id } },
+        select: { id: true },
+      });
+      if (consumed) {
+        return { status: 'failed', reason: `Cannot accept handover for job ${jobId}: the offer was already accepted.` };
+      }
+      const offerRun = offer.runId != null
+        ? await tx.run.findFirst({ where: { id: offer.runId, companyId }, select: { assignedTrailerId: true, assignedTruckId: true } })
+        : null;
+      const fromVehicleId  = offerRun?.assignedTrailerId ?? offerRun?.assignedTruckId ?? null;
+      const fromVehicleRef = fromVehicleId != null ? String(fromVehicleId) : `run${offer.runId}`;
+      const part = collectionPart ?? deliveryPart ?? fallbackPart;
+      custody = { transactionType: 'handover', jobPartId: part.id,
+        fromCustody: customAt.onVehicle(fromVehicleRef), toCustody: customAt.onVehicle(vehicleRef),
+        quantity: qtyFor(part), unit: unitFor(part), trailerId,
+        notes: `handover fromDriverId=${offer.actorUserId ?? 'unknown'} toDriverId=${actorUserId} offerEventId=${offer.id}` };
+      handoverOfferAssignmentId = offer.runAssignmentId;
     } else {
       // isDeliver — invariant 3: no deliver without a prior collect.
       const priorCollect = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: 'collect', deletedAt: null }, select: { id: true } });
@@ -242,6 +317,10 @@ export async function applyJobEvent(
     data:  { status: def.resultingState },
   });
 
+  // Step 7: an unresolved swap trailer surfaces as a review flag on the event.
+  const finalNeedsReview   = needsReview || swapReviewReason != null;
+  const finalReviewReason  = reviewReason ?? swapReviewReason ?? null;
+
   const createdEvent = await tx.jobExecutionEvent.create({
     data: {
       jobId,
@@ -256,8 +335,8 @@ export async function applyJobEvent(
       appVersion:      appVersion ?? null,
       gpsLat:          gpsLat   ?? null,
       gpsLng:          gpsLng   ?? null,
-      needsReview,
-      reviewReason:    reviewReason ?? null,
+      needsReview:     finalNeedsReview,
+      reviewReason:    finalReviewReason,
       runId:           assignment.runId,
       runAssignmentId: assignment.id,
       jobPartId:       assignment.jobPartId,
@@ -284,6 +363,26 @@ export async function applyJobEvent(
       timestamp:       clientTimestamp,
       gpsLat:          gpsLat ?? null,
       gpsLng:          gpsLng ?? null,
+      notes:           custody.notes ?? null,
+    });
+  }
+
+  // Step 7 (B4): the run continues on the new trailer. Written AFTER the custody
+  // row so the ledger's on_vehicle ref captured the DROPPED trailer. updateMany
+  // keyed on { id, companyId } — tenant scoping on writes (defence-in-depth).
+  if (isSwap) {
+    await tx.run.updateMany({
+      where: { id: assignment.runId, companyId },
+      data:  { assignedTrailerId: swapNewTrailerId },
+    });
+  }
+
+  // Step 8 (B3): the offering leg ends when the receiver accepts — custody has
+  // already moved to B's vehicle, so A's assignment is complete for its leg.
+  if (isAccept && handoverOfferAssignmentId != null) {
+    await tx.runAssignment.updateMany({
+      where: { id: handoverOfferAssignmentId, companyId },
+      data:  { status: 'delivered' },
     });
   }
 
@@ -299,7 +398,7 @@ export async function applyJobEvent(
     status:         'accepted',
     jobStatus:      reconciledJob?.status ?? job.status,
     executionState: def.resultingState,    // the new assignment state (D2)
-    needsReview,
-    reviewReason,
+    needsReview:    finalNeedsReview,
+    reviewReason:   finalReviewReason ?? undefined,
   };
 }

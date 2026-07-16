@@ -16,8 +16,10 @@ export interface IncomingEvent {
   deliveryNote?: string;
   gpsLat?: number;
   gpsLng?: number;
-  /** Step 6: yard reference for drop_at_yard / pick_from_yard. */
+  /** Step 6: yard reference for drop_at_yard / pick_from_yard (also the swap location for trailer_swap). */
   yardRef?: string;
+  /** Step 7: registration of the trailer the run continues on after trailer_swap. */
+  newTrailerReg?: string;
 }
 
 export interface SyncResult {
@@ -130,6 +132,7 @@ export async function processSyncEvents(
           actualQuantity:  event.actualQuantity,
           actualUnit:      event.actualUnit,
           yardRef:         event.yardRef,
+          newTrailerReg:   event.newTrailerReg,
         });
       });
 

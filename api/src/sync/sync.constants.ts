@@ -70,6 +70,26 @@ export const EVENT_DEFINITIONS = {
     resultingState:    'loaded'        as ExecutionState,
     allowedFromStates: ['not_started'] as ExecutionState[],
   },
+  // Step 7 (B4 trailer swap): the driver drops the LOADED trailer — custody goes
+  // to yard and this leg ends 'delivered' (same shape as drop_at_yard) — then the
+  // run continues on a different trailer (applyJobEvent updates the run's
+  // assignedTrailerId from the event's newTrailerReg).
+  trailer_swap: {
+    resultingState:    'delivered'                                  as ExecutionState,
+    allowedFromStates: ['loaded', 'en_route_dropoff', 'at_dropoff'] as ExecutionState[],
+  },
+  // Step 8 (B3 driver handover): driver A offers the load at the meet point (NO
+  // custody change — A still holds it, state stays 'loaded'); driver B accepts on
+  // their own run. The accept authors the single `handover` custody row
+  // (vehicleA → vehicleB) and ends A's leg ('delivered') inside applyJobEvent.
+  handover_offered: {
+    resultingState:    'loaded'   as ExecutionState,
+    allowedFromStates: ['loaded'] as ExecutionState[],
+  },
+  handover_accepted: {
+    resultingState:    'loaded'        as ExecutionState,
+    allowedFromStates: ['not_started'] as ExecutionState[],
+  },
 } as const;
 
 export type EventType = keyof typeof EVENT_DEFINITIONS;

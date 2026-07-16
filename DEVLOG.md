@@ -7,6 +7,36 @@
 
 ---
 
+## Step 8 — driver handover (B3): one custody row, authored at accept 2026-07-16 (same session as Step 7)
+
+**LOAD_MOVEMENT_PLAN Step 8** — the last gate before Phase C (S11 exceptions entry criteria = "S8 green"). **Phase C is now unblocked.**
+
+- **Two driver events** (`EVENT_DEFINITIONS`): `handover_offered` (driver A at the meet point) is a state NO-OP — `loaded` → `loaded`, **no custody row** — because A still physically holds the load; an offer B never accepts must not move anything. `handover_accepted` (driver B, `not_started` → `loaded` on B's OWN run, same shape as pick_from_yard).
+- **The accept authors the single `handover` custody row** — `on_vehicle:<vehicleA> → on_vehicle:<vehicleB>` — never the offer, so custody can't double-count (B3's "goes wrong" case). A's vehicle resolved from the offer event's run; both driver IDs + the offer event id recorded on the row's `notes` (first use of `LoadTrack.notes`, plumbed through `appendLoadTrack`).
+- **Invariant 8 twice**: (1) accept with no prior `handover_offered` for the job → rejected, zero rows. (2) **A consumed offer cannot be accepted twice** — guard: any handover row whose `eventId` is later than the latest offer means it was already taken (a third driver re-accepting is refused; a genuine A→B→C chain works because B raises a NEW offer).
+- **A's leg ends at accept**: the offer event's runAssignment → `delivered` (updateMany keyed `{ id, companyId }`); the reconciler (unchanged again — custody-base generic) rolls run A up to `completed` and holds the job at `collected` while the load rides B's vehicle.
+- New `driverHandover.test.ts` (5 subtests, form-shaped fixtures): B3 end-to-end (collect → offer writes nothing → accept = exactly one row, both IDs, run A completed → deliver = job `completed`, ledger collect→handover→deliver); consumed-offer re-accept refused; accept-before-offer refused. `sync.constants.test.ts` registry mirror extended.
+- Docs: DATA_DICTIONARY eventType row; STATUS Step 8 ✅, Phase C gate noted open, 3.4 split (API ✅ / UI 🔲), mobile offer/accept buttons added to the ⏳ follow-up.
+
+**Next: Phase C — Live management screen**, starting with S11 exceptions (delay_reported / breakdown / delivery_refused / damage / partials → `exception` + `attention_needed`). S12 reassign/cancel and S13 dependency-lock enforcement follow (S13's feeders S6+S8 both exist).
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **264/264** (was 258) · knip 111 exports (≤112 baseline).
+
+## Step 7 — trailer swap (B4): dropped loaded trailer never loses custody 2026-07-16 (second session)
+
+Per the plan's gate order (Phase C blocked on S7/S8), built **LOAD_MOVEMENT_PLAN Step 7**. Design discussion first (recorded for the WHY): a trailer change on an unstarted run is NOT a swap — that's just editing `assignedTrailerId` on the Runs screen (already built). The swap concept only exists **after collection**, because the load physically rides the trailer; and a next-day pickup of the dropped trailer is not a new scenario — it's the same `yard` custody the Step 6 relay already handles, with the second run on a later date.
+
+- **New driver event `trailer_swap`** (`EVENT_DEFINITIONS`): leg ends `delivered` from `loaded`/`en_route_dropoff`/`at_dropoff` — same shape as `drop_at_yard`. Custody row `on_vehicle:<droppedTrailer> → yard:<loc>` (transaction type existed in loadVocab since Step 0; `yardRef` payload reused for the location). Invariant 3 guard: no swap without a prior collect.
+- **Run continues on the new trailer**: wire payload `newTrailerReg` resolved exactly like `GET /fleet/trailers/lookup` (trim/uppercase, tenant-scoped, not deleted) → `Run.assignedTrailerId` (updateMany keyed `{ id, companyId }`). Written AFTER the custody append so the ledger's `on_vehicle` ref captures the DROPPED trailer. **Unknown/missing reg never blocks the driver** (offline-first, same rule as shift trailer ownership): trailer goes honest-null + event flagged `needsReview` (`trailer_swap_new_trailer_not_in_fleet` / `trailer_swap_no_new_trailer_reg`) — the system never invents a fleet row (four intake gates).
+- **Dropped load is pickable**: `pick_from_yard`'s invariant-8 prior-drop check now accepts `{ in: ['drop_at_yard', 'trailer_swap'] }` — B4's follow-on run is plain B2 machinery.
+- **Reconciler: zero change** — its custody guard is base-generic (`yard` keeps the job at `collected`), which is the primitive-composition design paying off.
+- New `trailerSwap.test.ts` (4 subtests, form-shaped fixtures — trailers registered via `POST /fleet/trailers`): B4 end-to-end (collect → swap → pick → deliver, 4 ledger rows, run 1 ends on trailer Y, job `completed`); unknown reg → accepted + null trailer + needsReview; swap-before-collect rejected with no custody row. `sync.constants.test.ts` registry mirror extended.
+- Doc sweep: DATA_DICTIONARY `eventType` enum row + one stale "LoadTrack has no write path yet" line fixed (anti-drift rule 4/5); STATUS 3.3 split (API ✅ / UI 🔲); mobile swap button tracked as ⏳ follow-up.
+
+**Next: S8 driver handover** (`handover_offered`/`handover_accepted` → one `handover` custody row at accept) — then Phase C's gate (S11 entry = S8 green) opens.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **258/258** (was 253) · knip baseline.
+
 ## MOT/VOR readiness checks go real + mobile driver pass 2026-07-16
 
 **Item 1 — MOT / VOR are no longer stubs.** `motExpiryDate` added to FleetUnit + FleetTrailer (migration `20260716000000_fleet_mot_expiry`) with date inputs on both fleet forms (form field FIRST — anti-drift rule 1). Readiness `mot_inspection` now real: expired = HARD fail (blocks publish), ≤30 days = warn, no date on an assigned asset = honest unknown naming the reg, nothing assigned = n/a. `vor_defects` real from the fleet form's existing `status="vor"`: assigned asset off road = HARD fail. 5 new pure tests (16 total in the readiness suite; api 253/253).

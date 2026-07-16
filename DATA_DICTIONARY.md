@@ -591,7 +591,7 @@ Canonical registry: **`loadVocab.ts`** (byte-identical in `shared/`, `api/src/co
 | refuse_return | on_vehicle → returned |
 | damage_writeoff | (any) → written_off |
 
-> Migration note: prior free-text custody values (`customer`, `driver:<id>`, `depot`) are superseded by this registry. `LoadTrack` has no write path yet (Step 2), so there is no production data to migrate. `plannerWorkService.ts`'s `.includes("driver")/.includes("depot")` custody reader is updated to the new bases when its step lands.
+> Migration note: prior free-text custody values (`customer`, `driver:<id>`, `depot`) are superseded by this registry. They predate the LoadTrack write path (see STATUS.md for what is live), so no production data needed migrating; `plannerWorkService.ts`'s custody reader uses the registry bases.
 
 ---
 
@@ -605,7 +605,7 @@ Table: `JobExecutionEvent`
 | jobId | Int | Yes | FK → Job.id | Job the event relates to |
 | companyId | Int | Yes | FK → Company.id | Owning company |
 | driverId | Int | Yes | FK → User.id | Driver who raised the event |
-| eventType | String | Yes | `started` \| `arrived_pickup` \| `collected` \| `arrived_dropoff` \| `completed` \| `drop_at_yard` \| `pick_from_yard` \| `cancelled` \| `note_added` | Type of execution event. Driver-triggerable set = `EVENT_DEFINITIONS` keys (sync.constants.ts); `drop_at_yard`/`pick_from_yard` added in Step 6 (yard relay); `cancelled` is planner-only. |
+| eventType | String | Yes | `started` \| `arrived_pickup` \| `collected` \| `arrived_dropoff` \| `completed` \| `drop_at_yard` \| `pick_from_yard` \| `trailer_swap` \| `handover_offered` \| `handover_accepted` \| `cancelled` \| `note_added` | Type of execution event. Driver-triggerable set = `EVENT_DEFINITIONS` keys (sync.constants.ts); `drop_at_yard`/`pick_from_yard` added in Step 6 (yard relay); `trailer_swap` added in Step 7 (B4 — wire payload carries `yardRef` + `newTrailerReg`); `handover_offered`/`handover_accepted` added in Step 8 (B3 — the accept authors the single `handover` custody row); `cancelled` is planner-only. |
 | note | String | Yes | Free text, default `""` | Optional driver note attached to the event |
 | clientEventId | String | Yes | Unique per company; UUID / device-generated | Idempotency key from the driver's device |
 | clientTimestamp | DateTime | Yes | ISO 8601 | Timestamp recorded on the driver's device |
