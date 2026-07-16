@@ -18,6 +18,8 @@
 import type { PrismaClient } from "../generated/client.js";
 import { bodyTypeLabel } from "../constants/vehicleTaxonomy.js";
 
+const lcs = (s?: string | null) => (s ?? "").toLowerCase();
+
 export interface ReadinessDriver {
   id:                    number;
   displayName:           string;
@@ -37,6 +39,7 @@ interface ReadinessTruck {
   registration:     string;
   status?:          string | null;
   onboardEquipment?: string[] | null;
+  motExpiryDate?:   Date | string | null;
 }
 
 interface ReadinessTrailer {
@@ -46,6 +49,7 @@ interface ReadinessTrailer {
   bodyType?:        string | null;
   status?:          string | null;
   onboardEquipment?: string[] | null;
+  motExpiryDate?:   Date | string | null;
   // Load state relative to THIS run: pre-loaded with one of its jobs is the right
   // trailer; loaded with anything else means it's full and cannot go out.
   loadedWithThisRun?:  boolean;
@@ -221,9 +225,51 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
       : { key: "equipment", label: "Equipment", status: "warn", hard: false, reason: `May be missing: ${missing.join(", ")}.` });
   }
 
-  // ── Not-yet-captured (honest unknowns; never block on their own) ────────────
-  checks.push({ key: "mot_inspection", label: "MOT / inspection", status: "unknown", hard: false, reason: "Not captured yet." });
-  checks.push({ key: "vor_defects",    label: "Defects / VOR",     status: "unknown", hard: false, reason: "Not captured yet." });
+  // ── MOT / annual test — real check from the fleet form's motExpiryDate ──────
+  // Expired = illegal to run → hard fail. Within 30 days → warn. No date on an
+  // assigned asset → honest unknown for THAT asset. Nothing assigned → n/a.
+  {
+    const assets: { reg: string; date: Date | string | null | undefined }[] = [];
+    if (input.truck)   assets.push({ reg: input.truck.registration,   date: input.truck.motExpiryDate });
+    if (input.trailer) assets.push({ reg: input.trailer.registration, date: input.trailer.motExpiryDate });
+    if (assets.length === 0) {
+      checks.push({ key: "mot_inspection", label: "MOT / inspection", status: "na", hard: true });
+    } else {
+      const now = Date.now();
+      const soonMs = 30 * 24 * 60 * 60 * 1000;
+      const expired: string[] = []; const soon: string[] = []; const missing: string[] = [];
+      for (const a of assets) {
+        if (a.date == null) { missing.push(a.reg); continue; }
+        const t = new Date(a.date).getTime();
+        if (t < now) expired.push(`${a.reg} expired ${new Date(a.date).toISOString().slice(0, 10)}`);
+        else if (t < now + soonMs) soon.push(`${a.reg} expires ${new Date(a.date).toISOString().slice(0, 10)}`);
+      }
+      if (expired.length) {
+        checks.push({ key: "mot_inspection", label: "MOT / inspection", status: "fail", hard: true, reason: `MOT/annual test expired: ${expired.join("; ")}.` });
+      } else if (soon.length) {
+        checks.push({ key: "mot_inspection", label: "MOT / inspection", status: "warn", hard: true, reason: `Due soon: ${soon.join("; ")}.` });
+      } else if (missing.length) {
+        checks.push({ key: "mot_inspection", label: "MOT / inspection", status: "unknown", hard: true, reason: `No test date recorded for ${missing.join(", ")} — add it on the fleet form.` });
+      } else {
+        checks.push({ key: "mot_inspection", label: "MOT / inspection", status: "pass", hard: true });
+      }
+    }
+  }
+
+  // ── Defects / VOR — real check from the fleet form's status ("vor") ─────────
+  {
+    const off: string[] = [];
+    if (input.truck   && lcs(input.truck.status)   === "vor") off.push(input.truck.registration);
+    if (input.trailer && lcs(input.trailer.status) === "vor") off.push(input.trailer.registration);
+    if (!input.truck && !input.trailer) {
+      checks.push({ key: "vor_defects", label: "Defects / VOR", status: "na", hard: true });
+    } else if (off.length) {
+      checks.push({ key: "vor_defects", label: "Defects / VOR", status: "fail", hard: true, reason: `${off.join(", ")} is off road (VOR) — swap the asset or return it to service.` });
+    } else {
+      checks.push({ key: "vor_defects", label: "Defects / VOR", status: "pass", hard: true });
+    }
+  }
+
   checks.push({ key: "driver_hours",   label: "Driver hours", status: "unknown", hard: false, reason: "Allocation uses the full preferred shift; live remaining hours are tracked on the Live screen." });
 
   // ── Gate ────────────────────────────────────────────────────────────────────
@@ -265,10 +311,10 @@ export async function loadRunReadiness(
   const jobIds = [...new Set(run.assignments.map(a => a.jobId))];
   const [truck, trailer, jobs] = await Promise.all([
     run.assignedTruckId
-      ? prisma.fleetUnit.findFirst({ where: { id: run.assignedTruckId, companyId }, select: { id: true, registration: true, status: true, onboardEquipment: true } })
+      ? prisma.fleetUnit.findFirst({ where: { id: run.assignedTruckId, companyId }, select: { id: true, registration: true, status: true, onboardEquipment: true, motExpiryDate: true } })
       : Promise.resolve(null),
     run.assignedTrailerId
-      ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true, linkedJobId: true } })
+      ? prisma.fleetTrailer.findFirst({ where: { id: run.assignedTrailerId, companyId }, select: { id: true, registration: true, trailerType: true, bodyType: true, status: true, onboardEquipment: true, linkedJobId: true, motExpiryDate: true } })
       : Promise.resolve(null),
     jobIds.length
       ? prisma.job.findMany({ where: { companyId, id: { in: jobIds } }, select: { id: true, hazardClass: true, equipment: true, vehicleCategory: true, trailersAllowed: true } })
@@ -306,10 +352,11 @@ export async function loadRunReadiness(
       manualHandlingAllowed: d.manualHandlingAllowed, canUseTrailer: d.canUseTrailer,
       trailerTypesAllowed: arr(d.trailerTypesAllowed),
     } : null,
-    truck:   truck   ? { id: truck.id, registration: truck.registration, status: truck.status, onboardEquipment: arr(truck.onboardEquipment) } : null,
+    truck:   truck   ? { id: truck.id, registration: truck.registration, status: truck.status, onboardEquipment: arr(truck.onboardEquipment), motExpiryDate: truck.motExpiryDate } : null,
     trailer: trailer ? {
       id: trailer.id, registration: trailer.registration, trailerType: trailer.trailerType, bodyType: trailer.bodyType,
       status: trailer.status, onboardEquipment: arr(trailer.onboardEquipment),
+      motExpiryDate: trailer.motExpiryDate,
       loadedWithThisRun:  trailerLoadedWithOurs,
       loadedWithOtherJob: trailerLoaded && !trailerLoadedWithOurs,
     } : null,

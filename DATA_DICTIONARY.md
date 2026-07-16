@@ -169,6 +169,7 @@ Table: `FleetUnit`
 | lengthM | Float? | No | Metres | Overall vehicle length in metres (cab only, excluding trailer) — used for length restriction checks |
 | axleLoadT | Float? | No | Tonnes | Maximum axle load in tonnes — used for weight restriction checks |
 | status | String | Yes | `available` \| `in_use` \| `off_road` \| `disposed`, default `available` | Current operational status |
+| motExpiryDate | DateTime? | No | ISO 8601 date | MOT / annual test expiry — feeds the readiness `mot_inspection` check (expired = hard fail, ≤30 days = warn, missing = honest unknown) |
 | notes | String? | No | Free text | Maintenance notes or other remarks |
 | assignedDriverId | Int? | No | FK → DriverProfile.id | Driver currently assigned to this unit |
 | currentTrailerId | Int? | No | FK → FleetTrailer.id | Trailer currently coupled to this unit |
@@ -198,6 +199,7 @@ Table: `FleetTrailer`
 | lengthM | Float? | No | Metres | Trailer length in metres (numeric form of `trailerLength`) |
 | axleLoadT | Float? | No | Tonnes | Maximum axle load in tonnes |
 | status | String | Yes | `available` \| `in_use` \| `off_road` \| `disposed`, default `available` | Current operational status |
+| motExpiryDate | DateTime? | No | ISO 8601 date | Annual test expiry — feeds the readiness `mot_inspection` check (expired = hard fail, ≤30 days = warn, missing = honest unknown) |
 | notes | String? | No | Free text | Maintenance notes or other remarks |
 | attachedUnitId | Int? | No | FK → FleetUnit.id | Tractor unit this trailer is currently attached to |
 | linkedJobId | Int? | No | FK → Job.id | Job this trailer is currently allocated to |

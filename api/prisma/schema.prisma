@@ -974,6 +974,7 @@ model FleetUnit {
   bodyType           String   @default("")
   onboardEquipment   Json?
   status             String   @default("available")
+  motExpiryDate      DateTime? // MOT / annual test expiry — feeds the readiness check
   notes              String?
 
   // Physical dimensions for HGV route restriction checks (ORS)
@@ -1007,6 +1008,7 @@ model FleetTrailer {
   compartments     Int?
   onboardEquipment Json?
   status           String   @default("available")
+  motExpiryDate    DateTime? // annual test expiry — feeds the readiness check
   notes            String?
 
   // Physical dimensions for HGV route restriction checks (ORS)

@@ -105,6 +105,59 @@ describe("computeRunReadiness — the publish gate", () => {
     assert.strictEqual(r.ready, true, JSON.stringify(r.blockers));
   });
 
+  it("expired MOT on an assigned asset → blocked (hard fail)", () => {
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE,
+      truck: { ...TRUCK, motExpiryDate: past },
+      trailer: { ...TRAILER, motExpiryDate: new Date(Date.now() + 90 * 86400000).toISOString() },
+      loads: [{}],
+    });
+    assert.strictEqual(r.ready, false);
+    assert.ok(r.blockers.some(b => /expired/i.test(b)), JSON.stringify(r.blockers));
+  });
+
+  it("MOT due within 30 days → warn, does NOT block", () => {
+    const soon = new Date(Date.now() + 10 * 86400000).toISOString();
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE,
+      truck: { ...TRUCK, motExpiryDate: soon },
+      trailer: { ...TRAILER, motExpiryDate: new Date(Date.now() + 90 * 86400000).toISOString() },
+      loads: [{}],
+    });
+    assert.strictEqual(r.ready, true);
+    const mot = r.resources.checks.find(c => c.key === "mot_inspection");
+    assert.strictEqual(mot?.status, "warn");
+  });
+
+  it("no MOT date recorded → honest unknown, does NOT block", () => {
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE, truck: TRUCK, trailer: TRAILER, loads: [{}],
+    });
+    assert.strictEqual(r.ready, true);
+    const mot = r.resources.checks.find(c => c.key === "mot_inspection");
+    assert.strictEqual(mot?.status, "unknown");
+    assert.match(mot?.reason ?? "", /No test date recorded/);
+  });
+
+  it("assigned asset off road (VOR) → blocked", () => {
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE,
+      truck: { ...TRUCK, status: "vor" }, trailer: TRAILER, loads: [{}],
+    });
+    assert.strictEqual(r.ready, false);
+    assert.ok(r.blockers.some(b => /off road/i.test(b)), JSON.stringify(r.blockers));
+  });
+
+  it("assets in service → VOR check passes (real data, not a stub)", () => {
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE,
+      truck: { ...TRUCK, status: "available" }, trailer: { ...TRAILER, status: "available" }, loads: [{}],
+    });
+    const vor = r.resources.checks.find(c => c.key === "vor_defects");
+    assert.strictEqual(vor?.status, "pass");
+  });
+
   it("no stops → never ready (nothing to execute)", () => {
     const r = computeRunReadiness({ hasStops: false, driver: DAVE, loads: [] });
     assert.strictEqual(r.ready, false);

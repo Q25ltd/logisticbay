@@ -30,6 +30,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
     status:        initial?.status        ?? "available",
     notes:         initial?.notes         ?? "",
     yardLocation:  initial?.yardLocation  ?? "",
+    motExpiryDate: initial?.motExpiryDate ? String(initial.motExpiryDate).slice(0, 10) : "",
     heightM:       initial?.heightM   != null ? String(initial.heightM)   : "",
     widthM:        initial?.widthM    != null ? String(initial.widthM)    : "",
     lengthM:       initial?.lengthM   != null ? String(initial.lengthM)   : "",
@@ -63,6 +64,7 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
         status:        form.status,
         notes:         form.notes.trim()        || undefined,
         yardLocation:  form.yardLocation.trim() || undefined,
+        motExpiryDate: form.motExpiryDate || null,
         heightM:       form.heightM   ? parseFloat(form.heightM)   : null,
         widthM:        form.widthM    ? parseFloat(form.widthM)    : null,
         lengthM:       form.lengthM   ? parseFloat(form.lengthM)   : null,
@@ -110,6 +112,13 @@ export default function TrailerForm({ initial, onSave, onCancel }: {
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
+        </label>
+        <label className="block text-sm font-semibold">
+          Annual test (MOT) expiry
+          <input type="date" className="input mt-1 w-full" value={form.motExpiryDate} onChange={set("motExpiryDate")} />
+          <span className="block text-xs font-normal text-muted mt-0.5">
+            Feeds the run readiness check — an expired test blocks publishing.
+          </span>
         </label>
       </div>
       <div className={`grid gap-3 mt-3 ${showDecks ? "grid-cols-2" : "grid-cols-1"}`}>

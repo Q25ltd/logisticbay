@@ -3,9 +3,22 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-07-15
+> Last updated: 2026-07-16
 
 ---
+
+## MOT/VOR readiness checks go real + mobile driver pass 2026-07-16
+
+**Item 1 — MOT / VOR are no longer stubs.** `motExpiryDate` added to FleetUnit + FleetTrailer (migration `20260716000000_fleet_mot_expiry`) with date inputs on both fleet forms (form field FIRST — anti-drift rule 1). Readiness `mot_inspection` now real: expired = HARD fail (blocks publish), ≤30 days = warn, no date on an assigned asset = honest unknown naming the reg, nothing assigned = n/a. `vor_defects` real from the fleet form's existing `status="vor"`: assigned asset off road = HARD fail. 5 new pure tests (16 total in the readiness suite; api 253/253).
+
+**Item 2 — mobile driver pass** (in-repo mobile/, Expo):
+- **Trailer ownership prompt at vehicle setup**: new `lib/trailerOwnership.ts` calls `GET /fleet/trailers/lookup` when the driver enters a trailer reg (StartShift + ChangeVehicle); unknown reg → native prompt "Contractor / Third-party / I'll re-check the reg"; the claim rides the segment draft (`Segment.trailerOwnership`) and submits with the shift (ReviewScreen). Offline or dismissed → nothing sent; the server flags `unregistered`. Never blocks the driver.
+- **Per-trip quantities**: `GET /jobs/my` now returns driver-scoped `tripShares` (one share per run, collect+deliver deduped). Mobile shows "26 of 30 pallets this trip" / "26 + 4 of 30 pallets (2 trips)" on the jobs list, job detail (THIS TRIP badge), and the collection-confirm form; JobDetail derives the split map from `runAssignments` when opened via /jobs/:id.
+- **Dead-field cleanup found on the way**: mobile read `quantityExpected`, `materialType`, `pickupTextSnapshot`, `plannedDate` — fields that no longer exist; quantities and materials have rendered BLANK in the driver app since the schema refactor. New `lib/jobDisplay.ts` derives route/goods/quantity/date from the real fields (stops, goodsType/goodsDescription, quantity + tripShares). Mobile typecheck 0.
+
+**Item 3 — Phase C: BLOCKED by the plan's own gate.** S11 Exceptions entry criteria = "S8 green"; S7 trailer swap + S8 handover are not built (parked in Phase B backlog). Per the gated build order (do not jump steps), Phase C cannot start until S7/S8 land. Next session should build S7/S8 first.
+
+Gates: typecheck 0/0 (api+web) · mobile tsc 0 · vocab ✅ · check:docs ✅ · api tests 253/253 · build ✅ · knip baseline.
 
 ## Audit of a parallel agent's uncommitted Runs-screen work 2026-07-15 (review, no code changes)
 

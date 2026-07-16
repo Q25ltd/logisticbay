@@ -20,6 +20,8 @@ const dimensionFields = {
 
 const sharedFields = {
   onboardEquipment: z.array(z.string().max(64)).max(50).optional(),
+  // MOT / annual test expiry — "YYYY-MM-DD" from the form's date input
+  motExpiryDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker (YYYY-MM-DD)").nullable().optional(),
   notes:            z.string().max(4000).nullable().optional(),
   yardLocation:     z.string().max(200).nullable().optional(),
   ...dimensionFields,

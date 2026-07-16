@@ -140,10 +140,25 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     // Step 4 publish gate: only runs published to the driver are visible (audit 🟠 #1).
     const assignments = await prisma.runAssignment.findMany({
       where: { companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
-      select: { jobId: true },
-      distinct: ["jobId"],
+      select: { jobId: true, runId: true, quantityAssigned: true, quantityUnit: true },
     });
-    const jobIds = assignments.map(a => a.jobId);
+    const jobIds = [...new Set(assignments.map(a => a.jobId))];
+
+    // Per-trip shares for THIS driver: one entry per run (a job's collect +
+    // deliver on the same run carry the same share — keep the max). Lets the
+    // app show "pick 26 this trip, 4 next" on a split/multi-trip job.
+    const tripSharesOf = (jobId: number) => {
+      const byRun = new Map<number, { runId: number; quantityAssigned: number; quantityUnit: string }>();
+      for (const a of assignments) {
+        if (a.jobId !== jobId) continue;
+        const prev = byRun.get(a.runId);
+        const qty  = Number(a.quantityAssigned);
+        if (!prev || qty > prev.quantityAssigned) {
+          byRun.set(a.runId, { runId: a.runId, quantityAssigned: qty, quantityUnit: a.quantityUnit });
+        }
+      }
+      return [...byRun.values()];
+    };
 
     const jobs = await prisma.job.findMany({
       where: {
@@ -175,10 +190,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     };
     const todayJobs = jobs
       .filter(j => getCollectDate(j) === todayStr)
-      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []) }));
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id) }));
     const upcomingJobs = jobs
       .filter(j => getCollectDate(j) !== todayStr)
-      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []) }));
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id) }));
 
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });

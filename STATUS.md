@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-07-15 (quantity ledger: partial/split remainders stay visible on the board; multi-trip same-driver assignment with over-assign guardrails; driver sees per-trip quantities)
+> Last updated: 2026-07-16 (MOT/VOR readiness checks real from fleet-form data; mobile: trailer-ownership prompt, per-trip quantities, dead-field display fixes. Phase C blocked on S7/S8 per plan gates)
 
 ---
 
