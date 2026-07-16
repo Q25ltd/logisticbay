@@ -14,6 +14,11 @@
  * and the run continues on the new trailer (assignedTrailerId updated). Step 8
  * adds handover_offered / handover_accepted (B3): one handover custody row
  * (vehicleA→vehicleB) authored at accept; the offering leg ends 'delivered'.
+ * Step 11 adds the exception events (B8/B9/B11/B12/B13): delay_reported and
+ * damage_reported are state-preserving + needsReview; breakdown/delivery_refused/
+ * damage_writeoff set the assignment to 'exception' (refuse_return / written_off
+ * custody where the load moves); partial/over quantities on collect/deliver are
+ * flagged, never silently accepted.
  *
  * Both callers delegate here (A.1 — one state machine, not two):
  *   - routes/jobs.ts  PATCH /jobs/:id/status  (online path)
@@ -164,16 +169,26 @@ export async function applyJobEvent(
   const isPickYard = eventType === 'pick_from_yard';
   const isSwap     = eventType === 'trailer_swap';
   const isAccept   = eventType === 'handover_accepted';
+  const isRefused  = eventType === 'delivery_refused';
+  const isWriteoff = eventType === 'damage_writeoff';
   let custody:
-    | { transactionType: 'collect' | 'deliver' | 'drop_at_yard' | 'pick_from_yard' | 'trailer_swap' | 'handover'; jobPartId: number; fromCustody: string; toCustody: string; quantity: number; unit: string; trailerId: string; notes?: string }
+    | { transactionType: 'collect' | 'deliver' | 'drop_at_yard' | 'pick_from_yard' | 'trailer_swap' | 'handover' | 'refuse_return' | 'damage_writeoff'; jobPartId: number; fromCustody: string; toCustody: string; quantity: number; unit: string; trailerId: string; notes?: string }
     | null = null;
   // Step 7: the trailer the run continues on after a swap (null = honest unknown).
   let swapNewTrailerId: number | null = null;
-  let swapReviewReason: string | null = null;
+  // Steps 7/11: a reason derived while applying the event that must surface on the
+  // planner review queue (unknown swap trailer, partial/over quantity, delay, damage).
+  let derivedReviewReason: string | null = null;
   // Step 8: the offering driver's assignment — its leg ends when B accepts.
   let handoverOfferAssignmentId: number | null = null;
 
-  if (isCollect || isDeliver || isDropYard || isPickYard || isSwap || isAccept) {
+  // Step 11 (B8/B13): informational exceptions — no custody, no state change, but
+  // ALWAYS flagged so the planner review surface sees them.
+  if (eventType === 'delay_reported' || eventType === 'damage_reported') {
+    derivedReviewReason = eventType;
+  }
+
+  if (isCollect || isDeliver || isDropYard || isPickYard || isSwap || isAccept || isRefused || isWriteoff) {
     const parts = await tx.jobPart.findMany({
       where:  { jobId, companyId },
       select: { id: true, type: true, quantityRequired: true, quantityUnit: true },
@@ -195,6 +210,19 @@ export async function applyJobEvent(
       parseQuantity(actualQuantity) ?? (p.quantityRequired != null ? Number(p.quantityRequired) : 0);
     const unitFor = (p: { quantityUnit: string | null }) => actualUnit ?? p.quantityUnit ?? '';
 
+    // Step 11 (B12): partial/over quantity on collect or deliver. The custody row
+    // records the driver's HONEST actual (the shortfall simply never leaves its
+    // current custody — conservation by construction); the mismatch vs the
+    // form-born expected quantity is flagged for the planner, never silently
+    // accepted and never blocking the driver.
+    const flagQuantityDrift = (p: { quantityRequired: Prisma.Decimal | null }, kind: 'collection' | 'delivery') => {
+      const actual = parseQuantity(actualQuantity);
+      if (actual == null || p.quantityRequired == null) return; // nothing declared or confirmed — no drift to judge
+      const expected = Number(p.quantityRequired);
+      if (actual < expected)      derivedReviewReason = `partial_${kind}`;
+      else if (actual > expected) derivedReviewReason = `over_${kind}`;
+    };
+
     // Step 6 (D6.4): yard ref — payload, else the run's yard waypoint, else run label.
     const resolveYardRef = async (): Promise<string> => {
       if (yardRef && yardRef.trim() !== '') return yardRef.trim();
@@ -211,6 +239,7 @@ export async function applyJobEvent(
 
     if (isCollect) {
       const part = collectionPart ?? fallbackPart;
+      flagQuantityDrift(part, 'collection');
       custody = { transactionType: 'collect', jobPartId: part.id,
         fromCustody: customAt.customerOrigin(part.id), toCustody: customAt.onVehicle(vehicleRef),
         quantity: qtyFor(part), unit: unitFor(part), trailerId };
@@ -254,14 +283,14 @@ export async function applyJobEvent(
       // for planner review instead of inventing a fleet row.
       const reg = (newTrailerReg ?? '').trim().toUpperCase();
       if (reg === '') {
-        swapReviewReason = 'trailer_swap_no_new_trailer_reg';
+        derivedReviewReason = 'trailer_swap_no_new_trailer_reg';
       } else {
         const newTrailer = await tx.fleetTrailer.findFirst({
           where:  { companyId, registration: reg, status: { not: 'deleted' } },
           select: { id: true },
         });
         if (newTrailer) swapNewTrailerId = newTrailer.id;
-        else swapReviewReason = 'trailer_swap_new_trailer_not_in_fleet';
+        else derivedReviewReason = 'trailer_swap_new_trailer_not_in_fleet';
       }
     } else if (isAccept) {
       // Step 8 (B3): invariant 8 — B cannot accept before A offers. The single
@@ -296,6 +325,33 @@ export async function applyJobEvent(
         quantity: qtyFor(part), unit: unitFor(part), trailerId,
         notes: `handover fromDriverId=${offer.actorUserId ?? 'unknown'} toDriverId=${actorUserId} offerEventId=${offer.id}` };
       handoverOfferAssignmentId = offer.runAssignmentId;
+    } else if (isRefused) {
+      // Step 11 (B11): consignee rejects — refuse_return custody (invariant 3
+      // analogue: can't return what was never collected). A PARTIAL refusal is
+      // completed(kept qty) followed by delivery_refused(refused qty): the two
+      // rows sum to the collected quantity (invariant 2 conservation). The
+      // refusal reason travels in the event note.
+      const priorCollect = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: 'collect', deletedAt: null }, select: { id: true } });
+      if (!priorCollect) {
+        return { status: 'failed', reason: `Cannot record refused delivery for job ${jobId}: no prior collection recorded.` };
+      }
+      const part = deliveryPart ?? fallbackPart;
+      custody = { transactionType: 'refuse_return', jobPartId: part.id,
+        fromCustody: customAt.onVehicle(vehicleRef), toCustody: customAt.returned(part.id),
+        quantity: qtyFor(part), unit: unitFor(part), trailerId };
+    } else if (isWriteoff) {
+      // Step 11 (B13): terminal-bad — the load's CURRENT custody (latest ledger
+      // row, else still at origin) moves to written_off with the quantity
+      // recorded, so conservation stays auditable.
+      const latest = await tx.loadTrack.findFirst({
+        where:   { jobId, companyId, deletedAt: null },
+        orderBy: { id: 'desc' },
+        select:  { toCustody: true },
+      });
+      const part = collectionPart ?? fallbackPart;
+      custody = { transactionType: 'damage_writeoff', jobPartId: part.id,
+        fromCustody: latest?.toCustody ?? customAt.customerOrigin(part.id), toCustody: customAt.writtenOff(),
+        quantity: qtyFor(part), unit: unitFor(part), trailerId };
     } else {
       // isDeliver — invariant 3: no deliver without a prior collect.
       const priorCollect = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: 'collect', deletedAt: null }, select: { id: true } });
@@ -303,6 +359,7 @@ export async function applyJobEvent(
         return { status: 'failed', reason: `Cannot deliver job ${jobId}: no prior collection recorded (invariant: no delivery before collection).` };
       }
       const part = deliveryPart ?? fallbackPart;
+      flagQuantityDrift(part, 'delivery');
       custody = { transactionType: 'deliver', jobPartId: part.id,
         fromCustody: customAt.onVehicle(vehicleRef), toCustody: customAt.customerDest(part.id),
         quantity: qtyFor(part), unit: unitFor(part), trailerId };
@@ -310,16 +367,19 @@ export async function applyJobEvent(
   }
 
   // ── 7. Write (inside caller's transaction) ──────────────────────────────────
-  // Advance the assignment's execution state. Job.status is intentionally NOT
-  // touched here — the reconciler (Step 3) derives it.
-  await tx.runAssignment.update({
-    where: { id: assignment.id },
-    data:  { status: def.resultingState },
-  });
+  // Advance the assignment's execution state (null = state-preserving event,
+  // e.g. delay_reported / damage_reported — Step 11). Job.status is intentionally
+  // NOT touched here — the reconciler (Step 3) derives it.
+  if (def.resultingState != null) {
+    await tx.runAssignment.update({
+      where: { id: assignment.id },
+      data:  { status: def.resultingState },
+    });
+  }
 
   // Step 7: an unresolved swap trailer surfaces as a review flag on the event.
-  const finalNeedsReview   = needsReview || swapReviewReason != null;
-  const finalReviewReason  = reviewReason ?? swapReviewReason ?? null;
+  const finalNeedsReview   = needsReview || derivedReviewReason != null;
+  const finalReviewReason  = reviewReason ?? derivedReviewReason ?? null;
 
   const createdEvent = await tx.jobExecutionEvent.create({
     data: {
@@ -397,7 +457,7 @@ export async function applyJobEvent(
   return {
     status:         'accepted',
     jobStatus:      reconciledJob?.status ?? job.status,
-    executionState: def.resultingState,    // the new assignment state (D2)
+    executionState: def.resultingState ?? assignment.status, // new state, or unchanged (D2)
     needsReview:    finalNeedsReview,
     reviewReason:   finalReviewReason ?? undefined,
   };

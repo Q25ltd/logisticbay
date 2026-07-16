@@ -23,7 +23,7 @@ import {
 describe('sync.constants — execution-state machine (Step 1)', () => {
 
   it('SUPPORTED_EVENT_TYPES matches EVENT_DEFINITIONS keys', () => {
-    const expected = ['started', 'arrived_pickup', 'collected', 'arrived_dropoff', 'completed', 'drop_at_yard', 'pick_from_yard', 'trailer_swap', 'handover_offered', 'handover_accepted'];
+    const expected = ['started', 'arrived_pickup', 'collected', 'arrived_dropoff', 'completed', 'drop_at_yard', 'pick_from_yard', 'trailer_swap', 'handover_offered', 'handover_accepted', 'delay_reported', 'breakdown', 'delivery_refused', 'damage_reported', 'damage_writeoff'];
     assert.deepStrictEqual([...SUPPORTED_EVENT_TYPES].sort(), [...expected].sort());
   });
 
@@ -35,7 +35,7 @@ describe('sync.constants — execution-state machine (Step 1)', () => {
   });
 
   it('RESULTING_STATE_BY_EVENT maps each event to its execution state', () => {
-    const expected: Record<string, string> = {
+    const expected: Record<string, string | null> = {
       started:         'en_route_pickup',
       arrived_pickup:  'at_pickup',
       collected:       'loaded',
@@ -46,6 +46,11 @@ describe('sync.constants — execution-state machine (Step 1)', () => {
       trailer_swap:      'delivered',
       handover_offered:  'loaded',
       handover_accepted: 'loaded',
+      delay_reported:    null,        // state-preserving (B8)
+      breakdown:         'exception',
+      delivery_refused:  'exception',
+      damage_reported:   null,        // state-preserving (B13)
+      damage_writeoff:   'exception',
     };
     for (const [ev, state] of Object.entries(expected)) {
       assert.strictEqual(
@@ -76,11 +81,12 @@ describe('sync.constants — execution-state machine (Step 1)', () => {
   it('EXECUTION_TRANSITIONS reflects allowedFromStates → resultingState', () => {
     const expected: Record<string, string[]> = {
       not_started:      ['en_route_pickup', 'loaded'],       // started | pick_from_yard | handover_accepted
-      en_route_pickup:  ['at_pickup'],
-      at_pickup:        ['loaded'],
-      loaded:           ['at_dropoff', 'delivered', 'loaded'], // arrived_dropoff | drop_at_yard/trailer_swap | handover_offered
-      en_route_dropoff: ['delivered'],                        // drop_at_yard | trailer_swap
-      at_dropoff:       ['delivered'],                        // completed | drop_at_yard | trailer_swap
+      en_route_pickup:  ['at_pickup', 'exception'],          // + breakdown
+      at_pickup:        ['loaded', 'exception'],             // + breakdown | damage_writeoff
+      loaded:           ['at_dropoff', 'delivered', 'loaded', 'exception'], // arrived_dropoff | drop_at_yard/trailer_swap | handover_offered | breakdown/writeoff
+      en_route_dropoff: ['delivered', 'exception'],          // drop_at_yard/trailer_swap | breakdown/writeoff
+      at_dropoff:       ['delivered', 'exception'],          // completed/drop/swap | breakdown/refused/writeoff
+      delivered:        ['exception'],                       // delivery_refused (partial refusal after deliver)
     };
     for (const [from, targets] of Object.entries(expected)) {
       assert.deepStrictEqual(

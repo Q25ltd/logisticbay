@@ -29,7 +29,9 @@ import { ExecutionState } from '../constants/loadVocab.js';
  * Single source of truth for all driver-triggerable job events.
  *
  * Each entry defines:
- *   resultingState     — the RunAssignment.status set when this event is applied
+ *   resultingState     — the RunAssignment.status set when this event is applied,
+ *                        or null = the event leaves the execution state UNCHANGED
+ *                        (informational exceptions: delay_reported, damage_reported)
  *   allowedFromStates  — RunAssignment.status values from which this event is valid
  *
  * 'cancelled' is NOT here — it is a planner-only Job-level action handled via the
@@ -90,6 +92,41 @@ export const EVENT_DEFINITIONS = {
     resultingState:    'loaded'        as ExecutionState,
     allowedFromStates: ['not_started'] as ExecutionState[],
   },
+  // Step 11 (B8 delay): a time exception, NOT a custody or state change — the
+  // driver keeps working; the event is flagged needsReview so the planner sees it.
+  delay_reported: {
+    resultingState:    null,
+    allowedFromStates: ['en_route_pickup', 'at_pickup', 'loaded', 'en_route_dropoff', 'at_dropoff'] as ExecutionState[],
+  },
+  // Step 11 (B9 breakdown): vehicle fails mid-run. Custody stays on_vehicle (the
+  // load is stranded WITH the vehicle — GPS on the event pins it); the assignment
+  // goes 'exception' and the reconciler surfaces attention_needed. Resolution
+  // (recover/resume or rescue via handover/yard) is planner work (Step 12).
+  breakdown: {
+    resultingState:    'exception' as ExecutionState,
+    allowedFromStates: ['en_route_pickup', 'at_pickup', 'loaded', 'en_route_dropoff', 'at_dropoff'] as ExecutionState[],
+  },
+  // Step 11 (B11 refused delivery): consignee rejects — refuse_return custody row
+  // (on_vehicle → returned). Allowed from 'delivered' too so a PARTIAL refusal is
+  // two events: completed(8) then delivery_refused(2) — conservation 8+2=10.
+  delivery_refused: {
+    resultingState:    'exception'                 as ExecutionState,
+    allowedFromStates: ['at_dropoff', 'delivered'] as ExecutionState[],
+  },
+  // Step 11 (B13 damage): report = informational (note/photo/GPS ride the event,
+  // custody still moves, driver continues — state unchanged, flagged for review).
+  // Allowed from 'delivered' for damage discovered at handover to the consignee.
+  damage_reported: {
+    resultingState:    null,
+    allowedFromStates: ['at_pickup', 'loaded', 'en_route_dropoff', 'at_dropoff', 'delivered'] as ExecutionState[],
+  },
+  // Step 11 (B13 write-off): load unusable — terminal-bad custody row (current
+  // location → written_off, quantity recorded for conservation); leg ends in
+  // 'exception' and the job surfaces attention_needed.
+  damage_writeoff: {
+    resultingState:    'exception' as ExecutionState,
+    allowedFromStates: ['at_pickup', 'loaded', 'en_route_dropoff', 'at_dropoff'] as ExecutionState[],
+  },
 } as const;
 
 export type EventType = keyof typeof EVENT_DEFINITIONS;
@@ -105,13 +142,13 @@ export const SUPPORTED_EVENT_TYPES = Object.keys(EVENT_DEFINITIONS) as EventType
 export type SupportedEventType = EventType;
 
 /**
- * Maps eventType → resulting RunAssignment execution state. Derived.
+ * Maps eventType → resulting RunAssignment execution state (null = unchanged). Derived.
  */
-export const RESULTING_STATE_BY_EVENT: Record<SupportedEventType, ExecutionState> =
+export const RESULTING_STATE_BY_EVENT: Record<SupportedEventType, ExecutionState | null> =
   Object.fromEntries(
-    (Object.entries(EVENT_DEFINITIONS) as [EventType, { resultingState: ExecutionState }][])
+    (Object.entries(EVENT_DEFINITIONS) as [EventType, { resultingState: ExecutionState | null }][])
       .map(([ev, def]) => [ev, def.resultingState]),
-  ) as Record<SupportedEventType, ExecutionState>;
+  ) as Record<SupportedEventType, ExecutionState | null>;
 
 /**
  * Inbound alias for the online path (`PATCH /jobs/:id/status`).
@@ -138,6 +175,7 @@ export const EVENT_TYPE_MAP: Record<string, string> = {
 export const EXECUTION_TRANSITIONS: Record<string, string[]> = (() => {
   const trans: Record<string, Set<string>> = {};
   for (const def of Object.values(EVENT_DEFINITIONS)) {
+    if (def.resultingState == null) continue; // state-preserving events are not transitions
     for (const from of def.allowedFromStates) {
       (trans[from] ??= new Set()).add(def.resultingState);
     }

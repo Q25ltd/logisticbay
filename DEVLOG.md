@@ -7,6 +7,21 @@
 
 ---
 
+## Step 11 — exception events (B8/B9/B11/B12/B13): honest ledger under failure 2026-07-16 (same session)
+
+First Phase C slice, entered through the now-open gate (S11 entry = S8 green). Five scenarios, one design rule throughout: **the ledger records what actually happened, the planner gets flagged, the driver is never blocked from continuing honest work.**
+
+- **New state-machine concept — state-preserving events** (`resultingState: null` in `EVENT_DEFINITIONS`): `delay_reported` (B8) and `damage_reported` (B13) log + flag (`needsReview` with the event name as reason) but do NOT advance the assignment — a delay must not brick the run (the `exception` state has no driver-side exit until S12). `EXECUTION_TRANSITIONS` skips null; `RESULTING_STATE_BY_EVENT` is now `ExecutionState | null`; no consumers outside sync.constants/tests (verified by grep before changing).
+- **`breakdown` (B9)**: assignment → `exception`, job → `attention_needed` (the reconciler's existing exception rule — zero reconciler change for the third step running). NO custody row — the load is honestly still `on_vehicle`, stranded with the vehicle; the event's GPS pins where. Resolution (recover/resume or rescue via S7 swap / S8 handover) is planner work in S12.
+- **`delivery_refused` (B11)**: `refuse_return` custody row `on_vehicle → returned:<stopId>`, prior-collect guard, reason in the event note. **Partial refusal is two events** — `completed(8)` then `delivery_refused(2)` (allowed from `delivered` for exactly this) — and the test proves conservation: deliver 8 + returned 2 = collected 10. Planner return-path disposition (origin/yard/write-off) = S12.
+- **B12 partial/over quantities**: `flagQuantityDrift` on collect AND deliver compares the driver's actual against the form-born `quantityRequired` — under → `partial_collection`/`partial_delivery`, over → `over_collection`/`over_delivery` (needsReview). Conservation by construction: the custody row carries the honest actual, so a shortfall simply never leaves its current custody. The generic `derivedReviewReason` plumbing replaced the Step-7 swap-only variable.
+- **`damage_writeoff` (B13)**: current custody (latest ledger row, else still-at-origin) → `written_off` with the quantity recorded; leg ends `exception`; job `attention_needed`.
+- New `exceptionEvents.test.ts` (5 scenario subtests) incl. "driver continues after a delay" and the 8+2=10 conservation assertion. Registry mirror test extended (incl. new `delivered → exception` transition row).
+
+**Next: S12 — reassignment & cancel-with-custody** (B10 pre-start reassign with execution reset + audit; B14 cancel-mid-flight forces a custody disposition). Then S13 dependency-lock enforcement (feeders S6+S8 exist).
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **270/270** (was 264) · knip 111/77 = baseline.
+
 ## Step 8 — driver handover (B3): one custody row, authored at accept 2026-07-16 (same session as Step 7)
 
 **LOAD_MOVEMENT_PLAN Step 8** — the last gate before Phase C (S11 exceptions entry criteria = "S8 green"). **Phase C is now unblocked.**
