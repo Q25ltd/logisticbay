@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../generated/client.js';
 import { validateClientTimestamp } from '../lib/eventTimestamp.js';
 import { applyJobEvent } from './applyJobEvent.js';
+import { notifyExceptionEvent } from '../services/notificationService.js';
 
 export interface IncomingEvent {
   clientEventId: string;
@@ -63,7 +64,7 @@ export async function processSyncEvents(
   const results: SyncResult[] = [];
   const driverProfile = await prisma.driverProfile.findFirst({
     where:  { companyId, userId: driverId, status: 'active' },
-    select: { id: true },
+    select: { id: true, displayName: true },
   });
 
   for (const event of sorted) {
@@ -142,6 +143,16 @@ export async function processSyncEvents(
       if (r.status === 'accepted') {
         await updateSyncLog(prisma, event.clientEventId, companyId, 'accepted', undefined);
         results.push({ clientEventId: event.clientEventId, status: 'accepted' });
+        // S14: exception events alert the planners — AFTER the transaction
+        // committed, best-effort (notifyExceptionEvent never throws and no-ops
+        // for non-exception event types).
+        await notifyExceptionEvent(prisma, {
+          companyId,
+          jobId:      event.jobId,
+          eventType:  event.eventType,
+          driverName: driverProfile.displayName,
+          note:       event.note,
+        });
       } else if (r.status === 'duplicate') {
         await updateSyncLog(prisma, event.clientEventId, companyId, 'duplicate', undefined);
         results.push({ clientEventId: event.clientEventId, status: 'duplicate' });

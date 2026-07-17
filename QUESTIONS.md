@@ -707,6 +707,8 @@ Exact list of what an accountant can see and do:
 
 ### Notifications
 
+- [ ] "Run modified mid-execution → notify driver" (S14 deferred): which run edits count as a modification worth pushing — stop add/remove, resequence, time change, vehicle change, notes? All of them would spam; none of them hides real changes. Needs a product decision before wiring the trigger.
+
 - [ ] When a driver starts a shift, does the planner get notified?
 
 - [ ] When a driver arrives at a collection point, does the planner get notified?

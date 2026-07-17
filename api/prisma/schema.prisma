@@ -1090,3 +1090,38 @@ model ClientRequestLink {
   @@index([companyId])
   @@index([tokenHash])
 }
+
+// ── S14 notifications ─────────────────────────────────────────────────────────
+
+// Expo push token for a signed-in device. Write path: POST /devices (the driver
+// app registers its token at login / app start). token is globally unique — a
+// device that changes hands is re-pointed at the new user on re-register.
+model DeviceToken {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  userId    Int
+  token     String   @unique
+  platform  String?  // ios | android
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, userId])
+}
+
+// In-app notification queue row (S14). Push delivery is best-effort on top —
+// this row is the durable record the web/mobile clients read. type values come
+// from NOTIFICATION_TYPES (api/src/constants/notificationVocab.ts).
+model Notification {
+  id              Int       @id @default(autoincrement())
+  companyId       Int
+  recipientUserId Int
+  type            String
+  title           String
+  body            String
+  data            Json?
+  readAt          DateTime?
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+
+  @@index([companyId, recipientUserId, readAt])
+}

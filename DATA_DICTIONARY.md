@@ -1112,6 +1112,45 @@ Non-job stops on a run (depot start, yard transfer, overnight rest, return to ba
 
 ---
 
+## DeviceToken
+
+Table: `DeviceToken`
+
+Expo push token for a signed-in device (S14 notifications). Write path: `POST /devices` — the driver app registers its token at login / app start. `token` is globally unique; a device that changes hands is re-pointed at the new user on re-register (upsert by token).
+
+| Field | Type | Required | Values / Format | Description |
+|---|---|---|---|---|
+| id | Int | Yes (auto) | Auto-increment PK | Surrogate primary key |
+| companyId | Int | Yes | FK → Company.id | Company the device's user was signed into at registration |
+| userId | Int | Yes | FK → User.id | User this device currently belongs to |
+| token | String | Yes | Expo push token (`ExponentPushToken[...]`), unique | Transport address for push delivery |
+| platform | String? | No | `ios` \| `android` | Device platform, as reported by the app |
+| createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
+| updatedAt | DateTime | Yes | ISO 8601 | Last re-registration timestamp |
+
+---
+
+## Notification
+
+Table: `Notification`
+
+In-app notification queue row (S14). This row is the durable record the web/mobile clients read (`GET /notifications`); Expo push delivery is best-effort on top and never blocks the business transaction. `type` values come from `NOTIFICATION_TYPES` (`api/src/constants/notificationVocab.ts`): `run_published` \| `run_recalled` \| `delay_reported` \| `breakdown` \| `delivery_refused` \| `damage_reported` \| `damage_writeoff`.
+
+| Field | Type | Required | Values / Format | Description |
+|---|---|---|---|---|
+| id | Int | Yes (auto) | Auto-increment PK | Surrogate primary key |
+| companyId | Int | Yes | FK → Company.id | Owning company |
+| recipientUserId | Int | Yes | FK → User.id | User this notification is for |
+| type | String | Yes | `NOTIFICATION_TYPES` value (see above) | What happened |
+| title | String | Yes | Short human text | Notification title (also the push title) |
+| body | String | Yes | Human text | Notification body (also the push body) |
+| data | Json? | No | `{ runId?, jobId?, eventType? }` | Deep-link payload for the client |
+| readAt | DateTime? | No | ISO 8601 | When the recipient marked it read (`PATCH /notifications/:id/read`) |
+| createdAt | DateTime | Yes | ISO 8601 | Record creation timestamp |
+| deletedAt | DateTime? | No | ISO 8601 | Soft delete (standard convention) |
+
+---
+
 ## Planning API — Response types
 
 These are API-layer response shapes, not database models. They are computed and returned by planning endpoints.

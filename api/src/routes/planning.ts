@@ -25,6 +25,7 @@ import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
 import { loadRunReadiness } from "../services/runReadinessService.js";
+import { dispatchNotification, runDriverUserId } from "../services/notificationService.js";
 import { buildProposals, type ProposalStop } from "../services/proposeRunsService.js";
 import { checkRun } from "../services/checkRunService.js";
 import { buildFleetCapacityProfile } from "../lib/loadCapacity.js";
@@ -519,6 +520,20 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
       // Step 5: recompute compatibility if the truck/trailer changed.
       if (vehicleChanged) await recomputeRunCompatibility(prisma, id, companyId);
 
+      // S14: a recall takes the run off the driver's phone — tell them. Uses the
+      // PRE-patch driver (a recall+reassign must notify the driver who loses it).
+      if (b.publishedToDriver === false && run.publishedToDriver === true && run.assignedDriverId != null) {
+        const profile = await prisma.driverProfile.findFirst({ where: { id: run.assignedDriverId, companyId }, select: { userId: true } });
+        if (profile?.userId != null) {
+          await dispatchNotification(prisma, {
+            companyId, recipientUserIds: [profile.userId], type: "run_recalled",
+            title: "Run recalled",
+            body:  `Run ${run.runReference} has been recalled by the planner.`,
+            data:  { runId: id },
+          });
+        }
+      }
+
       const updated = await prisma.run.findFirst({ where: { id, companyId }, include: RUN_INCLUDE });
       return reply.send(fleetWarnings.length ? { ...updated, warning: fleetWarnings.join(" ") } : updated);
     },
@@ -719,6 +734,17 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         data:  { status: "assigned", publishedToDriver: true },
         include: RUN_INCLUDE,
       });
+
+      // S14: tell the driver — after the publish write, best-effort.
+      const driverUserId = await runDriverUserId(prisma, companyId, id);
+      if (driverUserId != null) {
+        await dispatchNotification(prisma, {
+          companyId, recipientUserIds: [driverUserId], type: "run_published",
+          title: "New run published",
+          body:  `Run ${updated.runReference}${updated.plannedDate ? ` for ${updated.plannedDate.toISOString().slice(0, 10)}` : ""} is ready for you.`,
+          data:  { runId: id },
+        });
+      }
 
       return reply.send(updated);
     },

@@ -3,9 +3,26 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-07-16
+> Last updated: 2026-07-17
 
 ---
+
+## Step 14 — notifications: the one greenfield subsystem 2026-07-17
+
+**LOAD_MOVEMENT_PLAN Step 14** (fixes audit 🟠 #9). Design principle: **the Notification ROW is the product; push is best-effort delivery on top.** Every dispatch persists an in-app queue row first (that's what clients read, and it pre-feeds S15's planner queue), then attempts Expo push to the recipient's registered devices — always AFTER the triggering business transaction, catching everything: an Expo outage can never fail a publish or lose a driver's event.
+
+- **Schema**: `DeviceToken` (Expo token, globally unique, upsert-by-token via `POST /devices` — the app registers at login; a device that changes hands re-points to the new user) + `Notification` (companyId, recipientUserId, type, title, body, data Json, readAt, deletedAt). Migration `20260716120000_s14_notifications`; dictionary sections added (check:docs 30 models).
+- **Dev migration-history repair (recorded for the next session):** `migrate deploy` on dev failed replaying `shift_segment_trailer_ownership` — that one plus `drop_phantom_columns` and `fleet_mot_expiry` had been applied via `db push` without being recorded. Marked all three `migrate resolve --applied` (verified the columns exist), then deployed S14's migration cleanly. **Production still needs `npm run migrate:prod`** for the three pending migrations (phantom-drop, mot-expiry, s14-notifications) — if prod's history shows the same drift, resolve the applied ones first.
+- **Transport** `lib/expoPush.ts`: Expo push HTTP API via plain fetch (no SDK dep), `AbortSignal.timeout(5000)` per the routing.ts precedent, 100-message chunks, never throws. Swappable via `setPushTransport` — the Step 14 exit criteria ("assert the send call in a test/mock") is met with a spy transport, zero network in tests.
+- **Type registry** `constants/notificationVocab.ts`: `run_published`, `run_recalled`, `delay_reported`, `breakdown`, `delivery_refused`, `damage_reported`, `damage_writeoff` (one registry per concept rule).
+- **Dispatch points**: both publish routes → assigned driver (`run_published`, resolved DriverProfile→userId); planning PATCH recall (`publishedToDriver` true→false) → the PRE-patch driver (a recall+reassign must notify the driver who LOSES the run); sync path after each accepted exception event → all active planner/owner memberships, body carries driver name + job ref + the driver's note. The online `PATCH /jobs/:id/status` path needs no hook — its legacy `EVENT_TYPE_MAP` cannot express exception events, so sync-only dispatch is complete coverage.
+- **Reader API**: `GET /notifications` (own rows, unread filter, unreadCount) + `PATCH /notifications/:id/read` — recipient-scoped: another user marking your row read gets 404 (tested).
+- New `notificationDispatch.test.ts` (5 subtests): device upsert; publish → driver row + spy called with the driver's token; breakdown via sync → planner row naming the driver + note, spy called with planner's token, and `started` dispatches NOTHING; recall → `run_recalled`; queue list/read/foreign-user-404.
+- **Deferred**: "run modified mid-execution" triggers (which edits count is a real product question — QUESTIONS), customer notifications, mobile device-registration call + notification UI, web bell (Live screen).
+
+**Next: S15 — monitoring & reconciliation surface** (P0.13): `GET /needs-review` + planner queue + live run board off reconciled statuses/custody — the last backend step before the Live screen UI, then S16 run-system unification ends the programme.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ (30 models) · api tests **287/287** (was 281) · knip 111/77 = baseline.
 
 ## Step 13 — dependency lock enforced: relay timing cannot be violated 2026-07-16 (same session)
 

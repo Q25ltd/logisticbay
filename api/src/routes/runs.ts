@@ -11,6 +11,7 @@ import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
 import { loadRunReadiness } from "../services/runReadinessService.js";
 import { computeRunCandidates } from "../services/runCandidatesService.js";
+import { dispatchNotification, runDriverUserId } from "../services/notificationService.js";
 import { SplitRunSchema } from "../schemas/runs.js";
 
 // ── Run reference generation ──────────────────────────────────────────────────
@@ -592,6 +593,17 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       data:    { publishedToDriver: true, status: run.status === "draft" ? "assigned" : run.status },
       include: RUN_DETAIL_INCLUDE,
     });
+
+    // S14: tell the driver — after the publish write, best-effort, never fails the request.
+    const driverUserId = await runDriverUserId(prisma, companyId, id);
+    if (driverUserId != null) {
+      await dispatchNotification(prisma, {
+        companyId, recipientUserIds: [driverUserId], type: "run_published",
+        title: "New run published",
+        body:  `Run ${updated.runReference}${updated.plannedDate ? ` for ${updated.plannedDate.toISOString().slice(0, 10)}` : ""} is ready for you.`,
+        data:  { runId: id },
+      });
+    }
 
     return reply.send(updated);
   });
