@@ -9,8 +9,13 @@
 import { Prisma } from '../generated/client.js';
 import { syncJobPlanningStatuses } from '../lib/jobUtils.js';
 import { recomputeRunCompatibility } from '../lib/runCompatibility.js';
+import { appendLoadTrack } from '../lib/loadTrack.js';
+import { custodyBaseOf, customAt } from '../constants/loadVocab.js';
 
 type TxClient = Prisma.TransactionClient;
+
+/** S12 (B14): how load stranded on the cancelled run's vehicle is dispositioned. */
+export type CustodyDisposition = 'return_to_origin' | 'leave_at_yard';
 
 export interface CancelRunInput {
   runId:       number;
@@ -18,6 +23,14 @@ export interface CancelRunInput {
   actorUserId: number;
   /** Human-readable reason stored on every removed RunAssignment and AuditLog */
   reason:      string;
+  /**
+   * S12 (B14): REQUIRED when a load's latest custody is on this run's vehicle —
+   * a cancel must never strand a load (invariant 1). Without it, cancelRun
+   * throws CUSTODY_DISPOSITION_REQUIRED (409) listing the affected jobs.
+   */
+  custodyDisposition?: CustodyDisposition;
+  /** Yard label/id for `leave_at_yard` (defaults to 'unspecified'). */
+  dispositionYardRef?: string;
 }
 
 export interface CancelRunResult {
@@ -51,7 +64,7 @@ export async function cancelRun(
   tx: TxClient,
   input: CancelRunInput,
 ): Promise<CancelRunResult> {
-  const { runId, companyId, actorUserId, reason } = input;
+  const { runId, companyId, actorUserId, reason, custodyDisposition, dispositionYardRef } = input;
 
   // Collect affected job IDs before removing assignments
   const assignments = await tx.runAssignment.findMany({
@@ -59,6 +72,69 @@ export async function cancelRun(
     select: { jobId: true },
   });
   const affectedJobIds = [...new Set(assignments.map(a => a.jobId))];
+
+  // 0. S12 (B14): a cancel must never strand a load. Find jobs whose LATEST
+  //    custody is on THIS run's vehicle — those cannot just vanish; the planner
+  //    must choose a disposition ("stop and ask" made mechanical).
+  const latestRows = await Promise.all(affectedJobIds.map(jobId =>
+    tx.loadTrack.findFirst({ where: { jobId, companyId, deletedAt: null }, orderBy: { id: 'desc' } }),
+  ));
+  const stranded = latestRows.filter(
+    (r): r is NonNullable<typeof r> => r != null && r.runId === runId && custodyBaseOf(r.toCustody) === 'on_vehicle',
+  );
+
+  if (stranded.length > 0 && !custodyDisposition) {
+    const jobIds = stranded.map(r => r.jobId).join(', ');
+    throw Object.assign(
+      new Error(`This run is carrying load for job(s) ${jobIds} — cancelling would strand it. Choose what happens to the load: return to origin, or leave at a yard.`),
+      { statusCode: 409, code: 'CUSTODY_DISPOSITION_REQUIRED', details: { jobIds: stranded.map(r => r.jobId) } },
+    );
+  }
+
+  // Write the compensating custody row per stranded load, caused by a planner
+  // 'cancelled' event (invariant 5 — no orphan custody; invariant 4 — new rows,
+  // never edits). LoadTrack itself stays preserved as before.
+  if (stranded.length > 0 && custodyDisposition) {
+    const now = new Date();
+    for (const row of stranded) {
+      const cancelEvent = await tx.jobExecutionEvent.create({
+        data: {
+          jobId:           row.jobId,
+          companyId,
+          driverId:        actorUserId, // legacy twin of actorUserId (Migration C pending)
+          actorUserId,
+          eventType:       'cancelled',
+          note:            `Run cancelled with load on board — disposition: ${custodyDisposition}`,
+          clientEventId:   `run-cancel-${runId}-job-${row.jobId}-${now.getTime()}`,
+          clientTimestamp: now,
+          needsReview:     false,
+          runId,
+          runAssignmentId: row.runAssignmentId,
+          jobPartId:       row.jobPartId,
+        },
+        select: { id: true },
+      });
+      await appendLoadTrack(tx, {
+        companyId,
+        jobId:           row.jobId,
+        jobPartId:       row.jobPartId,
+        runId,
+        runAssignmentId: row.runAssignmentId,
+        eventId:         cancelEvent.id,
+        transactionType: custodyDisposition === 'return_to_origin' ? 'refuse_return' : 'drop_at_yard',
+        quantity:        Number(row.quantity),
+        unit:            row.unit,
+        fromCustody:     row.toCustody,
+        toCustody:       custodyDisposition === 'return_to_origin'
+          ? customAt.returned(row.jobPartId)
+          : customAt.yard((dispositionYardRef ?? '').trim() || 'unspecified'),
+        driverId:        actorUserId,
+        trailerId:       row.trailerId,
+        timestamp:       now,
+        notes:           `disposition on run cancel: ${custodyDisposition}`,
+      });
+    }
+  }
 
   // 1. Soft-remove all active assignments
   await tx.runAssignment.updateMany({
@@ -94,6 +170,77 @@ export async function cancelRun(
   });
 
   return { runId, affectedJobIds };
+}
+
+// ── S12 (B10) — pre-start driver reassignment ─────────────────────────────────
+
+export interface GuardDriverReassignmentInput {
+  runId:       number;
+  companyId:   number;
+  actorUserId: number;
+  oldDriverId: number | null;
+  newDriverId: number | null;
+}
+
+/**
+ * Guard + reset for changing the driver on a run (B10). Call inside the same
+ * transaction as the run update, BEFORE writing assignedDriverId. Shared by
+ * PATCH /runs/:id and PATCH /planning/runs/:id (one implementation).
+ *
+ * - No previous driver, or same driver → nothing to do (fresh assignment).
+ * - Custody exists for this run → REFUSED (RUN_HAS_CUSTODY): the load is on or
+ *   was moved by the old driver's vehicle; silently repointing the run would
+ *   strand it (invariant 1). The rescue paths are handover (S8) or yard relay
+ *   (S6/S7), which keep the ledger honest.
+ * - No custody: any started assignment (en_route/at_pickup — or exception from a
+ *   pre-collection breakdown, B9 resolution b) resets to not_started for the new
+ *   driver, and the reset is audited.
+ */
+export async function guardDriverReassignment(
+  tx: TxClient,
+  input: GuardDriverReassignmentInput,
+): Promise<{ resetCount: number }> {
+  const { runId, companyId, actorUserId, oldDriverId, newDriverId } = input;
+  if (oldDriverId == null || oldDriverId === newDriverId) return { resetCount: 0 };
+
+  const custody = await tx.loadTrack.findFirst({
+    where:  { runId, companyId, deletedAt: null },
+    select: { id: true, jobId: true },
+  });
+  if (custody) {
+    throw Object.assign(
+      new Error('This run has already moved load — reassigning the driver would strand it. Set up a handover or yard relay instead.'),
+      { statusCode: 409, code: 'RUN_HAS_CUSTODY' },
+    );
+  }
+
+  const started = await tx.runAssignment.findMany({
+    where:  { runId, companyId, removedAt: null, status: { not: 'not_started' } },
+    select: { id: true },
+  });
+  if (started.length > 0) {
+    await tx.runAssignment.updateMany({
+      where: { id: { in: started.map(s => s.id) }, companyId },
+      data:  { status: 'not_started' },
+    });
+  }
+
+  await tx.auditLog.create({
+    data: {
+      companyId,
+      actorId:    actorUserId,
+      entityType: 'Run',
+      entityId:   runId,
+      action:     'driver_reassigned',
+      field:      'assignedDriverId',
+      newValue:   { oldDriverId, newDriverId, resetAssignments: started.length } as Prisma.InputJsonValue,
+      note:       started.length > 0
+        ? `Driver reassigned before any custody — ${started.length} started assignment(s) reset to not_started`
+        : 'Driver reassigned before execution started',
+    },
+  });
+
+  return { resetCount: started.length };
 }
 
 // ── Derived run requirements — recalculated whenever assignments change ───────

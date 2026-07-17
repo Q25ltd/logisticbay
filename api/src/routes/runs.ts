@@ -5,7 +5,7 @@ import { dayRangeUtc } from "../lib/dateUtils.js";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
-import { cancelRun, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText } from "../services/runService.js";
+import { cancelRun, guardDriverReassignment, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText, CustodyDisposition } from "../services/runService.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
@@ -381,7 +381,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       compatibilityOverridden?:     boolean;
       compatibilityOverrideReason?: string | null;
     };
-    const { companyId } = request.user!;
+    const { companyId, userId } = request.user!;
 
     const run = await prisma.run.findFirst({ where: { id, companyId } });
     if (!run) return notFound(reply, "Run");
@@ -427,6 +427,15 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
         if (!driver) {
           throw Object.assign(new Error("Driver not found or inactive"), { statusCode: 400, code: "DRIVER_NOT_FOUND" });
         }
+      }
+
+      // S12 (B10): changing the driver on a run that has custody is refused;
+      // with no custody, started assignments reset to not_started (audited).
+      if ("assignedDriverId" in body && run.assignedDriverId != null && (body.assignedDriverId ?? null) !== run.assignedDriverId) {
+        await guardDriverReassignment(tx, {
+          runId: id, companyId, actorUserId: userId,
+          oldDriverId: run.assignedDriverId, newDriverId: body.assignedDriverId ?? null,
+        });
       }
 
       // Step 5: validate truck/trailer belong to this company (status → warning).
@@ -523,9 +532,16 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return reply.status(204).send();
     }
 
-    // Not yet cancelled — delegate to shared cancelRun service
+    // Not yet cancelled — delegate to shared cancelRun service. S12 (B14): when a
+    // load's latest custody is on this run's vehicle, the body must carry a
+    // custodyDisposition or cancelRun throws CUSTODY_DISPOSITION_REQUIRED (409).
+    const delBody = (request.body ?? {}) as { custodyDisposition?: CustodyDisposition; dispositionYardRef?: string };
     await prisma.$transaction(async (tx) => {
-      await cancelRun(tx, { runId: id, companyId, actorUserId: userId, reason: "run_cancelled" });
+      await cancelRun(tx, {
+        runId: id, companyId, actorUserId: userId, reason: "run_cancelled",
+        custodyDisposition: delBody.custodyDisposition,
+        dispositionYardRef: delBody.dispositionYardRef,
+      });
     });
 
     return reply.status(204).send();

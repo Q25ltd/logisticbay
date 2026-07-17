@@ -18,7 +18,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 import { haversineKm }               from "../lib/geo.js";
-import { cancelRun, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText } from "../services/runService.js";
+import { cancelRun, guardDriverReassignment, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText, CustodyDisposition } from "../services/runService.js";
 import { parseIdParam }              from "../lib/validate.js";
 import { dayRangeUtc }               from "../lib/dateUtils.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
@@ -447,6 +447,8 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         estimatedEndTime?:   string | null;
         status?:             string;
         publishedToDriver?:  boolean;
+        custodyDisposition?: CustodyDisposition;
+        dispositionYardRef?: string;
       };
 
       const run = await prisma.run.findFirst({ where: { id, companyId } });
@@ -459,9 +461,14 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
 
       // When cancelling a run, delegate to the shared cancelRun service.
       // This fixes A.7 (duplicate logic), B.4 (LoadTrack preserved), B.15 (now transactional).
+      // S12 (B14): load on this run's vehicle requires a custodyDisposition (409 otherwise).
       if (b.status === "cancelled") {
         await prisma.$transaction(async (tx) => {
-          await cancelRun(tx, { runId: id, companyId, actorUserId: userId, reason: "run_cancelled_by_planner" });
+          await cancelRun(tx, {
+            runId: id, companyId, actorUserId: userId, reason: "run_cancelled_by_planner",
+            custodyDisposition: b.custodyDisposition,
+            dispositionYardRef: b.dispositionYardRef,
+          });
         });
       }
 
@@ -478,20 +485,35 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
         fleetWarnings = fv.warnings;
       }
 
-      await prisma.run.update({
-        where: { id },
-        data: {
-          ...(b.runType           !== undefined ? { runType:           b.runType }           : {}),
-          ...(b.dependsOnRunId    !== undefined ? { dependsOnRunId:    b.dependsOnRunId }    : {}),
-          ...(b.assignedTrailerId !== undefined ? { assignedTrailerId: b.assignedTrailerId } : {}),
-          ...(b.assignedDriverId  !== undefined ? { assignedDriverId:  b.assignedDriverId }  : {}),
-          ...(b.assignedTruckId   !== undefined ? { assignedTruckId:   b.assignedTruckId }   : {}),
-          ...(b.plannerNotes      !== undefined ? { plannerNotes:      b.plannerNotes?.trim() || null } : {}),
-          ...(b.estimatedStartTime !== undefined ? { estimatedStartTime: b.estimatedStartTime } : {}),
-          ...(b.estimatedEndTime   !== undefined ? { estimatedEndTime:   b.estimatedEndTime }   : {}),
-          ...(b.status            !== undefined ? { status:            b.status }            : {}),
-          ...(b.publishedToDriver !== undefined ? { publishedToDriver: b.publishedToDriver } : {}),
-        },
+      // S12 (B10): changing the driver on a run that has custody is refused; with
+      // no custody, started assignments reset to not_started (audited). Guard and
+      // update run atomically.
+      const driverChanging = b.assignedDriverId !== undefined
+        && run.assignedDriverId != null
+        && (b.assignedDriverId ?? null) !== run.assignedDriverId;
+
+      await prisma.$transaction(async (tx) => {
+        if (driverChanging) {
+          await guardDriverReassignment(tx, {
+            runId: id, companyId, actorUserId: userId,
+            oldDriverId: run.assignedDriverId, newDriverId: b.assignedDriverId ?? null,
+          });
+        }
+        await tx.run.update({
+          where: { id },
+          data: {
+            ...(b.runType           !== undefined ? { runType:           b.runType }           : {}),
+            ...(b.dependsOnRunId    !== undefined ? { dependsOnRunId:    b.dependsOnRunId }    : {}),
+            ...(b.assignedTrailerId !== undefined ? { assignedTrailerId: b.assignedTrailerId } : {}),
+            ...(b.assignedDriverId  !== undefined ? { assignedDriverId:  b.assignedDriverId }  : {}),
+            ...(b.assignedTruckId   !== undefined ? { assignedTruckId:   b.assignedTruckId }   : {}),
+            ...(b.plannerNotes      !== undefined ? { plannerNotes:      b.plannerNotes?.trim() || null } : {}),
+            ...(b.estimatedStartTime !== undefined ? { estimatedStartTime: b.estimatedStartTime } : {}),
+            ...(b.estimatedEndTime   !== undefined ? { estimatedEndTime:   b.estimatedEndTime }   : {}),
+            ...(b.status            !== undefined ? { status:            b.status }            : {}),
+            ...(b.publishedToDriver !== undefined ? { publishedToDriver: b.publishedToDriver } : {}),
+          },
+        });
       });
 
       // Step 5: recompute compatibility if the truck/trailer changed.

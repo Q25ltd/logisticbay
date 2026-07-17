@@ -7,6 +7,19 @@
 
 ---
 
+## Step 12 — reassignment & cancel-with-custody (B10/B14): nothing can strand a load 2026-07-16 (same session)
+
+**LOAD_MOVEMENT_PLAN Step 12.** Both behaviours live in `runService` (one implementation) and are called by BOTH run-patch/cancel routes (`/runs/:id` and `/planning/runs/:id`), inside the same transaction as the run write.
+
+- **B10 `guardDriverReassignment`**: fires when `assignedDriverId` changes away from an existing driver. If ANY LoadTrack row exists for the run → **409 `RUN_HAS_CUSTODY`** — the load is on (or was moved by) the old driver's vehicle, and silently repointing the run would strand it; the honest rescue paths are S8 handover or S6/S7 yard relay. With no custody: every started assignment — including `exception` from a pre-collect breakdown (B9 resolution b) — resets to `not_started` for the new driver, with an AuditLog `driver_reassigned` entry recording old/new driver + reset count. Fresh assignment (no previous driver) or same driver = no-op.
+- **B14 cancel disposition gate** (in `cancelRun`, keeping its LoadTrack preservation untouched): before cancelling, find jobs whose LATEST custody row is `on_vehicle` **via this run**. If any and no `custodyDisposition` → **409 `CUSTODY_DISPOSITION_REQUIRED`** naming the jobs — the "stop and ask" rule made mechanical; the run stays uncancelled. With `return_to_origin` / `leave_at_yard` (+`dispositionYardRef`): a compensating custody row (`refuse_return` → `returned:<part>`, or `drop_at_yard` → `yard:<ref>`) is written per stranded load, caused by a planner-authored `cancelled` JobExecutionEvent (invariant 5 — no orphan custody; no new vocab — `cancelled` was already the planner event type). Loads already AT a yard need no disposition (parked = plannable, and `syncJobPlanningStatuses` reverts the job as before).
+- Web note: `DELETE /runs/:id` (Planning board ✕) now 409s on a loaded run until the UI offers the disposition choice — tracked in the ⏳ follow-ups; cancelling unloaded runs is unchanged (regression subtest proves it).
+- New `runReassignCancel.test.ts` (4 subtests): started-not-collected reassign resets + audits; collected reassign refused; cancel-without-disposition refused then return_to_origin cancels with a balanced compensating row (eventId present); leave_at_yard via the planning route writes `yard:Leeds yard`; plain cancel untouched.
+
+**Next: S13 — dependency-lock enforcement** (block publish/`pick_from_yard`/`handover_accepted` on a dependent leg until the feeding leg's custody row exists — the pick/accept guards from S6/S8 already do the custody half; S13 adds the publish-time block via `dependsOnRunId`). Then S14 notifications (greenfield push infra) and S15 monitoring.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **275/275** (was 270) · knip 111/77 = baseline.
+
 ## Step 11 — exception events (B8/B9/B11/B12/B13): honest ledger under failure 2026-07-16 (same session)
 
 First Phase C slice, entered through the now-open gate (S11 entry = S8 green). Five scenarios, one design rule throughout: **the ledger records what actually happened, the planner gets flagged, the driver is never blocked from continuing honest work.**
