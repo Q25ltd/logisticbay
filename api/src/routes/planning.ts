@@ -18,7 +18,7 @@ import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses }   from "../lib/jobUtils.js";
 import { getPlannerWorkItems }       from "../services/plannerWorkService.js";
 import { haversineKm }               from "../lib/geo.js";
-import { cancelRun, guardDriverReassignment, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText, CustodyDisposition } from "../services/runService.js";
+import { cancelRun, guardDriverReassignment, dependencyFeedStatus, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText, CustodyDisposition } from "../services/runService.js";
 import { parseIdParam }              from "../lib/validate.js";
 import { dayRangeUtc }               from "../lib/dateUtils.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
@@ -695,6 +695,14 @@ export async function planningRoutes(app: FastifyInstance, prisma: PrismaClient)
           vehicleCompatible: run.vehicleCompatible,
           overrideAllowed:   true,
         });
+      }
+
+      // S13 — dependency lock (invariant 8): a dependent relay leg cannot be
+      // published before its feeding leg has produced the load (drop/swap/offer).
+      const feed = await dependencyFeedStatus(prisma, { runId: id, companyId });
+      if (!feed.fed) {
+        return conflict(reply, "DEPENDENCY_NOT_READY",
+          `Cannot publish: this run waits on ${feed.feedingRunReference ?? `run ${feed.dependsOnRunId}`} — the load has not been dropped, swapped, or offered yet.`);
       }
 
       // B5 — hard resource gate (same as POST /runs/:id/publish): refuse publish

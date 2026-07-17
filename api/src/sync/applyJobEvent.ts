@@ -199,12 +199,15 @@ export async function applyJobEvent(
 
     const run = await tx.run.findFirst({
       where:  { id: assignment.runId, companyId },
-      select: { assignedTrailerId: true, assignedTruckId: true },
+      select: { assignedTrailerId: true, assignedTruckId: true, dependsOnRunId: true },
     });
     // D2.3: on_vehicle uses assignedTrailerId first, assignedTruckId fallback.
     const vehicleId  = run?.assignedTrailerId ?? run?.assignedTruckId ?? null;
     const vehicleRef = vehicleId != null ? String(vehicleId) : `run${assignment.runId}`;
     const trailerId  = vehicleId != null ? String(vehicleId) : '';
+    // S13 (invariant 8, "matching" half): when this run declares a feeding leg,
+    // the prior drop/offer must come FROM that leg, not from any run on the job.
+    const feederRunId = run?.dependsOnRunId ?? null;
 
     const qtyFor = (p: { quantityRequired: Prisma.Decimal | null }) =>
       parseQuantity(actualQuantity) ?? (p.quantityRequired != null ? Number(p.quantityRequired) : 0);
@@ -254,11 +257,18 @@ export async function applyJobEvent(
         fromCustody: customAt.onVehicle(vehicleRef), toCustody: customAt.yard(await resolveYardRef()),
         quantity: qtyFor(part), unit: unitFor(part), trailerId };
     } else if (isPickYard) {
-      // Invariant 8 stub (D6.5): can't pick from a yard nothing was dropped at.
-      // Step 7: a trailer_swap row also leaves the load at a yard, so it counts as the drop.
-      const priorDrop = await tx.loadTrack.findFirst({ where: { jobId, companyId, transactionType: { in: ['drop_at_yard', 'trailer_swap'] }, deletedAt: null }, select: { id: true } });
+      // Invariant 8 (D6.5 + S13): can't pick from a yard nothing was dropped at.
+      // Step 7: a trailer_swap row also leaves the load at a yard, so it counts as
+      // the drop. S13: a dependent leg only unlocks on ITS feeding run's drop.
+      const priorDrop = await tx.loadTrack.findFirst({
+        where: { jobId, companyId, transactionType: { in: ['drop_at_yard', 'trailer_swap'] }, deletedAt: null,
+          ...(feederRunId != null ? { runId: feederRunId } : {}) },
+        select: { id: true },
+      });
       if (!priorDrop) {
-        return { status: 'failed', reason: `Cannot pick job ${jobId} from yard: no prior drop_at_yard recorded.` };
+        return { status: 'failed', reason: feederRunId != null
+          ? `Cannot pick job ${jobId} from yard: feeding run ${feederRunId} has not dropped this load yet (invariant 8).`
+          : `Cannot pick job ${jobId} from yard: no prior drop_at_yard recorded.` };
       }
       const part = collectionPart ?? deliveryPart ?? fallbackPart;
       custody = { transactionType: 'pick_from_yard', jobPartId: part.id,
@@ -297,13 +307,17 @@ export async function applyJobEvent(
       // handover custody row is authored HERE, at accept time (never at offer),
       // so custody can't double-count; both driver IDs + the offer event are
       // captured on the row for audit.
+      // S13: a dependent leg only accepts an offer raised by ITS feeding run.
       const offer = await tx.jobExecutionEvent.findFirst({
-        where:   { jobId, companyId, eventType: 'handover_offered' },
+        where:   { jobId, companyId, eventType: 'handover_offered',
+          ...(feederRunId != null ? { runId: feederRunId } : {}) },
         orderBy: { id: 'desc' },
         select:  { id: true, runId: true, runAssignmentId: true, actorUserId: true },
       });
       if (!offer) {
-        return { status: 'failed', reason: `Cannot accept handover for job ${jobId}: no prior handover_offered recorded.` };
+        return { status: 'failed', reason: feederRunId != null
+          ? `Cannot accept handover for job ${jobId}: feeding run ${feederRunId} has not offered this load yet (invariant 8).`
+          : `Cannot accept handover for job ${jobId}: no prior handover_offered recorded.` };
       }
       // An offer is consumed by exactly one accept: any handover row caused by a
       // LATER event than this offer means it was already accepted.

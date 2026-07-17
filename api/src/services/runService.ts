@@ -172,6 +172,54 @@ export async function cancelRun(
   return { runId, affectedJobIds };
 }
 
+// ── S13 — dependency lock (invariant 8) ───────────────────────────────────────
+
+export interface DependencyFeedStatus {
+  dependsOnRunId:      number | null;
+  /** true when there is no dependency, or the feeding leg has produced the load. */
+  fed:                 boolean;
+  feedingRunReference: string | null;
+}
+
+/**
+ * S13: has the feeding leg of a dependent run produced the load yet?
+ *
+ * "Fed" means the feeding run has any of:
+ *   - a drop_at_yard / trailer_swap / handover custody row (the load left it), or
+ *   - a handover_offered event (B3: the handover custody row is only authored at
+ *     ACCEPT, and the receiver cannot accept an unpublished run — the offer is
+ *     the earliest honest feed signal, so requiring the row here would deadlock), or
+ *   - status 'completed'.
+ *
+ * A dangling dependsOnRunId (feeder deleted) counts as fed — a stale pointer
+ * must not brick a run. Used by both publish routes; the event-time halves of
+ * invariant 8 live in applyJobEvent (pick/accept feeder-scoped guards).
+ */
+export async function dependencyFeedStatus(
+  db: TxClient,
+  { runId, companyId }: { runId: number; companyId: number },
+): Promise<DependencyFeedStatus> {
+  const run = await db.run.findFirst({ where: { id: runId, companyId }, select: { dependsOnRunId: true } });
+  const depId = run?.dependsOnRunId ?? null;
+  if (depId == null) return { dependsOnRunId: null, fed: true, feedingRunReference: null };
+
+  const feeder = await db.run.findFirst({ where: { id: depId, companyId }, select: { runReference: true, status: true } });
+  if (!feeder) return { dependsOnRunId: depId, fed: true, feedingRunReference: null };
+  if (feeder.status === 'completed') return { dependsOnRunId: depId, fed: true, feedingRunReference: feeder.runReference };
+
+  const custodyFeed = await db.loadTrack.findFirst({
+    where:  { runId: depId, companyId, deletedAt: null, transactionType: { in: ['drop_at_yard', 'trailer_swap', 'handover'] } },
+    select: { id: true },
+  });
+  if (custodyFeed) return { dependsOnRunId: depId, fed: true, feedingRunReference: feeder.runReference };
+
+  const offer = await db.jobExecutionEvent.findFirst({
+    where:  { runId: depId, companyId, eventType: 'handover_offered' },
+    select: { id: true },
+  });
+  return { dependsOnRunId: depId, fed: offer != null, feedingRunReference: feeder.runReference };
+}
+
 // ── S12 (B10) — pre-start driver reassignment ─────────────────────────────────
 
 export interface GuardDriverReassignmentInput {

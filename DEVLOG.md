@@ -7,6 +7,19 @@
 
 ---
 
+## Step 13 — dependency lock enforced: relay timing cannot be violated 2026-07-16 (same session)
+
+**LOAD_MOVEMENT_PLAN Step 13** — closes audit 🟠 #8 and STATUS 1.8 ("stored and badged, API does not enforce"). `dependsOnRunId` now has teeth in three places:
+
+- **Publish gate (both routes)**: `dependencyFeedStatus` in runService — a dependent leg publishes only when its feeding run has produced the load: a `drop_at_yard`/`trailer_swap`/`handover` custody row, a `handover_offered` event, or feeder `completed`. Otherwise **409 `DEPENDENCY_NOT_READY`** naming the feeding run. **Design decision (the offer escape):** a handover's custody row is authored at ACCEPT (S8), and the receiver cannot accept a run they can't see — requiring the custody row at publish would deadlock every B3 relay. The feeder's `handover_offered` event is the earliest honest feed signal, so it unlocks publish; the B2 yard case stays strict (row required), exactly matching the plan's "run 2 published before run 1 dropped → blocked". Dangling feeder pointer (deleted run) counts as fed — a stale dep must not brick a run.
+- **Event-time matching (invariant 8's "matching" word)**: when the acting run declares a feeder, `pick_from_yard`'s prior-drop query and `handover_accepted`'s offer query are scoped to `runId = dependsOnRunId` — a drop or offer from some OTHER run on the same job no longer unlocks a leg that waits on a specific feeder. Runs without a dependency keep the S6/S8 job-scoped behaviour unchanged (all prior relay tests still green).
+- New `dependencyLock.test.ts` (5 subtests): publish blocked on both routes then unblocked by the feeder's drop; wrong-feeder pick blocked → repointed → succeeds; wrong-feeder accept blocked (zero handover rows) → repointed → exactly one row; handover relay publishes after OFFER (no-deadlock proof); dependency-free run publishes as before.
+- STATUS 1.8 flipped to [x]; Phase-2 checklist 2.4 ("delivery run locked until collection completes") satisfied by this step.
+
+**Next: S14 notifications** (greenfield — no push infra exists; driver publish/recall alerts, planner exception alerts) then S15 monitoring, then the Live screen UI that consumes S11–S15.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **281/281** (was 275) · knip 111/77 = baseline.
+
 ## Step 12 — reassignment & cancel-with-custody (B10/B14): nothing can strand a load 2026-07-16 (same session)
 
 **LOAD_MOVEMENT_PLAN Step 12.** Both behaviours live in `runService` (one implementation) and are called by BOTH run-patch/cancel routes (`/runs/:id` and `/planning/runs/:id`), inside the same transaction as the run write.
