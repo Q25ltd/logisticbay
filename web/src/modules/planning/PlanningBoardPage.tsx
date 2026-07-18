@@ -2131,6 +2131,69 @@ function matchesWorkItem(item: PlannerWorkItem, q: string): boolean {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// ── Custody disposition dialog (S12/B14) ─────────────────────────────────────
+// Shown when cancelling a run whose load is on the vehicle: the API refuses
+// (CUSTODY_DISPOSITION_REQUIRED) until the planner chooses where the load goes.
+// Module-level on purpose — components defined inside a page remount every render.
+function DispositionDialog({ message, onConfirm, onClose }: {
+  message:   string;
+  onConfirm: (disposition: "return_to_origin" | "leave_at_yard", yardRef?: string) => Promise<void>;
+  onClose:   () => void;
+}) {
+  const [choice, setChoice]   = useState<"return_to_origin" | "leave_at_yard">("return_to_origin");
+  const [yardRef, setYardRef] = useState("");
+  const [saving, setSaving]   = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-slate-800">This run is carrying load</h3>
+        <p className="text-sm text-slate-600">{message}</p>
+
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 p-2 rounded border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <input type="radio" name="disposition" className="mt-0.5" checked={choice === "return_to_origin"} onChange={() => setChoice("return_to_origin")} />
+            <span className="text-sm">
+              <span className="font-medium text-slate-700 block">Return to collection point</span>
+              <span className="text-slate-500">The load goes back to where it was collected.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 p-2 rounded border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <input type="radio" name="disposition" className="mt-0.5" checked={choice === "leave_at_yard"} onChange={() => setChoice("leave_at_yard")} />
+            <span className="text-sm flex-1">
+              <span className="font-medium text-slate-700 block">Leave at a yard</span>
+              <span className="text-slate-500">Parked safely — plan a new run to move it later.</span>
+              {choice === "leave_at_yard" && (
+                <input
+                  type="text" value={yardRef} onChange={e => setYardRef(e.target.value)}
+                  placeholder="Yard name (e.g. Leeds yard)"
+                  className="mt-1.5 w-full border border-slate-300 rounded px-2 py-1 text-sm"
+                  autoFocus
+                />
+              )}
+            </span>
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800" onClick={onClose} disabled={saving}>Keep the run</button>
+          <button
+            className="px-3 py-1.5 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try { await onConfirm(choice, choice === "leave_at_yard" ? yardRef : undefined); }
+              finally { setSaving(false); }
+            }}
+          >
+            {saving ? "Cancelling…" : "Cancel run"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PlanningBoardPage() {
   const [date,           setDate]           = useState(today());
   const [lookAheadDays,  setLookAheadDays]  = useState(0);
@@ -2148,6 +2211,8 @@ export default function PlanningBoardPage() {
   const [err,            setErr]            = useState("");
   const [mobileTab,      setMobileTab]      = useState<"jobs" | "runs">("jobs");
   const [creatingRun,    setCreatingRun]    = useState(false);
+  // S12/B14: cancel refused because the run is carrying load — planner must choose.
+  const [dispositionFor, setDispositionFor] = useState<{ runId: number; message: string } | null>(null);
 
   // Sidebar filters
   const [activePool,    setActivePool]    = useState<string | null>(null);
@@ -2441,8 +2506,35 @@ export default function PlanningBoardPage() {
 
   async function handleDeleteRun(runId: number) {
     if (!window.confirm("Delete this run? Stops return to the unplanned list.")) return;
-    await planningApi.patchRun(runId, { status: "cancelled" });
-    await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    try {
+      await planningApi.patchRun(runId, { status: "cancelled" });
+      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    } catch (e: unknown) {
+      const error = e as Error & { code?: string };
+      // B14: the run is carrying load — the API refuses until the planner
+      // chooses where the load goes. Open the disposition dialog.
+      if (error.code === "CUSTODY_DISPOSITION_REQUIRED") {
+        setDispositionFor({ runId, message: error.message });
+      } else {
+        setErr(error.message ?? "Could not cancel the run");
+      }
+    }
+  }
+
+  async function handleConfirmDisposition(disposition: "return_to_origin" | "leave_at_yard", yardRef?: string) {
+    if (!dispositionFor) return;
+    try {
+      await planningApi.patchRun(dispositionFor.runId, {
+        status: "cancelled",
+        custodyDisposition: disposition,
+        dispositionYardRef: yardRef?.trim() || undefined,
+      });
+      setDispositionFor(null);
+      await Promise.all([loadLeft(date, dateTo), loadRight(date)]);
+    } catch (e: unknown) {
+      setDispositionFor(null);
+      setErr((e as Error).message ?? "Could not cancel the run");
+    }
   }
 
   async function handleCreateRun() {
@@ -2817,6 +2909,13 @@ export default function PlanningBoardPage() {
         </div>
       </div>
       <JobQuickLook jobId={peekJobId} onClose={() => setPeekJobId(null)} />
+      {dispositionFor && (
+        <DispositionDialog
+          message={dispositionFor.message}
+          onConfirm={handleConfirmDisposition}
+          onClose={() => setDispositionFor(null)}
+        />
+      )}
     </div>
   );
 }

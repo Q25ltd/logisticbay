@@ -7,6 +7,10 @@
 
 ---
 
+## Custody disposition prompt — the B14 gate gets its UI 2026-07-18 (same day)
+
+Closed the UX hole the S12 gate opened: cancelling a loaded run 409'd (`CUSTODY_DISPOSITION_REQUIRED`) with no way for the planner to answer. Now: `web/src/api/client.ts` attaches the API error `code` + `status` to thrown errors (pages can branch on specific failures — message-text matching would have been fragile); the board's `handleDeleteRun` (the ONLY web cancel path — `runsApi.deleteRun` has no callers) catches that code and opens `DispositionDialog` (module-level component — the AssetPicker remount lesson): the API's own message ("carrying load for job(s) X…") + two choices in human words — "Return to collection point" / "Leave at a yard" with a yard-name input — then retries the cancel with `custodyDisposition`/`dispositionYardRef`. "Keep the run" backs out. Other cancel errors now surface in the board's error strip instead of dying silently in console (the handler previously had NO catch). Gates: web typecheck 0 · build ✅ (api untouched). Browser verify = user's live smoke session.
+
 ## S16 hotfix — board crash on "New run" (write response is not board-shaped) 2026-07-18 (user-reported, same day)
 
 User's browser smoke caught a real S16 migration bug: creating a run on the Planning board crashed `RunLane` (`run.waypoints.map` on undefined). Cause: `planningApi.createRun` now posts to `/runs`, whose response (`RUN_DETAIL_INCLUDE`) has no `waypoints` and nests the job differently than the board's `PlanningRun` shape — and `handleCreateRun` APPENDED that raw write response into board state. Fix: never trust a write response for board state — `handleCreateRun` refetches the board's own read (`loadRight`) after creating; the client's `createRun` return type is now honestly `{ id: number }` (the only field any caller uses — the proposal-accept flow takes `run.id` then refetches). Audited every other migrated write: patchRun/removeStop/reorderStops/publish responses are consumed nowhere. Lesson recorded: when swapping a client's endpoint, check the RESPONSE consumers, not just the request shape. Gates: web typecheck 0, build ✅ (api untouched).

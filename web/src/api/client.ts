@@ -102,7 +102,12 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
       : Array.isArray(data.details) && data.details.length
         ? `: ${data.details.join(", ")}`
         : "";
-    throw new Error(`${data.message || data.error || `Request failed (${res.status})`}${detail}`);
+    // Carry the API's error code + status so pages can branch on specific
+    // failures (e.g. CUSTODY_DISPOSITION_REQUIRED opens a choice dialog).
+    throw Object.assign(
+      new Error(`${data.message || data.error || `Request failed (${res.status})`}${detail}`),
+      { code: typeof data.code === "string" ? data.code : undefined, status: res.status },
+    );
   }
   return data;
 }
