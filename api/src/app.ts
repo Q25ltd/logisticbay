@@ -18,6 +18,7 @@ import { aiRoutes }            from "./routes/ai.js";
 import { planningRoutes }      from "./routes/planning.js";
 import { deviceRoutes }        from "./routes/devices.js";
 import { notificationRoutes }  from "./routes/notifications.js";
+import { liveRoutes }          from "./routes/live.js";
 import cors                    from "@fastify/cors";
 
 export async function buildApp(
@@ -115,6 +116,7 @@ export async function buildApp(
   await planningRoutes(app, prisma);
   await deviceRoutes(app, prisma);
   await notificationRoutes(app, prisma);
+  await liveRoutes(app, prisma);
 
   return app;
 }

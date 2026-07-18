@@ -4,9 +4,10 @@ import { useAuth } from "../../hooks/useAuth";
 
 // The operational pipeline — the three screens a planner moves through, in order.
 const PRIMARY_NAV = [
-  { to: "/app/planning",  label: "Planning" },
-  { to: "/app/runs",      label: "Runs"     },
-  { to: "/app/dashboard", label: "Live"     },   // interim → real Live screen in Phase C
+  { to: "/app/planning",  label: "Planning"  },
+  { to: "/app/runs",      label: "Runs"      },
+  { to: "/app/live",      label: "Live"      },   // S15 monitoring & reconciliation surface
+  { to: "/app/dashboard", label: "Dashboard" },
 ];
 
 // Everything else, grouped by operation.

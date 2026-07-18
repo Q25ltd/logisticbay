@@ -551,6 +551,9 @@ model JobExecutionEvent {
   gpsLng           Float?
   needsReview      Boolean  @default(false)
   reviewReason     String?
+  // S15 reconciliation surface (P0.13): stamped by POST /live/needs-review/:id/resolve
+  reviewedAt       DateTime?
+  reviewedBy       Int?     // User.id of the planner who resolved it
   createdAt        DateTime @default(now())
 
   // Phase 1 additions — links to new models (null for historical events)

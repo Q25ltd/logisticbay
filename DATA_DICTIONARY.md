@@ -615,6 +615,8 @@ Table: `JobExecutionEvent`
 | gpsLng | Float? | No | Decimal degrees | GPS longitude at the time of the event |
 | needsReview | Boolean | Yes | Default: `false` | Flagged for planner review (e.g. suspicious GPS, timing anomaly) |
 | reviewReason | String? | No | Free text | Reason why the event was flagged for review |
+| reviewedAt | DateTime? | No | ISO 8601 | S15: when a planner resolved this item from the needs-review queue (`POST /live/needs-review/:id/resolve`); `null` = still open |
+| reviewedBy | Int? | No | FK → User.id | S15: the planner who resolved it |
 | runId | Int? | No | FK → Run.id | Run during which this event occurred (null for pre-Run historical events) |
 | runAssignmentId | Int? | No | FK → RunAssignment.id | Assignment this event relates to (null for historical events) |
 | jobPartId | Int? | No | FK → JobPart.id | Stop this event relates to (null for historical events) |

@@ -42,6 +42,7 @@ import PublicRequestForm        from "./modules/requests/PublicRequestForm";
 import JobRequestsPage          from "./modules/requests/JobRequestsPage";
 import RunsPage                 from "./modules/runs/RunsPage";
 import PlanningBoardPage        from "./modules/planning/PlanningBoardPage";
+import LivePage                 from "./modules/live/LivePage";
 
 // ── AuthLayout — mounts auth context for /app/* only ─────────────────────────
 //
@@ -121,6 +122,7 @@ function AppRoutes() {
           <Route path="job-requests" element={<JobRequestsPage />} />
           <Route path="runs"         element={<RunsPage />} />
           <Route path="planning"     element={<PlanningBoardPage />} />
+          <Route path="live"         element={<LivePage />} />
         </Route>
       </Route>
 

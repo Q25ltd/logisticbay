@@ -7,6 +7,21 @@
 
 ---
 
+## Step 15 — Live screen v1: no exception is invisible 2026-07-18
+
+**LOAD_MOVEMENT_PLAN Step 15** (P0.13). The queue rows the system has been writing since the 2026-05-31 sync decisions — and everything S11 started flagging — finally have a planner-facing surface.
+
+- **Queue definition decision**: `GET /live/needs-review` returns unresolved events that are `needsReview` **OR** exception-typed. Rationale: S11 deliberately made breakdown/refusal/writeoff drive `attention_needed` via execution state WITHOUT the needsReview flag — a queue reading only the flag would hide exactly the events that matter most. Both classes in one list = "no exception is invisible" verbatim.
+- **Actioning**: `JobExecutionEvent.reviewedAt/reviewedBy` (migration `20260718000000_event_review_fields`) stamped by `POST /live/needs-review/:id/resolve`; a resolved item leaves the queue; double-resolve is 404 (updateMany keyed `{ id, companyId, reviewedAt: null }` — also tenant scoping on the write).
+- **Live board**: `GET /live/runs?date=` — reconciled `Run.status`, per-stop execution state, and the latest LoadTrack row per part (invariant 1: latest row = current location), all bulk queries, no N+1.
+- **Web `/app/live`** (`modules/live/LivePage.tsx` + `api/live.ts`): left = queue cards (event badge, job link, reason in plain English, driver note, "Mark handled"); right = run board (status chips, per-stop state pills, "📦 At yard (7)"-style custody, red highlight on attention runs); 30s polling like the dashboard; date navigation. ALL labels human (no snake_case in UI — house rule); label maps live in the page. Top-nav "Live" now points at `/app/live` (was interim dashboard); Dashboard kept as a 4th nav item.
+- New `needsReviewQueue.test.ts` (4 subtests): delay + breakdown both queued with job/run/actor context while `started` stays out; driver 403 + second-company empty; resolve stamps reviewer + clears + 404 on re-resolve; board shows `in_progress` run, `exception` stop, `attention_needed` job, `on_vehicle` custody.
+- Deferred: GPS positions on the board (Phase 4 GPS events), an exception RESUME action (needs a state-machine exit from `exception` — design with care), web notification bell, disposition prompt in the cancel UI. Incognito smoke on Mac = user.
+
+**Next: S16 — unify the two run systems** (the final step): one run/assignment service, delete the duplicate `/planning/runs/*` vs `/runs/*` logic, full B1–B14 regression — then the load-movement programme is DONE.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **292/292** (was 287) · web build ✅ · knip 111/77 = baseline.
+
 ## Step 14 — notifications: the one greenfield subsystem 2026-07-17
 
 **LOAD_MOVEMENT_PLAN Step 14** (fixes audit 🟠 #9). Design principle: **the Notification ROW is the product; push is best-effort delivery on top.** Every dispatch persists an in-app queue row first (that's what clients read, and it pre-feeds S15's planner queue), then attempts Expo push to the recipient's registered devices — always AFTER the triggering business transaction, catching everything: an Expo outage can never fail a publish or lose a driver's event.
