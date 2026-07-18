@@ -202,7 +202,7 @@ Gated 16-step build of the full load lifecycle. Per-step detail + gates live in 
 | **Jobs list (web)** | List, filter by status, search | Filter by date range, customer filter |
 | **Job detail (web)** | All fields displayed | POD viewer, audit log display, stop-level execution status |
 | **Runs screen (web)** | One-screen asset allocation: inline driver/truck/trailer pickers fed by candidates, readiness gate, publish (RunDetailPage deleted 2026-07-01) | Live status from mobile |
-| **Planning dashboard** | Today's runs, driver names | "Ready to plan" jobs backlog panel, drag-to-assign |
+| **Dashboard** | Today's runs overview, driver names; still the `/app` landing page | Direction (2026-07-18): becomes the role-specific day-summary welcome screen — today's jobs, assets available, later financials (see QUESTIONS.md "Dashboard as role-specific welcome screen"); build after S16 |
 | **Driver profiles (web)** | CRUD — name, pay rate, min hours, `workPattern` (day_driver/night_driver/tramper), `basePostcode` (auto-geocoded to `baseLat`/`baseLng` via postcodes.io), work pattern badge display in driver list | Availability board (see all drivers week view), working time compliance display |
 | **Shifts (web)** | Basic list | Full shift detail with PDF, delivery task breakdown |
 | **LoadTrack** | Write path live since Step 2 (2026-06-07): collect/deliver/yard events append custody rows; reconciler derives statuses from them | Planner-facing custody viewer UI |

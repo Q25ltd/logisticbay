@@ -705,6 +705,15 @@ Exact list of what an accountant can see and do:
 
 > Notifications, mobile app behaviour, customer portal, trusted network, marketplace design.
 
+### Dashboard as role-specific welcome screen (decided in principle 2026-07-18)
+
+Direction: the Dashboard stays and becomes the **day-at-a-glance welcome screen** — today's jobs, available assets (drivers/units/trailers free vs out), and later financial information. Live/Planning/Runs remain the operational pipeline; the Dashboard is orientation, not operation. Different permissions get different welcome screens. Open questions before building:
+
+- [ ] Which roles get which dashboard? (company_owner: + financials; planner: operational summary; driver: web login is rare — do drivers get one at all, or is mobile Home their dashboard?)
+- [ ] What financial information, from what source? (No revenue/cost fields exist on Job today — rates/invoicing would be a NEW intake concern, four-gates rule applies: the form fields must come first.)
+- [ ] What does "assets available today" count — status=available only, or available minus already-assigned-to-a-run-today (the B4 candidates busy-check logic)?
+- [ ] Build timing: before or after S16 run-system unification? (S16 already touches the dashboard's job-centric drawer remnants — doing the reshape after avoids building on code S16 may delete.)
+
 ### Notifications
 
 - [ ] "Run modified mid-execution → notify driver" (S14 deferred): which run edits count as a modification worth pushing — stop add/remove, resequence, time change, vehicle change, notes? All of them would spam; none of them hides real changes. Needs a product decision before wiring the trigger.
