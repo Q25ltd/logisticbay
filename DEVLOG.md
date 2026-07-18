@@ -7,6 +7,30 @@
 
 ---
 
+## Step 16 — one run system: the load-movement programme is COMPLETE 2026-07-18 (same day)
+
+**LOAD_MOVEMENT_PLAN Step 16** (fixes audit 🟡 #6/#7) — the deliberately-last step, deferred so we never consolidated a moving target. With S1–S15 green, the target stopped moving; this session collapsed the two run systems into one.
+
+**Canonical choice:** `/runs/*` survives as the single write path (it already carried the S12 reassignment guard, S13 dependency lock, B5 readiness gate, S14 notify via shared services). planning.ts keeps ONLY board reads + board tools: unplanned, propose-runs, GET /planning/runs (board-shaped read), waypoints, overnight-rest, fleet/work-items/drivers.
+
+**Deleted:** the six duplicated planning handlers — POST/PATCH `/planning/runs(/:id)`, publish, add/remove assignment, reorder (~360 lines incl. their `as unknown as PrismaClient` casts), planning's local `generateRunReference` copy, and nine dead imports.
+
+**Parity absorbed into `/runs/*` (each twin's best behaviour won):**
+- create+patch: `runType` + `dependsOnRunId` (feeder validated in-company — new, neither twin did) + `publishedToDriver`.
+- **PATCH status=cancelled now delegates to `cancelRun`** — the raw status write was a REAL hole (bypassed assignment soft-removal, job status sync, audit, and the B14 custody-disposition gate). Cancel is never a plain field write again.
+- Recall (publishedToDriver true→false) notifies the PRE-patch driver (from the planning twin).
+- Assignments: `jobId` now derived from the jobPart server-side (the part's jobId is the truth; client value only cross-checked). Sequence-number aggregate includes soft-deleted rows — planning's fix for the @@unique([runId,sequenceNumber]) reuse bug, which runs.ts still had.
+- Resequence: waypoint-aware 1000/2000/3000 spacing (planning's version), so depot_start (0) / return_to_base (999999) / yard waypoints keep their route positions.
+- Publish: early no-driver 400 removed — the B5 readiness gate handles it with RESOURCE_NOT_READY + named blockers (one gate, one message).
+
+**Web:** planning client's createRun/patchRun/addStop/removeStop/reorderStops/publish are now thin wrappers over `/runs/*` (plannedDate sent as noon-UTC so board date filtering is TZ-safe); board reads unchanged. Five tests migrated off the deleted endpoints; dependencyLock's two-route parametrization collapsed to one.
+
+**Exit criteria proven:** one code path creates/assigns/publishes runs; greps show zero write endpoints under `/planning/runs`, ONE `generateRunReference`, zero web callers of deleted endpoints; **full B1–B14 regression 292/292**. Incognito smoke on Mac = user (planning board write paths changed).
+
+**The 16-step programme (2026-06-07 → 2026-07-18) is done.** Per the plan's definition: every scenario B1–B14 has a green end-to-end test, a load can be tracked through any legal path, the ledger stays conservation-valid, the planner sees real progress and every exception, and there is exactly one run system. What remains around it is enrichment, not lifecycle: mobile UI for the new driver events, web disposition prompt + notification bell, GPS on the Live board, the role-specific Dashboard (after-S16 by decision), and the P0 release-hardening list. ⚠ Production migrations pending: phantom-drop, mot-expiry, s14-notifications, event-review-fields.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **292/292** · web build ✅ · knip 111/77 = baseline.
+
 ## Step 15 — Live screen v1: no exception is invisible 2026-07-18
 
 **LOAD_MOVEMENT_PLAN Step 15** (P0.13). The queue rows the system has been writing since the 2026-05-31 sync decisions — and everything S11 started flagging — finally have a planner-facing surface.

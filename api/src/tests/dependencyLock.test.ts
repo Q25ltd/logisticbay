@@ -73,8 +73,9 @@ test("dependency lock — relay timing cannot be violated (Step 13)", async (t) 
 
   const sync = (token: string, events: unknown[]) =>
     app.inject({ method: "POST", url: "/sync/events", headers: { authorization: `Bearer ${token}` }, payload: { events } });
-  const publish = (runId: number, via: "runs" | "planning") =>
-    app.inject({ method: "POST", url: via === "runs" ? `/runs/${runId}/publish` : `/planning/runs/${runId}/publish`, headers: { authorization: `Bearer ${plannerToken}` } });
+  // S16: one publish route — the planning twin was deleted with the run-system unification.
+  const publish = (runId: number) =>
+    app.inject({ method: "POST", url: `/runs/${runId}/publish`, headers: { authorization: `Bearer ${plannerToken}` } });
 
   try {
     await t.test("publish of a dependent leg is blocked until the feeder drops — then unlocks", async () => {
@@ -82,12 +83,10 @@ test("dependency lock — relay timing cannot be violated (Step 13)", async (t) 
       const leg1 = await mkRun(A.p.id, f.job.id, f.cPart.id, { published: true });
       const leg2 = await mkRun(B.p.id, f.job.id, f.dPart.id, { dependsOnRunId: leg1.run.id });
 
-      // Blocked on BOTH publish routes while the feeder has produced nothing.
-      for (const via of ["runs", "planning"] as const) {
-        const res = await publish(leg2.run.id, via);
-        assert.strictEqual(res.statusCode, 409, `${via}: ${res.body}`);
-        assert.strictEqual(JSON.parse(res.body).code, "DEPENDENCY_NOT_READY", via);
-      }
+      // Blocked while the feeder has produced nothing.
+      const res0 = await publish(leg2.run.id);
+      assert.strictEqual(res0.statusCode, 409, res0.body);
+      assert.strictEqual(JSON.parse(res0.body).code, "DEPENDENCY_NOT_READY");
       const still = await prisma.run.findUnique({ where: { id: leg2.run.id }, select: { publishedToDriver: true } });
       assert.strictEqual(still?.publishedToDriver, false);
 
@@ -99,7 +98,7 @@ test("dependency lock — relay timing cannot be violated (Step 13)", async (t) 
       ]);
       assert.strictEqual(JSON.parse(r.body).failed.length, 0, r.body);
 
-      const ok = await publish(leg2.run.id, "runs");
+      const ok = await publish(leg2.run.id);
       assert.strictEqual(ok.statusCode, 200, ok.body);
       const after2 = await prisma.run.findUnique({ where: { id: leg2.run.id }, select: { publishedToDriver: true } });
       assert.strictEqual(after2?.publishedToDriver, true, "the block lifts once the feed exists");
@@ -160,7 +159,7 @@ test("dependency lock — relay timing cannot be violated (Step 13)", async (t) 
       const offering = await mkRun(A.p.id, f.job.id, f.cPart.id, { published: true });
       const leg2 = await mkRun(B.p.id, f.job.id, f.dPart.id, { dependsOnRunId: offering.run.id });
 
-      const blocked = await publish(leg2.run.id, "planning");
+      const blocked = await publish(leg2.run.id);
       assert.strictEqual(blocked.statusCode, 409, blocked.body);
 
       const r = await sync(A.token, [
@@ -170,14 +169,14 @@ test("dependency lock — relay timing cannot be violated (Step 13)", async (t) 
       ]);
       assert.strictEqual(JSON.parse(r.body).failed.length, 0, r.body);
 
-      const ok = await publish(leg2.run.id, "planning");
+      const ok = await publish(leg2.run.id);
       assert.strictEqual(ok.statusCode, 200, ok.body);
     });
 
     await t.test("a run with no dependency publishes as before", async () => {
       const f = await mkJob();
       const solo = await mkRun(A.p.id, f.job.id, f.cPart.id);
-      const ok = await publish(solo.run.id, "runs");
+      const ok = await publish(solo.run.id);
       assert.strictEqual(ok.statusCode, 200, ok.body);
     });
 

@@ -172,6 +172,23 @@ export async function cancelRun(
   return { runId, affectedJobIds };
 }
 
+// ── Run reference generation (S16: single implementation) ────────────────────
+
+/** Allocate the next RUN-<year>-<seq> reference. Call inside a transaction. */
+export async function generateRunReference(
+  companyId: number,
+  year: number,
+  tx: TxClient,
+): Promise<string> {
+  const company = await tx.company.update({
+    where:  { id: companyId },
+    data:   { nextRunSequence: { increment: 1 } },
+    select: { nextRunSequence: true },
+  });
+  const seq = (company.nextRunSequence - 1).toString().padStart(6, "0");
+  return `RUN-${year}-${seq}`;
+}
+
 // ── S13 — dependency lock (invariant 8) ───────────────────────────────────────
 
 export interface DependencyFeedStatus {

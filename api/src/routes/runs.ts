@@ -5,7 +5,7 @@ import { dayRangeUtc } from "../lib/dateUtils.js";
 import { PrismaClient, Prisma } from "../generated/client.js";
 import { authenticate, requireRole } from "../middleware.js";
 import { syncJobPlanningStatuses } from "../lib/jobUtils.js";
-import { cancelRun, guardDriverReassignment, dependencyFeedStatus, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText, CustodyDisposition } from "../services/runService.js";
+import { cancelRun, guardDriverReassignment, dependencyFeedStatus, generateRunReference, recalculateDerivedRequirements, partQuantityLedger, ledgerBreakdownText, CustodyDisposition } from "../services/runService.js";
 import { RUN_STATUSES, type RunStatus } from "../sync/runStatuses.js";
 import { badRequest, conflict, notFound, validationFailed } from "../lib/errors.js";
 import { recomputeRunCompatibility, validateFleetAssignment } from "../lib/runCompatibility.js";
@@ -13,21 +13,6 @@ import { loadRunReadiness } from "../services/runReadinessService.js";
 import { computeRunCandidates } from "../services/runCandidatesService.js";
 import { dispatchNotification, runDriverUserId } from "../services/notificationService.js";
 import { SplitRunSchema } from "../schemas/runs.js";
-
-// ── Run reference generation ──────────────────────────────────────────────────
-async function generateRunReference(
-  companyId: number,
-  year: number,
-  tx: TxClient,
-): Promise<string> {
-  const company = await tx.company.update({
-    where:  { id: companyId },
-    data:   { nextRunSequence: { increment: 1 } },
-    select: { nextRunSequence: true },
-  });
-  const seq = (company.nextRunSequence - 1).toString().padStart(6, "0");
-  return `RUN-${year}-${seq}`;
-}
 
 // ── Driver conflict check ─────────────────────────────────────────────────────
 // Returns the conflicting run if the driver is already assigned to a non-cancelled
@@ -91,6 +76,9 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       endInstructionNote?:  string | null;
       returnToBase?:        boolean;
       returnToBaseNote?:    string | null;
+      // S16: absorbed from the deleted POST /planning/runs
+      runType?:             string | null;
+      dependsOnRunId?:      number | null;
     };
     const { companyId, userId } = request.user!;
 
@@ -125,6 +113,12 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
         if (!fv.ok) throw Object.assign(new Error(fv.message!), { statusCode: 400, code: fv.code });
       }
 
+      // S16: a declared feeding run must exist in this company (S13 lock target).
+      if (body.dependsOnRunId != null) {
+        const feeder = await tx.run.findFirst({ where: { id: body.dependsOnRunId, companyId }, select: { id: true } });
+        if (!feeder) throw Object.assign(new Error("dependsOnRunId does not reference a run in this company"), { statusCode: 400, code: "BAD_REQUEST" });
+      }
+
       const runReference = await generateRunReference(companyId, year, tx);
 
       return tx.run.create({
@@ -143,6 +137,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
           endInstructionNote:  body.endInstructionNote ?? null,
           returnToBase:        body.returnToBase ?? false,
           returnToBaseNote:    body.returnToBaseNote ?? null,
+          runType:             body.runType ?? null,
+          dependsOnRunId:      body.dependsOnRunId ?? null,
           createdBy:           userId,
         },
         include: RUN_DETAIL_INCLUDE,
@@ -381,6 +377,12 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       status?:                      string;
       compatibilityOverridden?:     boolean;
       compatibilityOverrideReason?: string | null;
+      // S16: absorbed from the deleted PATCH /planning/runs/:id
+      runType?:                     string | null;
+      dependsOnRunId?:              number | null;
+      publishedToDriver?:           boolean;
+      custodyDisposition?:          CustodyDisposition;
+      dispositionYardRef?:          string;
     };
     const { companyId, userId } = request.user!;
 
@@ -407,19 +409,41 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if ("endInstructionNote"          in body) updateData.endInstructionNote          = body.endInstructionNote ?? null;
     if ("returnToBase"                in body) updateData.returnToBase                = body.returnToBase;
     if ("returnToBaseNote"            in body) updateData.returnToBaseNote            = body.returnToBaseNote   ?? null;
+    // S16: cancel is NEVER a raw status write — it must go through cancelRun
+    // (soft-remove assignments, job status sync, audit, B14 custody disposition).
+    const cancelling = body.status === "cancelled" && run.status !== "cancelled";
     if ("status" in body) {
       if (!RUN_STATUSES.includes(body.status as RunStatus)) {
         return badRequest(reply, "INVALID_RUN_STATUS", `status must be one of: ${RUN_STATUSES.join(", ")}`);
       }
-      updateData.status = body.status;
+      if (!cancelling) updateData.status = body.status;
     }
     if ("compatibilityOverridden"     in body) updateData.compatibilityOverridden     = body.compatibilityOverridden;
     if ("compatibilityOverrideReason" in body) updateData.compatibilityOverrideReason = body.compatibilityOverrideReason ?? null;
+    if ("runType"                     in body) updateData.runType                     = body.runType ?? null;
+    if ("dependsOnRunId"              in body) updateData.dependsOnRunId              = body.dependsOnRunId ?? null;
+    if ("publishedToDriver"           in body) updateData.publishedToDriver           = body.publishedToDriver;
 
     const warnings: string[] = [];
     const vehicleChanged = "assignedTruckId" in body || "assignedTrailerId" in body;
 
     const updated = await prisma.$transaction(async (tx) => {
+      // S16 (was planning-only): cancel delegates to the shared service, with the
+      // B14 disposition gate (409 CUSTODY_DISPOSITION_REQUIRED when loaded).
+      if (cancelling) {
+        await cancelRun(tx, {
+          runId: id, companyId, actorUserId: userId, reason: "run_cancelled_by_planner",
+          custodyDisposition: body.custodyDisposition,
+          dispositionYardRef: body.dispositionYardRef,
+        });
+      }
+
+      // S16: a declared feeding run must exist in this company.
+      if ("dependsOnRunId" in body && body.dependsOnRunId != null) {
+        const feeder = await tx.run.findFirst({ where: { id: body.dependsOnRunId, companyId }, select: { id: true } });
+        if (!feeder) throw Object.assign(new Error("dependsOnRunId does not reference a run in this company"), { statusCode: 400, code: "BAD_REQUEST" });
+      }
+
       // Validate driver exists and is active
       if (newDriverId != null && "assignedDriverId" in body) {
         const driver = await tx.driverProfile.findFirst({
@@ -503,6 +527,20 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return (await tx.run.findFirst({ where: { id }, include: RUN_DETAIL_INCLUDE }))!;
     });
 
+    // S14 (was planning-only): a recall takes the run off the driver's phone —
+    // tell the PRE-patch driver (a recall+reassign must notify the one losing it).
+    if (body.publishedToDriver === false && run.publishedToDriver === true && run.assignedDriverId != null) {
+      const profile = await prisma.driverProfile.findFirst({ where: { id: run.assignedDriverId, companyId }, select: { userId: true } });
+      if (profile?.userId != null) {
+        await dispatchNotification(prisma, {
+          companyId, recipientUserIds: [profile.userId], type: "run_recalled",
+          title: "Run recalled",
+          body:  `Run ${run.runReference} has been recalled by the planner.`,
+          data:  { runId: id },
+        });
+      }
+    }
+
     return reply.send(warnings.length ? { ...updated, warning: warnings.join(" ") } : updated);
   });
 
@@ -560,9 +598,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!run) return notFound(reply, "Run");
 
-    if (!run.assignedDriverId) {
-      return badRequest(reply, "BAD_REQUEST", "Cannot publish: no driver assigned");
-    }
+    // No early no-driver check here (S16): the B5 readiness gate below hard-fails
+    // a missing driver with RESOURCE_NOT_READY + named blockers — one gate, one message.
     if (run.assignments.length === 0) {
       return badRequest(reply, "BAD_REQUEST", "Cannot publish: run has no job assignments");
     }
@@ -614,7 +651,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     if (runId === null) return badRequest(reply, "BAD_REQUEST", "runId must be a valid integer");
     const body = request.body as {
       jobPartId:         number;
-      jobId:             number;
+      /** S16: optional — derived from the jobPart when omitted (the part's jobId is the truth). */
+      jobId?:            number;
       sequenceNumber?:   number;
       quantityAssigned?: number;
       quantityUnit?:     string;
@@ -622,8 +660,8 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     };
     const { companyId, userId } = request.user!;
 
-    if (!body.jobPartId || !body.jobId) {
-      return badRequest(reply, "BAD_REQUEST", "jobPartId and jobId are required");
+    if (!body.jobPartId) {
+      return badRequest(reply, "BAD_REQUEST", "jobPartId is required");
     }
 
     const run = await prisma.run.findFirst({ where: { id: runId, companyId } });
@@ -633,14 +671,15 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return badRequest(reply, "INVALID_RUN_STATUS", `Cannot add assignments to a ${run.status} run`);
     }
 
-    // Verify JobPart and Job belong to this company
-    const [jobPart, job] = await Promise.all([
-      prisma.jobPart.findFirst({ where: { id: body.jobPartId, companyId } }),
-      prisma.job.findFirst({ where: { id: body.jobId, companyId } }),
-    ]);
+    // Verify the JobPart belongs to this company; jobId comes FROM the part.
+    const jobPart = await prisma.jobPart.findFirst({ where: { id: body.jobPartId, companyId } });
     if (!jobPart) return badRequest(reply, "BAD_REQUEST", "JobPart not found");
-    if (!job)    return badRequest(reply, "BAD_REQUEST", "Job not found");
-    if (jobPart.jobId !== body.jobId) return badRequest(reply, "BAD_REQUEST", "JobPart does not belong to this Job");
+    if (body.jobId != null && jobPart.jobId !== body.jobId) {
+      return badRequest(reply, "BAD_REQUEST", "JobPart does not belong to this Job");
+    }
+    const jobId = jobPart.jobId;
+    const job = await prisma.job.findFirst({ where: { id: jobId, companyId } });
+    if (!job) return badRequest(reply, "BAD_REQUEST", "Job not found");
 
     // Quantity ledger: a part may sit on SEVERAL runs (split / multi-trip —
     // same driver, several trips) as long as the shares never exceed the
@@ -665,11 +704,14 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Determine sequence number
+      // Determine sequence number. Include ALL assignments (even soft-deleted) —
+      // the @@unique([runId, sequenceNumber]) constraint does not exempt removed
+      // rows, so reusing a removed row's number would violate it (S16: fix
+      // adopted from the planning twin).
       let sequenceNumber = body.sequenceNumber;
       if (sequenceNumber == null) {
         const maxSeq = await tx.runAssignment.aggregate({
-          where:  { runId, removedAt: null },
+          where:  { runId },
           _max:   { sequenceNumber: true },
         });
         sequenceNumber = (maxSeq._max.sequenceNumber ?? 0) + 1;
@@ -680,7 +722,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
           companyId,
           runId,
           jobPartId:        body.jobPartId,
-          jobId:            body.jobId,
+          jobId,
           sequenceNumber,
           // Share = requested amount, else the unassigned REMAINDER (so a
           // second trip automatically takes what's left of the load).
@@ -695,7 +737,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
 
       await recalculateDerivedRequirements(runId, companyId, tx);
       // Advance job to in_planning now it has at least one active run assignment
-      await syncJobPlanningStatuses([body.jobId], companyId, tx);
+      await syncJobPlanningStatuses([jobId], companyId, tx);
 
       return assignment;
     });
@@ -812,7 +854,10 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       return badRequest(reply, "BAD_REQUEST", "order contains invalid or inactive assignment ids");
     }
 
-    // Apply new sequence in a transaction using temp negative values to avoid unique conflicts
+    // Apply new sequence in a transaction using temp negative values to avoid
+    // unique conflicts. Final numbers are spaced 1000/2000/3000… (S16: adopted
+    // from the planning reorder twin) so RunWaypoints — depot_start at seq 0,
+    // return_to_base at 999999, yard stops between — keep their route positions.
     await prisma.$transaction(async (tx) => {
       // Step 1: move all to negative temps
       for (let i = 0; i < body.order.length; i++) {
@@ -825,7 +870,7 @@ export async function runRoutes(app: FastifyInstance, prisma: PrismaClient) {
       for (let i = 0; i < body.order.length; i++) {
         await tx.runAssignment.update({
           where: { id: body.order[i] },
-          data:  { sequenceNumber: i + 1 },
+          data:  { sequenceNumber: (i + 1) * 1000 },
         });
       }
     });

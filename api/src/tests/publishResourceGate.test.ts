@@ -148,7 +148,7 @@ test("B5 — publish blocked on hard resource failures, allowed once fixed", asy
       });
       assert.strictEqual(add2.statusCode, 201, add2.body);
 
-      const res = await app.inject({ method: "POST", url: `/planning/runs/${run2Id}/publish`, headers: { authorization: `Bearer ${plannerToken}` } });
+      const res = await app.inject({ method: "POST", url: `/runs/${run2Id}/publish`, headers: { authorization: `Bearer ${plannerToken}` } });
       assert.strictEqual(res.statusCode, 400, res.body);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.code, "RESOURCE_NOT_READY");

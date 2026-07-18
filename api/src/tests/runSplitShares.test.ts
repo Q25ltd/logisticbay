@@ -122,7 +122,7 @@ test("split shares balance and weight is apportioned per run", async (t) => {
       const movedRows = await prisma.runAssignment.findMany({ where: { runId: newRunId, removedAt: null } });
       for (const row of movedRows) {
         const res = await app.inject({
-          method: "DELETE", url: `/planning/runs/${newRunId}/assignments/${row.id}`,
+          method: "DELETE", url: `/runs/${newRunId}/assignments/${row.id}`,
           headers: { authorization: `Bearer ${token}` },
         });
         assert.ok(res.statusCode < 300, res.body);

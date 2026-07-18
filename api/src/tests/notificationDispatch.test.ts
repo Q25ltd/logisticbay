@@ -112,7 +112,7 @@ test("notification dispatch — publish/recall → driver, exceptions → planne
     });
 
     await t.test("recall → run_recalled notification to the driver losing the run", async () => {
-      const res = await app.inject({ method: "PATCH", url: `/planning/runs/${run.id}`, headers: { authorization: `Bearer ${plannerToken}` },
+      const res = await app.inject({ method: "PATCH", url: `/runs/${run.id}`, headers: { authorization: `Bearer ${plannerToken}` },
         payload: { status: "draft", publishedToDriver: false } });
       assert.strictEqual(res.statusCode, 200, res.body);
 

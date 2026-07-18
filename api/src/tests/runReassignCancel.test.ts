@@ -121,14 +121,14 @@ test("reassignment & cancel-with-custody — B10/B14 (Step 12)", async (t) => {
       assert.ok(rows[1].eventId != null, "compensating row references the planner cancel event (invariant 5)");
     });
 
-    await t.test("B14: leave_at_yard disposition via planning cancel → drop_at_yard row", async () => {
+    await t.test("B14: leave_at_yard disposition via run patch cancel → drop_at_yard row", async () => {
       const f = await mkJob();
       const r = await sync(A.token, [
         ev("started", f.job.id), ev("arrived_pickup", f.job.id), ev("collected", f.job.id, { actualQuantity: "10" }),
       ]);
       assert.strictEqual(JSON.parse(r.body).failed.length, 0, r.body);
 
-      const res = await app.inject({ method: "PATCH", url: `/planning/runs/${f.run.id}`, headers: { authorization: `Bearer ${plannerToken}` },
+      const res = await app.inject({ method: "PATCH", url: `/runs/${f.run.id}`, headers: { authorization: `Bearer ${plannerToken}` },
         payload: { status: "cancelled", custodyDisposition: "leave_at_yard", dispositionYardRef: "Leeds yard" } });
       assert.strictEqual(res.statusCode, 200, res.body);
       assert.strictEqual((await runRow(f.run.id))?.status, "cancelled");

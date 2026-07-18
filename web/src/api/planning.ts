@@ -295,6 +295,10 @@ export const planningApi = {
   getRuns: (date: string) =>
     api.get<{ runs: PlanningRun[] }>(`/planning/runs?date=${date}`),
 
+  // S16: all run/assignment WRITES go through the single /runs system. The
+  // board keeps its own reads (getRuns above) — writes below are thin wrappers
+  // over the canonical endpoints.
+
   createRun: (body: {
     date: string;
     runType?: string;
@@ -302,7 +306,15 @@ export const planningApi = {
     assignedTrailerId?: number;
     assignedDriverId?: number;
     dependsOnRunId?: number;
-  }) => api.post<PlanningRun>("/planning/runs", body),
+  }) => api.post<PlanningRun>("/runs", {
+    // Noon UTC keeps the run inside the board's date filter regardless of TZ.
+    plannedDate:       `${body.date}T12:00:00.000Z`,
+    runType:           body.runType,
+    plannerNotes:      body.plannerNotes,
+    assignedTrailerId: body.assignedTrailerId,
+    assignedDriverId:  body.assignedDriverId,
+    dependsOnRunId:    body.dependsOnRunId,
+  }),
 
   patchRun: (id: number, body: {
     runType?:            string | null;
@@ -314,22 +326,21 @@ export const planningApi = {
     estimatedStartTime?: string | null;
     status?:             string;
     publishedToDriver?:  boolean;
-  }) => api.patch<PlanningRun>(`/planning/runs/${id}`, body),
+    custodyDisposition?: "return_to_origin" | "leave_at_yard";
+    dispositionYardRef?: string;
+  }) => api.patch<PlanningRun>(`/runs/${id}`, body),
 
   addStop: (runId: number, jobPartId: number, quantityAssigned?: number) =>
-    api.post<{ assignment: PlanningAssignment; run: PlanningRun }>(
-      `/planning/runs/${runId}/assignments`,
-      { jobPartId, quantityAssigned },
-    ),
+    api.post<PlanningAssignment>(`/runs/${runId}/assignments`, { jobPartId, quantityAssigned }),
 
   removeStop: (runId: number, assignmentId: number) =>
-    api.delete<PlanningRun>(`/planning/runs/${runId}/assignments/${assignmentId}`),
+    api.delete<void>(`/runs/${runId}/assignments/${assignmentId}`),
 
   reorderStops: (runId: number, assignmentIds: number[]) =>
-    api.patch<{ run: PlanningRun }>(`/planning/runs/${runId}/assignments/reorder`, { assignmentIds }),
+    api.post<{ run: PlanningRun }>(`/runs/${runId}/assignments/resequence`, { order: assignmentIds }),
 
   publish: (runId: number) =>
-    api.post<PlanningRun>(`/planning/runs/${runId}/publish`, {}),
+    api.post<PlanningRun>(`/runs/${runId}/publish`, {}),
 
   addWaypoint: (runId: number, body: {
     waypointType?:  string;
