@@ -7,6 +7,16 @@
 
 ---
 
+## Readiness checks now say WHERE to fix it 2026-07-18 (user feedback, same day)
+
+User's smoke feedback: publish was blocked and the planner had "no warning why it fails … and what information is missing in one of the 4 possible sources". The reasons existed but hid behind a hover tooltip / "Show details" toggle, and nothing named the intake source. Fixes:
+
+- **API**: every readiness check now carries `source: allocation | driver | fleet | job` — stamped from ONE key→source map in `runReadinessService` (`CHECK_SOURCE`, single place, can't drift per-check). `allocation` = fix on the Runs screen itself; the rest are the intake gates (driver form / fleet form / job form).
+- **Web (Runs card checks panel)**: blocking failures and `unknown` (= information missing at its source) now show their reason INLINE, always — no hover, no toggle — plus a "Fix on the Drivers page →" / "Fix on the Fleet page →" link (or "Fix with the pickers below" for allocation problems). Soft warns keep the compact Show-details toggle.
+- Publish-click server refusals (e.g. DEPENDENCY_NOT_READY) were already surfaced in the page error strip — verified, unchanged.
+
+Gates: typecheck 0/0 · api tests green · web build ✅.
+
 ## Custody disposition prompt — the B14 gate gets its UI 2026-07-18 (same day)
 
 Closed the UX hole the S12 gate opened: cancelling a loaded run 409'd (`CUSTODY_DISPOSITION_REQUIRED`) with no way for the planner to answer. Now: `web/src/api/client.ts` attaches the API error `code` + `status` to thrown errors (pages can branch on specific failures — message-text matching would have been fragile); the board's `handleDeleteRun` (the ONLY web cancel path — `runsApi.deleteRun` has no callers) catches that code and opens `DispositionDialog` (module-level component — the AssetPicker remount lesson): the API's own message ("carrying load for job(s) X…") + two choices in human words — "Return to collection point" / "Leave at a yard" with a yard-name input — then retries the cancel with `custodyDisposition`/`dispositionYardRef`. "Keep the run" backs out. Other cancel errors now surface in the board's error strip instead of dying silently in console (the handler previously had NO catch). Gates: web typecheck 0 · build ✅ (api untouched). Browser verify = user's live smoke session.

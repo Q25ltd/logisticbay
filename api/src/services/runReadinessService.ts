@@ -79,13 +79,42 @@ export interface RunReadinessInput {
 
 type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "na";
 
+/**
+ * Where the information behind a check is BORN / fixed (four-intake-gates):
+ *   allocation — fix on the Runs screen itself (assign / swap the asset)
+ *   driver     — the driver registration form (Drivers page)
+ *   fleet      — the unit/trailer registration form (Fleet page)
+ *   job        — the job intake form (CJP/PRF)
+ */
+export type CheckSource = "allocation" | "driver" | "fleet" | "job";
+
 interface ReadinessCheck {
   key:     string;
   label:   string;
   status:  CheckStatus;
   hard:    boolean;            // a hard `fail` blocks publish
   reason?: string;
+  source?: CheckSource;        // stamped from CHECK_SOURCE — tells the planner WHERE to fix it
 }
+
+/** One map, one place — every check key points at the source that fixes it. */
+const CHECK_SOURCE: Record<string, CheckSource> = {
+  driver_assigned:    "allocation",
+  driver_available:   "driver",
+  driver_licence:     "driver",
+  driver_adr:         "driver",
+  driver_trailer:     "driver",
+  trailer_assigned:   "allocation",
+  trailer_compatible: "allocation",
+  trailer_load_state: "allocation",
+  trailer_status:     "fleet",
+  truck_assigned:     "allocation",
+  vehicle_compatible: "allocation",
+  equipment:          "fleet",
+  mot_inspection:     "fleet",
+  vor_defects:        "fleet",
+  driver_hours:       "driver",
+};
 
 export interface RunReadiness {
   ready:     boolean;          // gate: every hard check passes (no hard `fail`)
@@ -271,6 +300,9 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
   }
 
   checks.push({ key: "driver_hours",   label: "Driver hours", status: "unknown", hard: false, reason: "Allocation uses the full preferred shift; live remaining hours are tracked on the Live screen." });
+
+  // Stamp each check with the intake source that fixes it (one map, no drift).
+  for (const c of checks) c.source = CHECK_SOURCE[c.key];
 
   // ── Gate ────────────────────────────────────────────────────────────────────
   const blockers = checks.filter(c => c.hard && c.status === "fail").map(c => c.reason ?? c.label);

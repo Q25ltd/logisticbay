@@ -250,6 +250,15 @@ const CHECK_ICON: Record<string, { icon: string; cls: string }> = {
   unknown: { icon: "?", cls: "text-slate-400" },
 };
 
+// Where each readiness problem is fixed — the four intake sources + this screen.
+// Mirrors the server's check `source` stamp so the planner never has to guess.
+const FIX_AT: Record<string, { label: string; to?: string }> = {
+  driver:     { label: "Fix on the Drivers page", to: "/app/drivers" },
+  fleet:      { label: "Fix on the Fleet page",   to: "/app/fleet" },
+  job:        { label: "Fix on the job form",     to: "/app/jobs" },
+  allocation: { label: "Fix with the pickers below" },
+};
+
 function cardStatusChip(run: Run, state: RunState): { label: string; cls: string } {
   switch (state) {
     case "done":      return { label: RUN_STATUS_LABELS[run.status] ?? run.status, cls: "bg-slate-100 text-slate-500 border-slate-200" };
@@ -444,12 +453,22 @@ function RunCard({ row, checked, highlighted, saving, publishing, allDrivers, tr
             )}
             {issues.map(c => {
               const ic = CHECK_ICON[c.status] ?? CHECK_ICON.unknown;
+              // Blocking failures and missing information are ALWAYS explained in
+              // place — why it fails and which intake source fixes it. The planner
+              // must never have to hover or hunt (four-intake-gates).
+              const alwaysOpen = c.status === "fail" || c.status === "unknown";
+              const fix = c.source ? FIX_AT[c.source] : undefined;
               return (
                 <div key={c.key} className="flex items-start gap-1.5 py-px">
                   <span className={`${ic.cls} flex-shrink-0`}>{ic.icon}</span>
                   <span className="text-slate-700 min-w-0">
                     {c.label}
-                    {issuesOpen && c.reason && <span className="block text-[10px] text-slate-500">{c.reason}</span>}
+                    {(alwaysOpen || issuesOpen) && c.reason && <span className="block text-[10px] text-slate-500">{c.reason}</span>}
+                    {(alwaysOpen || issuesOpen) && fix && (
+                      fix.to
+                        ? <Link to={fix.to} className="block text-[10px] font-semibold text-blue-600 hover:underline">{fix.label} →</Link>
+                        : <span className="block text-[10px] font-semibold text-slate-400">{fix.label}</span>
+                    )}
                   </span>
                 </div>
               );
