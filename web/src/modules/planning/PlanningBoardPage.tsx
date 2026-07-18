@@ -2448,8 +2448,11 @@ export default function PlanningBoardPage() {
   async function handleCreateRun() {
     setCreatingRun(true);
     try {
-      const run = await planningApi.createRun({ date, runType: "direct" });
-      setRuns(prev => [...prev, run]);
+      // S16: the write goes through /runs, whose response is NOT board-shaped
+      // (no waypoints, different job nesting) — refetch the board's own read
+      // instead of appending the write response.
+      await planningApi.createRun({ date, runType: "direct" });
+      await loadRight(date);
       setMobileTab("runs");
     } catch (e: unknown) { setErr((e as Error).message); }
     finally { setCreatingRun(false); }

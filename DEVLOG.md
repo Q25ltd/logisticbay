@@ -7,6 +7,10 @@
 
 ---
 
+## S16 hotfix — board crash on "New run" (write response is not board-shaped) 2026-07-18 (user-reported, same day)
+
+User's browser smoke caught a real S16 migration bug: creating a run on the Planning board crashed `RunLane` (`run.waypoints.map` on undefined). Cause: `planningApi.createRun` now posts to `/runs`, whose response (`RUN_DETAIL_INCLUDE`) has no `waypoints` and nests the job differently than the board's `PlanningRun` shape — and `handleCreateRun` APPENDED that raw write response into board state. Fix: never trust a write response for board state — `handleCreateRun` refetches the board's own read (`loadRight`) after creating; the client's `createRun` return type is now honestly `{ id: number }` (the only field any caller uses — the proposal-accept flow takes `run.id` then refetches). Audited every other migrated write: patchRun/removeStop/reorderStops/publish responses are consumed nowhere. Lesson recorded: when swapping a client's endpoint, check the RESPONSE consumers, not just the request shape. Gates: web typecheck 0, build ✅ (api untouched).
+
 ## Step 16 — one run system: the load-movement programme is COMPLETE 2026-07-18 (same day)
 
 **LOAD_MOVEMENT_PLAN Step 16** (fixes audit 🟡 #6/#7) — the deliberately-last step, deferred so we never consolidated a moving target. With S1–S15 green, the target stopped moving; this session collapsed the two run systems into one.

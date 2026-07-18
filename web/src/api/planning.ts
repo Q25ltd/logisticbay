@@ -299,6 +299,8 @@ export const planningApi = {
   // board keeps its own reads (getRuns above) — writes below are thin wrappers
   // over the canonical endpoints.
 
+  /** Returns only { id } — the /runs response is not board-shaped (no waypoints,
+   *  different job nesting). Callers must refetch getRuns for the board view. */
   createRun: (body: {
     date: string;
     runType?: string;
@@ -306,7 +308,7 @@ export const planningApi = {
     assignedTrailerId?: number;
     assignedDriverId?: number;
     dependsOnRunId?: number;
-  }) => api.post<PlanningRun>("/runs", {
+  }) => api.post<{ id: number }>("/runs", {
     // Noon UTC keeps the run inside the board's date filter regardless of TZ.
     plannedDate:       `${body.date}T12:00:00.000Z`,
     runType:           body.runType,
