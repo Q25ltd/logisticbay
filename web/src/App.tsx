@@ -17,6 +17,7 @@
  */
 
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate } from "react-router-dom";
+import { Analytics }            from "@vercel/analytics/react";
 import { ErrorBoundary }        from "./components/ErrorBoundary";
 import { AuthCtx, useAuthProvider } from "./hooks/useAuth";
 import { getToken }             from "./api/client";
@@ -137,6 +138,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <Analytics />
     </BrowserRouter>
   );
 }
