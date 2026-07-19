@@ -7,6 +7,18 @@
 
 ---
 
+## Driver hours check made REAL — run length vs the driver's day 2026-07-18 (user request, same day)
+
+User: the `driver_hours` stub should actually check "driver preferred hours — how long he can work in this day and how long the run takes and driver manage to do it". Built exactly that, all form-born:
+
+- **Run length**: `checkRun` — the ONE deterministic timing model (drive + dwell + 45-min breaks per 4.5h + window waits, Q3b/Q3c) — gained an `offlineRouting` flag: skips ORS and postcode lookups (haversine-only), so the readiness path NEVER waits on the network (it runs per-run in the Runs list and inside both publish gates). No parallel implementation.
+- **The driver's day**: `ShiftPreference.requestedHours` for the run's date (driver-submitted) → else `DriverProfile.minHoursPerDay` (driver form, "usual day"); the weekly `DriverAvailability` plan supplies "unavailable that day".
+- **Verdicts**: driving >10h or duty >~13h = **hard fail** (illegal — consistent with the MOT rule: illegal → blocks publish); run longer than the driver's day = warn naming both numbers ("Run ≈ 9h 30m — longer than Dave's 8h requested shift"); 9–10h driving extension = warn; availability says unavailable = warn; stops without map pins = honest **unknown pointing at the job form** (per-check `source` override, `??=` stamping). Fits = pass WITH the estimate shown ("Run ≈ 7h incl. breaks — fits Dave's 8h usual day").
+- 7 new pure subtests (fit/overrun/10h/13h/extension/unavailable/missing-pins). Existing bare-stop test fixtures stay green by design: no pins → unknown → never blocks.
+- Note: existing runs planned before this change may now warn/fail honestly at publish — that is the check working, not a regression.
+
+Gates: typecheck 0/0 · vocab ✅ · check:docs ✅ · api tests **299/299** (was 292) · knip 111/77 = baseline.
+
 ## Readiness checks now say WHERE to fix it 2026-07-18 (user feedback, same day)
 
 User's smoke feedback: publish was blocked and the planner had "no warning why it fails … and what information is missing in one of the 4 possible sources". The reasons existed but hid behind a hover tooltip / "Show details" toggle, and nothing named the intake source. Fixes:

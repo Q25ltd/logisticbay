@@ -1309,7 +1309,8 @@ Computed by `runReadinessService` (deterministic). **Resource** half of the Runs
 |---|---|
 | `ready` | **Gate** — true only when the run has stops and every *hard* check passes. Not a percentage. |
 | `blockers` | Human-readable hard failures (the reasons publish is blocked). |
-| `resources.checks` | `{ key, label, status, hard, reason }[]` — driver assigned/available/licence/ADR/trailer-capability, trailer assigned/compatible/available, vehicle assigned/compatible, equipment, mot_inspection, vor_defects, driver_hours. |
+| `resources.checks` | `{ key, label, status, hard, reason, source }[]` — driver assigned/available/licence/ADR/trailer-capability, trailer assigned/compatible/available, vehicle assigned/compatible, equipment, mot_inspection, vor_defects, driver_hours. `source` (`allocation` \| `driver` \| `fleet` \| `job`) names where the information is fixed (four intake gates + this screen). |
+| `driver_hours` (check) | REAL since 2026-07-18: estimated run duty (drive + dwell + legal breaks + window waits, `checkRun` offline mode — haversine, no network) vs the driver's day: `ShiftPreference.requestedHours` for that date, else `DriverProfile.minHoursPerDay`. Driving >10h or duty >~13h = hard fail; longer than the driver's day, the 9–10h extension band, or availability-plan "unavailable" = warn; stops without map pins = honest unknown pointing at the job form. |
 | `CheckStatus` | `pass` / `warn` / `fail` / `unknown` / `na`. `unknown` = data not captured (MOT/VOR/tacho) — never a fake tick, never blocks alone. |
 | `hard` (per check) | A hard `fail` blocks publish; soft and `unknown` never block on their own. |
 | `trailerCompatible` / `vehicleCompatible` (on Run, from S5) | **Carried** into readiness — Runs does NOT recompute compatibility. |

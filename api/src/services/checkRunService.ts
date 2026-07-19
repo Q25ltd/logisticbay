@@ -75,6 +75,9 @@ export interface RunFeasibilityInput {
   fleet?:              FleetCapacityProfile | null;
   // Q5b — the allocated vehicle (when a run already has one), to check it suits the load.
   assignedVehicle?:    AssignedVehicle | null;
+  /** Skip ORS + postcode lookups (haversine-only). Used by the readiness path,
+   *  which runs per-run in lists and must never wait on the network. */
+  offlineRouting?:     boolean;
 }
 
 export interface RunGeometry {
@@ -269,7 +272,7 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
   const resolvedCoords = await Promise.all(
     stops.map(async s => {
       if (s.lat != null && s.lng != null) return { lat: s.lat, lng: s.lng };
-      if (s.postcode) {
+      if (s.postcode && !input.offlineRouting) {
         const c = await postcodeToCoords(s.postcode).catch(() => null);
         if (c) return { lat: c.lat as number, lng: c.lng as number };
       }
@@ -291,7 +294,8 @@ export async function checkRun(input: RunFeasibilityInput): Promise<RunFeasibili
       const a = resolvedCoords[i];
       const b = resolvedCoords[i + 1];
       if (a.lat == null || b.lat == null) return { driveMin: null as number | null, roadKm: null as number | null };
-      const ors = await getHgvLeg({ lat: a.lat, lng: a.lng! }, { lat: b.lat, lng: b.lng! }, hgvParams).catch(() => null);
+      const ors = input.offlineRouting ? null
+        : await getHgvLeg({ lat: a.lat, lng: a.lng! }, { lat: b.lat, lng: b.lng! }, hgvParams).catch(() => null);
       if (ors) return { driveMin: ors.durationMinutes, roadKm: ors.distanceKm };
       const road = haversineKm(a.lat, a.lng!, b.lat, b.lng!) * ROAD_FACTOR;
       return { driveMin: (road / HGV_SPEED_KMH) * 60, roadKm: road };

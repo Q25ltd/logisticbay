@@ -17,6 +17,8 @@
 
 import type { PrismaClient } from "../generated/client.js";
 import { bodyTypeLabel } from "../constants/vehicleTaxonomy.js";
+import { checkRun } from "./checkRunService.js";
+import { dayRangeUtc } from "../lib/dateUtils.js";
 
 const lcs = (s?: string | null) => (s ?? "").toLowerCase();
 
@@ -62,6 +64,23 @@ interface ReadinessLoad {
   equipment?:        string[] | null;  // required onboard/handling equipment
 }
 
+/**
+ * Driver-day fit (2026-07-18): does the estimated run length fit the hours this
+ * driver can work that day? Every fact is form-born: the estimate from the run's
+ * stops (job-form pins/windows via the deterministic timing model), the day
+ * length from the driver's shift preference for that date, else the driver
+ * form's contracted hours; unavailability from the weekly availability plan.
+ */
+interface DriverDayFit {
+  /** null = not estimable (stops lack map pins / no stops). */
+  estimated:        { dutyMin: number; drivingMin: number; usesExtension: boolean } | null;
+  stopsMissingPins: boolean;
+  availableHours:   number;
+  hoursSource:      "shift_preference" | "driver_profile";
+  /** The weekly availability plan marks the driver unavailable on the run's day. */
+  unavailable:      boolean;
+}
+
 export interface RunReadinessInput {
   hasStops:           boolean;
   driver?:            ReadinessDriver  | null;
@@ -75,6 +94,8 @@ export interface RunReadinessInput {
   // (fridge)") — surfaced in the no-trailer warning so the driver knows what to
   // collect from the yard.
   requiredTrailerText?: string | null;
+  /** Driver-day fit — null/omitted = not computable (no driver, no stops). */
+  day?:               DriverDayFit | null;
 }
 
 type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "na";
@@ -86,7 +107,7 @@ type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "na";
  *   fleet      — the unit/trailer registration form (Fleet page)
  *   job        — the job intake form (CJP/PRF)
  */
-export type CheckSource = "allocation" | "driver" | "fleet" | "job";
+type CheckSource = "allocation" | "driver" | "fleet" | "job";
 
 interface ReadinessCheck {
   key:     string;
@@ -299,10 +320,55 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
     }
   }
 
-  checks.push({ key: "driver_hours",   label: "Driver hours", status: "unknown", hard: false, reason: "Allocation uses the full preferred shift; live remaining hours are tracked on the Live screen." });
+  // ── Driver hours — does the run fit the driver's day? (2026-07-18) ──────────
+  // Estimated duty (drive + dwell + legal breaks + window waits) vs the hours
+  // the driver can work that day. Legal ceilings are HARD (illegal to run);
+  // exceeding the driver's own day length is a warn (planner's call).
+  {
+    const fmtH = (min: number) => {
+      const h = Math.floor(min / 60), m = Math.round(min % 60);
+      return m > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${h}h`;
+    };
+    if (!driver) {
+      checks.push({ key: "driver_hours", label: "Driver hours", status: "na", hard: true });
+    } else if (!input.day) {
+      checks.push({ key: "driver_hours", label: "Driver hours", status: "unknown", hard: true,
+        reason: "Run length not estimable — no stops to time yet." });
+    } else if (input.day.unavailable) {
+      checks.push({ key: "driver_hours", label: "Driver hours", status: "warn", hard: true,
+        reason: `${driver.displayName} is marked unavailable on this day — check the availability plan.` });
+    } else if (!input.day.estimated) {
+      checks.push(input.day.stopsMissingPins
+        ? { key: "driver_hours", label: "Driver hours", status: "unknown", hard: true, source: "job",
+            reason: "Can't estimate the run length — stops are missing their map pins (entrance pin on the job form)." }
+        : { key: "driver_hours", label: "Driver hours", status: "unknown", hard: true,
+            reason: "Run length not estimable yet." });
+    } else {
+      const { dutyMin, drivingMin, usesExtension } = input.day.estimated;
+      const availMin  = Math.round(input.day.availableHours * 60);
+      const hoursText = `${fmtH(availMin)} ${input.day.hoursSource === "shift_preference" ? "requested shift" : "usual day"}`;
+      if (drivingMin > 600) {
+        checks.push({ key: "driver_hours", label: "Driver hours", status: "fail", hard: true,
+          reason: `≈${fmtH(drivingMin)} driving — over the 10h daily driving limit. Split the run or plan a relay.` });
+      } else if (dutyMin > 13 * 60) {
+        checks.push({ key: "driver_hours", label: "Driver hours", status: "fail", hard: true,
+          reason: `≈${fmtH(dutyMin)} on duty — over the ~13h duty ceiling. Split the run or plan a relay.` });
+      } else if (dutyMin > availMin) {
+        checks.push({ key: "driver_hours", label: "Driver hours", status: "warn", hard: true,
+          reason: `Run ≈ ${fmtH(dutyMin)} incl. breaks and waits — longer than ${driver.displayName}'s ${hoursText}.` });
+      } else if (usesExtension) {
+        checks.push({ key: "driver_hours", label: "Driver hours", status: "warn", hard: true,
+          reason: `Run ≈ ${fmtH(dutyMin)} fits the ${hoursText}, but driving needs the 9–10h extension (allowed twice a week).` });
+      } else {
+        checks.push({ key: "driver_hours", label: "Driver hours", status: "pass", hard: true,
+          reason: `Run ≈ ${fmtH(dutyMin)} incl. breaks — fits ${driver.displayName}'s ${hoursText}.` });
+      }
+    }
+  }
 
-  // Stamp each check with the intake source that fixes it (one map, no drift).
-  for (const c of checks) c.source = CHECK_SOURCE[c.key];
+  // Stamp each check with the intake source that fixes it (one map, no drift;
+  // ??= so a check that knows better — e.g. missing job pins — keeps its own).
+  for (const c of checks) c.source ??= CHECK_SOURCE[c.key];
 
   // ── Gate ────────────────────────────────────────────────────────────────────
   const blockers = checks.filter(c => c.hard && c.status === "fail").map(c => c.reason ?? c.label);
@@ -336,7 +402,10 @@ export async function loadRunReadiness(
 ): Promise<LoadedRunReadiness | null> {
   const run = await prisma.run.findFirst({
     where:   { id: runId, companyId },
-    include: { driver: true, assignments: { where: { removedAt: null }, select: { jobId: true } } },
+    include: { driver: true, assignments: { where: { removedAt: null }, select: {
+      jobId: true, sequenceNumber: true,
+      jobPart: { select: { type: true, lat: true, lng: true, timeWindowStart: true, timeWindowEnd: true, bookedTime: true } },
+    } } },
   });
   if (!run) return null;
 
@@ -375,6 +444,63 @@ export async function loadRunReadiness(
     : allowedBodies.length > 0 ? allowedBodies.join(" / ") : null;
 
   const d = run.driver;
+
+  // ── Driver-day fit (2026-07-18): estimated run length vs the driver's day ───
+  // Timing via the ONE deterministic model (checkRun) in offline mode — pure
+  // math from job-form pins/windows, no network in the readiness path. Day
+  // length: the driver's shift preference for that date, else contracted hours.
+  let day: DriverDayFit | null = null;
+  if (d && run.assignments.length > 0) {
+    const stops = run.assignments.map(a => ({
+      sequenceNumber:  a.sequenceNumber,
+      type:            a.jobPart.type,
+      lat:             a.jobPart.lat,
+      lng:             a.jobPart.lng,
+      timeWindowStart: a.jobPart.timeWindowStart?.toISOString() ?? null,
+      timeWindowEnd:   a.jobPart.timeWindowEnd?.toISOString() ?? null,
+      bookedTime:      a.jobPart.bookedTime?.toISOString() ?? null,
+    }));
+    const feas = await checkRun({ stops, estimatedStartTime: run.estimatedStartTime, offlineRouting: true });
+
+    let availableHours = Number(d.minHoursPerDay ?? 8);
+    let hoursSource: "shift_preference" | "driver_profile" = "driver_profile";
+    let unavailable = false;
+    if (run.plannedDate) {
+      const dateIso = run.plannedDate.toISOString().slice(0, 10);
+      const day0    = new Date(`${dateIso}T00:00:00Z`);
+      const monday  = new Date(day0);
+      monday.setUTCDate(day0.getUTCDate() - ((day0.getUTCDay() + 6) % 7));
+      const mondayIso = monday.toISOString().slice(0, 10);
+      const [pref, avail] = await Promise.all([
+        prisma.shiftPreference.findFirst({
+          where:   { companyId, driverProfileId: d.id, shiftDate: dayRangeUtc(dateIso, dateIso) },
+          orderBy: { id: "desc" },
+          select:  { requestedHours: true },
+        }),
+        prisma.driverAvailability.findFirst({
+          where:  { companyId, driverProfileId: d.id, weekStartDate: dayRangeUtc(mondayIso, mondayIso) },
+          select: { monPref: true, tuePref: true, wedPref: true, thuPref: true, friPref: true, satPref: true, sunPref: true },
+        }),
+      ]);
+      if (pref?.requestedHours != null && pref.requestedHours > 0) {
+        availableHours = pref.requestedHours;
+        hoursSource    = "shift_preference";
+      }
+      if (avail) {
+        const byDow = [avail.sunPref, avail.monPref, avail.tuePref, avail.wedPref, avail.thuPref, avail.friPref, avail.satPref];
+        unavailable = (byDow[day0.getUTCDay()] ?? "normal") === "unavailable";
+      }
+    }
+
+    day = {
+      estimated: feas.confidence != null
+        ? { dutyMin: feas.legal.dutyMin, drivingMin: feas.legal.drivingMin, usesExtension: feas.legal.usesExtension }
+        : null,
+      stopsMissingPins: stops.some(s => s.lat == null || s.lng == null),
+      availableHours, hoursSource, unavailable,
+    };
+  }
+
   const readiness = computeRunReadiness({
     hasStops: run.assignments.length > 0,
     driver: d ? {
@@ -396,6 +522,7 @@ export async function loadRunReadiness(
     trailerCompatible: run.compatibilityOverridden ? true : run.trailerCompatible,
     vehicleCompatible: run.compatibilityOverridden ? true : run.vehicleCompatible,
     requiredTrailerText,
+    day,
   });
 
   return {

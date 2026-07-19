@@ -172,3 +172,78 @@ describe("computeRunReadiness — the publish gate", () => {
     assert.ok(r.resources.checks.some(c => c.key === "truck_assigned" && c.status === "warn" && !c.hard));
   });
 });
+
+// ── Driver hours — run length vs the driver's day (2026-07-18) ────────────────
+
+describe("computeRunReadiness — driver hours (day fit)", () => {
+  const base = { hasStops: true, driver: DAVE, truck: TRUCK, trailer: TRAILER,
+    loads: [{ requiresTrailer: true }], trailerCompatible: true, vehicleCompatible: true };
+  const hoursCheck = (r: ReturnType<typeof computeRunReadiness>) =>
+    r.resources.checks.find(c => c.key === "driver_hours")!;
+
+  it("run fits the driver's day → pass, with the estimate in the reason", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: { dutyMin: 7 * 60, drivingMin: 5 * 60, usesExtension: false },
+        stopsMissingPins: false, availableHours: 8, hoursSource: "driver_profile", unavailable: false } });
+    const c = hoursCheck(r);
+    assert.strictEqual(c.status, "pass");
+    assert.match(c.reason ?? "", /7h/);
+    assert.strictEqual(r.ready, true);
+  });
+
+  it("run longer than the driver's day → warn, never a silent overrun", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: { dutyMin: 9 * 60 + 30, drivingMin: 6 * 60, usesExtension: false },
+        stopsMissingPins: false, availableHours: 8, hoursSource: "shift_preference", unavailable: false } });
+    const c = hoursCheck(r);
+    assert.strictEqual(c.status, "warn");
+    assert.match(c.reason ?? "", /longer than Dave's 8h requested shift/);
+    assert.strictEqual(r.ready, true, "a preference overrun is the planner's call — soft");
+  });
+
+  it("driving over the 10h legal limit → HARD fail, publish blocked", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: { dutyMin: 12 * 60, drivingMin: 10 * 60 + 30, usesExtension: true },
+        stopsMissingPins: false, availableHours: 13, hoursSource: "driver_profile", unavailable: false } });
+    const c = hoursCheck(r);
+    assert.strictEqual(c.status, "fail");
+    assert.strictEqual(r.ready, false);
+    assert.ok(r.blockers.some(b => /10h daily driving limit/.test(b)));
+  });
+
+  it("duty over the ~13h ceiling → HARD fail", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: { dutyMin: 13 * 60 + 40, drivingMin: 8 * 60, usesExtension: false },
+        stopsMissingPins: false, availableHours: 14, hoursSource: "driver_profile", unavailable: false } });
+    assert.strictEqual(hoursCheck(r).status, "fail");
+    assert.strictEqual(r.ready, false);
+  });
+
+  it("9–10h driving extension → warn even when the day fits", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: { dutyMin: 11 * 60, drivingMin: 9 * 60 + 30, usesExtension: true },
+        stopsMissingPins: false, availableHours: 12, hoursSource: "driver_profile", unavailable: false } });
+    const c = hoursCheck(r);
+    assert.strictEqual(c.status, "warn");
+    assert.match(c.reason ?? "", /extension/);
+  });
+
+  it("driver marked unavailable that day → warn naming the availability plan", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: { dutyMin: 6 * 60, drivingMin: 4 * 60, usesExtension: false },
+        stopsMissingPins: false, availableHours: 8, hoursSource: "driver_profile", unavailable: true } });
+    const c = hoursCheck(r);
+    assert.strictEqual(c.status, "warn");
+    assert.match(c.reason ?? "", /unavailable/);
+  });
+
+  it("stops missing map pins → honest unknown pointing at the JOB form", () => {
+    const r = computeRunReadiness({ ...base,
+      day: { estimated: null, stopsMissingPins: true, availableHours: 8, hoursSource: "driver_profile", unavailable: false } });
+    const c = hoursCheck(r);
+    assert.strictEqual(c.status, "unknown");
+    assert.strictEqual(c.source, "job");
+    assert.match(c.reason ?? "", /map pins/);
+    assert.strictEqual(r.ready, true, "missing information never silently blocks");
+  });
+});
