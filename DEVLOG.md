@@ -7,6 +7,24 @@
 
 ---
 
+## Driver mobile audit: vehicle info never reached the app + a live BST bug 2026-07-18 (user request, same day)
+
+User asked to check whether a driver gets everything necessary to do the job. Full trace: form → API → what the app actually renders, across every driver-facing screen.
+
+**Root finding — `assignedTruck`/`assignedTrailer` have never existed on any job API response.** Truck/trailer assignment lives on `Run.assignedTruckId/assignedTrailerId` (IDs, not registrations); nothing ever joined that through to the driver. Every screen that reads it — `JobDetail/index.tsx`, `VehicleConfirmForm.tsx`, `StartShiftScreen.tsx` — has been silently falling to "no vehicle assigned / enter manually" regardless of what the planner allocated via the Runs screen's candidate/suitability system. Fixed by resolving the driver's own run's truck/trailer IDs → registrations in `GET /jobs/my` and `GET /jobs/:id` (driver role only); null when nothing's pinned, which is correct and unchanged behaviour — B5's readiness gate already only hard-blocks publish on a missing DRIVER, never a missing vehicle (yard-grab), so the app's manual-entry fallback stays exactly as it was for that case. User confirmed this is exactly the intended design before I built it.
+
+**Same audit found the SAME phantom-field class in three more places**, all missed by the 2026-07-16 `jobDisplay.ts` cleanup: `HomeScreen.tsx` and `DeliveriesScreen.tsx` still read `pickupTextSnapshot`/`dropoffTextSnapshot` (only ever existed on `JobTemplate`, never `Job`) and `materialType`/`referenceNumber` (real fields: `goodsType`/`goodsDescription`, `jobReference`); `JobDetail/index.tsx` had the same `referenceNumber` phantom. All three now use the existing `routeOf`/`goodsOf`/`collectDateOf` helpers — no new API surface needed, `stops` was already in the payload.
+
+**Found and fixed a live production bug in the same pass, unrelated to what was asked**: while writing the test fixture, `GET /jobs/my` returned a job I'd scheduled for today under `upcoming` instead of `data`. Root cause: `todayStr = today.toISOString().split("T")[0]` where `today` was built from LOCAL date components (`new Date(now.getFullYear(), now.getMonth(), now.getDate())`) — during BST (server TZ `Europe/London`, UTC+1), local midnight IS 23:00 UTC the previous day, so that string always reads as yesterday. This isn't a boundary-minute bug — it's been wrong **all day, every day, for the entire BST season** (~March–October), meaning the driver's "Today" job list has likely been silently showing today's jobs as "Upcoming" this whole time. Fixed with local-calendar-date extraction (`getFullYear/getMonth/getDate`, matching how `today` itself was built) instead of the UTC round-trip; confirmed via grep this exact anti-pattern appears nowhere else (the four other `.toISOString().split("T")[0]` call sites all operate on `shiftDate` values written via `new Date("YYYY-MM-DD")`, which IS UTC-midnight per ISO spec — genuinely different and correct).
+
+**Housekeeping**: deleted dead top-level `mobile/src/screens/JobDetailScreen.tsx` (761 lines, unimported since `JobDetail/index.tsx` superseded it, full of the same stale field names) — per the register-what-you-create / delete-on-sight rule.
+
+New `driverVehicleInfo.test.ts` (2 subtests): assigned truck+trailer flow through both driver-facing endpoints with the real registration; unassigned stays honestly `null` (never invented) rather than falling to `undefined`/silently missing.
+
+**Confirmed still open** (not touched this pass — separate, larger threads): `safetyInstructions`/`driverVisibleNotes`/`driverNoteChips` never rendered (the schema comment literally calls the chips field "shown to driver on mobile" — never built); no hazmat/ADR warning on a dangerous-goods job; no stop-level contact/access/opening-hours/navigation info; no proof-of-delivery capture (signature/photo) despite `photosRequired`/`proofRequirements` being real form fields; no map/navigation integration despite accurate stop lat/lng; zero UI for any S7/S8/S11 driver event (trailer swap, handover offer/accept, delay/breakdown/refusal/damage — API fully built since those steps, mobile has zero references); `POST /devices` is never called from mobile, so S14 push notifications cannot reach a single device today. All tracked as "the mobile driver session."
+
+Gates: typecheck 0/0 (api+web+mobile) · vocab ✅ · check:docs ✅ · api tests **302/302** (was 292) · knip 111/77 = baseline.
+
 ## Driver hours check made REAL — run length vs the driver's day 2026-07-18 (user request, same day)
 
 User: the `driver_hours` stub should actually check "driver preferred hours — how long he can work in this day and how long the run takes and driver manage to do it". Built exactly that, all form-born:

@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-07-18 (programme complete + post-programme polish: disposition prompt, readiness fix-at sources, and the `driver_hours` check made REAL — run duty estimate vs the driver's day, legal ceilings hard-block)
+> Last updated: 2026-07-18 (driver mobile audit: `assignedTruck`/`assignedTrailer` were never on any job API response — every mobile screen reading them was dead; now resolved from `Run.assignedTruckId/TrailerId` and wired through. Also fixed a live production bug: `/jobs/my`'s today/upcoming split broke for the entire BST season)
 
 ---
 
@@ -169,6 +169,9 @@ Gated 16-step build of the full load lifecycle. Per-step detail + gates live in 
 - Web `RunsPage` — list runs by date, status filter, create new run modal
 - Runs screen (`RunsPage`) — one-screen asset allocation (RunDetailPage consolidated away 2026-07-01; stop management lives on the Planning board)
 - `DashboardPage` — today's runs overview by status, driver names, assignment counts
+
+### Mobile (driver app) — vehicle info + date-bucketing fixed 2026-07-18
+`assignedTruck`/`assignedTrailer` (registration strings) now resolved server-side from the driver's own published `Run.assignedTruckId/TrailerId` and attached to `GET /jobs/my` + `GET /jobs/:id` — every mobile screen that reads them (JobDetail, VehicleConfirmForm, StartShiftScreen) was silently dead until now, since the field never existed on any job response; null when the planner left it unassigned (yard-grab — publish only hard-blocks on a missing driver, never a missing vehicle, so the app's manual-entry fallback is unchanged and still works). Also fixed 3 more phantom-field reads (`pickupTextSnapshot`/`dropoffTextSnapshot`, `referenceNumber`, `vehicleClass`/`reqBodyCategory`) across HomeScreen/DeliveriesScreen/JobDetail/StartShiftScreen using the existing `jobDisplay.ts` helpers (`routeOf`, `goodsOf`, `collectDateOf`) — same class of bug as the 2026-07-16 pass, missed on these screens. **Found and fixed a live production bug in the same audit**: `GET /jobs/my`'s today/upcoming bucketing derived its date label via `.toISOString()` on a locally-constructed midnight `Date`, which reads as the previous day during BST (UTC+1) — every job scheduled for today was showing under "Upcoming" instead of "Today" on the driver's Home screen and Jobs tab, for the whole BST season (now fixed with local-calendar-date extraction). Deleted dead top-level `JobDetailScreen.tsx` (761 lines, unimported, superseded by `JobDetail/index.tsx`). New `driverVehicleInfo.test.ts` (2 subtests) proves both the assigned and yard-grab (null) cases. Still open from the same audit (not yet built): safety instructions/driver notes/hazmat info never surfaced to the driver, no proof-of-delivery capture (signature/photo), no map integration, no UI for S7/S8/S11 driver events (swap/handover/exceptions), `POST /devices` never called from mobile (push notifications can't reach any device yet) — tracked as the mobile driver session.
 
 ### Mobile (driver app)
 - Login, multi-company picker, Face ID / biometric unlock, Change PIN

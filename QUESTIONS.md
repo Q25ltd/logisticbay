@@ -752,6 +752,8 @@ Direction: the Dashboard stays and becomes the **day-at-a-glance welcome screen*
 
 ### Mobile app
 
+- [ ] Mobile driver session scope (2026-07-18 audit): safety instructions / driver notes chips / hazmat warning display; proof-of-delivery capture (signature/photo, `photosRequired`/`proofRequirements` are real form fields with no mobile UI); map/navigation integration off stop lat/lng; UI for the S7/S8/S11 driver events (trailer swap, handover offer/accept, delay/breakdown/refusal/damage — all API-complete, zero mobile references); `POST /devices` call at login so S14 push notifications can reach a device. Which of these ship together vs separately?
+
 - [ ] What happens if a driver gets a new phone? Can they log in immediately?
 
 - [ ] Can the driver app be used on a tablet?

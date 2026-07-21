@@ -140,9 +140,45 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     // Step 4 publish gate: only runs published to the driver are visible (audit 🟠 #1).
     const assignments = await prisma.runAssignment.findMany({
       where: { companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
-      select: { jobId: true, runId: true, quantityAssigned: true, quantityUnit: true },
+      select: {
+        jobId: true, runId: true, quantityAssigned: true, quantityUnit: true,
+        run: { select: { assignedTruckId: true, assignedTrailerId: true } },
+      },
     });
     const jobIds = [...new Set(assignments.map(a => a.jobId))];
+
+    // Vehicle the driver should take, per job: the PLANNER may leave truck/trailer
+    // unassigned (yard-grab — publish only hard-blocks on a missing driver, never
+    // on missing vehicle) — in that case the driver enters the reg manually, an
+    // existing app flow this must not disturb. When one IS assigned, resolve its
+    // registration so the app can show it instead of asking the driver to guess.
+    // "Primary" = the first run found per job; a driver running the SAME job on
+    // several different vehicles same-day is a rare edge case, tracked separately.
+    const vehicleIdsByJob = new Map<number, { truckId: number | null; trailerId: number | null }>();
+    for (const a of assignments) {
+      if (!vehicleIdsByJob.has(a.jobId)) {
+        vehicleIdsByJob.set(a.jobId, { truckId: a.run.assignedTruckId, trailerId: a.run.assignedTrailerId });
+      }
+    }
+    const truckIds   = [...new Set([...vehicleIdsByJob.values()].map(v => v.truckId).filter((x): x is number => x != null))];
+    const trailerIds = [...new Set([...vehicleIdsByJob.values()].map(v => v.trailerId).filter((x): x is number => x != null))];
+    const [trucksById, trailersById] = await Promise.all([
+      truckIds.length
+        ? prisma.fleetUnit.findMany({ where: { id: { in: truckIds }, companyId }, select: { id: true, registration: true } })
+            .then(rows => new Map(rows.map(r => [r.id, r.registration])))
+        : Promise.resolve(new Map<number, string>()),
+      trailerIds.length
+        ? prisma.fleetTrailer.findMany({ where: { id: { in: trailerIds }, companyId }, select: { id: true, registration: true } })
+            .then(rows => new Map(rows.map(r => [r.id, r.registration])))
+        : Promise.resolve(new Map<number, string>()),
+    ]);
+    const vehicleOf = (jobId: number): { assignedTruck: string | null; assignedTrailer: string | null } => {
+      const ids = vehicleIdsByJob.get(jobId);
+      return {
+        assignedTruck:   ids?.truckId   != null ? (trucksById.get(ids.truckId)     ?? null) : null,
+        assignedTrailer: ids?.trailerId != null ? (trailersById.get(ids.trailerId) ?? null) : null,
+      };
+    };
 
     // Per-trip shares for THIS driver: one entry per run (a job's collect +
     // deliver on the same run carry the same share — keep the max). Lets the
@@ -181,19 +217,25 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       orderBy: [{ id: "asc" }],
     });
 
-    // Segment by first collection stop's date (E.2)
-    const todayStr = today.toISOString().split("T")[0];
+    // Segment by first collection stop's date (E.2). Local calendar date, NOT
+    // .toISOString() — during BST (UTC+1) local midnight IS 23:00 UTC the
+    // previous day, so a naive toISOString().slice(0,10) on the local-midnight
+    // Date object always reads "yesterday", pushing every one of today's jobs
+    // into "upcoming" for the driver, all day, for the whole BST season. Local
+    // Date getters (used to build `today` itself, above) stay consistent.
+    const localYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const todayStr = localYmd(today);
     const getCollectDate = (job: (typeof jobs)[0]): string | null => {
       const coll = (job.stops ?? []).find(s => s.type === "collection" || s.type === "pickup");
-      if (coll?.timeWindowStart) return (coll.timeWindowStart as Date).toISOString().split("T")[0];
+      if (coll?.timeWindowStart) return localYmd(coll.timeWindowStart as Date);
       return null; // timeWindowStart is the only date source (E.2)
     };
     const todayJobs = jobs
       .filter(j => getCollectDate(j) === todayStr)
-      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id) }));
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id), ...vehicleOf(job.id) }));
     const upcomingJobs = jobs
       .filter(j => getCollectDate(j) !== todayStr)
-      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id) }));
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id), ...vehicleOf(job.id) }));
 
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });
@@ -210,18 +252,35 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     });
     if (!job) return notFound(reply, "Job");
 
+    // Vehicle the driver should take — resolved from the run(s) they're actually
+    // on for this job. Planner may leave it unassigned (yard-grab; publish only
+    // hard-blocks on a missing driver, never a missing vehicle — B5) — the app's
+    // existing manual-entry flow must keep working when this comes back null.
+    let driverVehicle: { assignedTruck: string | null; assignedTrailer: string | null } = { assignedTruck: null, assignedTrailer: null };
+
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile) return forbidden(reply, "Not your job");
       // Step 4 publish gate: a recalled/unpublished job returns 403 (audit 🟠 #1, D4.3).
-      const assignment = await prisma.runAssignment.findFirst({
+      const ownAssignments = await prisma.runAssignment.findMany({
         where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
+        select: { run: { select: { assignedTruckId: true, assignedTrailerId: true } } },
       });
-      if (!assignment) return forbidden(reply, "Not your job");
+      if (ownAssignments.length === 0) return forbidden(reply, "Not your job");
+
+      // "Primary" = the first of the driver's own runs on this job (same rule as
+      // GET /jobs/my) — same-day multi-vehicle trips are a rare tracked edge case.
+      const { assignedTruckId, assignedTrailerId } = ownAssignments[0].run;
+      const [truck, trailer] = await Promise.all([
+        assignedTruckId   != null ? prisma.fleetUnit.findFirst({ where: { id: assignedTruckId, companyId }, select: { registration: true } })    : Promise.resolve(null),
+        assignedTrailerId != null ? prisma.fleetTrailer.findFirst({ where: { id: assignedTrailerId, companyId }, select: { registration: true } }) : Promise.resolve(null),
+      ]);
+      driverVehicle = { assignedTruck: truck?.registration ?? null, assignedTrailer: trailer?.registration ?? null };
     }
 
     return reply.send({
       ...job,
+      ...driverVehicle,
       planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []),
     });
   });
