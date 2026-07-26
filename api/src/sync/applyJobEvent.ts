@@ -146,9 +146,27 @@ export async function applyJobEvent(
   }
 
   // ── 5. Resolve the RunAssignment this event advances ────────────────────────
+  // A job normally carries TWO+ RunAssignment rows (one per JobPart — collection
+  // and delivery are separate stops per the intake form, CLAUDE.md § four intake
+  // gates). Picking "the first one found" is wrong and non-deterministic
+  // (Postgres does not order rows without ORDER BY) — proven live: firing
+  // started→arrived_pickup on a normal two-stop job resolved to a DIFFERENT row
+  // on each call, so the second call failed with a state-mismatch error even
+  // though the flow was followed correctly. When the caller doesn't know the
+  // exact assignment (no explicit runAssignmentId — the sync/online paths from
+  // before this fix), resolve the one row that is actually ELIGIBLE for this
+  // transition (status is in this event's allowedFromStates) — correct by
+  // construction, since only the assignment genuinely mid-flight for this event
+  // can be in that state. Ties (rare: e.g. two collection stops both waiting)
+  // break on sequenceNumber. Falls back to the old lowest-sequence pick only
+  // when NOTHING is eligible, so the resulting TRANSITION_FAILED error still
+  // names a real row instead of silently reporting "no assignment".
   const assignment = runAssignmentId
     ? await tx.runAssignment.findFirst({ where: { id: runAssignmentId, companyId, jobId, removedAt: null } })
-    : await tx.runAssignment.findFirst({ where: { jobId, companyId, removedAt: null }, orderBy: { sequenceNumber: 'asc' } });
+    : await tx.runAssignment.findFirst({
+        where:   { jobId, companyId, removedAt: null, status: { in: [...def.allowedFromStates] } },
+        orderBy: { sequenceNumber: 'asc' },
+      }) ?? await tx.runAssignment.findFirst({ where: { jobId, companyId, removedAt: null }, orderBy: { sequenceNumber: 'asc' } });
   if (!assignment) {
     return { status: 'failed', reason: `No active run assignment for job ${jobId} — assign it to a run before execution.` };
   }
@@ -193,8 +211,23 @@ export async function applyJobEvent(
       where:  { jobId, companyId },
       select: { id: true, type: true, quantityRequired: true, quantityUnit: true },
     });
-    const collectionPart = parts.find(p => p.type === 'collection' || p.type === 'pickup');
-    const deliveryPart   = parts.find(p => p.type === 'delivery'   || p.type === 'dropoff');
+    const isCollectionType = (t: string) => t === 'collection' || t === 'pickup';
+    const isDeliveryType   = (t: string) => t === 'delivery'   || t === 'dropoff';
+    // D2.4 (task #28 follow-up, 2026-07-22): prefer the JobPart this specific
+    // assignment actually carries — required for multi-drop/multi-collection
+    // jobs (2+ delivery or collection parts), where a job-wide `.find()` would
+    // always resolve to the SAME first matching part regardless of which
+    // assignment fired the event (proven empirically: every `completed` event
+    // was writing its custody row against delivery part #1, so part #2 never
+    // reached customer_dest and the job stayed stuck at partially_delivered).
+    // Falls back to the job-wide search when the assignment's own part is the
+    // WRONG type for this event — the case that keeps the single-assignment
+    // 2-part pattern working (one assignment can carry the whole started→
+    // …→completed chain, so a 'completed' event on a collection-typed
+    // assignment still needs to find the job's delivery part).
+    const ownPart = parts.find(p => p.id === assignment.jobPartId);
+    const collectionPart = (ownPart && isCollectionType(ownPart.type)) ? ownPart : parts.find(p => isCollectionType(p.type));
+    const deliveryPart   = (ownPart && isDeliveryType(ownPart.type))   ? ownPart : parts.find(p => isDeliveryType(p.type));
     const fallbackPart    = { id: assignment.jobPartId, quantityRequired: null as Prisma.Decimal | null, quantityUnit: null as string | null };
 
     const run = await tx.run.findFirst({

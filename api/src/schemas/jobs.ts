@@ -187,6 +187,12 @@ export const UpdateJobStatusSchema = z.object({
   clientTimestamp: z.string().max(200).optional(),
   gpsLat:          z.number().min(-90).max(90).optional(),
   gpsLng:          z.number().min(-180).max(180).optional(),
+  // Optional: the app knows which JobPart/assignment card the driver is acting
+  // on (job.runAssignments). When given, it's used directly (validated against
+  // this job+driver); otherwise applyJobEvent picks the assignment whose
+  // current state is eligible for this event — a job normally has 2+
+  // assignments (one per JobPart), so "the driver's first" is not reliable.
+  runAssignmentId: z.number().int().positive().optional(),
 });
 
 export const AddJobNoteSchema = z.object({

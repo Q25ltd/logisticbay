@@ -141,7 +141,9 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const assignments = await prisma.runAssignment.findMany({
       where: { companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
       select: {
-        jobId: true, runId: true, quantityAssigned: true, quantityUnit: true,
+        id: true, jobId: true, runId: true, jobPartId: true, sequenceNumber: true, status: true,
+        quantityAssigned: true, quantityUnit: true,
+        jobPart: { select: { type: true } },
         run: { select: { assignedTruckId: true, assignedTrailerId: true } },
       },
     });
@@ -179,6 +181,18 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
         assignedTrailer: ids?.trailerId != null ? (trailersById.get(ids.trailerId) ?? null) : null,
       };
     };
+
+    // The driver's OWN assignment rows for a job, in real EXECUTION_STATES
+    // vocabulary (not_started/en_route_pickup/at_pickup/loaded/en_route_dropoff/
+    // at_dropoff/delivered/exception) — a job normally has 2+ rows (one per
+    // JobPart: collection, delivery). The app must drive its action buttons off
+    // THIS, never off Job.status (a different, planner-facing dimension that
+    // was never the same vocabulary — see DEVLOG 2026-07-22).
+    const driverAssignmentsOf = (jobId: number) =>
+      assignments
+        .filter(a => a.jobId === jobId)
+        .map(a => ({ id: a.id, jobPartId: a.jobPartId, stopType: a.jobPart.type, sequenceNumber: a.sequenceNumber, executionState: a.status }))
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
     // Per-trip shares for THIS driver: one entry per run (a job's collect +
     // deliver on the same run carry the same share — keep the max). Lets the
@@ -232,10 +246,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     };
     const todayJobs = jobs
       .filter(j => getCollectDate(j) === todayStr)
-      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id), ...vehicleOf(job.id) }));
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id), driverAssignments: driverAssignmentsOf(job.id), ...vehicleOf(job.id) }));
     const upcomingJobs = jobs
       .filter(j => getCollectDate(j) !== todayStr)
-      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id), ...vehicleOf(job.id) }));
+      .map((job) => ({ ...job, planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []), tripShares: tripSharesOf(job.id), driverAssignments: driverAssignmentsOf(job.id), ...vehicleOf(job.id) }));
 
     return reply.send({ data: todayJobs, upcoming: upcomingJobs });
   });
@@ -257,6 +271,10 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     // hard-blocks on a missing driver, never a missing vehicle — B5) — the app's
     // existing manual-entry flow must keep working when this comes back null.
     let driverVehicle: { assignedTruck: string | null; assignedTrailer: string | null } = { assignedTruck: null, assignedTrailer: null };
+    // The driver's OWN assignment rows in real EXECUTION_STATES vocabulary — the
+    // app must drive its action buttons off this, never off Job.status (see
+    // GET /jobs/my for the full rationale).
+    let driverAssignments: { id: number; jobPartId: number; stopType: string; sequenceNumber: number; executionState: string }[] = [];
 
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
@@ -264,9 +282,17 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
       // Step 4 publish gate: a recalled/unpublished job returns 403 (audit 🟠 #1, D4.3).
       const ownAssignments = await prisma.runAssignment.findMany({
         where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id, publishedToDriver: true } },
-        select: { run: { select: { assignedTruckId: true, assignedTrailerId: true } } },
+        select: {
+          id: true, jobPartId: true, sequenceNumber: true, status: true,
+          jobPart: { select: { type: true } },
+          run: { select: { assignedTruckId: true, assignedTrailerId: true } },
+        },
       });
       if (ownAssignments.length === 0) return forbidden(reply, "Not your job");
+
+      driverAssignments = ownAssignments
+        .map(a => ({ id: a.id, jobPartId: a.jobPartId, stopType: a.jobPart.type, sequenceNumber: a.sequenceNumber, executionState: a.status }))
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
       // "Primary" = the first of the driver's own runs on this job (same rule as
       // GET /jobs/my) — same-day multi-vehicle trips are a rare tracked edge case.
@@ -281,6 +307,7 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     return reply.send({
       ...job,
       ...driverVehicle,
+      driverAssignments,
       planningStatus: computePlanningStatus(job.stops ?? [], job.runAssignments ?? []),
     });
   });
@@ -448,17 +475,26 @@ export async function jobRoutes(app: FastifyInstance, prisma: PrismaClient) {
     const job = await prisma.job.findFirst({ where: { id, companyId } });
     if (!job) return notFound(reply, "Job");
 
-    // Driver assignment guard (online path only — sync checks via driverProfile)
-    // Capture the assignment id so applyJobEvent advances the right execution state.
-    let runAssignmentId: number | null = null;
+    // Driver assignment guard (online path only — sync checks via driverProfile).
+    // A job normally has 2+ RunAssignment rows (one per JobPart — collection and
+    // delivery are separate stops). This check only confirms the driver has SOME
+    // assignment on the job; it must NOT hand a specific row to applyJobEvent —
+    // that silently targeted the wrong JobPart's assignment for later events in
+    // the SAME driver session, since Postgres does not order findFirst() without
+    // ORDER BY (proven: started→arrived_pickup resolved to different rows on
+    // consecutive calls for the same job). If the app knows the exact assignment
+    // (job.runAssignments), it passes body.runAssignmentId directly; otherwise
+    // applyJobEvent resolves the one row whose current state is eligible for
+    // this specific event.
+    let runAssignmentId: number | null = body.runAssignmentId ?? null;
     if (role === "driver") {
       const profile = await prisma.driverProfile.findFirst({ where: { companyId, userId } });
       if (!profile) return forbidden(reply, "Not your job");
-      const assignment = await prisma.runAssignment.findFirst({
-        where: { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } },
-      });
-      if (!assignment) return forbidden(reply, "Not your job");
-      runAssignmentId = assignment.id;
+      const ownAssignmentWhere = runAssignmentId != null
+        ? { id: runAssignmentId, jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } }
+        : { jobId: id, companyId, removedAt: null, run: { assignedDriverId: profile.id } };
+      const hasAssignment = await prisma.runAssignment.findFirst({ where: ownAssignmentWhere, select: { id: true } });
+      if (!hasAssignment) return forbidden(reply, "Not your job");
     }
 
     // ready_to_plan gate: vehicle category required (planning-specific rule, not an event concern)

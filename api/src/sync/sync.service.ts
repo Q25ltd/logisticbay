@@ -21,6 +21,10 @@ export interface IncomingEvent {
   yardRef?: string;
   /** Step 7: registration of the trailer the run continues on after trailer_swap. */
   newTrailerReg?: string;
+  /** The specific JobPart's assignment this event targets (job.runAssignments on
+   *  the app side). Optional — when absent, applyJobEvent resolves the row whose
+   *  current state is eligible for this event; see its own doc comment. */
+  runAssignmentId?: number;
 }
 
 export interface SyncResult {
@@ -101,10 +105,17 @@ export async function processSyncEvents(
       continue;
     }
 
-    // Job assignment — driver must be assigned to this job via a Run
-    const runAssignment = await prisma.runAssignment.findFirst({
-      where: { jobId: event.jobId, companyId, removedAt: null, run: { assignedDriverId: driverProfile.id } },
-    });
+    // Job assignment — driver must be assigned to this job via a Run. This only
+    // confirms SOME assignment exists; it must NOT be handed to applyJobEvent as
+    // THE target (a job normally has 2+ assignments, one per JobPart — picking
+    // "first found" here silently advanced the wrong JobPart's row on later
+    // events in the same offline batch). If the queued event carries its own
+    // runAssignmentId (the app knows which JobPart card it acted on), that's
+    // validated and used; otherwise applyJobEvent resolves by eligibility.
+    const assignmentWhere = event.runAssignmentId != null
+      ? { id: event.runAssignmentId, jobId: event.jobId, companyId, removedAt: null, run: { assignedDriverId: driverProfile.id } }
+      : { jobId: event.jobId, companyId, removedAt: null, run: { assignedDriverId: driverProfile.id } };
+    const runAssignment = await prisma.runAssignment.findFirst({ where: assignmentWhere, select: { id: true } });
     if (!runAssignment) {
       await updateSyncLog(prisma, event.clientEventId, companyId, 'failed', 'job_not_assigned_to_driver');
       results.push({ clientEventId: event.clientEventId, status: 'failed', failureReason: 'Job ' + event.jobId + ' is not assigned to this driver' });
@@ -120,7 +131,11 @@ export async function processSyncEvents(
           actorUserId:     driverId,
           role:            'driver',
           jobId:           event.jobId,
-          runAssignmentId: runAssignment.id,
+          // Pass through ONLY the explicit id (if the app sent one) — leaving
+          // this undefined when it didn't lets applyJobEvent's eligibility
+          // resolution pick the right JobPart's assignment. `runAssignment`
+          // above already proved the driver owns SOME assignment on this job.
+          runAssignmentId: event.runAssignmentId,
           eventType:       event.eventType,
           clientEventId:   event.clientEventId,
           clientTimestamp: tsResult.date,

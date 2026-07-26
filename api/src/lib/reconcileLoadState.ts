@@ -37,28 +37,54 @@ const RECONCILER_ENTRY_STATUSES = new Set<string>([
   'completed',
 ]);
 
-/** Execution states that mean "this part has been collected (is past pickup)". */
-const COLLECTED_STATES = new Set<string>(['loaded', 'en_route_dropoff', 'at_dropoff', 'delivered']);
+const isCollectionType = (t: string): boolean => t === 'collection' || t === 'pickup';
+const isDeliveryType   = (t: string): boolean => t === 'delivery'   || t === 'dropoff';
+
+export interface PartCustodyInfo {
+  /** JobPart.type — only collection/pickup and delivery/dropoff feed the rollup. */
+  type: string;
+  /** Base of the latest LoadTrack row for this part, or null if none written yet. */
+  custodyBase: string | null;
+}
 
 /**
- * Derive the rolled-up Job.status from a job's assignment execution states.
- * Returns null when there is nothing to assert (no started execution).
+ * Derive the rolled-up Job.status from a job's assignment execution states
+ * (dimension 2 — for the exception override and the "has anything started"
+ * floor) plus each JobPart's latest custody base (dimension 3 — the ONLY
+ * correct signal for "has this part actually reached the customer").
+ *
+ * Why not count RunAssignment.status === 'delivered' (the pre-2026-07-22
+ * approach)? Because 'delivered' is an EXECUTION-state value that is
+ * deliberately overloaded (A4: "handed to consignee (final) OR dropped at
+ * yard (interim)") and because a job's parts do not always map 1:1 with the
+ * assignment(s) that carried them — a relay leg or an ambiguous event
+ * resolution can leave a sibling assignment at 'not_started' forever while
+ * the physical load has genuinely reached the customer (proven empirically:
+ * driverAssignmentsExposed.test.ts). The custody ledger is written per
+ * JobPart by `applyJobEvent` regardless of which assignment row absorbed the
+ * state transition, so it is the one honest source for "did the freight
+ * arrive" — this is what LOAD_MOVEMENT_PLAN.md §A6 step 2 specifies ("read
+ * the latest LoadTrack custody per part") and what makes this correct for
+ * direct, relay, and multi-drop jobs without any special-casing.
  */
-export function deriveJobStatus(states: string[]): string | null {
-  const total = states.length;
-  if (total === 0) return null;
+export function deriveJobStatus(executionStates: string[], parts: PartCustodyInfo[]): string | null {
+  if (executionStates.length === 0) return null;
 
-  if (states.includes('exception')) return 'attention_needed';
+  if (executionStates.includes('exception')) return 'attention_needed';
 
-  const delivered = states.filter(s => s === 'delivered').length;
-  const collected = states.filter(s => COLLECTED_STATES.has(s)).length;
-  const started   = states.filter(s => s !== 'not_started').length;
+  const deliveryParts   = parts.filter(p => isDeliveryType(p.type));
+  const collectionParts = parts.filter(p => isCollectionType(p.type));
 
-  if (delivered === total) return 'completed';
-  if (delivered > 0)       return 'partially_delivered';
-  if (collected === total) return 'collected';
-  if (collected > 0)       return 'partially_collected';
-  if (started > 0)         return 'in_execution';
+  const deliveredCount = deliveryParts.filter(p => p.custodyBase === 'customer_dest').length;
+  const collectedCount = collectionParts.filter(p => p.custodyBase != null && p.custodyBase !== 'customer_origin').length;
+
+  if (deliveryParts.length > 0 && deliveredCount === deliveryParts.length) return 'completed';
+  if (deliveredCount > 0) return 'partially_delivered';
+  if (collectionParts.length > 0 && collectedCount === collectionParts.length) return 'collected';
+  if (collectedCount > 0) return 'partially_collected';
+
+  const started = executionStates.filter(s => s !== 'not_started').length;
+  if (started > 0) return 'in_execution';
   return null;
 }
 
@@ -89,23 +115,30 @@ export async function reconcileLoadState(
   if (assignments.length === 0) return;
 
   // ── 1. Derive + apply Job.status (only from reconciler-owned statuses) ───────
-  let derived = deriveJobStatus(assignments.map(a => a.status));
+  // Custody-based (2026-07-22, task #28): read each JobPart's own latest custody
+  // row (dimension 3) rather than counting RunAssignment.status (dimension 2).
+  // This also supersedes the former "D6.2 custody guard", which patched the same
+  // relay false-positive by re-checking the job's single latest LoadTrack row
+  // after the fact — unnecessary now that "delivered" is read per delivery-type
+  // part directly (a yard drop never writes to a delivery part's custody, so the
+  // false positive this guarded against cannot occur here in the first place).
+  const parts = await tx.jobPart.findMany({
+    where:  { jobId, companyId },
+    select: { id: true, type: true },
+  });
+  const custodyRows = await tx.loadTrack.findMany({
+    where:   { jobId, companyId, deletedAt: null },
+    orderBy: { id: 'asc' },
+    select:  { jobPartId: true, toCustody: true },
+  });
+  const latestCustodyByPart = new Map<number, string>();
+  for (const row of custodyRows) latestCustodyByPart.set(row.jobPartId, row.toCustody);
+  const partCustody = parts.map(p => {
+    const custody = latestCustodyByPart.get(p.id);
+    return { type: p.type, custodyBase: custody != null ? custodyBaseOf(custody) : null };
+  });
 
-  // Step 6 (D6.2): custody guard. An assignment can be 'delivered' for its leg
-  // while the physical load is still in a yard / on a vehicle (relay). Don't
-  // report the job delivered until its latest custody is the customer (or a
-  // terminal write-off). Keeps a relay at 'collected' until the final deliver.
-  if (derived === 'completed' || derived === 'partially_delivered') {
-    const latest = await tx.loadTrack.findFirst({
-      where:   { jobId, companyId, deletedAt: null },
-      orderBy: { id: 'desc' },
-      select:  { toCustody: true },
-    });
-    const base = latest ? custodyBaseOf(latest.toCustody) : null;
-    if (base != null && base !== 'customer_dest' && base !== 'written_off') {
-      derived = 'collected';
-    }
-  }
+  const derived = deriveJobStatus(assignments.map(a => a.status), partCustody);
 
   if (
     derived &&

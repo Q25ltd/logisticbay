@@ -275,7 +275,7 @@ failed        🔲 run could not complete (planned)
 | sequenceNumber | Int | order within the run |
 | quantityAssigned | Decimal | how much of this stop's qty this run covers |
 | quantityUnit | String | |
-| status | String | pending / in_progress / completed / failed / skipped |
+| status | String | **enum `EXECUTION_STATES`** (loadVocab.ts): `not_started → en_route_pickup → at_pickup → loaded → en_route_dropoff → at_dropoff → delivered` (+ `exception`) — driver-event-only, per A4/Step 1 (2026-06-07). Superseded the old `pending/in_progress/completed/failed/skipped` set named here previously. |
 | addedAt | DateTime | |
 | addedBy | Int | |
 | removedAt | DateTime? | |

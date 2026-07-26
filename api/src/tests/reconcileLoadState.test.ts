@@ -18,30 +18,100 @@ import { buildApp } from "../app.js";
 import { deriveJobStatus, reconcileLoadState } from "../lib/reconcileLoadState.js";
 
 // ── Pure rollup unit tests (no DB) ───────────────────────────────────────────
+// deriveJobStatus(executionStates, parts) — parts carry each JobPart's TYPE +
+// latest custody BASE (dimension 3), which is what actually decides
+// collected/delivered since 2026-07-22 (task #28). executionStates still
+// drives the exception override and the in_execution floor (dimension 2).
+const collectionPart = (custodyBase: string | null) => ({ type: "collection", custodyBase });
+const deliveryPart   = (custodyBase: string | null) => ({ type: "delivery",   custodyBase });
+
 describe("deriveJobStatus (pure rollup)", () => {
-  it("empty / all not_started → null (no assertion)", () => {
-    assert.strictEqual(deriveJobStatus([]), null);
-    assert.strictEqual(deriveJobStatus(["not_started", "not_started"]), null);
+  it("empty / all not_started, no custody → null (no assertion)", () => {
+    assert.strictEqual(deriveJobStatus([], []), null);
+    assert.strictEqual(
+      deriveJobStatus(["not_started", "not_started"], [collectionPart(null), deliveryPart(null)]),
+      null,
+    );
   });
   it("any started, none collected → in_execution", () => {
-    assert.strictEqual(deriveJobStatus(["en_route_pickup"]), "in_execution");
-    assert.strictEqual(deriveJobStatus(["at_pickup", "not_started"]), "in_execution");
+    assert.strictEqual(
+      deriveJobStatus(["en_route_pickup"], [collectionPart(null), deliveryPart(null)]),
+      "in_execution",
+    );
+    assert.strictEqual(
+      deriveJobStatus(["at_pickup", "not_started"], [collectionPart(null), deliveryPart(null)]),
+      "in_execution",
+    );
   });
-  it("all collected, none delivered → collected", () => {
-    assert.strictEqual(deriveJobStatus(["loaded"]), "collected");
-    assert.strictEqual(deriveJobStatus(["at_dropoff", "loaded"]), "collected");
+  it("all collection parts' custody past customer_origin, none delivered → collected", () => {
+    assert.strictEqual(
+      deriveJobStatus(["loaded"], [collectionPart("on_vehicle"), deliveryPart(null)]),
+      "collected",
+    );
   });
   it("some collected → partially_collected", () => {
-    assert.strictEqual(deriveJobStatus(["loaded", "not_started"]), "partially_collected");
+    assert.strictEqual(
+      deriveJobStatus(
+        ["loaded", "not_started"],
+        [collectionPart("on_vehicle"), collectionPart(null), deliveryPart(null)],
+      ),
+      "partially_collected",
+    );
   });
-  it("all delivered → completed", () => {
-    assert.strictEqual(deriveJobStatus(["delivered", "delivered"]), "completed");
+  it("all delivery parts' custody at customer_dest → completed", () => {
+    assert.strictEqual(
+      deriveJobStatus(["delivered"], [collectionPart("on_vehicle"), deliveryPart("customer_dest")]),
+      "completed",
+    );
   });
   it("some delivered → partially_delivered", () => {
-    assert.strictEqual(deriveJobStatus(["delivered", "loaded"]), "partially_delivered");
+    assert.strictEqual(
+      deriveJobStatus(
+        ["delivered", "loaded"],
+        [collectionPart("on_vehicle"), deliveryPart("customer_dest"), deliveryPart("on_vehicle")],
+      ),
+      "partially_delivered",
+    );
   });
   it("any exception → attention_needed (dominates)", () => {
-    assert.strictEqual(deriveJobStatus(["exception", "delivered"]), "attention_needed");
+    assert.strictEqual(
+      deriveJobStatus(["exception", "delivered"], [collectionPart("on_vehicle"), deliveryPart("customer_dest")]),
+      "attention_needed",
+    );
+  });
+
+  // ── task #28 regression coverage: why custody, not assignment counting ──────
+  it("sibling assignment stuck at not_started, but delivery part's custody is at customer_dest → completed (the bug this fix closes)", () => {
+    // Reproduces driverAssignmentsExposed.test.ts: one assignment absorbed the
+    // whole event chain to 'delivered' while its sibling never advanced. Under
+    // the old assignment-counting rollup this could never reach 'completed'
+    // even though the freight had genuinely arrived. Custody says otherwise.
+    assert.strictEqual(
+      deriveJobStatus(
+        ["delivered", "not_started"],
+        [collectionPart("on_vehicle"), deliveryPart("customer_dest")],
+      ),
+      "completed",
+    );
+  });
+  it("relay: collection part dropped at yard (assignment shows 'delivered' for its own leg), delivery part has no custody yet → collected, NOT completed", () => {
+    // B2: drop_at_yard sets the carrying assignment's execution state to
+    // 'delivered' for ITS leg (A4: "delivered ... OR dropped at yard
+    // (interim)"), but the delivery-type part has no custody row until the
+    // second leg actually delivers. Supersedes the old D6.2 guard.
+    assert.strictEqual(
+      deriveJobStatus(["delivered"], [collectionPart("yard"), deliveryPart(null)]),
+      "collected",
+    );
+  });
+  it("multi-drop: two delivery parts, only one at customer_dest → partially_delivered, not completed", () => {
+    assert.strictEqual(
+      deriveJobStatus(
+        ["delivered", "delivered", "not_started"],
+        [collectionPart("on_vehicle"), deliveryPart("customer_dest"), deliveryPart("on_vehicle")],
+      ),
+      "partially_delivered",
+    );
   });
 });
 

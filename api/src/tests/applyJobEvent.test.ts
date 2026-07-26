@@ -69,6 +69,14 @@ test("applyJobEvent — execution-state machine (Step 1)", async (t) => {
   const jobPart = await prisma.jobPart.create({
     data: { companyId: company.id, jobId: job.id, sequenceNumber: 1, type: "collection" },
   });
+  // Form-shaped fixture (CLAUDE.md §8): every real job has a delivery stop too —
+  // required since Step 3's reconciler (2026-07-22) reads the delivery-type
+  // part's own custody to decide "completed" (dimension 3), not just execution
+  // state. No RunAssignment for it: this test's whole point is that ONE
+  // assignment absorbs the entire chain (the single-assignment case).
+  await prisma.jobPart.create({
+    data: { companyId: company.id, jobId: job.id, sequenceNumber: 2, type: "delivery" },
+  });
   const run = await prisma.run.create({
     data: {
       companyId:         company.id,
