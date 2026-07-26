@@ -253,9 +253,10 @@ const CHECK_ICON: Record<string, { icon: string; cls: string }> = {
 // Where each readiness problem is fixed — the four intake sources + this screen.
 // Mirrors the server's check `source` stamp so the planner never has to guess.
 const FIX_AT: Record<string, { label: string; to?: string }> = {
-  driver:     { label: "Fix on the Drivers page", to: "/app/drivers" },
-  fleet:      { label: "Fix on the Fleet page",   to: "/app/fleet" },
-  job:        { label: "Fix on the job form",     to: "/app/jobs" },
+  driver:     { label: "Fix on the Drivers page",  to: "/app/drivers" },
+  fleet:      { label: "Fix on the Fleet page",    to: "/app/fleet" },
+  job:        { label: "Fix on the job form",      to: "/app/jobs" },
+  planning:   { label: "Add stops on the Planning board", to: "/app/planning" },
   allocation: { label: "Fix with the pickers below" },
 };
 

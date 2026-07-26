@@ -158,9 +158,34 @@ describe("computeRunReadiness — the publish gate", () => {
     assert.strictEqual(vor?.status, "pass");
   });
 
-  it("no stops → never ready (nothing to execute)", () => {
+  it("no stops → never ready, and the empty run is NAMED as the blocker", () => {
+    // Regression: `ready` used to be false via a separate `hasStops` term while
+    // no check failed, so the planner got "Not ready" with an empty blocker
+    // list and publish answered with the bare "run is not ready".
     const r = computeRunReadiness({ hasStops: false, driver: DAVE, loads: [] });
     assert.strictEqual(r.ready, false);
+    assert.ok(r.blockers.length > 0, "an unready run must always name why");
+    assert.ok(r.blockers.some(b => /no stops on this run/i.test(b)), JSON.stringify(r.blockers));
+    const stops = r.resources.checks.find(c => c.key === "stops_assigned");
+    assert.strictEqual(stops?.status, "fail");
+    assert.strictEqual(stops?.source, "planning", "points the planner at the board that fixes it");
+  });
+
+  it("no stops → driver hours is n/a, not an unknown blamed on the driver's day", () => {
+    const r = computeRunReadiness({ hasStops: false, driver: DAVE, loads: [] });
+    const hours = r.resources.checks.find(c => c.key === "driver_hours");
+    assert.strictEqual(hours?.status, "na");
+    assert.strictEqual(hours?.reason, undefined, "no stray 'not estimable' text under Driver hours");
+    assert.ok(!r.resources.checks.some(c => /not estimable/i.test(c.reason ?? "")));
+  });
+
+  it("stops present → stops_assigned passes and counts toward the tally", () => {
+    const r = computeRunReadiness({
+      hasStops: true, driver: DAVE, truck: TRUCK, trailer: TRAILER,
+      loads: [{ requiresTrailer: true }], trailerCompatible: true, vehicleCompatible: true,
+    });
+    assert.strictEqual(r.resources.checks.find(c => c.key === "stops_assigned")?.status, "pass");
+    assert.strictEqual(r.ready, true);
   });
 
   it("a missing vehicle is a soft warning, not a blocker (unit is a later phase)", () => {

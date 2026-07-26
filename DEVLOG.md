@@ -3,7 +3,47 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-07-17
+> Last updated: 2026-07-26
+
+---
+
+## Driver execution actually works now: 3 blocking bugs in the core event path 2026-07-26 (mobile driver session, continued)
+
+Continuation of the 2026-07-18 driver audit. User asked to keep going on the mobile driver session; the investigation surfaced defects deep enough that no mobile UI work could sit on top of them, so the session became a fix of the execution engine itself. **All three predate this session and were invisible because every test fixture across the entire 16-step build simplified to a single-`JobPart` job — real jobs always have 2+ (collection and delivery are separate stops, born that way at the PRF/CJP intake gate).**
+
+**Bug 1 — the driver never had a Start button.** `JobDetail`'s `ACTIONS` map was keyed on the legacy `pending`/`accepted`/`in_progress` job vocabulary. Step 1 (2026-06-07) moved driver execution onto `RunAssignment.status`/`EXECUTION_STATES` and deliberately stopped writing `Job.status`, but the app was never told. A planned job is `planned`, which matches no `ACTIONS` key, so `JobActionBar` rendered nothing — for six weeks the backend spoke one vocabulary and the phone another. Fixed by exposing the driver's OWN assignment rows as `driverAssignments` on `GET /jobs/my` + `GET /jobs/:id` and rekeying every driver surface onto them (`currentAssignmentOf` / `driverPhaseOf` in `jobDisplay.ts`).
+
+**Bug 2 — non-deterministic assignment resolution (the nastiest).** Both event paths resolved "which assignment does this advance" with `findFirst()` and **no `ORDER BY`**. Postgres is free to return any row; with 2+ assignments per job it genuinely returned different ones across consecutive calls. Proven live with a throwaway trace script: `in_progress` resolved to assignment 2045, then `arrived_pickup` resolved to 2046 (still `not_started`) → `TRANSITION_FAILED`. A driver following the flow correctly got an error, at random, on a normal two-stop job. Fixed at the shared root (`applyJobEvent`, so the online route, the offline sync drain, and any future caller all benefit): resolve the assignment ELIGIBLE for this event — its status is in the event's `allowedFromStates` — ties on `sequenceNumber`, falling back to lowest-sequence only so a genuine failure still names a real row. Both callers had been *pre-resolving* and forcing a specific id, which bypassed the new fallback; both were changed to pass through instead. The app now also sends an explicit `runAssignmentId` (optional on the wire — no forced mobile release); a foreign or bogus id 403s rather than being silently substituted.
+
+**Bug 3 — multi-drop custody landed on the wrong stop.** Found while writing the regression test for bug 4, not by looking for it. `applyJobEvent` picked its custody target with a job-wide `parts.find(p => p.type === 'delivery')`, so on a two-delivery job BOTH `completed` events wrote their `LoadTrack` row against delivery part #1. Part #2 never reached `customer_dest`; the job could never complete. Now prefers the firing assignment's own `jobPartId` when its type matches the event, keeping the job-wide search as the fallback that lets one assignment carry a whole single-assignment chain.
+
+**Bug 4 / the design change — completion is CUSTODY-based, not assignment-counted.** User chose this explicitly over the alternative, with the reasoning worth preserving: *"a logistics platform exists to track freight, not to count assignment records… the freight has reached the customer's destination, as reflected in the latest LoadTrack custody state."* Before touching it the user required a full audit of every `Job.status === "completed"` consumer (planner board, live board, dashboards, KPIs, billing, POD, exports, APIs, notifications, reporting, tests) — done, and it found no consumer relying on assignment-count semantics, plus several currently-broken ones (dashboard carry-over, JobsPage filter, PlanningBoard cargo pill, plannerWorkService exclusion) that the change FIXES rather than regresses. `deriveJobStatus(executionStates, parts)` now reads each JobPart's own latest custody base; execution state is retained only for the `attention_needed` override and the `in_execution` floor. **Deleted the D6.2 custody guard** — it post-hoc patched the same relay false-positive by re-checking the job's single latest ledger row, which is redundant once completion is read per delivery part (a yard drop never writes to a delivery part's custody, so the false positive can't arise). This is what §A6 step 2 specified all along.
+
+**Why `RunAssignment.status === 'delivered'` was never the right signal:** A4 deliberately overloads it — "handed to consignee (final) OR dropped at yard (interim)" — and a job's parts don't map 1:1 onto the assignments that carried them. A sibling assignment left at `not_started` by bug 2's resolution used to block completion permanently even though the freight had arrived.
+
+**Decision — order of work.** User set it and it was followed exactly: fix resolution → fix mobile vocabulary → audit completion consumers → change the reconciler only if the audit clears it → regression tests → and only then build new driver UI (swap/handover/notes/exceptions/push). Rationale, in their words: *"There's no point implementing Swap/Handover/Delay/Breakdown if the driver can't even see Start Job."*
+
+**Regression coverage** now asserts `Job.status = completed` on all four shapes the user named: two-stop direct (`driverAssignmentsExposed`, `applyJobEvent`, `reconcileLoadState`), relay by driver handover (`driverHandover`), relay via yard buffer (`yardBuffer`), multi-drop (`multiDropCompletion`, new). Trailer swap covered too. `applyJobEvent.test.ts`'s fixture gained the delivery stop it was always missing — a form-shaped fixture per CLAUDE.md §8, not a weakening of the new check.
+
+**Doc rot fixed in passing:** `ARCHITECTURE.md` still documented `RunAssignment.status` as `pending / in_progress / completed / failed / skipped`, stale since Step 1. Corrected to point at `EXECUTION_STATES`.
+
+Gates: api typecheck 0 ✅ · web typecheck 0 ✅ · mobile `tsc --noEmit` 0 ✅ · api tests **316/316** ✅ · check:vocab ✅ · check:docs ✅ · web build ✅ · knip baseline ✅.
+
+Deferred (unchanged, next session): safety/hazmat/driver-notes display, POD capture, map integration, driver UI for swap/handover/yard/exception events, `POST /devices` push registration. Two smaller items noted but deliberately not fixed: `web/src/constants/jobStatuses.ts` still carries its own copy of the dead legacy vocabulary, and `computePlanningStatus()` in `routes/jobs.ts` compares `RunAssignment.status === "completed"` when the real value is `"delivered"`.
+
+---
+
+## Readiness gate: an unready run could name no reason 2026-07-26 (user spotted it)
+
+User reported the Runs screen showing **"Driver hours — Run length not estimable — no stops to time yet"** and asked whether preferred driver hours was actually wired.
+
+Preferred hours **is** real and working (since 2026-07-18): `driver_hours` reads `ShiftPreference.requestedHours` for the run's own date first, falls back to `DriverProfile.minHoursPerDay`, and says which it used ("requested shift" vs "usual day"); it also warns on an availability-plan "unavailable" day. Legal ceilings (>10h driving, >~13h duty) hard-block; exceeding the driver's own preferred day only warns, because that's the planner's call.
+
+The message meant something else entirely: **the run had no stops**. Tracing it exposed a real hole — `ready` was computed as `input.hasStops && blockers.length === 0`, so an empty run went unready **without any check failing**. `blockers` came back empty, the planner saw "Not ready" with nothing named, and publish fell through to the bare string `"run is not ready"`. That is precisely the fog the Runs readiness model exists to remove ("a gate with named blockers, NOT a blended percentage"). Worse, the only clue was filed under *Driver hours* as an `unknown` — blaming the driver's day for a planning gap, and dragging down the check tally.
+
+Fix: a hard **`stops_assigned`** check ("No stops on this run yet — add collection and delivery stops on the Planning board") carrying a new **`planning`** check source, so the Runs screen deep-links to `/app/planning` the same way other checks point at the Drivers/Fleet/job pages that fix them. `driver_hours` returns `na` when there are no stops — the same rule MOT/VOR/ADR already follow when their subject is absent. And the gate collapsed to ONE rule, `ready = blockers.length === 0`: the separate `hasStops` term was exactly what allowed an unnamed unready state to exist, and is now provably redundant. A test asserts an unready run can never have an empty blocker list.
+
+Gates: typecheck api+web 0 ✅ · api tests 316/316 ✅ · check:vocab ✅ · check:docs ✅ · web build ✅ · knip baseline ✅. Not browser-verified — it needs a seeded stopless run plus a login, and the web delta is two lines (a type union and a map entry).
 
 ---
 

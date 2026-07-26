@@ -74,7 +74,7 @@ interface ReadinessCheck {
   hard:    boolean;
   reason?: string;
   /** Where the information is born / fixed (four intake gates + this screen). */
-  source?: "allocation" | "driver" | "fleet" | "job";
+  source?: "allocation" | "driver" | "fleet" | "job" | "planning";
 }
 export interface RunReadiness {
   ready:     boolean;

@@ -106,8 +106,9 @@ type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "na";
  *   driver     — the driver registration form (Drivers page)
  *   fleet      — the unit/trailer registration form (Fleet page)
  *   job        — the job intake form (CJP/PRF)
+ *   planning   — the Planning board (which stops ride on which run)
  */
-type CheckSource = "allocation" | "driver" | "fleet" | "job";
+type CheckSource = "allocation" | "driver" | "fleet" | "job" | "planning";
 
 interface ReadinessCheck {
   key:     string;
@@ -120,6 +121,7 @@ interface ReadinessCheck {
 
 /** One map, one place — every check key points at the source that fixes it. */
 const CHECK_SOURCE: Record<string, CheckSource> = {
+  stops_assigned:     "planning",
   driver_assigned:    "allocation",
   driver_available:   "driver",
   driver_licence:     "driver",
@@ -167,6 +169,16 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
   const anyHazardous   = loads.some(l => l.hazardous);
   const needsTrailer   = loads.some(l => l.requiresTrailer);
   const neededEquip    = [...new Set(loads.flatMap(l => (l.equipment ?? []).map(lc)))];
+
+  // ── Stops — an empty run has nothing to execute ────────────────────────────
+  // This was the gate's one UNNAMED blocker: `ready` was false whenever the run
+  // had no stops, but no check failed, so the planner saw "Not ready" with an
+  // empty blocker list and publish returned the bare "run is not ready". Named
+  // here so every not-ready state has a reason and a place to fix it.
+  checks.push(input.hasStops
+    ? { key: "stops_assigned", label: "Stops on run", status: "pass", hard: true }
+    : { key: "stops_assigned", label: "Stops on run", status: "fail", hard: true,
+        reason: "No stops on this run yet — add collection and delivery stops on the Planning board." });
 
   // ── Driver ────────────────────────────────────────────────────────────────
   checks.push(driver
@@ -331,9 +343,16 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
     };
     if (!driver) {
       checks.push({ key: "driver_hours", label: "Driver hours", status: "na", hard: true });
+    } else if (!input.hasStops) {
+      // Nothing to time yet. The empty run is already named by `stops_assigned`
+      // above — repeating it here as an `unknown` filed under "Driver hours"
+      // blamed the driver's day for what is a planning gap, and counted against
+      // the check tally. `na` keeps it out of both (same rule the MOT/VOR/ADR
+      // checks follow when their subject is absent).
+      checks.push({ key: "driver_hours", label: "Driver hours", status: "na", hard: true });
     } else if (!input.day) {
       checks.push({ key: "driver_hours", label: "Driver hours", status: "unknown", hard: true,
-        reason: "Run length not estimable — no stops to time yet." });
+        reason: "Run length not estimable yet." });
     } else if (input.day.unavailable) {
       checks.push({ key: "driver_hours", label: "Driver hours", status: "warn", hard: true,
         reason: `${driver.displayName} is marked unavailable on this day — check the availability plan.` });
@@ -372,7 +391,9 @@ export function computeRunReadiness(input: RunReadinessInput): RunReadiness {
 
   // ── Gate ────────────────────────────────────────────────────────────────────
   const blockers = checks.filter(c => c.hard && c.status === "fail").map(c => c.reason ?? c.label);
-  const ready    = input.hasStops && blockers.length === 0;
+  // ONE rule: no hard failure. The former extra `input.hasStops &&` term is now
+  // carried by the stops_assigned check, so an unready run always names why.
+  const ready    = blockers.length === 0;
   const applicable = checks.filter(c => c.status !== "na");
   const passed     = applicable.filter(c => c.status === "pass").length;
 
