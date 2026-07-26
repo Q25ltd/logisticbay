@@ -191,8 +191,7 @@ New tests: `driverAssignmentsExposed.test.ts` (4 subtests — exposure shape, fu
 - Jobs screen: Today / Upcoming tabs, view-only without active shift
 - Job detail: full collection → delivery execution flow
   - Collect: confirm qty, site check-in
-  - Deliver: confirm qty, POD (signature / photo / pod number / timestamp)
-  - Per-job POD requirements enforced
+  - Deliver: confirm qty + POD **reference number only** — `DeliveryForm` gates on `job.requirePOD` and captures a typed `podNumber`. Signature and photo capture do NOT exist (corrected 2026-07-26: this line previously claimed "signature / photo / pod number / timestamp"; verified against `mobile/src/screens/JobDetail/DeliveryForm.tsx`, which has no capture surface for either). The `proofRequirements` JSON on JobPart can already ask for signature/photo — the app cannot yet satisfy those.
 - Change vehicle mid-shift
 - End segment, End shift, Review screen, Submit shift
 - History screen, Shift detail
