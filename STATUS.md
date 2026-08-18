@@ -3,7 +3,7 @@
 > **Keep this file accurate.** After every session that adds, changes, or removes a feature,
 > update the relevant section. Three tiers: ✅ Done · 🔶 Partial · 🔲 Not started.
 > For the release checklist (P0/P1/P2), update checkbox status when tasks are completed.
-> Last updated: 2026-07-26 (driver-app execution wiring: the mobile action buttons never matched real state and were rekeyed onto `EXECUTION_STATES`; event→assignment resolution was non-deterministic on any 2+ stop job; `Job.status` completion is now derived from CUSTODY, not assignment counting; multi-drop custody targeting fixed; the readiness gate no longer reports an unready run with zero named blockers)
+> Last updated: 2026-08-18 (pilot readiness: the driver app had no distributable build at all — EAS profiles, bundle id/package, real app name, and the two missing permission plugins that would have crashed a standalone build on location and Face ID; see P0.20). Previous: 2026-07-26 (driver-app execution wiring: the mobile action buttons never matched real state and were rekeyed onto `EXECUTION_STATES`; event→assignment resolution was non-deterministic on any 2+ stop job; `Job.status` completion is now derived from CUSTODY, not assignment counting; multi-drop custody targeting fixed; the readiness gate no longer reports an unready run with zero named blockers)
 
 ---
 
@@ -427,6 +427,7 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 - [ ] **P0.17** — Rotate any secret that has ever appeared in chat/commits (Postgres password, JWT secrets, SendGrid key)
 - [ ] **P0.18** — `/health` returns real signals (p95 latency, failed-sync count, needsReview count, memory, event-loop lag)
 - [ ] **P0.19** — System-state banner + DEGRADED/INCIDENT toggle (`Company.systemState`, `GET /system-state`, web + mobile banner)
+- [~] **P0.20** — **Distributable driver build** (added 2026-08-18 — the gap that made every other mobile item unreachable: no driver could install the app). `mobile/eas.json` ✅ (`preview` = internal-distribution Android **APK**, no store account needed; `production` = store/app-bundle), `ios.bundleIdentifier` + `android.package` = `com.q25ltd.logisticbay.driver` ✅, display name **LogisticBay Driver** ✅ (was `"mobile"`), and the missing `expo-location` / `expo-local-authentication` config plugins ✅ — without their usage strings a standalone iOS build **crashes** on the first location request (GPS rides on every execution event) and on Face ID unlock, and fails App Review. Remaining: Apple Developer Program enrolment (organization needs a D-U-N-S number — the long pole, and it gates a Google Play org account too), then a first `preview` build. Google Play ($25) is needed only for store distribution; Firebase/FCM for Android push is free. `slug` stays `"mobile"` to match the `@q25ltd/mobile` EAS project — rename on expo.dev first if it is ever changed.
 
 ### P1 — STRONG RECOMMENDATIONS (before scaling beyond design partners)
 

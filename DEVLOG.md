@@ -3,7 +3,29 @@
 > Historical record of every session: what was built, what was decided, what is still outstanding.
 > Read this to understand the WHY behind past decisions and avoid re-debating closed questions.
 > Do NOT rewrite history — only append. New entries go at the TOP.
-> Last updated: 2026-07-26
+> Last updated: 2026-08-18
+
+---
+
+## The app had no way to reach a phone: EAS build config + two permission strings that would have crashed it 2026-08-18 (pilot-readiness session)
+
+User returned after ~3 weeks and asked what is needed to make the app testable with real companies. The honest answer was not on the P0 list at all: **no driver could install the app.** There was no `mobile/eas.json`, and `app.json` carried neither `ios.bundleIdentifier` nor `android.package` — both mandatory before EAS can produce any distributable build. The app's display name was `"mobile"`, which is what a driver would have seen on their home screen. Three weeks of driver UI (safety card, stops/navigation, report sheet) plus S14 push had been built against a phone that could never receive them.
+
+**Found while wiring it up — the build would have crashed on first use.** `expo-location` and `expo-local-authentication` are both dependencies, but **neither had a config-plugin entry**. This is invisible in Expo Go, which ships every permission string in its own Info.plist, and fatal in a standalone build: no `NSLocationWhenInUseUsageDescription` means iOS terminates the app the moment it requests location — and GPS is attached to *every* execution event — while a missing `NSFaceIDUsageDescription` kills the Face ID unlock. Both are also automatic App Review rejections. Same class as the phantom-field bugs: something the dev harness silently supplied, that production does not. Verified the fix with `expo config --type introspect` (the public config strips native mods, so the strings are genuinely absent there — `introspect` runs the mods in memory and shows the real Info.plist). Android gained `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION`/`USE_BIOMETRIC`/`USE_FINGERPRINT` from the same plugins.
+
+Permission copy is written for the person reading the dialog, not the developer — the location string says the office confirms the job happened at the right site, which is the actual reason it is collected.
+
+**Identity fixed (user chose):** display name **LogisticBay Driver**, `com.q25ltd.logisticbay.driver` for both the iOS bundle id and the Android package. Deliberately suffixed `.driver` so a future planner or customer app has room. These are effectively permanent once published, so they were confirmed before being written.
+
+**`slug` deliberately left as `"mobile"`.** The EAS project is `@q25ltd/mobile` (`project:info`), and eas-cli validates the manifest slug against the project the `projectId` points at — changing it here without renaming the project on expo.dev first breaks the link. Cosmetic only; it does not appear on the device.
+
+**`eas.json` profiles:** `preview` = internal distribution, Android `apk` (installable directly, no store account) — this is the pilot vehicle; `production` = store distribution, Android `app-bundle`, for TestFlight/Play later. Both pin `EXPO_PUBLIC_API_URL` explicitly rather than relying on the hardcoded fallback in `src/api.ts`, and both carry an EAS Update channel (`expo-updates` is installed and `updates.url` is set, so channels are live). `appVersionSource: "remote"` + `autoIncrement` so build numbers are managed server-side and cannot collide.
+
+**Account requirements established** (nothing here is code — recorded so it is not re-derived): Apple Developer Program at $99/yr is unavoidable for TestFlight; organization enrolment needs a **D-U-N-S number**, which is free but the slowest step (days to ~2 weeks) and now gates Google Play organization accounts too — one application unblocks both. Google Play is $25 one-time and **only needed for store distribution**; Firebase/FCM for Android push is free and needs no Play account. Net effect: **an Android pilot can start with zero paid accounts** via the `preview` APK, while Apple enrolment runs in parallel. User's drivers are a mix of both platforms, so this is the chosen sequence.
+
+Still dormant: push needs an APNs key (Apple) and FCM credentials (Firebase) against the EAS project before `POST /devices` registration means anything. `google-services.json` is not yet in the project.
+
+Gates: mobile `tsc --noEmit` 0 ✅ · `expo config --type public` resolves ✅ · `expo config --type introspect` confirms both usage strings ✅ · `eas config --profile preview --platform android` resolves with the env var loaded ✅. api/web untouched, so their gates were not re-run. **No build has been produced yet** — an EAS build uploads source to Expo's cloud and was not triggered without the user's say-so.
 
 ---
 
